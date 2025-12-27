@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.repositories.time_record_repository import time_record_repository
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
+from app.services.audit_service import audit_service
 
 
 class TimeRecordService:
@@ -42,10 +43,8 @@ class TimeRecordService:
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
 
-        # Atualiza o registro
         record.record_type = new_type
 
-        # Cria o log de ajuste manual
         adjustment = ManualAdjustment(
             time_record_id=record.id,
             previous_type=previous_type,
@@ -57,6 +56,15 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(record)
+
+        audit_service.log(
+            db,
+            user_id=user_id,
+            action="TOGGLE_RECORD",
+            entity="TIME_RECORD",
+            entity_id=record.id,
+            details=f"Toggled from {previous_type} to {new_type}"
+        )
 
         return record
 

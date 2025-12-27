@@ -4,10 +4,11 @@ from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
 from app.domain.models.user import User
 from app.core.security import get_password_hash
+from app.services.audit_service import audit_service
 
 
 class UserService:
-    def create_user(self, db: Session, user_in: UserCreate) -> User:
+    def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         user = user_repository.get_by_email(db, email=user_in.email)
         if user:
             raise HTTPException(
@@ -15,11 +16,20 @@ class UserService:
                 detail="The user with this email already exists in the system.",
             )
 
-        # Hash password
         user_in.password = get_password_hash(user_in.password)
-        return user_repository.create(db, user_in)
+        created_user = user_repository.create(db, user_in)
 
-    def update_user(self, db: Session, user_id: int, user_in: UserUpdate) -> User:
+        audit_service.log(
+            db,
+            user_id=current_user_id,
+            action="CREATE",
+            entity="USER",
+            entity_id=created_user.id,
+            details=f"Created user {created_user.email}"
+        )
+        return created_user
+
+    def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
             raise HTTPException(
@@ -30,14 +40,34 @@ class UserService:
         if user_in.password:
             user_in.password = get_password_hash(user_in.password)
 
-        return user_repository.update(db, user, user_in)
+        updated_user = user_repository.update(db, user, user_in)
 
-    def disable_user(self, db: Session, user_id: int) -> User:
+        audit_service.log(
+            db,
+            user_id=current_user_id,
+            action="UPDATE",
+            entity="USER",
+            entity_id=updated_user.id,
+            details="Updated user profile"
+        )
+        return updated_user
+
+    def disable_user(self, db: Session, user_id: int, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        return user_repository.update(db, user, {"is_active": False})
+        updated_user = user_repository.update(db, user, {"is_active": False})
+
+        audit_service.log(
+            db,
+            user_id=current_user_id,
+            action="DISABLE",
+            entity="USER",
+            entity_id=updated_user.id,
+            details="Disabled user"
+        )
+        return updated_user
 
 
 user_service = UserService()

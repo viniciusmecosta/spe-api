@@ -30,7 +30,7 @@ def create_user(
     """
     Create new user. (Manager only)
     """
-    return user_service.create_user(db, user_in)
+    return user_service.create_user(db, user_in, current_user.id)
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
@@ -42,7 +42,7 @@ def update_user(
     """
     Update a user. (Manager only)
     """
-    return user_service.update_user(db, user_id, user_in)
+    return user_service.update_user(db, user_id, user_in, current_user.id)
 
 @router.patch("/{user_id}/disable", response_model=UserResponse)
 def disable_user(
@@ -53,4 +53,4 @@ def disable_user(
     """
     Disable a user. (Manager only)
     """
-    return user_service.disable_user(db, user_id)
+    return user_service.disable_user(db, user_id, current_user.id)

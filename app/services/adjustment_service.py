@@ -7,6 +7,7 @@ from app.schemas.adjustment import AdjustmentRequestCreate
 from app.domain.models.adjustment import AdjustmentRequest
 from app.domain.models.enums import AdjustmentStatus
 from app.core.config import settings
+from app.services.audit_service import audit_service
 
 
 class AdjustmentService:
@@ -25,7 +26,18 @@ class AdjustmentService:
         tz = pytz.timezone(settings.TIMEZONE)
         request.reviewed_at = datetime.now(tz)
 
-        return adjustment_repository.update_status(db, request, new_status, manager_id, comment)
+        updated_request = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
+
+        audit_service.log(
+            db,
+            user_id=manager_id,
+            action="REVIEW_ADJUSTMENT",
+            entity="ADJUSTMENT_REQUEST",
+            entity_id=updated_request.id,
+            details=f"Status set to {new_status}. Comment: {comment}"
+        )
+
+        return updated_request
 
 
 adjustment_service = AdjustmentService()
