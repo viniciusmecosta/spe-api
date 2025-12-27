@@ -25,6 +25,14 @@ def register_exit(
 ) -> Any:
     return time_record_service.register_exit(db, current_user.id, request.client.host)
 
+@router.put("/{id}/toggle", response_model=TimeRecordResponse)
+def toggle_record_type(
+    id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    return time_record_service.toggle_record_type(db, id, current_user.id)
+
 @router.get("/my", response_model=list[TimeRecordResponse])
 def read_my_records(
     skip: int = 0,

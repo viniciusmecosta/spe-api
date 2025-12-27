@@ -5,7 +5,7 @@ import pytz
 from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.repositories.time_record_repository import time_record_repository
-from app.domain.models.time_record import TimeRecord
+from app.domain.models.time_record import TimeRecord, ManualAdjustment
 
 
 class TimeRecordService:
@@ -30,6 +30,35 @@ class TimeRecordService:
         current_time = datetime.now(tz)
 
         return time_record_repository.create(db, user_id, RecordType.EXIT, current_time, ip_address)
+
+    def toggle_record_type(self, db: Session, record_id: int, user_id: int) -> TimeRecord:
+        record = time_record_repository.get(db, record_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time record not found")
+
+        if record.user_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to modify this record")
+
+        previous_type = record.record_type
+        new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
+
+        # Atualiza o registro
+        record.record_type = new_type
+
+        # Cria o log de ajuste manual
+        adjustment = ManualAdjustment(
+            time_record_id=record.id,
+            previous_type=previous_type,
+            new_type=new_type,
+            adjusted_by_user_id=user_id
+        )
+
+        db.add(adjustment)
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        return record
 
 
 time_record_service = TimeRecordService()
