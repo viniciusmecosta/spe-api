@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: spe_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - spe_data:/app/uploads
+    environment:
+      - PROJECT_NAME=SPE
+      - TIMEZONE=America/Fortaleza
+      # Para persistir o SQLite fora do container em ambiente dev,
+      # idealmente mapearia um volume para o arquivo .db também.
+      # Exemplo simples mantendo dentro do container ou volume nomeado:
+      - SQLALCHEMY_DATABASE_URI=sqlite:///./spe.db
+    restart: unless-stopped
+
+volumes:
+  spe_data:
