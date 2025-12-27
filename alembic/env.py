@@ -8,8 +8,8 @@ from alembic import context
 # Importações da aplicação para o Alembic reconhecer os modelos e configs
 from app.core.config import settings
 from app.database.base import Base
-# Importar modelos futuros aqui para garantir que o Alembic os veja
-# from app.domain.models import ...
+# Importa todos os modelos para serem registrados no metadata
+import app.domain.models  # noqa
 
 config = context.config
 
