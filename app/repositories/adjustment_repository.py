@@ -39,6 +39,9 @@ class AdjustmentRepository:
             .limit(limit) \
             .all()
 
+    def count_pending(self, db: Session) -> int:
+        return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING).count()
+
     def update(self, db: Session, db_obj: AdjustmentRequest,
                obj_in: AdjustmentRequestUpdate | dict) -> AdjustmentRequest:
         if isinstance(obj_in, dict):

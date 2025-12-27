@@ -1,14 +1,19 @@
 from calendar import monthrange
 from datetime import date, timedelta, datetime
+from io import BytesIO
 
 import pytz
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType
+from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.schemas.report import MonthlyReportResponse, MonthlySummaryItem, UserReportResponse, DailyReportItem
+from app.schemas.report import MonthlyReportResponse, MonthlySummaryItem, UserReportResponse, DailyReportItem, \
+    DashboardMetricsResponse
 from app.services.work_hour_service import work_hour_service
 
 
@@ -19,9 +24,33 @@ class ReportService:
         end_date = date(year, month, last_day)
         return start_date, end_date
 
+    def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
+        tz = pytz.timezone(settings.TIMEZONE)
+        today = datetime.now(tz).date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+        today_start_aware = tz.localize(today_start)
+        today_end_aware = tz.localize(today_end)
+
+        active_users_count = user_repository.count_active(db)
+        pending_adjustments_count = adjustment_repository.count_pending(db)
+
+        records_today = time_record_repository.get_by_range(db, -1, today_start_aware,
+                                                            today_end_aware)
+
+
+        present_count = time_record_repository.count_unique_users_in_range(db, today_start_aware, today_end_aware)
+
+        return DashboardMetricsResponse(
+            total_active_employees=active_users_count,
+            pending_adjustments=pending_adjustments_count,
+            employees_present_today=present_count,
+            date=today
+        )
+
     def get_monthly_summary(self, db: Session, month: int, year: int) -> MonthlyReportResponse:
         start_date, end_date = self._get_month_range(month, year)
-        users = user_repository.get_multi(db, limit=1000)
+        users = user_repository.get_active_users(db)
 
         summary_items = []
         for user in users:
@@ -116,6 +145,59 @@ class ReportService:
             total_balance_hours=round(total_worked_month - total_expected_month, 2),
             daily_details=daily_details
         )
+
+    def generate_excel_report(self, db: Session, month: int, year: int) -> BytesIO:
+        summary = self.get_monthly_summary(db, month, year)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Relatorio_{month}_{year}"
+
+        headers = ["ID", "Funcionário", "Horas Trabalhadas", "Horas Esperadas", "Saldo"]
+        ws.append(headers)
+
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        for emp in summary.employees:
+            ws.append([
+                emp.user_id,
+                emp.user_name,
+                emp.total_worked_hours,
+                emp.expected_hours,
+                emp.balance_hours
+            ])
+        ws_det = wb.create_sheet("Detalhado")
+        headers_det = ["ID", "Funcionário", "Data", "Entradas", "Saídas", "Trabalhado", "Saldo"]
+        ws_det.append(headers_det)
+        for cell in ws_det[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+
+        users = user_repository.get_active_users(db)
+        for user in users:
+            report = self.get_user_report(db, user.id, month, year)
+            if report:
+                for day in report.daily_details:
+                    ws_det.append([
+                        user.id,
+                        user.name,
+                        day.date,
+                        ", ".join(day.entries),
+                        ", ".join(day.exits),
+                        day.worked_hours,
+                        day.balance_hours
+                    ])
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output
 
 
 report_service = ReportService()

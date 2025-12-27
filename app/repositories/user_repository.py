@@ -1,8 +1,7 @@
+from typing import Any
 from sqlalchemy.orm import Session
-
 from app.domain.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
-
 
 class UserRepository:
     def get_by_email(self, db: Session, email: str) -> User | None:
@@ -13,6 +12,12 @@ class UserRepository:
 
     def get_multi(self, db: Session, skip: int = 0, limit: int = 100) -> list[User]:
         return db.query(User).offset(skip).limit(limit).all()
+
+    def get_active_users(self, db: Session) -> list[User]:
+        return db.query(User).filter(User.is_active == True).all()
+
+    def count_active(self, db: Session) -> int:
+        return db.query(User).filter(User.is_active == True).count()
 
     def create(self, db: Session, user_in: UserCreate) -> User:
         db_user = User(
@@ -41,6 +46,5 @@ class UserRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
-
 
 user_repository = UserRepository()

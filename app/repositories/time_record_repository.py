@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import desc, and_
+from sqlalchemy import desc, and_, distinct, func
 from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType
@@ -40,6 +40,14 @@ class TimeRecordRepository:
                 TimeRecord.record_datetime <= end_date
             )
         ).order_by(TimeRecord.record_datetime).all()
+
+    def count_unique_users_in_range(self, db: Session, start_date: datetime, end_date: datetime) -> int:
+        return db.query(func.count(distinct(TimeRecord.user_id))).filter(
+            and_(
+                TimeRecord.record_datetime >= start_date,
+                TimeRecord.record_datetime <= end_date
+            )
+        ).scalar()
 
 
 time_record_repository = TimeRecordRepository()
