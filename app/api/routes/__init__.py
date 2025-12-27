@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.routes import auth, time_records
+from app.api.routes import auth, time_records, adjustments
 
 api_router = APIRouter()
 
@@ -9,3 +9,4 @@ def health_check():
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(time_records.router, prefix="/time-records", tags=["time-records"])
+api_router.include_router(adjustments.router, prefix="/adjustments", tags=["adjustments"])
