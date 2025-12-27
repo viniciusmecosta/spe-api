@@ -5,34 +5,58 @@ from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate
 from app.domain.models.enums import UserRole
 from app.core.config import settings
+from app.core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def init_db(db: Session) -> None:
-    # Verifica se já existe algum usuário (para não recriar em restarts)
-    user = user_repository.get_by_email(db, email="admin@spe.com")
+    # Verifica se já existe o superusuário definido nas configurações
+    user = user_repository.get_by_email(db, email=settings.FIRST_SUPERUSER)
     if not user:
-        logger.info("Creating initial superuser: admin@spe.com")
+        logger.info(f"Creating initial superuser: {settings.FIRST_SUPERUSER}")
+
+        # A senha bruta vem do settings, hash é gerado aqui
+        hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
+
         user_in = UserCreate(
             name="Administrador Inicial",
-            email="admin@spe.com",
-            password="adminpassword",  # Em produção, usar env var ou secrets
+            email=settings.FIRST_SUPERUSER,
+            password=hashed_password,  # Passamos o hash, pois o repository cria direto
             role=UserRole.MANAGER,
             weekly_workload_hours=44,
             is_active=True
         )
-        # Importante: O repository espera que a senha já venha hasheada se usar o método create cru,
-        # mas aqui vamos usar o service ou hashear manualmente.
-        # Para simplificar e evitar dependência circular com service, hasheamos aqui.
-        from app.core.security import get_password_hash
-        user_in.password = get_password_hash(user_in.password)
 
-        user_repository.create(db, user_in)
+        # Como o UserCreate espera 'password' (string), mas queremos salvar o hash,
+        # e o repositório atual (implementado anteriormente) não faz o hash automaticamente no método create cru,
+        # ajustamos o objeto antes de persistir ou garantimos que o repositório receba o que espera.
+        # O repositório implementado anteriormente espera que a senha já venha tratada ou ele salva direto.
+        # Vamos garantir:
+
+        # Hack: O schema UserCreate valida campos, mas o repository usa os campos do schema para criar o Model.
+        # Vamos passar a senha original para o UserCreate e substituir pelo hash no objeto de banco manualmente
+        # ou ajustar a chamada.
+        # Ajuste limpo para o código existente:
+
+        # 1. Instancia UserCreate com senha original (para validação pydantic)
+        user_data = UserCreate(
+            name="Administrador Inicial",
+            email=settings.FIRST_SUPERUSER,
+            password=settings.FIRST_SUPERUSER_PASSWORD,
+            role=UserRole.MANAGER,
+            weekly_workload_hours=44,
+            is_active=True
+        )
+
+        # 2. Substitui pela senha hashada antes de enviar ao repositório
+        user_data.password = hashed_password
+
+        user_repository.create(db, user_data)
         logger.info("Initial superuser created successfully.")
     else:
-        logger.info("Superuser already exists. Skipping creation.")
+        logger.info(f"Superuser {settings.FIRST_SUPERUSER} already exists. Skipping creation.")
 
 
 def main() -> None:
