@@ -1,8 +1,9 @@
-from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from app.domain.models.adjustment import AdjustmentRequest
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
+from sqlalchemy.orm import Session
+
+from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
 from app.domain.models.enums import AdjustmentStatus
+from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
 
 
 class AdjustmentRepository:
@@ -62,6 +63,17 @@ class AdjustmentRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
+    def create_attachment(self, db: Session, request_id: int, file_path: str, file_type: str) -> AdjustmentAttachment:
+        db_attachment = AdjustmentAttachment(
+            adjustment_request_id=request_id,
+            file_path=file_path,
+            file_type=file_type
+        )
+        db.add(db_attachment)
+        db.commit()
+        db.refresh(db_attachment)
+        return db_attachment
 
 
 adjustment_repository = AdjustmentRepository()
