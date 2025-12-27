@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+
 
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
@@ -22,6 +24,7 @@ class AdjustmentRequest(Base):
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
+
 
 class AdjustmentAttachment(Base):
     __tablename__ = "adjustment_attachments"

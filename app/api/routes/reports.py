@@ -1,11 +1,13 @@
-from typing import Any
 from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+
 from app.api import deps
+from app.domain.models.user import User
 from app.schemas.report import MonthlyReportResponse, UserReportResponse
 from app.services.report_service import report_service
-from app.domain.models.user import User
 
 router = APIRouter()
 
@@ -17,9 +19,6 @@ def get_monthly_global_report(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    """
-    Get a summary report of work hours for all employees in a specific month. (Manager only)
-    """
     now = datetime.now()
     if not month: month = now.month
     if not year: year = now.year
@@ -35,9 +34,6 @@ def get_user_detailed_report(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    """
-    Get a detailed daily report for a specific user. (Manager only)
-    """
     now = datetime.now()
     if not month: month = now.month
     if not year: year = now.year

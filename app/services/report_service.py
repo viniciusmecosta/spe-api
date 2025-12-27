@@ -1,11 +1,13 @@
-from datetime import date, timedelta, datetime
-import pytz
 from calendar import monthrange
+from datetime import date, timedelta, datetime
+
+import pytz
 from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.repositories.user_repository import user_repository
-from app.repositories.time_record_repository import time_record_repository
 from app.domain.models.enums import RecordType
+from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.report import MonthlyReportResponse, MonthlySummaryItem, UserReportResponse, DailyReportItem
 from app.services.work_hour_service import work_hour_service
 
@@ -19,11 +21,10 @@ class ReportService:
 
     def get_monthly_summary(self, db: Session, month: int, year: int) -> MonthlyReportResponse:
         start_date, end_date = self._get_month_range(month, year)
-        users = user_repository.get_multi(db, limit=1000)  # Assumindo limite razoável para o MVP
+        users = user_repository.get_multi(db, limit=1000)
 
         summary_items = []
         for user in users:
-            # Reutiliza o serviço de banco de horas para calcular totais
             balance_data = work_hour_service.calculate_balance(db, user.id, start_date, end_date)
 
             summary_items.append(MonthlySummaryItem(
@@ -44,7 +45,7 @@ class ReportService:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
-            return None  # Ou raise HTTPException
+            return None
 
         tz = pytz.timezone(settings.TIMEZONE)
         start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
@@ -52,7 +53,6 @@ class ReportService:
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
 
-        # Agrupar registros por dia
         daily_records = {}
         current = start_date
         while current <= end_date:
@@ -76,7 +76,6 @@ class ReportService:
             day_worked_seconds = 0.0
             entry_time = None
 
-            # Ordenar por horário para garantir pares corretos
             day_records.sort(key=lambda x: x.record_datetime)
 
             for rec in day_records:
@@ -93,7 +92,6 @@ class ReportService:
 
             day_worked_hours = day_worked_seconds / 3600.0
 
-            # Cálculo de horas esperadas (apenas dias úteis)
             day_expected = daily_workload if day.weekday() < 5 else 0.0
             day_balance = day_worked_hours - day_expected
 

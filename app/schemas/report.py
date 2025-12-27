@@ -1,13 +1,16 @@
-from typing import List, Optional
 from datetime import date
+from typing import List
+
 from pydantic import BaseModel
+
 
 class DailyReportItem(BaseModel):
     date: date
-    entries: List[str]  # Horários formatados HH:MM
-    exits: List[str]    # Horários formatados HH:MM
+    entries: List[str]
+    exits: List[str]
     worked_hours: float
     balance_hours: float
+
 
 class UserReportResponse(BaseModel):
     user_id: int
@@ -19,12 +22,14 @@ class UserReportResponse(BaseModel):
     total_balance_hours: float
     daily_details: List[DailyReportItem]
 
+
 class MonthlySummaryItem(BaseModel):
     user_id: int
     user_name: str
     total_worked_hours: float
     expected_hours: float
     balance_hours: float
+
 
 class MonthlyReportResponse(BaseModel):
     month: int

@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
+
 from app.domain.models.audit import AuditLog
 from app.schemas.audit import AuditLogCreate
+
 
 class AuditRepository:
     def create(self, db: Session, obj_in: AuditLogCreate) -> AuditLog:
@@ -15,5 +17,6 @@ class AuditRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
 
 audit_repository = AuditRepository()

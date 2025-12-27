@@ -1,7 +1,9 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 from app.domain.models.enums import UserRole
+
 
 class User(Base):
     __tablename__ = "users"

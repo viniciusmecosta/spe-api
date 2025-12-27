@@ -1,10 +1,12 @@
 from datetime import datetime, date, timedelta
-from sqlalchemy.orm import Session
+
 import pytz
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.domain.models.enums import RecordType
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.domain.models.enums import RecordType
 from app.schemas.work_hour import WorkHourBalanceResponse
 
 
@@ -12,7 +14,6 @@ class WorkHourService:
     def calculate_balance(self, db: Session, user_id: int, start_date: date, end_date: date) -> WorkHourBalanceResponse:
         tz = pytz.timezone(settings.TIMEZONE)
 
-        # Converte datas para datetime com timezone para a query
         start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
         end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
 
@@ -32,15 +33,12 @@ class WorkHourService:
 
         total_worked_hours = total_seconds / 3600.0
 
-        # Cálculo simples de horas esperadas (dias úteis seg-sex)
-        # Assumindo jornada semanal de 44h distribuída em 5 dias (~8.8h/dia) para simplificação do MVP
-        # Em um sistema real, consideraria feriados e escalas específicas.
         expected_hours = 0.0
         current_date = start_date
         daily_workload = user.weekly_workload_hours / 5.0
 
         while current_date <= end_date:
-            if current_date.weekday() < 5:  # 0-4 são seg-sex
+            if current_date.weekday() < 5:
                 expected_hours += daily_workload
             current_date += timedelta(days=1)
 

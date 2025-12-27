@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 from app.domain.models.enums import RecordType
+
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
@@ -15,6 +17,7 @@ class TimeRecord(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", backref="time_records")
+
 
 class ManualAdjustment(Base):
     __tablename__ = "manual_adjustments"

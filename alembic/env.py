@@ -1,22 +1,16 @@
 from logging.config import fileConfig
-
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
 from alembic import context
-
-# Importações da aplicação para o Alembic reconhecer os modelos e configs
 from app.core.config import settings
 from app.database.base import Base
-# Importa todos os modelos para serem registrados no metadata
-import app.domain.models  # noqa
+import app.domain.models
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Define a URL do banco dinamicamente via settings
 config.set_main_option("sqlalchemy.url", settings.SQLALCHEMY_DATABASE_URI)
 
 target_metadata = Base.metadata

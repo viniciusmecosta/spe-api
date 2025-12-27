@@ -69,7 +69,6 @@ class AdjustmentService:
         if request.user_id != user_id:
             raise HTTPException(status_code=403, detail="Not authorized to attach files to this request")
 
-        # Gera nome único para o arquivo
         file_ext = os.path.splitext(file.filename)[1]
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)

@@ -1,23 +1,12 @@
-"""initial tables
-
-Revision ID: 001
-Revises:
-Create Date: 2023-10-27 10:00:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 
-
-# revision identifiers, used by Alembic.
 revision = '001'
 down_revision = None
 branch_labels = None
 depends_on = None
 
-
 def upgrade() -> None:
-    # --- Users Table ---
     op.create_table('users',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('name', sa.String(), nullable=False),
@@ -33,7 +22,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
 
-    # --- Time Records Table ---
     op.create_table('time_records',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
@@ -46,7 +34,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_time_records_id'), 'time_records', ['id'], unique=False)
 
-    # --- Manual Adjustments Table ---
     op.create_table('manual_adjustments',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('time_record_id', sa.Integer(), nullable=False),
@@ -60,7 +47,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_manual_adjustments_id'), 'manual_adjustments', ['id'], unique=False)
 
-    # --- Adjustment Requests Table ---
     op.create_table('adjustment_requests',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
@@ -80,7 +66,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_adjustment_requests_id'), 'adjustment_requests', ['id'], unique=False)
 
-    # --- Adjustment Attachments Table ---
     op.create_table('adjustment_attachments',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('adjustment_request_id', sa.Integer(), nullable=False),
@@ -92,7 +77,6 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_adjustment_attachments_id'), 'adjustment_attachments', ['id'], unique=False)
 
-    # --- Audit Logs Table ---
     op.create_table('audit_logs',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('user_id', sa.Integer(), nullable=False),
@@ -105,7 +89,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_audit_logs_id'), 'audit_logs', ['id'], unique=False)
-
 
 def downgrade() -> None:
     op.drop_index(op.f('ix_audit_logs_id'), table_name='audit_logs')

@@ -1,16 +1,16 @@
 from typing import Generator
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import verify_password
 from app.database.session import SessionLocal
-from app.schemas.token import TokenPayload
-from app.domain.models.user import User
 from app.domain.models.enums import UserRole
+from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
+from app.schemas.token import TokenPayload
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 

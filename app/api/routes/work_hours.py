@@ -1,12 +1,14 @@
-from typing import Any
 from datetime import date, datetime, timedelta
+from typing import Any
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+
 from app.api import deps
+from app.domain.models.user import User
+from app.repositories.user_repository import user_repository
 from app.schemas.work_hour import WorkHourBalanceResponse
 from app.services.work_hour_service import work_hour_service
-from app.repositories.user_repository import user_repository
-from app.domain.models.user import User
 
 router = APIRouter()
 
@@ -33,9 +35,6 @@ def get_my_work_hours(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    Get work hours balance for the current user.
-    """
     start_date, end_date = _get_default_dates(start_date, end_date)
     return work_hour_service.calculate_balance(db, current_user.id, start_date, end_date)
 
@@ -48,9 +47,6 @@ def get_user_work_hours(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    """
-    Get work hours balance for a specific user. (Manager only)
-    """
     if not user_repository.get(db, user_id):
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -65,9 +61,6 @@ def get_all_work_hours(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    """
-    Get work hours balance for all users. (Manager only)
-    """
     start_date, end_date = _get_default_dates(start_date, end_date)
     users = user_repository.get_multi(db, limit=1000)
 

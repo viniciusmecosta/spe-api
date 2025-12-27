@@ -1,5 +1,5 @@
-from typing import Any
 from sqlalchemy.orm import Session
+
 from app.domain.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
@@ -15,8 +15,6 @@ class UserRepository:
         return db.query(User).offset(skip).limit(limit).all()
 
     def create(self, db: Session, user_in: UserCreate) -> User:
-        # Nota: O service deve hashear a senha antes de chamar este método,
-        # mas mantemos a assinatura compatível com o objeto UserCreate
         db_user = User(
             name=user_in.name,
             email=user_in.email,

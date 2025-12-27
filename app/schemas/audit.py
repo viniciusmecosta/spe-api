@@ -1,6 +1,8 @@
-from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
+
+from pydantic import BaseModel
+
 
 class AuditLogBase(BaseModel):
     action: str
@@ -8,8 +10,10 @@ class AuditLogBase(BaseModel):
     entity_id: Optional[int] = None
     details: Optional[str] = None
 
+
 class AuditLogCreate(AuditLogBase):
     user_id: int
+
 
 class AuditLogResponse(AuditLogBase):
     id: int

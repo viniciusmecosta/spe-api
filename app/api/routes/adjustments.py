@@ -30,9 +30,6 @@ def upload_adjustment_attachment(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    Attach a document to an adjustment request.
-    """
     return adjustment_service.upload_attachment(db, id, current_user.id, file)
 
 
@@ -45,8 +42,6 @@ def read_my_adjustments(
 ) -> Any:
     return adjustment_repository.get_all_by_user(db, current_user.id, skip, limit)
 
-
-# Manager Routes
 
 @router.get("/", response_model=list[AdjustmentRequestResponse])
 def read_all_adjustments(
@@ -85,7 +80,4 @@ def edit_adjustment_request(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    """
-    Edit an adjustment request. (Manager only)
-    """
     return adjustment_service.update_request(db, id, current_user.id, request_in)
