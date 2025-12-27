@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.domain.models.adjustment import AdjustmentRequest
-from app.schemas.adjustment import AdjustmentRequestCreate
+from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
 from app.domain.models.enums import AdjustmentStatus
 
 
@@ -37,6 +37,21 @@ class AdjustmentRepository:
             .offset(skip) \
             .limit(limit) \
             .all()
+
+    def update(self, db: Session, db_obj: AdjustmentRequest,
+               obj_in: AdjustmentRequestUpdate | dict) -> AdjustmentRequest:
+        if isinstance(obj_in, dict):
+            update_data = obj_in
+        else:
+            update_data = obj_in.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
 
     def update_status(self, db: Session, db_obj: AdjustmentRequest, status: AdjustmentStatus, manager_id: int,
                       comment: str | None = None) -> AdjustmentRequest:

@@ -13,6 +13,13 @@ class AdjustmentRequestBase(BaseModel):
 class AdjustmentRequestCreate(AdjustmentRequestBase):
     pass
 
+class AdjustmentRequestUpdate(BaseModel):
+    adjustment_type: Optional[AdjustmentType] = None
+    target_date: Optional[date] = None
+    entry_time: Optional[time] = None
+    exit_time: Optional[time] = None
+    reason_text: Optional[str] = None
+
 class AdjustmentRequestResponse(AdjustmentRequestBase):
     id: int
     user_id: int
