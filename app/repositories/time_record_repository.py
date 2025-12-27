@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, and_
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.domain.models.enums import RecordType
 from datetime import datetime
@@ -25,5 +25,14 @@ class TimeRecordRepository:
 
     def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
         return db.query(TimeRecord).filter(TimeRecord.user_id == user_id).order_by(desc(TimeRecord.record_datetime)).offset(skip).limit(limit).all()
+
+    def get_by_range(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[TimeRecord]:
+        return db.query(TimeRecord).filter(
+            and_(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_date,
+                TimeRecord.record_datetime <= end_date
+            )
+        ).order_by(TimeRecord.record_datetime).all()
 
 time_record_repository = TimeRecordRepository()
