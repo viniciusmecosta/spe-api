@@ -10,9 +10,6 @@ services:
     environment:
       - PROJECT_NAME=SPE
       - TIMEZONE=America/Fortaleza
-      # Para persistir o SQLite fora do container em ambiente dev,
-      # idealmente mapearia um volume para o arquivo .db também.
-      # Exemplo simples mantendo dentro do container ou volume nomeado:
       - SQLALCHEMY_DATABASE_URI=sqlite:///./spe.db
     restart: unless-stopped
 

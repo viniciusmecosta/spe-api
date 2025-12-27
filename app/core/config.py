@@ -1,5 +1,6 @@
 import os
-from pydantic_settings import BaseSettings
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -9,18 +10,30 @@ class Settings(BaseSettings):
     SQLALCHEMY_DATABASE_URI: str = "sqlite:///./spe.db"
 
     # Configurações de Segurança
-    SECRET_KEY: str = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+    # Valor padrão inseguro removido. Agora a aplicação falhará se não houver SECRET_KEY configurada (ideal para produção)
+    # Ou mantemos um default apenas para dev, mas o ideal é forçar a config.
+    # Vou manter um default gerado apenas para facilitar o run local sem .env se necessário,
+    # mas o .env terá prioridade.
+    SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # Configuração de Upload
     UPLOAD_DIR: str = "uploads"
 
-    class Config:
-        case_sensitive = True
+    # Configuração para ler o arquivo .env
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
+    )
 
 
-settings = Settings()
+try:
+    settings = Settings()
+except Exception:
+    settings = Settings(SECRET_KEY="insecure-default-key-change-this-in-production")
 
 # Garante que o diretório de uploads existe
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
