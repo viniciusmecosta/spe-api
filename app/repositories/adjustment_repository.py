@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.domain.models.adjustment import AdjustmentRequest
 from app.schemas.adjustment import AdjustmentRequestCreate
+from app.domain.models.enums import AdjustmentStatus
+
 
 class AdjustmentRepository:
     def create(self, db: Session, user_id: int, obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
@@ -12,19 +14,39 @@ class AdjustmentRepository:
             entry_time=obj_in.entry_time,
             exit_time=obj_in.exit_time,
             reason_text=obj_in.reason_text,
-            # Status padrão é PENDING (definido no model)
         )
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
         return db_obj
 
+    def get(self, db: Session, id: int) -> AdjustmentRequest | None:
+        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).first()
+
     def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
-        return db.query(AdjustmentRequest)\
-            .filter(AdjustmentRequest.user_id == user_id)\
-            .order_by(desc(AdjustmentRequest.created_at))\
-            .offset(skip)\
-            .limit(limit)\
+        return db.query(AdjustmentRequest) \
+            .filter(AdjustmentRequest.user_id == user_id) \
+            .order_by(desc(AdjustmentRequest.created_at)) \
+            .offset(skip) \
+            .limit(limit) \
             .all()
+
+    def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
+        return db.query(AdjustmentRequest) \
+            .order_by(desc(AdjustmentRequest.created_at)) \
+            .offset(skip) \
+            .limit(limit) \
+            .all()
+
+    def update_status(self, db: Session, db_obj: AdjustmentRequest, status: AdjustmentStatus, manager_id: int,
+                      comment: str | None = None) -> AdjustmentRequest:
+        db_obj.status = status
+        db_obj.manager_id = manager_id
+        db_obj.manager_comment = comment
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
 
 adjustment_repository = AdjustmentRepository()

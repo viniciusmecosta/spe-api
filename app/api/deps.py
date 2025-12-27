@@ -9,6 +9,7 @@ from app.core.security import verify_password
 from app.database.session import SessionLocal
 from app.schemas.token import TokenPayload
 from app.domain.models.user import User
+from app.domain.models.enums import UserRole
 from app.repositories.user_repository import user_repository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
@@ -51,4 +52,15 @@ def get_current_active_user(
 ) -> User:
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+
+def get_current_manager(
+        current_user: User = Depends(get_current_active_user),
+) -> User:
+    if current_user.role != UserRole.MANAGER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough privileges"
+        )
     return current_user
