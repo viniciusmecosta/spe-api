@@ -1,9 +1,10 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.core.security import get_password_hash
+from app.domain.models.user import User, WorkSchedule
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
-from app.domain.models.user import User, WorkSchedule
-from app.core.security import get_password_hash
 from app.services.audit_service import audit_service
 
 
@@ -17,12 +18,11 @@ class UserService:
             )
 
         # Captura os horários antes de manipular o objeto
+        # user_in.schedules é uma lista de objetos Pydantic agora
         schedules_in = user_in.schedules
 
         user_in.password = get_password_hash(user_in.password)
 
-        # Criação manual do objeto User para evitar passar 'schedules' para o construtor do SQLAlchemy
-        # (já que UserCreate tem 'schedules' mas o modelo User não tem esse campo direto no init)
         db_user = User(
             name=user_in.name,
             username=user_in.username,
@@ -30,21 +30,19 @@ class UserService:
             role=user_in.role,
             is_active=user_in.is_active
         )
+
+        # Adiciona Schedules
+        if schedules_in:
+            for sch in schedules_in:
+                db_sch = WorkSchedule(
+                    day_of_week=sch.day_of_week,
+                    daily_hours=sch.daily_hours
+                )
+                db_user.schedules.append(db_sch)
+
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-
-        # Agora cria os horários associados, se houver
-        if schedules_in:
-            for sched in schedules_in:
-                db_sched = WorkSchedule(
-                    user_id=db_user.id,
-                    day_of_week=sched.day_of_week,
-                    daily_hours=sched.daily_hours
-                )
-                db.add(db_sched)
-            db.commit()
-            db.refresh(db_user)
 
         audit_service.log(
             db,
@@ -61,26 +59,40 @@ class UserService:
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if user_in.password:
-            user_in.password = get_password_hash(user_in.password)
-
+        # Verifica unicidade de username se alterado
         if user_in.username and user_in.username != user.username:
             existing = user_repository.get_by_username(db, username=user_in.username)
             if existing:
                 raise HTTPException(status_code=400, detail="Username already exists.")
 
-        # Update User fields
-        user_data = user_in.model_dump(exclude_unset=True, exclude={'schedules'})
-        for field, value in user_data.items():
+        update_data = user_in.model_dump(exclude_unset=True)
+
+        # Separa schedules para tratamento manual
+        schedules_in = update_data.pop("schedules", None)
+
+        # Atualiza senha se fornecida
+        if "password" in update_data and update_data["password"]:
+            update_data["password_hash"] = get_password_hash(update_data["password"])
+            del update_data["password"]
+
+        # Atualiza campos simples do usuário
+        for field, value in update_data.items():
             setattr(user, field, value)
 
-        # Update Schedules if provided
-        if user_in.schedules is not None:
-            # Remove old
-            db.query(WorkSchedule).filter(WorkSchedule.user_id == user.id).delete()
-            # Add new
-            for sched in user_in.schedules:
-                db.add(WorkSchedule(user_id=user.id, day_of_week=sched.day_of_week, daily_hours=sched.daily_hours))
+        # Atualização de Schedules (Lógica Corrigida)
+        if schedules_in is not None:
+            # 1. Limpa a lista existente. O cascade delete-orphan cuidará da remoção no banco.
+            user.schedules.clear()
+
+            # 2. Adiciona os novos horários
+            for sch_data in schedules_in:
+                # sch_data aqui é um dict, pois veio de model_dump()
+                new_sch = WorkSchedule(
+                    day_of_week=sch_data['day_of_week'],
+                    daily_hours=sch_data['daily_hours']
+                )
+                # Adiciona à relação. O SQLAlchemy vai inserir e associar o ID automaticamente.
+                user.schedules.append(new_sch)
 
         db.add(user)
         db.commit()
