@@ -1,20 +1,22 @@
+import locale
+from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-import pytz
-from calendar import monthrange
-import locale
 from typing import List
-from sqlalchemy.orm import Session
+
+import pytz
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter  # Importação necessária
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.repositories.user_repository import user_repository
-from app.repositories.time_record_repository import time_record_repository
-from app.repositories.adjustment_repository import adjustment_repository
-from app.repositories.holiday_repository import holiday_repository
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
 from app.domain.models.user import User
+from app.repositories.adjustment_repository import adjustment_repository
+from app.repositories.holiday_repository import holiday_repository
+from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse
@@ -89,7 +91,6 @@ class ReportService:
 
             is_holiday = any(h.date == current for h in holidays)
 
-            # Verifica Atestado para o dia
             certificate_adj = next((adj for adj in approved_adjustments
                                     if
                                     adj.target_date == current and adj.adjustment_type == AdjustmentType.CERTIFICATE),
@@ -123,19 +124,6 @@ class ReportService:
 
             if day_worked > 0:
                 days_worked_count += 1
-            elif expected > 0 and not is_holiday and not is_certificate:
-                # Se era esperado trabalhar, não é feriado e não tem atestado -> Falta
-                # Nota: Se tiver atestado, 'expected' já virou 0 ali em cima, então não conta falta.
-                # Mas para contabilizar dias uteis perdidos no RH, talvez queiram saber.
-                # Aqui o 'expected' ser 0 garante que o saldo não fique negativo.
-                pass
-
-            # Se tem registro, mas não tem hora esperada (feriado trabalhado)
-            if is_certificate:
-                # Logica de atestado: considera como se tivesse trabalhado o esperado (abono)
-                # Ou zera a divida. Aqui zeramos a expectativa para não gerar horas negativas.
-                # Se o RH quiser pagar o dia, ele vê no relatório status "Atestado".
-                pass
 
             balance = day_worked - expected
 
@@ -260,7 +248,7 @@ class ReportService:
 
         for col in ws_summary.columns:
             max_length = 0
-            column = col[0].column_letter
+            column = col[0].column_letter  # This works for standard cells
             for cell in col:
                 try:
                     if len(str(cell.value)) > max_length:
@@ -316,7 +304,7 @@ class ReportService:
                 if day.status == "Falta":
                     status_cell.font = Font(color="FF0000", bold=True)
                 elif "Atestado" in day.status:
-                    status_cell.font = Font(color="008000", bold=True)  # Verde
+                    status_cell.font = Font(color="008000", bold=True)
                 elif day.status == "Feriado":
                     status_cell.font = Font(color="0000FF", bold=True)
                 elif day.status == "Fim de Semana":
@@ -333,8 +321,9 @@ class ReportService:
             for col in range(1, 11):
                 ws_det.cell(row=ws_det.max_row, column=col).font = Font(bold=True)
 
-            for col in ws_det.columns:
-                ws_det.column_dimensions[col[0].column_letter].width = 15
+            for i in range(1, 11):
+                col_letter = get_column_letter(i)
+                ws_det.column_dimensions[col_letter].width = 15
 
         output = BytesIO()
         wb.save(output)
