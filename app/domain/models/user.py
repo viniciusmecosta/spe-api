@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 from app.domain.models.enums import UserRole
+
 
 class User(Base):
     __tablename__ = "users"
@@ -17,6 +19,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     work_schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan")
+
 
 class WorkSchedule(Base):
     __tablename__ = "work_schedules"

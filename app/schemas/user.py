@@ -1,11 +1,15 @@
-from typing import Optional, List
-from pydantic import BaseModel, field_validator
 from datetime import datetime
+from typing import Optional, List
+
+from pydantic import BaseModel, field_validator
+
 from app.domain.models.enums import UserRole
+
 
 class WorkScheduleBase(BaseModel):
     day_of_week: int
     daily_hours: float
+
 
 class UserBase(BaseModel):
     username: str
@@ -18,9 +22,11 @@ class UserBase(BaseModel):
     def username_to_lower(cls, v: str) -> str:
         return v.lower()
 
+
 class UserCreate(UserBase):
     password: str
     schedules: Optional[List[WorkScheduleBase]] = []
+
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -35,6 +41,7 @@ class UserUpdate(BaseModel):
         if v is not None:
             return v.lower()
         return v
+
 
 class UserResponse(UserBase):
     id: int

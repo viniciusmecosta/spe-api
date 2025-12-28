@@ -1,4 +1,5 @@
 from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from app.schemas.token import Token
 from app.schemas.user import UserResponse
 
 router = APIRouter()
+
 
 @router.post("/login", response_model=Token)
 def login_access_token(
@@ -34,6 +36,7 @@ def login_access_token(
         "access_token": access_token,
         "token_type": "bearer",
     }
+
 
 @router.get("/me", response_model=UserResponse)
 def read_users_me(

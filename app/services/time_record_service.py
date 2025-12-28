@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.repositories.time_record_repository import time_record_repository
+from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
 from app.services.audit_service import audit_service
 
 
@@ -59,6 +60,46 @@ class TimeRecordService:
         )
 
         return record
+
+    def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int) -> TimeRecord:
+        record = time_record_repository.create(
+            db,
+            user_id=obj_in.user_id,
+            record_type=obj_in.record_type,
+            record_datetime=obj_in.record_datetime,
+            ip_address="MANUAL_ADMIN"
+        )
+
+        audit_service.log(
+            db, user_id=manager_id, action="CREATE_RECORD_ADMIN", entity="TIME_RECORD", entity_id=record.id,
+            details=f"Created record for user {obj_in.user_id}"
+        )
+        return record
+
+    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
+        record = time_record_repository.get(db, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+
+        updated = time_record_repository.update(db, record, obj_in)
+
+        audit_service.log(
+            db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD", entity_id=record.id,
+            details=f"Updated record details: {obj_in.model_dump(exclude_unset=True)}"
+        )
+        return updated
+
+    def delete_admin_record(self, db: Session, record_id: int, manager_id: int):
+        record = time_record_repository.get(db, record_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Record not found")
+
+        time_record_repository.delete(db, record_id)
+
+        audit_service.log(
+            db, user_id=manager_id, action="DELETE_RECORD_ADMIN", entity="TIME_RECORD", entity_id=record_id,
+            details="Deleted time record"
+        )
 
 
 time_record_service = TimeRecordService()

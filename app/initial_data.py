@@ -1,11 +1,13 @@
 import logging
+
 from sqlalchemy.orm import Session
-from app.database.session import SessionLocal
-from app.repositories.user_repository import user_repository
-from app.schemas.user import UserCreate
-from app.domain.models.enums import UserRole
+
 from app.core.config import settings
 from app.core.security import get_password_hash
+from app.database.session import SessionLocal
+from app.domain.models.enums import UserRole
+from app.repositories.user_repository import user_repository
+from app.schemas.user import UserCreate
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

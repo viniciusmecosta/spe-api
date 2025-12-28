@@ -1,7 +1,8 @@
-from typing import Any
 from sqlalchemy.orm import Session
+
 from app.domain.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
+
 
 class UserRepository:
     def get_by_username(self, db: Session, username: str) -> User | None:
@@ -46,5 +47,6 @@ class UserRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
 
 user_repository = UserRepository()

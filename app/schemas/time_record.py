@@ -16,6 +16,17 @@ class TimeRecordCreate(BaseModel):
     pass
 
 
+class TimeRecordCreateAdmin(BaseModel):
+    user_id: int
+    record_type: RecordType
+    record_datetime: datetime
+
+
+class TimeRecordUpdate(BaseModel):
+    record_type: Optional[RecordType] = None
+    record_datetime: Optional[datetime] = None
+
+
 class TimeRecordResponse(TimeRecordBase):
     id: int
     user_id: int

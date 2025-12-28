@@ -1,9 +1,10 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.core.security import get_password_hash
+from app.domain.models.user import User, WorkSchedule
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
-from app.domain.models.user import User, WorkSchedule
-from app.core.security import get_password_hash
 from app.services.audit_service import audit_service
 
 
@@ -17,7 +18,6 @@ class UserService:
             )
 
         user_in.password = get_password_hash(user_in.password)
-
 
         db_user = User(
             name=user_in.name,

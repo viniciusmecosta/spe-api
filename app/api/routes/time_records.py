@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse
+from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()
@@ -47,3 +47,32 @@ def read_my_records(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return time_record_repository.get_all_by_user(db, current_user.id, skip, limit)
+
+
+@router.post("/admin", response_model=TimeRecordResponse)
+def create_time_record_admin(
+        record_in: TimeRecordCreateAdmin,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return time_record_service.create_admin_record(db, record_in, current_user.id)
+
+
+@router.put("/admin/{record_id}", response_model=TimeRecordResponse)
+def update_time_record_admin(
+        record_id: int,
+        record_in: TimeRecordUpdate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return time_record_service.update_admin_record(db, record_id, record_in, current_user.id)
+
+
+@router.delete("/admin/{record_id}")
+def delete_time_record_admin(
+        record_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    time_record_service.delete_admin_record(db, record_id, current_user.id)
+    return {"status": "success", "message": "Record deleted"}

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
+from app.schemas.time_record import TimeRecordUpdate
 
 
 class TimeRecordRepository:
@@ -48,6 +49,20 @@ class TimeRecordRepository:
                 TimeRecord.record_datetime <= end_date
             )
         ).scalar()
+
+    def update(self, db: Session, db_obj: TimeRecord, obj_in: TimeRecordUpdate) -> TimeRecord:
+        update_data = obj_in.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def delete(self, db: Session, record_id: int):
+        db.query(TimeRecord).filter(TimeRecord.id == record_id).delete()
+        db.commit()
 
 
 time_record_repository = TimeRecordRepository()
