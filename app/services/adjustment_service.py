@@ -1,15 +1,15 @@
-import uuid
 import os
 import shutil
-from datetime import datetime
+import uuid
+
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.repositories.adjustment_repository import adjustment_repository
-from app.repositories.user_repository import user_repository
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
 from app.domain.models.adjustment import AdjustmentRequest
 from app.domain.models.enums import AdjustmentStatus
+from app.repositories.adjustment_repository import adjustment_repository
+from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service  # Importação nova
 

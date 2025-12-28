@@ -1,15 +1,15 @@
 from typing import Generator
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core import security
 from app.core.config import settings
 from app.database.session import SessionLocal
-from app.domain.models.user import User
 from app.domain.models.enums import UserRole
+from app.domain.models.user import User
 from app.schemas.token import TokenPayload
 
 reusable_oauth2 = OAuth2PasswordBearer(

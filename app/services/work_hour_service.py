@@ -1,11 +1,13 @@
 from datetime import datetime, date, timedelta
-from sqlalchemy.orm import Session
+
 import pytz
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.domain.models.enums import RecordType
+from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.repositories.holiday_repository import holiday_repository
-from app.domain.models.enums import RecordType
 from app.schemas.work_hour import WorkHourBalanceResponse
 
 

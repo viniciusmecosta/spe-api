@@ -1,9 +1,12 @@
 from datetime import datetime
+
 from pydantic import BaseModel
+
 
 class PayrollClosureCreate(BaseModel):
     month: int
     year: int
+
 
 class PayrollClosureResponse(PayrollClosureCreate):
     id: int

@@ -1,24 +1,22 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.database.base import Base
 from app.domain.models.enums import UserRole
 
 
 class WorkSchedule(Base):
     __tablename__ = "work_schedules"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    day_of_week = Column(Integer, nullable=False)  # 0=Monday, 6=Sunday
+    day_of_week = Column(Integer, nullable=False)
     daily_hours = Column(Float, nullable=False)
-
-    user = relationship("User", back_populates="schedules")  # Ajustado back_populates para 'schedules'
+    user = relationship("User", back_populates="schedules")
 
 
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
@@ -27,7 +25,5 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
     schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="joined")
-
     work_schedules = relationship("WorkSchedule", viewonly=True)

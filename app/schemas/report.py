@@ -1,6 +1,8 @@
-from typing import List
 from datetime import date
+from typing import List
+
 from pydantic import BaseModel
+
 
 class DailyReportItem(BaseModel):
     date: date
@@ -17,6 +19,7 @@ class DailyReportItem(BaseModel):
     extra_hours: float
     missing_hours: float
 
+
 class UserPayrollSummary(BaseModel):
     user_id: int
     user_name: str
@@ -28,14 +31,17 @@ class UserPayrollSummary(BaseModel):
     days_worked: int
     absences: int
 
+
 class AdvancedUserReportResponse(BaseModel):
     summary: UserPayrollSummary
     daily_details: List[DailyReportItem]
+
 
 class MonthlyReportResponse(BaseModel):
     month: int
     year: int
     payroll_data: List[UserPayrollSummary]
+
 
 class DashboardMetricsResponse(BaseModel):
     total_active_employees: int

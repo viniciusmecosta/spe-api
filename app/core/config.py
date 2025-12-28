@@ -9,17 +9,12 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     TIMEZONE: str = "America/Fortaleza"
     SQLALCHEMY_DATABASE_URI: str = "sqlite:///./spe.db"
-
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
-
-    # Adicionado para corrigir o erro de CORS no main.py
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
-
     UPLOAD_DIR: str = "uploads"
 
     model_config = SettingsConfigDict(

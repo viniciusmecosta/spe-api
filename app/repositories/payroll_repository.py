@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
+
 from app.domain.models.payroll import PayrollClosure
+
 
 class PayrollRepository:
     def create(self, db: Session, month: int, year: int, user_id: int) -> PayrollClosure:
@@ -21,5 +23,6 @@ class PayrollRepository:
             PayrollClosure.year == year
         ).delete()
         db.commit()
+
 
 payroll_repository = PayrollRepository()
