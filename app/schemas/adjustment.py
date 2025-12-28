@@ -1,7 +1,10 @@
-from typing import Optional, List
 from datetime import date, time, datetime
-from pydantic import BaseModel
+from typing import Optional, List
+
+from pydantic import BaseModel, computed_field
+
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+
 
 class AdjustmentRequestBase(BaseModel):
     adjustment_type: AdjustmentType
@@ -10,8 +13,10 @@ class AdjustmentRequestBase(BaseModel):
     entry_time: Optional[time] = None
     exit_time: Optional[time] = None
 
+
 class AdjustmentRequestCreate(AdjustmentRequestBase):
     pass
+
 
 class AdjustmentRequestUpdate(BaseModel):
     adjustment_type: Optional[AdjustmentType] = None
@@ -20,14 +25,25 @@ class AdjustmentRequestUpdate(BaseModel):
     exit_time: Optional[time] = None
     reason_text: Optional[str] = None
 
+
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
     file_path: str
     file_type: str
     uploaded_at: datetime
 
+    @computed_field
+    def url(self) -> str:
+        # Extrai apenas o nome do arquivo do caminho completo
+        filename = self.file_path.split("/")[-1]
+        if "\\" in filename:
+            filename = filename.split("\\")[-1]
+
+        return f"/static/{filename}"
+
     class Config:
         from_attributes = True
+
 
 class AdjustmentRequestResponse(AdjustmentRequestBase):
     id: int
