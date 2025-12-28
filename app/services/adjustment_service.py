@@ -1,101 +1,103 @@
+import uuid
 import os
 import shutil
-import uuid
 from datetime import datetime
-
-import pytz
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
-
 from app.core.config import settings
-from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
-from app.domain.models.enums import AdjustmentStatus
 from app.repositories.adjustment_repository import adjustment_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
+from app.domain.models.adjustment import AdjustmentRequest
+from app.domain.models.enums import AdjustmentStatus
 from app.services.audit_service import audit_service
+from app.services.payroll_service import payroll_service  # Importação nova
 
 
 class AdjustmentService:
-    def create_request(self, db: Session, user_id: int, request_in: AdjustmentRequestCreate) -> AdjustmentRequest:
-        return adjustment_repository.create(db, user_id, request_in)
+    def create_adjustment_request(self, db: Session, user_id: int,
+                                  obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
+        # Valida Folha na data do ajuste
+        payroll_service.validate_period_open(db, obj_in.target_date)
 
-    def review_request(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus,
-                       comment: str | None = None) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
-        if not request:
-            raise HTTPException(status_code=404, detail="Adjustment request not found")
+        adjustment = adjustment_repository.create(db, user_id, obj_in)
+        return adjustment
 
-        if request.status != AdjustmentStatus.PENDING:
-            raise HTTPException(status_code=400, detail="Request is already reviewed")
-
-        tz = pytz.timezone(settings.TIMEZONE)
-        request.reviewed_at = datetime.now(tz)
-
-        updated_request = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
-
-        audit_service.log(
-            db,
-            user_id=manager_id,
-            action="REVIEW_ADJUSTMENT",
-            entity="ADJUSTMENT_REQUEST",
-            entity_id=updated_request.id,
-            details=f"Status set to {new_status}. Comment: {comment}"
-        )
-
-        return updated_request
-
-    def update_request(self, db: Session, request_id: int, manager_id: int,
-                       obj_in: AdjustmentRequestUpdate) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
-        if not request:
-            raise HTTPException(status_code=404, detail="Adjustment request not found")
-
-        if request.status != AdjustmentStatus.PENDING:
-            raise HTTPException(status_code=400, detail="Only pending requests can be edited")
-
-        updated = adjustment_repository.update(db, request, obj_in)
-
-        audit_service.log(
-            db, user_id=manager_id, action="UPDATE_ADJUSTMENT", entity="ADJUSTMENT_REQUEST",
-            entity_id=updated.id, details=f"Updated details: {obj_in.model_dump(exclude_unset=True)}"
-        )
-        return updated
-
-    def upload_attachment(self, db: Session, request_id: int, user_id: int, file: UploadFile) -> AdjustmentAttachment:
+    def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
         request = adjustment_repository.get(db, request_id)
         if not request:
             raise HTTPException(status_code=404, detail="Adjustment request not found")
 
         if request.user_id != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to attach files to this request")
+            raise HTTPException(status_code=403, detail="Not authorized")
 
-        file_ext = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
+        # Valida Folha (opcional, mas bom bloquear upload em mês fechado)
+        payroll_service.validate_period_open(db, request.target_date)
 
-        try:
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Could not save file: {str(e)}")
+        file_ext = file.filename.split(".")[-1]
+        file_name = f"{uuid.uuid4()}.{file_ext}"
+        file_path = os.path.join(settings.UPLOAD_DIR, file_name)
 
-        attachment = adjustment_repository.create_attachment(
-            db,
-            request_id=request_id,
-            file_path=file_path,
-            file_type=file.content_type or "application/octet-stream"
-        )
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        attachment = adjustment_repository.create_attachment(db, request_id, file_path, file.content_type)
 
         audit_service.log(
-            db,
-            user_id=user_id,
-            action="UPLOAD_ATTACHMENT",
-            entity="ADJUSTMENT_ATTACHMENT",
-            entity_id=attachment.id,
-            details=f"Uploaded file: {file.filename}"
+            db, user_id=user_id, action="UPLOAD_ATTACHMENT", entity="ADJUSTMENT", entity_id=request_id,
+            details=f"Uploaded file {file.filename}"
         )
-
         return attachment
+
+    def approve_adjustment(self, db: Session, request_id: int, manager_id: int) -> AdjustmentRequest:
+        request = adjustment_repository.get(db, request_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        # Valida Folha
+        payroll_service.validate_period_open(db, request.target_date)
+
+        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id)
+
+        audit_service.log(
+            db, user_id=manager_id, action="APPROVE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
+            details="Approved adjustment request"
+        )
+        return updated
+
+    def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
+        request = adjustment_repository.get(db, request_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        # Valida Folha
+        payroll_service.validate_period_open(db, request.target_date)
+
+        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
+
+        audit_service.log(
+            db, user_id=manager_id, action="REJECT_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
+            details=f"Rejected: {comment}"
+        )
+        return updated
+
+    def update_adjustment(self, db: Session, request_id: int, obj_in: AdjustmentRequestUpdate,
+                          manager_id: int) -> AdjustmentRequest:
+        request = adjustment_repository.get(db, request_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        payroll_service.validate_period_open(db, request.target_date)
+        if obj_in.target_date:
+            payroll_service.validate_period_open(db, obj_in.target_date)
+
+        updated = adjustment_repository.update(db, request, obj_in)
+
+        audit_service.log(
+            db, user_id=manager_id, action="UPDATE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
+            details="Updated adjustment details"
+        )
+        return updated
 
 
 adjustment_service = AdjustmentService()

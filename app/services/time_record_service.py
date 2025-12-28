@@ -10,6 +10,7 @@ from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
 from app.services.audit_service import audit_service
+from app.services.payroll_service import payroll_service  # Importação nova
 
 
 class TimeRecordService:
@@ -17,11 +18,17 @@ class TimeRecordService:
         tz = pytz.timezone(settings.TIMEZONE)
         current_time = datetime.now(tz)
 
+        # Valida Folha
+        payroll_service.validate_period_open(db, current_time.date())
+
         return time_record_repository.create(db, user_id, RecordType.ENTRY, current_time, ip_address)
 
     def register_exit(self, db: Session, user_id: int, ip_address: str = None) -> TimeRecord:
         tz = pytz.timezone(settings.TIMEZONE)
         current_time = datetime.now(tz)
+
+        # Valida Folha
+        payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(db, user_id, RecordType.EXIT, current_time, ip_address)
 
@@ -31,7 +38,10 @@ class TimeRecordService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time record not found")
 
         if record.user_id != user_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to modify this record")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+        # Valida Folha
+        payroll_service.validate_period_open(db, record.record_datetime.date())
 
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
@@ -51,23 +61,18 @@ class TimeRecordService:
         db.refresh(record)
 
         audit_service.log(
-            db,
-            user_id=user_id,
-            action="TOGGLE_RECORD",
-            entity="TIME_RECORD",
-            entity_id=record.id,
+            db, user_id=user_id, action="TOGGLE_RECORD", entity="TIME_RECORD", entity_id=record.id,
             details=f"Toggled from {previous_type} to {new_type}"
         )
-
         return record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int) -> TimeRecord:
+        # Valida Folha
+        payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
         record = time_record_repository.create(
-            db,
-            user_id=obj_in.user_id,
-            record_type=obj_in.record_type,
-            record_datetime=obj_in.record_datetime,
-            ip_address="MANUAL_ADMIN"
+            db, user_id=obj_in.user_id, record_type=obj_in.record_type,
+            record_datetime=obj_in.record_datetime, ip_address="MANUAL_ADMIN"
         )
 
         audit_service.log(
@@ -81,11 +86,18 @@ class TimeRecordService:
         if not record:
             raise HTTPException(status_code=404, detail="Record not found")
 
+        # Valida Folha (Data Original)
+        payroll_service.validate_period_open(db, record.record_datetime.date())
+
+        # Valida Folha (Nova Data, se houver mudança)
+        if obj_in.record_datetime:
+            payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
         updated = time_record_repository.update(db, record, obj_in)
 
         audit_service.log(
             db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD", entity_id=record.id,
-            details=f"Updated record details: {obj_in.model_dump(exclude_unset=True)}"
+            details=f"Updated record details"
         )
         return updated
 
@@ -93,6 +105,8 @@ class TimeRecordService:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Record not found")
+
+        payroll_service.validate_period_open(db, record.record_datetime.date())
 
         time_record_repository.delete(db, record_id)
 
