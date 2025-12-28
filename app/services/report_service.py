@@ -115,7 +115,6 @@ class ReportService:
 
             for rec in day_records:
                 time_str = rec.record_datetime.strftime("%H:%M")
-
                 suffix = "(E)" if rec.record_type == RecordType.ENTRY else "(S)"
                 punches.append(f"{time_str} {suffix}")
 
@@ -236,7 +235,7 @@ class ReportService:
 
         headers_sum = [
             "Nome do Colaborador", "Dias Trabalhados", "Faltas",
-            "Carga Horária Mensal", "Horas Trabalhadas", "Saldo Banco de Horas"
+            "Carga Horária Mensal", "Horas Trabalhadas", "Saldo Mês"
         ]
         ws_summary.append(headers_sum)
 

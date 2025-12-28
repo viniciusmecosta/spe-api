@@ -20,7 +20,6 @@ class WorkHourService:
         user = user_repository.get(db, user_id)
         holidays = holiday_repository.get_all(db)
 
-        # Verifica se o usuário tem alguma escala cadastrada
         has_schedule = bool(user.work_schedules)
 
         total_seconds = 0.0
@@ -33,8 +32,7 @@ class WorkHourService:
                 delta = record.record_datetime - entry_time
                 seconds = delta.total_seconds()
 
-                # Proteção contra erros de turno virado (ex: esqueceu saida na sexta e bateu entrada na segunda)
-                # Se for maior que 24h, ignora o par.
+                # Ignora turnos maiores que 24h (provável erro de ponto)
                 if seconds <= 86400:
                     total_seconds += seconds
 
@@ -57,7 +55,6 @@ class WorkHourService:
 
             current_date += timedelta(days=1)
 
-        # Se não tem escala definida, não gera saldo (nem positivo nem negativo)
         if not has_schedule:
             balance = 0.0
         else:

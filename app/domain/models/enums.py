@@ -3,6 +3,7 @@ import enum
 class UserRole(str, enum.Enum):
     EMPLOYEE = "EMPLOYEE"
     MANAGER = "MANAGER"
+    MAINTAINER = "MAINTAINER"
 
 class RecordType(str, enum.Enum):
     ENTRY = "ENTRY"
