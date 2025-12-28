@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType
+from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.work_hour import WorkHourBalanceResponse
@@ -14,15 +15,21 @@ class WorkHourService:
     def calculate_balance(self, db: Session, user_id: int, start_date: date, end_date: date) -> WorkHourBalanceResponse:
         tz = pytz.timezone(settings.TIMEZONE)
 
+        # Converter para datetime com timezone para consulta no banco
         start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
         end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         user = user_repository.get(db, user_id)
 
+        # Busca todos os feriados para verificar o intervalo
+        # Otimização: buscar apenas feriados dentro do range seria ideal, mas get_all funciona para volumes normais
+        holidays = holiday_repository.get_all(db)
+
         total_seconds = 0.0
         entry_time = None
 
+        # Cálculo de horas trabalhadas
         for record in records:
             if record.record_type == RecordType.ENTRY:
                 entry_time = record.record_datetime
@@ -35,11 +42,20 @@ class WorkHourService:
 
         expected_hours = 0.0
         current_date = start_date
-        daily_workload = user.weekly_workload_hours / 5.0
 
         while current_date <= end_date:
-            if current_date.weekday() < 5:
-                expected_hours += daily_workload
+            # Verifica se é feriado
+            is_holiday = any(h.date == current_date for h in holidays)
+
+            if not is_holiday:
+                weekday = current_date.weekday()  # 0 = Segunda, 6 = Domingo
+
+                # Busca a carga horária configurada para este dia da semana
+                schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
+
+                if schedule:
+                    expected_hours += schedule.daily_hours
+
             current_date += timedelta(days=1)
 
         balance = total_worked_hours - expected_hours
