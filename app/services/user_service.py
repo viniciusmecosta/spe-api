@@ -17,8 +17,6 @@ class UserService:
                 detail="The user with this username already exists.",
             )
 
-        # Captura os horários antes de manipular o objeto
-        # user_in.schedules é uma lista de objetos Pydantic agora
         schedules_in = user_in.schedules
 
         user_in.password = get_password_hash(user_in.password)
@@ -31,9 +29,12 @@ class UserService:
             is_active=user_in.is_active
         )
 
-        # Adiciona Schedules
         if schedules_in:
             for sch in schedules_in:
+                # Validação de Segurança
+                if sch.daily_hours < 0 or sch.daily_hours > 24:
+                    raise HTTPException(status_code=400, detail="Daily hours must be between 0 and 24")
+
                 db_sch = WorkSchedule(
                     day_of_week=sch.day_of_week,
                     daily_hours=sch.daily_hours
@@ -45,11 +46,7 @@ class UserService:
         db.refresh(db_user)
 
         audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="CREATE",
-            entity="USER",
-            entity_id=db_user.id,
+            db, user_id=current_user_id, action="CREATE", entity="USER", entity_id=db_user.id,
             details=f"Created user {db_user.username}"
         )
         return db_user
@@ -59,39 +56,31 @@ class UserService:
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Verifica unicidade de username se alterado
         if user_in.username and user_in.username != user.username:
             existing = user_repository.get_by_username(db, username=user_in.username)
             if existing:
                 raise HTTPException(status_code=400, detail="Username already exists.")
 
         update_data = user_in.model_dump(exclude_unset=True)
-
-        # Separa schedules para tratamento manual
         schedules_in = update_data.pop("schedules", None)
 
-        # Atualiza senha se fornecida
         if "password" in update_data and update_data["password"]:
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
 
-        # Atualiza campos simples do usuário
         for field, value in update_data.items():
             setattr(user, field, value)
 
-        # Atualização de Schedules (Lógica Corrigida)
         if schedules_in is not None:
-            # 1. Limpa a lista existente. O cascade delete-orphan cuidará da remoção no banco.
             user.schedules.clear()
-
-            # 2. Adiciona os novos horários
             for sch_data in schedules_in:
-                # sch_data aqui é um dict, pois veio de model_dump()
-                new_sch = WorkSchedule(
-                    day_of_week=sch_data['day_of_week'],
-                    daily_hours=sch_data['daily_hours']
-                )
-                # Adiciona à relação. O SQLAlchemy vai inserir e associar o ID automaticamente.
+                daily_hours = sch_data['daily_hours'] if isinstance(sch_data, dict) else sch_data.daily_hours
+                day_of_week = sch_data['day_of_week'] if isinstance(sch_data, dict) else sch_data.day_of_week
+
+                if daily_hours < 0 or daily_hours > 24:
+                    raise HTTPException(status_code=400, detail="Daily hours must be between 0 and 24")
+
+                new_sch = WorkSchedule(day_of_week=day_of_week, daily_hours=daily_hours)
                 user.schedules.append(new_sch)
 
         db.add(user)
@@ -99,11 +88,7 @@ class UserService:
         db.refresh(user)
 
         audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="UPDATE",
-            entity="USER",
-            entity_id=user.id,
+            db, user_id=current_user_id, action="UPDATE", entity="USER", entity_id=user.id,
             details="Updated user profile and/or schedule"
         )
         return user
@@ -119,11 +104,7 @@ class UserService:
         db.refresh(user)
 
         audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="DISABLE",
-            entity="USER",
-            entity_id=user.id,
+            db, user_id=current_user_id, action="DISABLE", entity="USER", entity_id=user.id,
             details="Disabled user"
         )
         return user

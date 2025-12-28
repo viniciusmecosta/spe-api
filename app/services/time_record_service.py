@@ -1,31 +1,38 @@
 from datetime import datetime
 
 import pytz
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import get_client_ip
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
 from app.services.audit_service import audit_service
-from app.services.payroll_service import payroll_service  # Importação nova
+from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:
-    def register_entry(self, db: Session, user_id: int, ip_address: str = None) -> TimeRecord:
+    def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         tz = pytz.timezone(settings.TIMEZONE)
         current_time = datetime.now(tz)
+
+        # Pega IP Real
+        ip_address = get_client_ip(request)
 
         # Valida Folha
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(db, user_id, RecordType.ENTRY, current_time, ip_address)
 
-    def register_exit(self, db: Session, user_id: int, ip_address: str = None) -> TimeRecord:
+    def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         tz = pytz.timezone(settings.TIMEZONE)
         current_time = datetime.now(tz)
+
+        # Pega IP Real
+        ip_address = get_client_ip(request)
 
         # Valida Folha
         payroll_service.validate_period_open(db, current_time.date())
@@ -40,7 +47,6 @@ class TimeRecordService:
         if record.user_id != user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        # Valida Folha
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
         previous_type = record.record_type
@@ -67,7 +73,6 @@ class TimeRecordService:
         return record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int) -> TimeRecord:
-        # Valida Folha
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
         record = time_record_repository.create(
@@ -86,10 +91,8 @@ class TimeRecordService:
         if not record:
             raise HTTPException(status_code=404, detail="Record not found")
 
-        # Valida Folha (Data Original)
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
-        # Valida Folha (Nova Data, se houver mudança)
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
