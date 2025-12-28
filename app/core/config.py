@@ -1,4 +1,5 @@
 import os
+from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +17,9 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
 
+    # Adicionado para corrigir o erro de CORS no main.py
+    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+
     UPLOAD_DIR: str = "uploads"
 
     model_config = SettingsConfigDict(
@@ -32,7 +36,8 @@ except Exception:
     settings = Settings(
         SECRET_KEY="insecure-default-key-change-this-in-production",
         FIRST_SUPERUSER="admin",
-        FIRST_SUPERUSER_PASSWORD="adminpassword"
+        FIRST_SUPERUSER_PASSWORD="adminpassword",
+        BACKEND_CORS_ORIGINS=["*"]
     )
 
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
