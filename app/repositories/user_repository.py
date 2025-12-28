@@ -4,8 +4,8 @@ from app.domain.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 
 class UserRepository:
-    def get_by_email(self, db: Session, email: str) -> User | None:
-        return db.query(User).filter(User.email == email).first()
+    def get_by_username(self, db: Session, username: str) -> User | None:
+        return db.query(User).filter(User.username == username).first()
 
     def get(self, db: Session, user_id: int) -> User | None:
         return db.query(User).filter(User.id == user_id).first()
@@ -22,7 +22,7 @@ class UserRepository:
     def create(self, db: Session, user_in: UserCreate) -> User:
         db_user = User(
             name=user_in.name,
-            email=user_in.email,
+            username=user_in.username,
             password_hash=user_in.password,
             role=user_in.role,
             weekly_workload_hours=user_in.weekly_workload_hours,

@@ -1,49 +1,40 @@
 import logging
-
 from sqlalchemy.orm import Session
-
-from app.core.config import settings
-from app.core.security import get_password_hash
 from app.database.session import SessionLocal
-from app.domain.models.enums import UserRole
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate
+from app.domain.models.enums import UserRole
+from app.core.config import settings
+from app.core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def init_db(db: Session) -> None:
-    user = user_repository.get_by_email(db, email=settings.FIRST_SUPERUSER)
+    username = settings.FIRST_SUPERUSER.lower()
+    user = user_repository.get_by_username(db, username=username)
     if not user:
-        logger.info(f"Creating initial superuser: {settings.FIRST_SUPERUSER}")
+        logger.info(f"Creating initial superuser: {username}")
 
         hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
 
         user_in = UserCreate(
             name="Administrador Inicial",
-            email=settings.FIRST_SUPERUSER,
+            username=username,
             password=hashed_password,
             role=UserRole.MANAGER,
             weekly_workload_hours=44,
             is_active=True
         )
 
-        user_data = UserCreate(
-            name="Administrador Inicial",
-            email=settings.FIRST_SUPERUSER,
-            password=settings.FIRST_SUPERUSER_PASSWORD,
-            role=UserRole.MANAGER,
-            weekly_workload_hours=44,
-            is_active=True
-        )
+        # Ajuste técnico: UserCreate espera a senha em texto plano, mas precisamos salvar o hash
+        user_in.password = hashed_password
 
-        user_data.password = hashed_password
-
-        user_repository.create(db, user_data)
+        user_repository.create(db, user_in)
         logger.info("Initial superuser created successfully.")
     else:
-        logger.info(f"Superuser {settings.FIRST_SUPERUSER} already exists. Skipping creation.")
+        logger.info(f"Superuser {username} already exists. Skipping creation.")
 
 
 def main() -> None:

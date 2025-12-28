@@ -1,20 +1,20 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-
-from app.core.security import get_password_hash
-from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
+from app.domain.models.user import User
+from app.core.security import get_password_hash
 from app.services.audit_service import audit_service
 
 
 class UserService:
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
-        user = user_repository.get_by_email(db, email=user_in.email)
+        # Username já é convertido para lowercase pelo schema Pydantic
+        user = user_repository.get_by_username(db, username=user_in.username)
         if user:
             raise HTTPException(
                 status_code=400,
-                detail="The user with this email already exists in the system.",
+                detail="The user with this username already exists in the system.",
             )
 
         user_in.password = get_password_hash(user_in.password)
@@ -26,7 +26,7 @@ class UserService:
             action="CREATE",
             entity="USER",
             entity_id=created_user.id,
-            details=f"Created user {created_user.email}"
+            details=f"Created user {created_user.username}"
         )
         return created_user
 
@@ -40,6 +40,14 @@ class UserService:
 
         if user_in.password:
             user_in.password = get_password_hash(user_in.password)
+
+        if user_in.username and user_in.username != user.username:
+            existing_user = user_repository.get_by_username(db, username=user_in.username)
+            if existing_user:
+                raise HTTPException(
+                    status_code=400,
+                    detail="The user with this username already exists in the system.",
+                )
 
         updated_user = user_repository.update(db, user, user_in)
 

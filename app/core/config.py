@@ -28,7 +28,7 @@ try:
 except Exception:
     settings = Settings(
         SECRET_KEY="insecure-default-key-change-this-in-production",
-        FIRST_SUPERUSER="admin@spe.com",
+        FIRST_SUPERUSER="admin",
         FIRST_SUPERUSER_PASSWORD="adminpassword"
     )
 
