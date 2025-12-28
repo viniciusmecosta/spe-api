@@ -235,8 +235,8 @@ class ReportService:
         ws_summary.title = "Resumo Folha"
 
         headers_sum = [
-            "ID", "Funcionário", "Dias Trabalhados", "Faltas",
-            "Horas Normais", "Horas Extras", "Horas Faltantes", "Saldo Líquido"
+            "Nome do Colaborador", "Dias Trabalhados", "Faltas",
+            "Carga Horária Mensal", "Horas Trabalhadas", "Saldo Banco de Horas"
         ]
         ws_summary.append(headers_sum)
 
@@ -255,15 +255,20 @@ class ReportService:
             report = self.get_advanced_user_report(db, user.id, month, year)
             sum_data = report.summary
             ws_summary.append([
-                sum_data.user_id,
                 sum_data.user_name,
                 sum_data.days_worked,
                 sum_data.absences,
                 sum_data.total_expected_hours,
-                sum_data.total_extra_hours,
-                sum_data.total_missing_hours,
+                sum_data.total_worked_hours,
                 sum_data.final_balance
             ])
+
+            last_row = ws_summary.max_row
+            balance_cell = ws_summary.cell(row=last_row, column=6)
+            if sum_data.final_balance < 0:
+                balance_cell.font = Font(color="FF0000", bold=True)
+            elif sum_data.final_balance > 0:
+                balance_cell.font = Font(color="008000", bold=True)
 
         for col in ws_summary.columns:
             max_length = 0
@@ -274,7 +279,7 @@ class ReportService:
                         max_length = len(str(cell.value))
                 except:
                     pass
-            ws_summary.column_dimensions[column].width = max_length + 2
+            ws_summary.column_dimensions[column].width = max_length + 4
 
         for user in users:
             report = self.get_advanced_user_report(db, user.id, month, year)
@@ -336,8 +341,8 @@ class ReportService:
 
             ws_det.column_dimensions['A'].width = 12
             ws_det.column_dimensions['B'].width = 15
-            ws_det.column_dimensions['C'].width = 15
-            ws_det.column_dimensions['D'].width = 40
+            ws_det.column_dimensions['C'].width = 18
+            ws_det.column_dimensions['D'].width = 45
             ws_det.column_dimensions['E'].width = 12
             ws_det.column_dimensions['F'].width = 12
             ws_det.column_dimensions['G'].width = 12
