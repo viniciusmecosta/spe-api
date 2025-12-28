@@ -13,14 +13,13 @@ from app.repositories.user_repository import user_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.holiday_repository import holiday_repository
-from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.user import User  # Importação direta do modelo
+from app.domain.models.enums import RecordType, UserRole, AdjustmentType
+from app.domain.models.user import User
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse
 )
 
-# Tenta configurar locale para PT-BR
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
 except:
@@ -42,7 +41,6 @@ class ReportService:
         tz = pytz.timezone(settings.TIMEZONE)
         today = datetime.now(tz).date()
 
-        # Correção: Usa o modelo User importado diretamente
         active_users = db.query(User).filter(
             User.is_active == True,
             User.role == UserRole.EMPLOYEE
@@ -73,6 +71,7 @@ class ReportService:
 
         all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
+        approved_adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
 
         daily_details = []
 
@@ -89,14 +88,20 @@ class ReportService:
             day_records.sort(key=lambda x: x.record_datetime)
 
             is_holiday = any(h.date == current for h in holidays)
+
+            # Verifica Atestado para o dia
+            certificate_adj = next((adj for adj in approved_adjustments
+                                    if
+                                    adj.target_date == current and adj.adjustment_type == AdjustmentType.CERTIFICATE),
+                                   None)
+            is_certificate = certificate_adj is not None
+
             weekday = current.weekday()
             is_weekend = weekday >= 5
 
-            # Expectativa de horas
             schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
-            expected = schedule.daily_hours if schedule and not is_holiday else 0.0
+            expected = schedule.daily_hours if schedule and not is_holiday and not is_certificate else 0.0
 
-            # Cálculo trabalhado
             entries = []
             exits = []
             worked_seconds = 0.0
@@ -118,13 +123,27 @@ class ReportService:
 
             if day_worked > 0:
                 days_worked_count += 1
-            elif expected > 0 and not is_holiday:
-                absences_count += 1
+            elif expected > 0 and not is_holiday and not is_certificate:
+                # Se era esperado trabalhar, não é feriado e não tem atestado -> Falta
+                # Nota: Se tiver atestado, 'expected' já virou 0 ali em cima, então não conta falta.
+                # Mas para contabilizar dias uteis perdidos no RH, talvez queiram saber.
+                # Aqui o 'expected' ser 0 garante que o saldo não fique negativo.
+                pass
+
+            # Se tem registro, mas não tem hora esperada (feriado trabalhado)
+            if is_certificate:
+                # Logica de atestado: considera como se tivesse trabalhado o esperado (abono)
+                # Ou zera a divida. Aqui zeramos a expectativa para não gerar horas negativas.
+                # Se o RH quiser pagar o dia, ele vê no relatório status "Atestado".
+                pass
 
             balance = day_worked - expected
 
             day_extra = balance if balance > 0 else 0.0
             day_missing = abs(balance) if balance < 0 else 0.0
+
+            if balance < 0 and not is_holiday and not is_weekend and not is_certificate:
+                absences_count += 1
 
             total_worked += day_worked
             total_expected += expected
@@ -132,7 +151,9 @@ class ReportService:
             total_missing += day_missing
 
             status = "Normal"
-            if is_holiday:
+            if is_certificate:
+                status = "Atestado/Abono"
+            elif is_holiday:
                 status = "Feriado"
             elif is_weekend:
                 status = "Fim de Semana"
@@ -174,7 +195,6 @@ class ReportService:
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
                             employee_ids: List[int] = None) -> MonthlyReportResponse:
-        # Correção: Usa User diretamente
         query = db.query(User).filter(
             User.is_active == True,
             User.role == UserRole.EMPLOYEE
@@ -194,7 +214,6 @@ class ReportService:
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None) -> BytesIO:
-        # Correção: Usa User diretamente
         query = db.query(User).filter(
             User.is_active == True,
             User.role == UserRole.EMPLOYEE
@@ -205,17 +224,15 @@ class ReportService:
 
         wb = Workbook()
 
-        # --- ABA 1: RESUMO DE PAGAMENTO (FOLHA) ---
         ws_summary = wb.active
         ws_summary.title = "Resumo Folha"
 
         headers_sum = [
-            "ID", "Funcionário", "Dias Trabalhados", "Faltas",
-            "Horas Normais", "Horas Extras (Banco+)", "Horas Devedoras (Banco-)", "Saldo Final"
+            "ID", "Funcionário", "Dias Trabalhados", "Faltas Reais",
+            "Horas Normais", "Horas Extras", "Horas Faltantes", "Saldo Final"
         ]
         ws_summary.append(headers_sum)
 
-        # Estilos
         header_font = Font(bold=True, color="FFFFFF")
         header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'),
@@ -241,7 +258,6 @@ class ReportService:
                 sum_data.final_balance
             ])
 
-        # Ajustar largura colunas
         for col in ws_summary.columns:
             max_length = 0
             column = col[0].column_letter
@@ -253,16 +269,13 @@ class ReportService:
                     pass
             ws_summary.column_dimensions[column].width = max_length + 2
 
-        # --- ABA 2 em diante: DETALHE POR FUNCIONÁRIO ---
         for user in users:
             report = self.get_advanced_user_report(db, user.id, month, year)
             if not report: continue
 
-            # Cria aba com nome do funcionário (limpo)
             sheet_name = f"{user.id}-{user.name.split()[0]}"
-            ws_det = wb.create_sheet(title=sheet_name[:30])  # Excel limita 31 chars
+            ws_det = wb.create_sheet(title=sheet_name[:30])
 
-            # Cabeçalho do Funcionário
             ws_det.merge_cells('A1:J1')
             title_cell = ws_det['A1']
             title_cell.value = f"Folha de Ponto: {user.name} - {month}/{year}"
@@ -273,7 +286,6 @@ class ReportService:
                            "Previsto", "Saldo"]
             ws_det.append(headers_det)
 
-            # Formata cabeçalho da tabela
             for col_num, header in enumerate(headers_det, 1):
                 cell = ws_det.cell(row=2, column=col_num)
                 cell.font = header_font
@@ -281,13 +293,11 @@ class ReportService:
                 cell.border = border
 
             for day in report.daily_details:
-                # Prepara entradas/saidas para colunas fixas (até 2 turnos, ou concatena o resto)
                 e1 = day.entries[0] if len(day.entries) > 0 else ""
                 s1 = day.exits[0] if len(day.exits) > 0 else ""
                 e2 = day.entries[1] if len(day.entries) > 1 else ""
                 s2 = day.exits[1] if len(day.exits) > 1 else ""
 
-                # Se tiver mais batidas, concatena na ultima coluna ou cria obs (simplificado aqui)
                 if len(day.entries) > 2: e2 += " ..."
 
                 row_data = [
@@ -301,11 +311,12 @@ class ReportService:
                 ]
                 ws_det.append(row_data)
 
-                # Cores condicionais
                 last_row = ws_det.max_row
                 status_cell = ws_det.cell(row=last_row, column=3)
                 if day.status == "Falta":
                     status_cell.font = Font(color="FF0000", bold=True)
+                elif "Atestado" in day.status:
+                    status_cell.font = Font(color="008000", bold=True)  # Verde
                 elif day.status == "Feriado":
                     status_cell.font = Font(color="0000FF", bold=True)
                 elif day.status == "Fim de Semana":
@@ -313,18 +324,15 @@ class ReportService:
                         ws_det.cell(row=last_row, column=col).fill = PatternFill(start_color="E0E0E0",
                                                                                  end_color="E0E0E0", fill_type="solid")
 
-            # Totais no final da aba
             ws_det.append([])
             ws_det.append(["TOTAIS", "", "", "", "", "", "",
                            report.summary.total_worked_hours,
                            report.summary.total_expected_hours,
                            report.summary.final_balance])
 
-            # Negrito na linha de totais
             for col in range(1, 11):
                 ws_det.cell(row=ws_det.max_row, column=col).font = Font(bold=True)
 
-            # Ajuste de largura
             for col in ws_det.columns:
                 ws_det.column_dimensions[col[0].column_letter].width = 15
 

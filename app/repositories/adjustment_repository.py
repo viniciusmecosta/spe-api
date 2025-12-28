@@ -1,10 +1,9 @@
-from sqlalchemy import desc
+from sqlalchemy import desc, and_
 from sqlalchemy.orm import Session
-
 from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
 from app.domain.models.enums import AdjustmentStatus
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
-
+from datetime import date
 
 class AdjustmentRepository:
     def create(self, db: Session, user_id: int, obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
@@ -42,6 +41,16 @@ class AdjustmentRepository:
     def count_pending(self, db: Session) -> int:
         return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING).count()
 
+    def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[AdjustmentRequest]:
+        return db.query(AdjustmentRequest).filter(
+            and_(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.status == AdjustmentStatus.APPROVED,
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date
+            )
+        ).all()
+
     def update(self, db: Session, db_obj: AdjustmentRequest,
                obj_in: AdjustmentRequestUpdate | dict) -> AdjustmentRequest:
         if isinstance(obj_in, dict):
@@ -77,6 +86,5 @@ class AdjustmentRepository:
         db.commit()
         db.refresh(db_attachment)
         return db_attachment
-
 
 adjustment_repository = AdjustmentRepository()

@@ -1,10 +1,7 @@
-from datetime import date, time, datetime
 from typing import Optional, List
-
+from datetime import date, time, datetime
 from pydantic import BaseModel
-
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus
-
 
 class AdjustmentRequestBase(BaseModel):
     adjustment_type: AdjustmentType
@@ -13,10 +10,8 @@ class AdjustmentRequestBase(BaseModel):
     entry_time: Optional[time] = None
     exit_time: Optional[time] = None
 
-
 class AdjustmentRequestCreate(AdjustmentRequestBase):
     pass
-
 
 class AdjustmentRequestUpdate(BaseModel):
     adjustment_type: Optional[AdjustmentType] = None
@@ -24,7 +19,6 @@ class AdjustmentRequestUpdate(BaseModel):
     entry_time: Optional[time] = None
     exit_time: Optional[time] = None
     reason_text: Optional[str] = None
-
 
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
@@ -34,7 +28,6 @@ class AdjustmentAttachmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 class AdjustmentRequestResponse(AdjustmentRequestBase):
     id: int
