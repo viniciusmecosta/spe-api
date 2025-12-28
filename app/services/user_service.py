@@ -1,10 +1,9 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-
-from app.core.security import get_password_hash
-from app.domain.models.user import User, WorkSchedule
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
+from app.domain.models.user import User, WorkSchedule
+from app.core.security import get_password_hash
 from app.services.audit_service import audit_service
 
 
@@ -17,8 +16,13 @@ class UserService:
                 detail="The user with this username already exists.",
             )
 
+        # Captura os horários antes de manipular o objeto
+        schedules_in = user_in.schedules
+
         user_in.password = get_password_hash(user_in.password)
 
+        # Criação manual do objeto User para evitar passar 'schedules' para o construtor do SQLAlchemy
+        # (já que UserCreate tem 'schedules' mas o modelo User não tem esse campo direto no init)
         db_user = User(
             name=user_in.name,
             username=user_in.username,
@@ -30,10 +34,14 @@ class UserService:
         db.commit()
         db.refresh(db_user)
 
-        if schedules_data:
-            for sched in schedules_data:
-                db_sched = WorkSchedule(user_id=db_user.id, day_of_week=sched.day_of_week,
-                                        daily_hours=sched.daily_hours)
+        # Agora cria os horários associados, se houver
+        if schedules_in:
+            for sched in schedules_in:
+                db_sched = WorkSchedule(
+                    user_id=db_user.id,
+                    day_of_week=sched.day_of_week,
+                    daily_hours=sched.daily_hours
+                )
                 db.add(db_sched)
             db.commit()
             db.refresh(db_user)
@@ -61,11 +69,16 @@ class UserService:
             if existing:
                 raise HTTPException(status_code=400, detail="Username already exists.")
 
+        # Update User fields
         user_data = user_in.model_dump(exclude_unset=True, exclude={'schedules'})
         for field, value in user_data.items():
             setattr(user, field, value)
+
+        # Update Schedules if provided
         if user_in.schedules is not None:
+            # Remove old
             db.query(WorkSchedule).filter(WorkSchedule.user_id == user.id).delete()
+            # Add new
             for sched in user_in.schedules:
                 db.add(WorkSchedule(user_id=user.id, day_of_week=sched.day_of_week, daily_hours=sched.daily_hours))
 
