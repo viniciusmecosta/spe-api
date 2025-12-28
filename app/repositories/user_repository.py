@@ -2,8 +2,9 @@ from typing import List
 
 from sqlalchemy.orm import Session
 
-from app.domain.models.user import User
-from app.schemas.user import UserCreate
+from app.core.security import get_password_hash
+from app.domain.models.user import User, WorkSchedule
+from app.schemas.user import UserCreate, UserUpdate
 
 
 class UserRepository:
@@ -23,15 +24,56 @@ class UserRepository:
         return db.query(User).filter(User.is_active == True).count()
 
     def create(self, db: Session, user_in: UserCreate) -> User:
-        # Mantido para compatibilidade, mas o Service é quem está chamando a criação agora
-        # para orquestrar senha e validações.
-        # Se for usar direto repository, precisa implementar a mesma lógica do service.
-        pass
+        db_user = User(
+            name=user_in.name,
+            username=user_in.username,
+            # AQUI: O repositório aplica o hash. Por isso initial_data não pode aplicar antes.
+            password_hash=get_password_hash(user_in.password),
+            role=user_in.role,
+            is_active=user_in.is_active
+        )
 
-    def update(self, db: Session, *, db_obj: User, obj_in: dict) -> User:
-        # Método genérico de update, caso necessário
-        for field, value in obj_in.items():
+        if user_in.schedules:
+            for sch in user_in.schedules:
+                db_sch = WorkSchedule(
+                    day_of_week=sch.day_of_week,
+                    daily_hours=sch.daily_hours
+                )
+                db_user.schedules.append(db_sch)
+
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+
+    def update(self, db: Session, db_obj: User, obj_in: UserUpdate | dict) -> User:
+        if isinstance(obj_in, dict):
+            update_data = obj_in
+        else:
+            update_data = obj_in.model_dump(exclude_unset=True)
+
+        schedules_in = update_data.pop("schedules", None)
+
+        if "password" in update_data and update_data["password"]:
+            update_data["password_hash"] = get_password_hash(update_data["password"])
+            del update_data["password"]
+
+        for field, value in update_data.items():
             setattr(db_obj, field, value)
+
+        if schedules_in is not None:
+            db_obj.schedules = []
+            for sch_data in schedules_in:
+                if isinstance(sch_data, dict):
+                    day = sch_data['day_of_week']
+                    hours = sch_data['daily_hours']
+                else:
+                    day = sch_data.day_of_week
+                    hours = sch_data.daily_hours
+
+                new_sch = WorkSchedule(day_of_week=day, daily_hours=hours)
+                db_obj.schedules.append(new_sch)
+
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

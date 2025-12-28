@@ -34,11 +34,9 @@ class AdjustmentAttachmentResponse(BaseModel):
 
     @computed_field
     def url(self) -> str:
-        # Extrai apenas o nome do arquivo do caminho completo
         filename = self.file_path.split("/")[-1]
         if "\\" in filename:
             filename = filename.split("\\")[-1]
-
         return f"/static/{filename}"
 
     class Config:

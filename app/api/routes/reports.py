@@ -1,16 +1,18 @@
-from typing import Any, List, Optional
 from datetime import datetime
+from typing import Any, List, Optional
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+
 from app.api import deps
+from app.domain.models.user import User
 from app.schemas.report import (
     MonthlyReportResponse,
     AdvancedUserReportResponse,
     DashboardMetricsResponse
 )
 from app.services.report_service import report_service
-from app.domain.models.user import User
 
 router = APIRouter()
 
@@ -21,6 +23,27 @@ def get_dashboard(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return report_service.get_dashboard_metrics(db)
+
+
+@router.get("/me", response_model=AdvancedUserReportResponse)
+def get_my_report(
+        month: int = Query(None, ge=1, le=12),
+        year: int = Query(None, ge=2000),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    Retorna o espelho de ponto detalhado do usuário logado.
+    """
+    now = datetime.now()
+    if not month: month = now.month
+    if not year: year = now.year
+
+    report = report_service.get_advanced_user_report(db, current_user.id, month, year)
+    if not report:
+        raise HTTPException(status_code=404, detail="Report data not found")
+
+    return report
 
 
 @router.get("/monthly", response_model=MonthlyReportResponse)
