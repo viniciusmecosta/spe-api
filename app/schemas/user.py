@@ -1,13 +1,16 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, field_validator
 from datetime import datetime
 from app.domain.models.enums import UserRole
+
+class WorkScheduleBase(BaseModel):
+    day_of_week: int
+    daily_hours: float
 
 class UserBase(BaseModel):
     username: str
     name: str
     role: UserRole = UserRole.EMPLOYEE
-    weekly_workload_hours: int = 44
     is_active: bool = True
 
     @field_validator('username')
@@ -17,13 +20,14 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    schedules: Optional[List[WorkScheduleBase]] = []
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     username: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
-    weekly_workload_hours: Optional[int] = None
+    schedules: Optional[List[WorkScheduleBase]] = None
 
     @field_validator('username')
     @classmethod
@@ -36,6 +40,7 @@ class UserResponse(UserBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    schedules: List[WorkScheduleBase] = []
 
     class Config:
         from_attributes = True

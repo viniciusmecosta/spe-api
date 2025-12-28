@@ -28,7 +28,6 @@ def init_db(db: Session) -> None:
             is_active=True
         )
 
-        # Ajuste técnico: UserCreate espera a senha em texto plano, mas precisamos salvar o hash
         user_in.password = hashed_password
 
         user_repository.create(db, user_in)

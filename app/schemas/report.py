@@ -4,9 +4,12 @@ from pydantic import BaseModel
 
 class DailyReportItem(BaseModel):
     date: date
+    day_name: str
+    status: str
     entries: List[str]
     exits: List[str]
     worked_hours: float
+    expected_hours: float
     balance_hours: float
 
 class UserReportResponse(BaseModel):
