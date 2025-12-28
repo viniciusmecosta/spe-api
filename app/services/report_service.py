@@ -1,22 +1,21 @@
-import locale
-from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-from typing import List
-
 import pytz
+from calendar import monthrange
+import locale
+from typing import List
+from sqlalchemy.orm import Session
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter  # Importação necessária
-from sqlalchemy.orm import Session
+from openpyxl.utils import get_column_letter
 
 from app.core.config import settings
-from app.domain.models.enums import RecordType, UserRole, AdjustmentType
-from app.domain.models.user import User
+from app.repositories.user_repository import user_repository
+from app.repositories.time_record_repository import time_record_repository
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.holiday_repository import holiday_repository
-from app.repositories.time_record_repository import time_record_repository
-from app.repositories.user_repository import user_repository
+from app.domain.models.enums import RecordType, UserRole, AdjustmentType
+from app.domain.models.user import User
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse
@@ -67,6 +66,8 @@ class ReportService:
         if not user:
             return None
 
+        has_schedule = bool(user.work_schedules)
+
         tz = pytz.timezone(settings.TIMEZONE)
         start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
         end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
@@ -100,16 +101,24 @@ class ReportService:
             weekday = current.weekday()
             is_weekend = weekday >= 5
 
-            schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
-            expected = schedule.daily_hours if schedule and not is_holiday and not is_certificate else 0.0
+            expected = 0.0
+            if has_schedule and not is_holiday and not is_certificate:
+                schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
+                if schedule:
+                    expected = schedule.daily_hours
 
             entries = []
             exits = []
+            punches = []
             worked_seconds = 0.0
             entry_time = None
 
             for rec in day_records:
                 time_str = rec.record_datetime.strftime("%H:%M")
+
+                suffix = "(E)" if rec.record_type == RecordType.ENTRY else "(S)"
+                punches.append(f"{time_str} {suffix}")
+
                 if rec.record_type == RecordType.ENTRY:
                     entries.append(time_str)
                     entry_time = rec.record_datetime
@@ -117,7 +126,11 @@ class ReportService:
                     exits.append(time_str)
                     if entry_time:
                         delta = rec.record_datetime - entry_time
-                        worked_seconds += delta.total_seconds()
+                        seconds = delta.total_seconds()
+
+                        if seconds <= 86400:
+                            worked_seconds += seconds
+
                         entry_time = None
 
             day_worked = worked_seconds / 3600.0
@@ -125,12 +138,15 @@ class ReportService:
             if day_worked > 0:
                 days_worked_count += 1
 
-            balance = day_worked - expected
+            if not has_schedule:
+                balance = 0.0
+            else:
+                balance = day_worked - expected
 
             day_extra = balance if balance > 0 else 0.0
             day_missing = abs(balance) if balance < 0 else 0.0
 
-            if balance < 0 and not is_holiday and not is_weekend and not is_certificate:
+            if balance < 0 and not is_holiday and not is_weekend and not is_certificate and has_schedule:
                 absences_count += 1
 
             total_worked += day_worked
@@ -149,6 +165,8 @@ class ReportService:
                 status = "Falta"
             elif day_worked > expected:
                 status = "Hora Extra"
+            elif not has_schedule and day_worked == 0:
+                status = "-"
 
             daily_details.append(DailyReportItem(
                 date=current,
@@ -158,6 +176,7 @@ class ReportService:
                 status=status,
                 entries=entries,
                 exits=exits,
+                punches=punches,
                 worked_hours=round(day_worked, 2),
                 expected_hours=round(expected, 2),
                 balance_hours=round(balance, 2),
@@ -174,7 +193,7 @@ class ReportService:
             total_expected_hours=round(total_expected, 2),
             total_extra_hours=round(total_extra, 2),
             total_missing_hours=round(total_missing, 2),
-            final_balance=round(total_worked - total_expected, 2),
+            final_balance=round(total_extra - total_missing, 2),
             days_worked=days_worked_count,
             absences=absences_count
         )
@@ -216,8 +235,8 @@ class ReportService:
         ws_summary.title = "Resumo Folha"
 
         headers_sum = [
-            "ID", "Funcionário", "Dias Trabalhados", "Faltas Reais",
-            "Horas Normais", "Horas Extras", "Horas Faltantes", "Saldo Final"
+            "ID", "Funcionário", "Dias Trabalhados", "Faltas",
+            "Horas Normais", "Horas Extras", "Horas Faltantes", "Saldo Líquido"
         ]
         ws_summary.append(headers_sum)
 
@@ -248,7 +267,7 @@ class ReportService:
 
         for col in ws_summary.columns:
             max_length = 0
-            column = col[0].column_letter  # This works for standard cells
+            column = col[0].column_letter
             for cell in col:
                 try:
                     if len(str(cell.value)) > max_length:
@@ -264,14 +283,13 @@ class ReportService:
             sheet_name = f"{user.id}-{user.name.split()[0]}"
             ws_det = wb.create_sheet(title=sheet_name[:30])
 
-            ws_det.merge_cells('A1:J1')
+            ws_det.merge_cells('A1:G1')
             title_cell = ws_det['A1']
             title_cell.value = f"Folha de Ponto: {user.name} - {month}/{year}"
             title_cell.font = Font(size=14, bold=True)
             title_cell.alignment = Alignment(horizontal='center')
 
-            headers_det = ["Data", "Dia Semana", "Status", "Entrada 1", "Saída 1", "Entrada 2", "Saída 2", "Trabalhado",
-                           "Previsto", "Saldo"]
+            headers_det = ["Data", "Dia Semana", "Status", "Registros de Ponto", "Trabalhado", "Previsto", "Saldo"]
             ws_det.append(headers_det)
 
             for col_num, header in enumerate(headers_det, 1):
@@ -281,18 +299,13 @@ class ReportService:
                 cell.border = border
 
             for day in report.daily_details:
-                e1 = day.entries[0] if len(day.entries) > 0 else ""
-                s1 = day.exits[0] if len(day.exits) > 0 else ""
-                e2 = day.entries[1] if len(day.entries) > 1 else ""
-                s2 = day.exits[1] if len(day.exits) > 1 else ""
-
-                if len(day.entries) > 2: e2 += " ..."
+                punches_str = " | ".join(day.punches)
 
                 row_data = [
                     day.date.strftime("%d/%m/%Y"),
                     day.day_name,
                     day.status,
-                    e1, s1, e2, s2,
+                    punches_str,
                     day.worked_hours,
                     day.expected_hours,
                     day.balance_hours
@@ -308,22 +321,26 @@ class ReportService:
                 elif day.status == "Feriado":
                     status_cell.font = Font(color="0000FF", bold=True)
                 elif day.status == "Fim de Semana":
-                    for col in range(1, 11):
+                    for col in range(1, 8):
                         ws_det.cell(row=last_row, column=col).fill = PatternFill(start_color="E0E0E0",
                                                                                  end_color="E0E0E0", fill_type="solid")
 
             ws_det.append([])
-            ws_det.append(["TOTAIS", "", "", "", "", "", "",
+            ws_det.append(["TOTAIS", "", "", "",
                            report.summary.total_worked_hours,
                            report.summary.total_expected_hours,
                            report.summary.final_balance])
 
-            for col in range(1, 11):
+            for col in range(1, 8):
                 ws_det.cell(row=ws_det.max_row, column=col).font = Font(bold=True)
 
-            for i in range(1, 11):
-                col_letter = get_column_letter(i)
-                ws_det.column_dimensions[col_letter].width = 15
+            ws_det.column_dimensions['A'].width = 12
+            ws_det.column_dimensions['B'].width = 15
+            ws_det.column_dimensions['C'].width = 15
+            ws_det.column_dimensions['D'].width = 40
+            ws_det.column_dimensions['E'].width = 12
+            ws_det.column_dimensions['F'].width = 12
+            ws_det.column_dimensions['G'].width = 12
 
         output = BytesIO()
         wb.save(output)

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 from datetime import date
 from pydantic import BaseModel
 
@@ -7,23 +7,24 @@ class DailyReportItem(BaseModel):
     day_name: str
     is_holiday: bool
     is_weekend: bool
-    status: str  # Normal, Falta, Folga, Extra
+    status: str
     entries: List[str]
     exits: List[str]
+    punches: List[str]
     worked_hours: float
     expected_hours: float
     balance_hours: float
-    extra_hours: float  # Horas positivas do dia
-    missing_hours: float # Horas negativas do dia (Falta/Atraso)
+    extra_hours: float
+    missing_hours: float
 
 class UserPayrollSummary(BaseModel):
     user_id: int
     user_name: str
     total_worked_hours: float
     total_expected_hours: float
-    total_extra_hours: float    # Banco Positivo/Hora Extra
-    total_missing_hours: float  # Banco Negativo/Faltas
-    final_balance: float        # Saldo líquido
+    total_extra_hours: float
+    total_missing_hours: float
+    final_balance: float
     days_worked: int
     absences: int
 

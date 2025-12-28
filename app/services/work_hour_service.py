@@ -18,9 +18,10 @@ class WorkHourService:
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         user = user_repository.get(db, user_id)
-
-        # Garante que lista de feriados não quebre se tabela vazia
         holidays = holiday_repository.get_all(db)
+
+        # Verifica se o usuário tem alguma escala cadastrada
+        has_schedule = bool(user.work_schedules)
 
         total_seconds = 0.0
         entry_time = None
@@ -30,7 +31,13 @@ class WorkHourService:
                 entry_time = record.record_datetime
             elif record.record_type == RecordType.EXIT and entry_time:
                 delta = record.record_datetime - entry_time
-                total_seconds += delta.total_seconds()
+                seconds = delta.total_seconds()
+
+                # Proteção contra erros de turno virado (ex: esqueceu saida na sexta e bateu entrada na segunda)
+                # Se for maior que 24h, ignora o par.
+                if seconds <= 86400:
+                    total_seconds += seconds
+
                 entry_time = None
 
         total_worked_hours = total_seconds / 3600.0
@@ -41,10 +48,8 @@ class WorkHourService:
         while current_date <= end_date:
             is_holiday = any(h.date == current_date for h in holidays)
 
-            if not is_holiday:
-                weekday = current_date.weekday()  # 0 = Segunda
-
-                # Busca horário no relacionamento work_schedules
+            if not is_holiday and has_schedule:
+                weekday = current_date.weekday()
                 schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
 
                 if schedule:
@@ -52,7 +57,11 @@ class WorkHourService:
 
             current_date += timedelta(days=1)
 
-        balance = total_worked_hours - expected_hours
+        # Se não tem escala definida, não gera saldo (nem positivo nem negativo)
+        if not has_schedule:
+            balance = 0.0
+        else:
+            balance = total_worked_hours - expected_hours
 
         return WorkHourBalanceResponse(
             user_id=user_id,
