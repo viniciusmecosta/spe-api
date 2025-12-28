@@ -20,16 +20,18 @@ def init_db(db: Session) -> None:
         hashed_password = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
 
         user_in = UserCreate(
-            name="Administrador do Sistema",
+            name="Mantenedor do Sistema",
             username=username,
             password=hashed_password,
-            role=UserRole.MANAGER,
+            role=UserRole.MAINTAINER,
             is_active=True
         )
+
         user_in.password = hashed_password
+
         user_repository.create(db, user_in)
 
-        logger.info("Initial superuser created successfully (No work schedule assigned).")
+        logger.info("Initial maintainer created successfully.")
     else:
         logger.info(f"Superuser {username} already exists. Skipping creation.")
 

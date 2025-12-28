@@ -1,18 +1,20 @@
 from typing import Generator
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.core import security
 from app.core.config import settings
 from app.database.session import SessionLocal
-from app.domain.models.enums import UserRole
 from app.domain.models.user import User
-from app.repositories.user_repository import user_repository
+from app.domain.models.enums import UserRole
 from app.schemas.token import TokenPayload
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+reusable_oauth2 = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+)
 
 
 def get_db() -> Generator:
@@ -25,25 +27,22 @@ def get_db() -> Generator:
 
 def get_current_user(
         db: Session = Depends(get_db),
-        token: str = Depends(oauth2_scheme)
+        token: str = Depends(reusable_oauth2)
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-        token_data = TokenPayload(sub=user_id)
-    except JWTError:
-        raise credentials_exception
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+    except (JWTError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials",
+        )
 
-    user = user_repository.get(db, user_id=int(token_data.sub))
-    if user is None:
-        raise credentials_exception
+    user = db.query(User).filter(User.id == int(token_data.sub)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     return user
 
 
@@ -58,9 +57,20 @@ def get_current_active_user(
 def get_current_manager(
         current_user: User = Depends(get_current_active_user),
 ) -> User:
-    if current_user.role != UserRole.MANAGER:
+    if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough privileges"
+            detail="The user does not have enough privileges (Manager or Maintainer required)"
+        )
+    return current_user
+
+
+def get_current_maintainer(
+        current_user: User = Depends(get_current_active_user),
+) -> User:
+    if current_user.role != UserRole.MAINTAINER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user does not have enough privileges (Maintainer required)"
         )
     return current_user
