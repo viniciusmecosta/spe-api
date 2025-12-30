@@ -17,6 +17,7 @@ class AdjustmentRepository:
             entry_time=obj_in.entry_time,
             exit_time=obj_in.exit_time,
             reason_text=obj_in.reason_text,
+            amount_hours=obj_in.amount_hours  # Salva a quantidade de horas
         )
         db.add(db_obj)
         db.commit()

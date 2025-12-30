@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -16,6 +16,9 @@ class AdjustmentRequest(Base):
     entry_time = Column(Time, nullable=True)
     exit_time = Column(Time, nullable=True)
     reason_text = Column(String, nullable=True)
+    # Novo campo para definir quantidade de horas abonadas
+    amount_hours = Column(Float, nullable=True)
+
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
     manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     manager_comment = Column(String, nullable=True)

@@ -38,7 +38,11 @@ def toggle_record_type(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    return time_record_service.toggle_record_type(db, id, current_user.id)
+    """
+    Alterna o tipo de registro (ENTRY <-> EXIT).
+    Permitido para o próprio usuário ou Gestores/Maintainers.
+    """
+    return time_record_service.toggle_record_type(db, id, current_user)
 
 
 @router.get("/my", response_model=list[TimeRecordResponse])

@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_client_ip
-from app.domain.models.enums import RecordType
+from app.domain.models.enums import RecordType, UserRole
+from app.domain.models.user import User
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
@@ -29,28 +30,44 @@ class TimeRecordService:
         payroll_service.validate_period_open(db, current_time.date())
         return time_record_repository.create(db, user_id, RecordType.EXIT, current_time, ip_address)
 
-    def toggle_record_type(self, db: Session, record_id: int, user_id: int) -> TimeRecord:
+    def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time record not found")
-        if record.user_id != user_id:
+
+        # Verifica permissão: Só o dono do registro ou Gestores/Maintainers podem alterar
+        is_owner = record.user_id == current_user.id
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+
+        if not is_owner and not is_manager:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
         payroll_service.validate_period_open(db, record.record_datetime.date())
+
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
         record.record_type = new_type
+
         adjustment = ManualAdjustment(
             time_record_id=record.id,
             previous_type=previous_type,
             new_type=new_type,
-            adjusted_by_user_id=user_id
+            adjusted_by_user_id=current_user.id
         )
+
         db.add(adjustment)
         db.add(record)
         db.commit()
         db.refresh(record)
-        audit_service.log(db, user_id=user_id, action="TOGGLE_RECORD", entity="TIME_RECORD", entity_id=record.id,
-                          details=f"Toggled from {previous_type} to {new_type}")
+
+        audit_service.log(
+            db,
+            user_id=current_user.id,
+            action="TOGGLE_RECORD",
+            entity="TIME_RECORD",
+            entity_id=record.id,
+            details=f"Toggled from {previous_type} to {new_type}"
+        )
         return record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int) -> TimeRecord:
