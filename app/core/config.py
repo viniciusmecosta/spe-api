@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     UPLOAD_DIR: str = "uploads"
+
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: Optional[int] = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    EMAIL_FROM: Optional[str] = None
+    EMAIL_TO: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

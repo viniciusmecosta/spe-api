@@ -1,6 +1,9 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,11 +13,36 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes import api_router
 from app.core.config import settings
+from app.services.backup_service import backup_service
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json")
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    trigger = CronTrigger(
+        hour=14,
+        minute=00,
+        timezone=settings.TIMEZONE
+    )
+    scheduler.add_job(backup_service.send_database_backup, trigger=trigger, id="daily_backup")
+    scheduler.start()
+    logger.info(f"Agendador iniciado")
+
+    yield
+    scheduler.shutdown()
+    logger.info("Agendador encerrado.")
+
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan
+)
+
 origins = ["*"]
 
 app.add_middleware(

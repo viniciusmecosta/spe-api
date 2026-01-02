@@ -8,8 +8,6 @@ from app.domain.models.enums import UserRole
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate
 
-# Removido import desnecessário de get_password_hash aqui, pois o repo já faz
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -20,8 +18,6 @@ def init_db(db: Session) -> None:
     if not user:
         logger.info(f"Creating initial superuser: {username}")
 
-        # CORREÇÃO: Passamos a senha em texto puro (raw).
-        # O UserCreate/UserRepository agora se encarrega de fazer o hash.
         user_in = UserCreate(
             name="Mantenedor do Sistema",
             username=username,
