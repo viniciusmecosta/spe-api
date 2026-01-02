@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Enum, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -14,6 +14,7 @@ class TimeRecord(Base):
     record_type = Column(Enum(RecordType), nullable=False)
     record_datetime = Column(DateTime(timezone=True), nullable=False)
     ip_address = Column(String, nullable=True)
+    is_time_verified = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", backref="time_records")
