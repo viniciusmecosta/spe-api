@@ -28,7 +28,7 @@ class AdjustmentService:
             adjustment_type=AdjustmentType.WAIVER,
             target_date=waiver_in.target_date,
             reason_text=waiver_in.reason_text,
-            amount_hours=waiver_in.amount_hours  # Passa a quantidade de horas
+            amount_hours=waiver_in.amount_hours
         )
 
         adjustment = adjustment_repository.create(db, waiver_in.user_id, adj_in)
@@ -52,9 +52,37 @@ class AdjustmentService:
 
         payroll_service.validate_period_open(db, request.target_date)
 
-        file_ext = file.filename.split(".")[-1]
-        file_name = f"{uuid.uuid4()}.{file_ext}"
-        file_path = os.path.join(settings.UPLOAD_DIR, file_name)
+        filename = file.filename.lower()
+        if "." not in filename:
+            raise HTTPException(status_code=400, detail="Nome de arquivo inválido.")
+
+        file_ext = filename.split(".")[-1]
+        allowed_extensions = {"pdf", "jpg", "jpeg", "png"}
+
+        if file_ext not in allowed_extensions:
+            raise HTTPException(
+                status_code=400,
+                detail="Tipo de arquivo não permitido. Use apenas PDF, JPG ou PNG."
+            )
+        header = file.file.read(10)
+        file.file.seek(0)
+
+        is_valid = False
+
+        if file_ext == "pdf" and header.startswith(b"%PDF"):
+            is_valid = True
+        elif file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n"):
+            is_valid = True
+        elif file_ext in ["jpg", "jpeg"] and header.startswith(b"\xff\xd8\xff"):
+            is_valid = True
+
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail="O conteúdo do arquivo não corresponde à extensão ou está corrompido."
+            )
+        safe_filename = f"{uuid.uuid4()}.{file_ext}"
+        file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -63,7 +91,7 @@ class AdjustmentService:
 
         audit_service.log(
             db, user_id=user_id, action="UPLOAD_ATTACHMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details=f"Uploaded file {file.filename}"
+            details=f"Uploaded file {safe_filename}"
         )
         return attachment
 
