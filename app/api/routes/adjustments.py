@@ -1,10 +1,13 @@
+import os
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, Body, UploadFile, File
+from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
+from app.domain.models.enums import UserRole
 from app.repositories.adjustment_repository import adjustment_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate, AdjustmentRequestResponse, \
     AdjustmentAttachmentResponse, AdjustmentWaiverCreate
@@ -32,6 +35,8 @@ def waive_absence_admin(
 
 
 # -------------------------------------
+# ANEXOS E ARQUIVOS
+# -------------------------------------
 
 @router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
 def upload_adjustment_attachment(
@@ -42,6 +47,47 @@ def upload_adjustment_attachment(
 ) -> Any:
     return adjustment_service.upload_attachment(db, id, file, current_user.id)
 
+
+@router.get("/{id}/download", response_class=FileResponse)
+def download_adjustment_attachment(
+        id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    Endpoint para baixar o anexo de um ajuste.
+    Verifica se o usuário tem permissão (é o dono ou gerente) e se o arquivo existe.
+    Baixa o anexo mais recente se houver múltiplos.
+    """
+    adjustment = adjustment_repository.get(db, id=id)
+    if not adjustment:
+        raise HTTPException(status_code=404, detail="Ajuste não encontrado")
+
+    # Verifica permissão: Dono do ajuste ou Gerente/Mantenedor
+    is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+    if adjustment.user_id != current_user.id and not is_manager:
+        raise HTTPException(status_code=403, detail="Sem permissão para acessar este arquivo")
+
+    if not adjustment.attachments:
+        raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
+
+    # Pega o último anexo da lista
+    attachment = adjustment.attachments[-1]
+    file_path = attachment.file_path
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no servidor")
+    
+    filename = os.path.basename(file_path)
+
+    return FileResponse(
+        path=file_path, 
+        filename=filename,
+        media_type='application/octet-stream'
+    )
+
+
+# -------------------------------------
 
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(
