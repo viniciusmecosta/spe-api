@@ -28,6 +28,10 @@ class AdjustmentRequest(Base):
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
 
+    @property
+    def user_name(self):
+        return self.user.name if self.user else "Desconhecido"
+
 
 class AdjustmentAttachment(Base):
     __tablename__ = "adjustment_attachments"

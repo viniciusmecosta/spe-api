@@ -55,6 +55,7 @@ class AdjustmentAttachmentResponse(BaseModel):
 class AdjustmentRequestResponse(AdjustmentRequestBase):
     id: int
     user_id: int
+    user_name: str
     status: AdjustmentStatus
     manager_id: Optional[int] = None
     manager_comment: Optional[str] = None

@@ -1,14 +1,16 @@
 import os
 import shutil
 import uuid
+from datetime import datetime
 
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.repositories.adjustment_repository import adjustment_repository
+from app.repositories.time_record_repository import time_record_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate, AdjustmentWaiverCreate
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
@@ -102,13 +104,43 @@ class AdjustmentService:
 
         payroll_service.validate_period_open(db, request.target_date)
 
+        if request.adjustment_type == AdjustmentType.CERTIFICATE:
+            if request.amount_hours is None or request.amount_hours <= 0:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Para aprovar um atestado, é obrigatório informar a quantidade de horas a abonar."
+                )
+
+        if request.adjustment_type in [AdjustmentType.MISSING_ENTRY, AdjustmentType.MISSING_EXIT, AdjustmentType.BOTH]:
+            self._create_punches_from_adjustment(db, request)
+
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id)
 
         audit_service.log(
             db, user_id=manager_id, action="APPROVE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details="Approved adjustment request"
+            details=f"Approved adjustment request ({request.adjustment_type})"
         )
         return updated
+
+    def _create_punches_from_adjustment(self, db: Session, request: AdjustmentRequest):
+        user_id = request.user_id
+        target_date = request.target_date
+
+        if request.adjustment_type in [AdjustmentType.MISSING_ENTRY, AdjustmentType.BOTH]:
+            if request.entry_time:
+                entry_dt = datetime.combine(target_date, request.entry_time)
+                time_record_repository.create(
+                    db, user_id=user_id, record_type=RecordType.ENTRY,
+                    record_datetime=entry_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
+                )
+
+        if request.adjustment_type in [AdjustmentType.MISSING_EXIT, AdjustmentType.BOTH]:
+            if request.exit_time:
+                exit_dt = datetime.combine(target_date, request.exit_time)
+                time_record_repository.create(
+                    db, user_id=user_id, record_type=RecordType.EXIT,
+                    record_datetime=exit_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
+                )
 
     def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
