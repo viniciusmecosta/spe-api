@@ -5,6 +5,11 @@ from app.api.routes import auth, time_records, adjustments, work_hours, users, r
 api_router = APIRouter()
 
 
+@api_router.get("/")
+def root():
+    return {"status": "ok", "message": "API V1 is running"}
+
+
 @api_router.get("/health")
 def health_check():
     return {"status": "ok", "app": "SPE"}
