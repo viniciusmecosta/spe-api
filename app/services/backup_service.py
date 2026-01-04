@@ -31,19 +31,27 @@ class BackupService:
             msg['To'] = settings.EMAIL_TO
 
             tz = pytz.timezone(settings.TIMEZONE)
-            now = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
-            msg['Subject'] = f"Backup SPE - {now}"
-
-            body = f"Segue em anexo o backup do banco de dados (spe.db) gerado em {now}."
+            current_dt = datetime.now(tz)
+            formatted_date = current_dt.strftime("%d/%m/%Y às %H:%M")
+            msg['Subject'] = f"Backup Banco MH7 Ponto - {formatted_date}"
+            body = (
+                f"Olá,\n\n"
+                f"O backup automático do banco de dados do sistema MH7 Ponto foi realizado com sucesso.\n\n"
+                f"📅 Data/Hora da Geração: {formatted_date}\n"
+                f"📂 Arquivo: spe.db (Anexado)\n\n"
+                f"Mantenha este arquivo seguro para garantir a integridade dos dados.\n\n"
+                f"Sistema de Ponto Eletrônico - Notificação Automática"
+            )
             msg.attach(MIMEText(body, 'plain'))
 
             with open(db_file, "rb") as attachment:
                 part = MIMEBase('application', 'octet-stream')
                 part.set_payload(attachment.read())
                 encoders.encode_base64(part)
+                filename = f"spe_backup_{current_dt.strftime('%Y%m%d_%H%M')}.db"
                 part.add_header(
                     'Content-Disposition',
-                    f"attachment; filename=spe_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                    f"attachment; filename={filename}",
                 )
                 msg.attach(part)
 

@@ -24,13 +24,13 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     trigger = CronTrigger(
-        hour=14,
+        hour='10,14',
         minute=00,
         timezone=settings.TIMEZONE
     )
     scheduler.add_job(backup_service.send_database_backup, trigger=trigger, id="daily_backup")
     scheduler.start()
-    logger.info(f"Agendador iniciado")
+    logger.info(f"Agendador iniciado (Backups agendados para 10h e 14h)")
 
     yield
     scheduler.shutdown()
