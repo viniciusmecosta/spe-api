@@ -3,6 +3,9 @@ from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Define o diretório raiz do projeto de forma absoluta
+# app/core/config.py -> sobe 2 niveis -> app -> sobe 1 nivel -> raiz (SPE)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "SPE - Sistema de Ponto Eletrônico"
@@ -15,7 +18,9 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
-    UPLOAD_DIR: str = "uploads"
+    
+    # Define UPLOAD_DIR como caminho absoluto dentro da raiz do projeto
+    UPLOAD_DIR: str = os.path.join(ROOT_DIR, "uploads")
 
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: Optional[int] = 587
@@ -42,4 +47,5 @@ except Exception:
         BACKEND_CORS_ORIGINS=["*"]
     )
 
+# Garante que a pasta existe no caminho absoluto correto
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

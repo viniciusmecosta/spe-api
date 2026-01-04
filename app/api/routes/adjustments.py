@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.config import settings
 from app.domain.models.user import User
 from app.domain.models.enums import UserRole
 from app.repositories.adjustment_repository import adjustment_repository
@@ -56,14 +57,11 @@ def download_adjustment_attachment(
 ) -> Any:
     """
     Endpoint para baixar o anexo de um ajuste.
-    Verifica se o usuário tem permissão (é o dono ou gerente) e se o arquivo existe.
-    Baixa o anexo mais recente se houver múltiplos.
     """
     adjustment = adjustment_repository.get(db, id=id)
     if not adjustment:
         raise HTTPException(status_code=404, detail="Ajuste não encontrado")
 
-    # Verifica permissão: Dono do ajuste ou Gerente/Mantenedor
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
     if adjustment.user_id != current_user.id and not is_manager:
         raise HTTPException(status_code=403, detail="Sem permissão para acessar este arquivo")
@@ -71,17 +69,24 @@ def download_adjustment_attachment(
     if not adjustment.attachments:
         raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
 
-    # Pega o último anexo da lista
     attachment = adjustment.attachments[-1]
-    file_path = attachment.file_path
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no servidor")
     
-    filename = os.path.basename(file_path)
+    # Lógica Robusta:
+    # Ignora o caminho completo salvo no banco (que pode ser de outro ambiente/Windows)
+    # e reconstrói o caminho usando a configuração atual do servidor (Docker/Linux).
+    filename = os.path.basename(attachment.file_path)
+    safe_file_path = os.path.join(settings.UPLOAD_DIR, filename)
+
+    if not os.path.exists(safe_file_path):
+        # Tenta fallback para o caminho original se o reconstruído falhar
+        if os.path.exists(attachment.file_path):
+            safe_file_path = attachment.file_path
+        else:
+            print(f"ERRO DE ARQUIVO: Esperado em {safe_file_path}, DB diz {attachment.file_path}")
+            raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no servidor")
 
     return FileResponse(
-        path=file_path, 
+        path=safe_file_path, 
         filename=filename,
         media_type='application/octet-stream'
     )

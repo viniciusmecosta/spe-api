@@ -6,12 +6,9 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-      - spe_data:/app/uploads
+      - ./uploads:/app/uploads
     environment:
       - PROJECT_NAME=SPE
       - TIMEZONE=America/Fortaleza
       - SQLALCHEMY_DATABASE_URI=sqlite:///./spe.db
     restart: unless-stopped
-
-volumes:
-  spe_data:
