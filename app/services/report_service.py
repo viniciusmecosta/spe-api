@@ -86,11 +86,9 @@ class ReportService:
 
         daily_details = []
 
-        # Acumuladores de tempo (segundos)
         total_worked_seconds = 0.0
         total_expected_seconds = 0.0
 
-        # Acumuladores de horas (float) para o App
         total_extra_hours = 0.0
         total_missing_hours = 0.0
 
@@ -148,9 +146,8 @@ class ReportService:
                             worked_seconds += seconds
                         entry_time = None
 
-            # Lógica de Abono/Atestado
+            waiver_credit = 0.0
             if is_excused:
-                waiver_credit = 0.0
                 if adjustment_day.amount_hours and adjustment_day.amount_hours > 0:
                     waiver_credit = adjustment_day.amount_hours * 3600
                 else:
@@ -164,7 +161,6 @@ class ReportService:
             if worked_seconds == 0 and expected_seconds > 0 and not is_weekend and not is_holiday and not is_excused and not is_future:
                 absences_count += 1
 
-            # --- Cálculos de Float para o App ---
             day_worked_hours = worked_seconds / 3600.0
             day_expected_hours = expected_seconds / 3600.0
 
@@ -185,9 +181,11 @@ class ReportService:
             if is_future:
                 status = ""
             elif is_waiver:
-                status = "Abonado"
+                formatted_waiver = self._format_duration(waiver_credit)
+                status = f"Abonado ({formatted_waiver})"
             elif is_certificate:
-                status = "Atestado"
+                formatted_waiver = self._format_duration(waiver_credit)
+                status = f"Atestado ({formatted_waiver})"
             elif is_holiday:
                 status = "Feriado"
             elif is_weekend:
@@ -209,14 +207,12 @@ class ReportService:
                 exits=exits,
                 punches=punches,
 
-                # Campos Float
                 worked_hours=round(day_worked_hours, 2),
                 expected_hours=round(day_expected_hours, 2),
                 balance_hours=round(day_balance, 2),
                 extra_hours=round(day_extra, 2),
                 missing_hours=round(day_missing, 2),
 
-                # Campos Formatados
                 worked_minutes=worked_minutes_int,
                 worked_time=self._format_duration(worked_seconds),
                 expected_time=self._format_duration(expected_seconds)
@@ -236,7 +232,6 @@ class ReportService:
             days_worked=days_worked_count,
             absences=absences_count,
 
-            # Totais Float
             total_worked_hours=round(total_worked_seconds / 3600.0, 2),
             total_expected_hours=round(total_expected_seconds / 3600.0, 2),
             total_extra_hours=round(total_extra_hours, 2),
