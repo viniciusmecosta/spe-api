@@ -142,3 +142,12 @@ def edit_adjustment_request(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return adjustment_service.update_adjustment(db, id, request_in, current_user.id)
+    
+@router.delete("/{id}")
+def delete_adjustment(
+        id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    adjustment_service.delete_adjustment(db, id, current_user.id)
+    return {"status": "success"}

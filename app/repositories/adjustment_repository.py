@@ -17,7 +17,7 @@ class AdjustmentRepository:
             entry_time=obj_in.entry_time,
             exit_time=obj_in.exit_time,
             reason_text=obj_in.reason_text,
-            amount_hours=obj_in.amount_hours  # Salva a quantidade de horas
+            amount_hours=obj_in.amount_hours
         )
         db.add(db_obj)
         db.commit()
@@ -91,6 +91,10 @@ class AdjustmentRepository:
         db.commit()
         db.refresh(db_attachment)
         return db_attachment
+
+    def delete(self, db: Session, id: int):
+        db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).delete()
+        db.commit()
 
 
 adjustment_repository = AdjustmentRepository()

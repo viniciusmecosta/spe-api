@@ -43,6 +43,20 @@ class AdjustmentService:
             details=f"Absence waived for user {waiver_in.user_id} on {waiver_in.target_date} (Amount: {waiver_in.amount_hours})"
         )
         return adjustment
+        
+    def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
+        request = adjustment_repository.get(db, adjustment_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Adjustment not found")
+            
+        payroll_service.validate_period_open(db, request.target_date)
+        
+        adjustment_repository.delete(db, adjustment_id)
+        
+        audit_service.log(
+            db, user_id=manager_id, action="DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
+            details="Deleted adjustment/waiver"
+        )
 
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
         request = adjustment_repository.get(db, request_id)

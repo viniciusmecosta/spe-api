@@ -111,6 +111,8 @@ class ReportService:
 
             is_certificate = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.CERTIFICATE
             is_waiver = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.WAIVER
+            
+            adj_id = adjustment_day.id if adjustment_day else None
 
             is_excused = is_certificate or is_waiver
 
@@ -206,6 +208,8 @@ class ReportService:
                 entries=entries,
                 exits=exits,
                 punches=punches,
+                
+                adjustment_id=adj_id,
 
                 worked_hours=round(day_worked_hours, 2),
                 expected_hours=round(day_expected_hours, 2),
