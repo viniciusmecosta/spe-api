@@ -1,6 +1,6 @@
-from datetime import datetime
 import ntplib
 import pytz
+from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
 
@@ -13,8 +13,8 @@ from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
 from app.services.audit_service import audit_service
-from app.services.payroll_service import payroll_service
 from app.services.manual_auth_service import manual_auth_service
+from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:

@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
+
 from app.database.base import Base
+
 
 class ManualPunchAuthorization(Base):
     __tablename__ = "manual_punch_authorizations"

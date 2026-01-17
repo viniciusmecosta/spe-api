@@ -1,24 +1,28 @@
-import logging
 import asyncio
-from typing import List
-from sqlalchemy.orm import Session
+import logging
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+from typing import List
+
+from app.core.mqtt import mqtt
 from app.domain.models import UserBiometric
 from app.schemas.mqtt import BiometricSyncData, BiometricSyncAck, EnrollResultPayload
-from app.core.mqtt import mqtt
 
 logger = logging.getLogger(__name__)
+
 
 class BiometricService:
     async def start_restore_process(self, db: Session):
         biometrics = db.query(UserBiometric).all()
+        logger.info(f"Iniciando restore de {len(biometrics)} biometrias com QoS 2.")
+
         for bio in biometrics:
             payload = BiometricSyncData(
                 biometric_id=bio.id,
                 template_data=bio.template_data,
                 user_id=bio.user_id
             )
-            mqtt.publish("mh7/admin/sync/data", payload.model_dump_json())
+            mqtt.publish("mh7/admin/sync/data", payload.model_dump_json(), qos=2)
             await asyncio.sleep(0.1)
 
     def process_sync_ack(self, db: Session, ack: BiometricSyncAck):
@@ -65,5 +69,6 @@ class BiometricService:
         except Exception as e:
             db.rollback()
             return False, str(e)
+
 
 biometric_service = BiometricService()

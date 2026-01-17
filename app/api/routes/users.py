@@ -1,18 +1,17 @@
-from typing import Any, List
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
-from app.core.config import settings
 from app.core.mqtt import mqtt
-from app.domain.models.user import User
 from app.domain.models.enums import UserRole
-from app.schemas.user import UserCreate, UserUpdate, UserResponse
-from app.schemas.mqtt import EnrollStartPayload
+from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.services.user_service import user_service
+from app.schemas.mqtt import EnrollStartPayload
+from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.services.manual_auth_service import manual_auth_service
+from app.services.user_service import user_service
 
 router = APIRouter()
 
@@ -129,6 +128,6 @@ def enroll_user_biometric(
         raise HTTPException(status_code=404, detail="User not found")
 
     payload = EnrollStartPayload(user_id=user.id, user_name=user.full_name)
-    mqtt.publish("mh7/admin/enroll/start", payload.model_dump_json())
+    mqtt.publish("mh7/admin/enroll/start", payload.model_dump_json(), qos=2)
 
     return {"status": "success", "message": "Enrollment command sent to device"}

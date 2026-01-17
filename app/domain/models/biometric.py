@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Text
 from sqlalchemy.orm import relationship
+
 from app.database.base import Base
+
 
 class UserBiometric(Base):
     __tablename__ = "user_biometrics"
