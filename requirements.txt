@@ -9,6 +9,7 @@ cryptography==46.0.3
 ecdsa==0.19.1
 email-validator==2.1.1
 fastapi==0.128.0
+fastapi-mqtt==2.0.2
 greenlet==3.3.0
 h11==0.16.0
 httptools==0.7.1
