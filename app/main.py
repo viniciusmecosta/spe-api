@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes import api_router
 from app.core.config import settings
+from app.core.mqtt import mqtt
 from app.services.backup_service import backup_service
 
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +33,14 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info(f"Agendador iniciado (Backups agendados para 10h e 14h)")
 
+    await mqtt.mqtt_startup()
+    logger.info("Módulo MQTT iniciado")
+
     yield
+
+    await mqtt.mqtt_shutdown()
+    logger.info("Módulo MQTT encerrado")
+
     scheduler.shutdown()
     logger.info("Agendador encerrado.")
 

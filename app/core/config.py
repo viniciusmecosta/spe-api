@@ -3,9 +3,8 @@ from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Define o diretório raiz do projeto de forma absoluta
-# app/core/config.py -> sobe 2 niveis -> app -> sobe 1 nivel -> raiz (SPE)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "SPE - Sistema de Ponto Eletrônico"
@@ -18,8 +17,7 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
-    
-    # Define UPLOAD_DIR como caminho absoluto dentro da raiz do projeto
+
     UPLOAD_DIR: str = os.path.join(ROOT_DIR, "uploads")
 
     SMTP_HOST: Optional[str] = None
@@ -28,6 +26,11 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
     EMAIL_TO: Optional[str] = None
+
+    MQTT_BROKER: str
+    MQTT_PORT: int
+    MQTT_USERNAME: str
+    MQTT_PASSWORD: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -44,8 +47,11 @@ except Exception:
         SECRET_KEY="insecure-default-key-change-this-in-production",
         FIRST_SUPERUSER="admin",
         FIRST_SUPERUSER_PASSWORD="adminpassword",
-        BACKEND_CORS_ORIGINS=["*"]
+        BACKEND_CORS_ORIGINS=["*"],
+        MQTT_BROKER="mosquitto",
+        MQTT_PORT=1883,
+        MQTT_USERNAME="backend",
+        MQTT_PASSWORD="password"
     )
 
-# Garante que a pasta existe no caminho absoluto correto
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
