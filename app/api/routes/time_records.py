@@ -1,14 +1,16 @@
 from datetime import datetime
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, Request, Query, HTTPException
+from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate
+from app.schemas.manual_auth import ManualPunchAuthCreate, ManualPunchAuthResponse
 from app.services.time_record_service import time_record_service
+from app.services.manual_auth_service import manual_auth_service
 
 router = APIRouter()
 
@@ -96,3 +98,19 @@ def delete_time_record_admin(
 ) -> Any:
     time_record_service.delete_admin_record(db, record_id, current_user.id)
     return {"status": "success", "message": "Record deleted"}
+
+
+@router.post("/admin/authorize", response_model=ManualPunchAuthResponse)
+def authorize_manual_punch(
+    auth_in: ManualPunchAuthCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    """
+    Cria uma autorização para um usuário registrar ponto manualmente.
+    Requer role MANAGER ou superior.
+    """
+    try:
+        return manual_auth_service.create_authorization(db, auth_in, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
