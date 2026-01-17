@@ -1,5 +1,4 @@
 from datetime import datetime
-
 import ntplib
 import pytz
 from fastapi import HTTPException, status, Request
@@ -11,9 +10,11 @@ from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
+from app.services.manual_auth_service import manual_auth_service
 
 
 class TimeRecordService:
@@ -27,18 +28,40 @@ class TimeRecordService:
         except Exception:
             return datetime.now(tz), False
 
+    def _validate_manual_punch_permission(self, db: Session, user_id: int):
+        user = user_repository.get(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Managers e Maintainers sempre podem
+        if user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+            return
+
+        # Employees precisam de autorizacao explicita
+        if not manual_auth_service.check_authorization(db, user_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Registro manual não autorizado. Utilize a biometria ou solicite liberação ao gestor."
+            )
+
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
+        self._validate_manual_punch_permission(db, user_id)
+
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
         payroll_service.validate_period_open(db, current_time.date())
+
         return time_record_repository.create(
             db, user_id, RecordType.ENTRY, current_time, ip_address, is_time_verified=is_verified
         )
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
+        self._validate_manual_punch_permission(db, user_id)
+
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
         payroll_service.validate_period_open(db, current_time.date())
+
         return time_record_repository.create(
             db, user_id, RecordType.EXIT, current_time, ip_address, is_time_verified=is_verified
         )
