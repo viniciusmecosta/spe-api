@@ -5,20 +5,24 @@ import pytz
 from pydantic import ValidationError
 from app.core.mqtt import mqtt
 from app.core.config import settings
-from app.schemas.mqtt import PunchPayload, FeedbackPayload, DeviceActions, TimeResponsePayload, BiometricSyncAck
+from app.domain.models import UserBiometric
+from app.domain.models.enums import UserRole
+from app.schemas.mqtt import (
+    PunchPayload, FeedbackPayload, DeviceActions, TimeResponsePayload,
+    BiometricSyncAck, AdminAuthRequest, AdminAuthResponse,
+    EnrollResultPayload, UserListResponse, UserItem
+)
 from app.services.punch_service import punch_service
 from app.services.biometric_service import biometric_service
+from app.services.user_service import user_service
+from app.repositories.user_repository import user_repository
 from app.database.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
 
-# ... (Handlers anteriores: handle_punch, handle_time_sync mantidos) ...
-
 @mqtt.subscribe("mh7/ponto/punch")
 async def handle_punch(client, topic, payload, qos, properties):
-    # (Código existente mantido)
-    logger.info(f"Recebido payload em {topic}")
     try:
         data = json.loads(payload.decode())
         punch_data = PunchPayload(**data)
@@ -56,7 +60,6 @@ async def handle_punch(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/global/time/req")
 async def handle_time_sync(client, topic, payload, qos, properties):
-    # (Código existente mantido)
     try:
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -66,12 +69,8 @@ async def handle_time_sync(client, topic, payload, qos, properties):
         logger.error(f"Erro sync time: {e}")
 
 
-# --- Novos Handlers de Restore ---
-
 @mqtt.subscribe("mh7/admin/sync/start")
 async def handle_sync_start(client, topic, payload, qos, properties):
-    """Inicia o processo de envio de todas as biometrias para o ESP."""
-    logger.info("Solicitação de restore de biometrias recebida.")
     db = SessionLocal()
     try:
         await biometric_service.start_restore_process(db)
@@ -83,17 +82,74 @@ async def handle_sync_start(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/admin/sync/ack")
 async def handle_sync_ack(client, topic, payload, qos, properties):
-    """Processa a confirmação de gravação do ESP e atualiza o index."""
     try:
         data = json.loads(payload.decode())
         ack_data = BiometricSyncAck(**data)
-
         db = SessionLocal()
         try:
             biometric_service.process_sync_ack(db, ack_data)
         finally:
             db.close()
-    except ValidationError as e:
-        logger.error(f"Payload de ACK inválido: {e}")
     except Exception as e:
         logger.error(f"Erro ao processar sync ack: {e}")
+
+
+@mqtt.subscribe("mh7/admin/auth/req")
+async def handle_admin_auth(client, topic, payload, qos, properties):
+    try:
+        data = json.loads(payload.decode())
+        auth_req = AdminAuthRequest(**data)
+
+        db = SessionLocal()
+        authorized = False
+        user_name = "Desconhecido"
+        try:
+            biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == auth_req.sensor_index).first()
+            if biometric and biometric.user:
+                user = biometric.user
+                user_name = user.full_name.split()[0] if user.full_name else "Usuario"
+                if user.is_active and user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+                    authorized = True
+        finally:
+            db.close()
+
+        response = AdminAuthResponse(
+            request_id=auth_req.request_id,
+            authorized=authorized,
+            user_name=user_name
+        )
+        mqtt.publish("mh7/admin/auth/resp", response.model_dump_json())
+
+    except Exception as e:
+        logger.error(f"Erro ao processar auth admin: {e}")
+
+
+@mqtt.subscribe("mh7/admin/enroll/result")
+async def handle_enroll_result(client, topic, payload, qos, properties):
+    try:
+        data = json.loads(payload.decode())
+        result = EnrollResultPayload(**data)
+        db = SessionLocal()
+        try:
+            success, msg = biometric_service.save_enrolled_biometric(db, result)
+            logger.info(f"Enroll result para User {result.user_id}: {msg}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Erro ao processar enroll result: {e}")
+
+
+@mqtt.subscribe("mh7/admin/users/req")
+async def handle_users_req(client, topic, payload, qos, properties):
+    db = SessionLocal()
+    try:
+        users = user_repository.get_multi(db, limit=1000)
+        active_users = [
+            UserItem(id=u.id, name=u.full_name[:16])
+            for u in users if u.is_active
+        ]
+
+        response = UserListResponse(users=active_users)
+        mqtt.publish("mh7/admin/users/resp", response.model_dump_json())
+    finally:
+        db.close()

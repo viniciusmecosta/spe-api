@@ -1,37 +1,37 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from sqlalchemy.orm import Session
 from app.domain.models.manual_authorization import ManualPunchAuthorization
-from app.schemas.manual_auth import ManualPunchAuthCreate
 from app.core.config import settings
 
 
 class ManualAuthService:
-    def create_authorization(self, db: Session, auth_in: ManualPunchAuthCreate,
-                             manager_id: int) -> ManualPunchAuthorization:
-        """
-        Cria uma nova janela de autorização para registro manual.
-        """
-        # Garante que as datas estejam coerentes
-        if auth_in.valid_until <= auth_in.valid_from:
-            raise ValueError("A data de término deve ser posterior ao início.")
+    def grant_permission(self, db: Session, user_id: int, manager_id: int) -> ManualPunchAuthorization:
+        self.revoke_permission(db, user_id)
+
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+        valid_until = now + timedelta(days=3650)
 
         db_auth = ManualPunchAuthorization(
-            user_id=auth_in.user_id,
+            user_id=user_id,
             authorized_by=manager_id,
-            valid_from=auth_in.valid_from,
-            valid_until=auth_in.valid_until,
-            reason=auth_in.reason
+            valid_from=now,
+            valid_until=valid_until,
+            reason="Autorizacao permanente concedida pelo gestor"
         )
         db.add(db_auth)
         db.commit()
         db.refresh(db_auth)
         return db_auth
 
+    def revoke_permission(self, db: Session, user_id: int):
+        db.query(ManualPunchAuthorization).filter(
+            ManualPunchAuthorization.user_id == user_id
+        ).delete()
+        db.commit()
+
     def check_authorization(self, db: Session, user_id: int) -> bool:
-        """
-        Verifica se o usuário possui uma autorização ativa AGORA.
-        """
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
 

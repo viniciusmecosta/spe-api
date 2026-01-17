@@ -1,24 +1,24 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 
 class PunchPayload(BaseModel):
-    request_id: str = Field(..., description="UUID único da requisição para idempotência")
-    sensor_index: int = Field(..., description="ID da biometria no sensor (0-127)")
-    timestamp_device: int = Field(..., description="Timestamp Unix do momento do registro no dispositivo")
+    request_id: str
+    sensor_index: int
+    timestamp_device: int
 
 
 class DeviceActions(BaseModel):
-    led_color: str = Field(..., pattern="^(green|red|off)$")
+    led_color: str
     led_duration_ms: int
-    buzzer_pattern: int  # 1: Sucesso (bip curto), 2: Erro (bip longo/triplo)
+    buzzer_pattern: int
     buzzer_duration_ms: int
 
 
 class FeedbackPayload(BaseModel):
     request_id: str
-    line1: str = Field(..., max_length=16)
-    line2: str = Field(..., max_length=16)
+    line1: str
+    line2: str
     actions: DeviceActions
 
 
@@ -38,3 +38,36 @@ class BiometricSyncAck(BaseModel):
     sensor_index: int
     success: bool
     error: Optional[str] = None
+
+
+class AdminAuthRequest(BaseModel):
+    request_id: str
+    sensor_index: int
+
+
+class AdminAuthResponse(BaseModel):
+    request_id: str
+    authorized: bool
+    user_name: str
+
+
+class EnrollStartPayload(BaseModel):
+    user_id: int
+    user_name: str
+
+
+class EnrollResultPayload(BaseModel):
+    user_id: int
+    sensor_index: int
+    template_data: str
+    success: bool
+    error: Optional[str] = None
+
+
+class UserItem(BaseModel):
+    id: int
+    name: str
+
+
+class UserListResponse(BaseModel):
+    users: List[UserItem]
