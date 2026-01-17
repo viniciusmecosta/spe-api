@@ -16,3 +16,7 @@ class FeedbackPayload(BaseModel):
     line1: str = Field(..., max_length=16)
     line2: str = Field(..., max_length=16)
     actions: DeviceActions
+
+class TimeResponsePayload(BaseModel):
+    unix: int
+    formatted: str

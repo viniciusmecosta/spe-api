@@ -1,8 +1,11 @@
 import logging
 import json
+from datetime import datetime
+import pytz
 from pydantic import ValidationError
 from app.core.mqtt import mqtt
-from app.schemas.mqtt import PunchPayload, FeedbackPayload, DeviceActions
+from app.core.config import settings
+from app.schemas.mqtt import PunchPayload, FeedbackPayload, DeviceActions, TimeResponsePayload
 from app.services.punch_service import punch_service
 from app.database.session import SessionLocal
 
@@ -44,6 +47,7 @@ async def handle_punch(client, topic, payload, qos, properties):
                 )
             )
         else:
+            # Lógica de Erro (Biometria não encontrada, Duplicado, etc)
             logger.warning(f"Erro no processamento: {message}")
             response = FeedbackPayload(
                 request_id=punch_data.request_id,
@@ -57,6 +61,7 @@ async def handle_punch(client, topic, payload, qos, properties):
                 )
             )
 
+        # 4. Envia Feedback ao ESP32
         mqtt.publish(
             "mh7/ponto/response",
             response.model_dump_json()
@@ -69,3 +74,29 @@ async def handle_punch(client, topic, payload, qos, properties):
         logger.error("Erro ao decodificar JSON do MQTT")
     except Exception as e:
         logger.error(f"Erro inesperado no handler MQTT: {e}")
+
+
+@mqtt.subscribe("mh7/global/time/req")
+async def handle_time_sync(client, topic, payload, qos, properties):
+    """
+    Responde à solicitação de sincronização de hora do ESP32.
+    """
+    logger.debug(f"Recebido pedido de sync de hora em {topic}")
+
+    try:
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+
+        response = TimeResponsePayload(
+            unix=int(now.timestamp()),
+            formatted=now.strftime("%d/%m/%Y %H:%M:%S")
+        )
+
+        mqtt.publish(
+            "mh7/global/time/resp",
+            response.model_dump_json()
+        )
+        logger.info(f"Hora enviada para ESP32: {response.formatted}")
+
+    except Exception as e:
+        logger.error(f"Erro ao processar sincronização de hora: {e}")
