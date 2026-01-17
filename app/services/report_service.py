@@ -1,13 +1,12 @@
 import locale
+import pytz
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-from typing import List
-
-import pytz
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -111,7 +110,7 @@ class ReportService:
 
             is_certificate = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.CERTIFICATE
             is_waiver = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.WAIVER
-            
+
             adj_id = adjustment_day.id if adjustment_day else None
 
             is_excused = is_certificate or is_waiver
@@ -208,7 +207,7 @@ class ReportService:
                 entries=entries,
                 exits=exits,
                 punches=punches,
-                
+
                 adjustment_id=adj_id,
 
                 worked_hours=round(day_worked_hours, 2),

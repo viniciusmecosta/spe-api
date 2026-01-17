@@ -1,14 +1,14 @@
 import logging
-from datetime import datetime
-from typing import Optional, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from cachetools import TTLCache
-
-from app.domain.models import UserBiometric, TimeRecord, User
-from app.schemas.mqtt import PunchPayload
-from app.core.config import settings
 import pytz
+from cachetools import TTLCache
+from datetime import datetime
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+from typing import Optional, Tuple
+
+from app.core.config import settings
+from app.domain.models import UserBiometric, TimeRecord
+from app.schemas.mqtt import PunchPayload
 
 logger = logging.getLogger(__name__)
 

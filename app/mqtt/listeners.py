@@ -14,14 +14,13 @@ from app.schemas.mqtt import (
 )
 from app.services.punch_service import punch_service
 from app.services.biometric_service import biometric_service
-from app.services.user_service import user_service
 from app.repositories.user_repository import user_repository
 from app.database.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
 
-@mqtt.subscribe("mh7/ponto/punch")
+@mqtt.subscribe("mh7/ponto/punch", qos=2)
 async def handle_punch(client, topic, payload, qos, properties):
     try:
         data = json.loads(payload.decode())
@@ -53,23 +52,23 @@ async def handle_punch(client, topic, payload, qos, properties):
                     led_color="red", led_duration_ms=3000, buzzer_pattern=2, buzzer_duration_ms=1000
                 )
             )
-        mqtt.publish("mh7/ponto/response", response.model_dump_json())
+        mqtt.publish("mh7/ponto/response", response.model_dump_json(), qos=2)
     except Exception as e:
         logger.error(f"Erro no handler de punch: {e}")
 
 
-@mqtt.subscribe("mh7/global/time/req")
+@mqtt.subscribe("mh7/global/time/req", qos=2)
 async def handle_time_sync(client, topic, payload, qos, properties):
     try:
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
         response = TimeResponsePayload(unix=int(now.timestamp()), formatted=now.strftime("%d/%m/%Y %H:%M:%S"))
-        mqtt.publish("mh7/global/time/resp", response.model_dump_json())
+        mqtt.publish("mh7/global/time/resp", response.model_dump_json(), qos=2)
     except Exception as e:
         logger.error(f"Erro sync time: {e}")
 
 
-@mqtt.subscribe("mh7/admin/sync/start")
+@mqtt.subscribe("mh7/admin/sync/start", qos=2)
 async def handle_sync_start(client, topic, payload, qos, properties):
     db = SessionLocal()
     try:
@@ -80,7 +79,7 @@ async def handle_sync_start(client, topic, payload, qos, properties):
         db.close()
 
 
-@mqtt.subscribe("mh7/admin/sync/ack")
+@mqtt.subscribe("mh7/admin/sync/ack", qos=2)
 async def handle_sync_ack(client, topic, payload, qos, properties):
     try:
         data = json.loads(payload.decode())
@@ -94,7 +93,7 @@ async def handle_sync_ack(client, topic, payload, qos, properties):
         logger.error(f"Erro ao processar sync ack: {e}")
 
 
-@mqtt.subscribe("mh7/admin/auth/req")
+@mqtt.subscribe("mh7/admin/auth/req", qos=2)
 async def handle_admin_auth(client, topic, payload, qos, properties):
     try:
         data = json.loads(payload.decode())
@@ -118,28 +117,53 @@ async def handle_admin_auth(client, topic, payload, qos, properties):
             authorized=authorized,
             user_name=user_name
         )
-        mqtt.publish("mh7/admin/auth/resp", response.model_dump_json())
+        mqtt.publish("mh7/admin/auth/resp", response.model_dump_json(), qos=2)
 
     except Exception as e:
         logger.error(f"Erro ao processar auth admin: {e}")
 
 
-@mqtt.subscribe("mh7/admin/enroll/result")
+@mqtt.subscribe("mh7/admin/enroll/result", qos=2)
 async def handle_enroll_result(client, topic, payload, qos, properties):
     try:
         data = json.loads(payload.decode())
         result = EnrollResultPayload(**data)
         db = SessionLocal()
+
+        feedback_response = None
+
         try:
             success, msg = biometric_service.save_enrolled_biometric(db, result)
-            logger.info(f"Enroll result para User {result.user_id}: {msg}")
+
+            if success:
+                feedback_response = FeedbackPayload(
+                    request_id="enroll_result",
+                    line1="Cadastro OK",
+                    line2=f"ID: {result.sensor_index}",
+                    actions=DeviceActions(
+                        led_color="green", led_duration_ms=2000, buzzer_pattern=1, buzzer_duration_ms=500
+                    )
+                )
+            else:
+                feedback_response = FeedbackPayload(
+                    request_id="enroll_result",
+                    line1="Erro Cadastro",
+                    line2=msg[:16],
+                    actions=DeviceActions(
+                        led_color="red", led_duration_ms=2000, buzzer_pattern=2, buzzer_duration_ms=1000
+                    )
+                )
         finally:
             db.close()
+
+        if feedback_response:
+            mqtt.publish("mh7/ponto/response", feedback_response.model_dump_json(), qos=2)
+
     except Exception as e:
         logger.error(f"Erro ao processar enroll result: {e}")
 
 
-@mqtt.subscribe("mh7/admin/users/req")
+@mqtt.subscribe("mh7/admin/users/req", qos=2)
 async def handle_users_req(client, topic, payload, qos, properties):
     db = SessionLocal()
     try:
@@ -150,6 +174,6 @@ async def handle_users_req(client, topic, payload, qos, properties):
         ]
 
         response = UserListResponse(users=active_users)
-        mqtt.publish("mh7/admin/users/resp", response.model_dump_json())
+        mqtt.publish("mh7/admin/users/resp", response.model_dump_json(), qos=2)
     finally:
         db.close()

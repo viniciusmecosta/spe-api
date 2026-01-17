@@ -1,6 +1,5 @@
-from typing import List
-
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.core.security import get_password_hash
 from app.domain.models.user import User, WorkSchedule

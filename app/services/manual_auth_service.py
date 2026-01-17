@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
 import pytz
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from app.domain.models.manual_authorization import ManualPunchAuthorization
+
 from app.core.config import settings
+from app.domain.models.manual_authorization import ManualPunchAuthorization
 
 
 class ManualAuthService:
