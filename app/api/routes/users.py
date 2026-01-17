@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
+from app.core.mqtt import mqtt
 from app.domain.models.user import User
 from app.domain.models.enums import UserRole
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
+from app.schemas.mqtt import EnrollStartPayload
 from app.repositories.user_repository import user_repository
 from app.services.user_service import user_service
 from app.services.manual_auth_service import manual_auth_service
@@ -69,19 +71,13 @@ def read_user_me(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    """
-    Get current user.
-    Calculates dynamic permission for manual punch.
-    """
     can_punch = False
 
-    # Regra: Manager/Maintainer sempre pode, Employee precisa de autorizacao
     if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
         can_punch = True
     else:
         can_punch = manual_auth_service.check_authorization(db, current_user.id)
 
-    # Injeta o valor calculado na resposta
     user_data = jsonable_encoder(current_user)
     user_data['can_manual_punch'] = can_punch
 
@@ -120,3 +116,19 @@ def update_user(
         )
     user = user_repository.update(db, db_obj=user, obj_in=user_in)
     return user
+
+
+@router.post("/{user_id}/enroll")
+def enroll_user_biometric(
+        user_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager),
+) -> Any:
+    user = user_repository.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    payload = EnrollStartPayload(user_id=user.id, user_name=user.full_name)
+    mqtt.publish("mh7/admin/enroll/start", payload.model_dump_json())
+
+    return {"status": "success", "message": "Enrollment command sent to device"}
