@@ -1,21 +1,22 @@
-import logging
 import json
-from datetime import datetime
+import logging
 import pytz
+from datetime import datetime
 from pydantic import ValidationError
-from app.core.mqtt import mqtt
+
 from app.core.config import settings
+from app.core.mqtt import mqtt
+from app.database.session import SessionLocal
 from app.domain.models import UserBiometric
 from app.domain.models.enums import UserRole
+from app.repositories.user_repository import user_repository
 from app.schemas.mqtt import (
     PunchPayload, FeedbackPayload, DeviceActions, TimeResponsePayload,
     BiometricSyncAck, AdminAuthRequest, AdminAuthResponse,
     EnrollResultPayload, UserListResponse, UserItem
 )
-from app.services.punch_service import punch_service
 from app.services.biometric_service import biometric_service
-from app.repositories.user_repository import user_repository
-from app.database.session import SessionLocal
+from app.services.punch_service import punch_service
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ async def handle_punch(client, topic, payload, qos, properties):
             db.close()
 
         if success and record:
-            user_first_name = record.user.full_name.split()[0] if record.user.full_name else "Usuario"
+            user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
             time_formatted = record.timestamp.strftime('%H:%M')
             type_label = "Entrada" if record.type == "entry" else "Saida"
             response = FeedbackPayload(
@@ -106,7 +107,7 @@ async def handle_admin_auth(client, topic, payload, qos, properties):
             biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == auth_req.sensor_index).first()
             if biometric and biometric.user:
                 user = biometric.user
-                user_name = user.full_name.split()[0] if user.full_name else "Usuario"
+                user_name = user.name.split()[0] if user.name else "Usuario"
                 if user.is_active and user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
                     authorized = True
         finally:
@@ -169,7 +170,7 @@ async def handle_users_req(client, topic, payload, qos, properties):
     try:
         users = user_repository.get_multi(db, limit=1000)
         active_users = [
-            UserItem(id=u.id, name=u.full_name[:16])
+            UserItem(id=u.id, name=u.name[:16])
             for u in users if u.is_active
         ]
 
