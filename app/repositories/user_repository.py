@@ -1,16 +1,15 @@
+from typing import List, Optional
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.core.security import get_password_hash
 from app.domain.models.user import User, WorkSchedule
 from app.schemas.user import UserCreate, UserUpdate
 
-
 class UserRepository:
-    def get_by_username(self, db: Session, username: str) -> User | None:
+    def get_by_username(self, db: Session, username: str) -> Optional[User]:
         return db.query(User).filter(User.username == username).first()
 
-    def get(self, db: Session, user_id: int) -> User | None:
+    def get(self, db: Session, user_id: int) -> Optional[User]:
         return db.query(User).filter(User.id == user_id).first()
 
     def get_multi(self, db: Session, skip: int = 0, limit: int = 100) -> List[User]:
@@ -24,15 +23,14 @@ class UserRepository:
 
     def create(self, db: Session, user_in: UserCreate) -> User:
         db_user = User(
-            name=user_in.name,
             username=user_in.username,
-            # AQUI: O repositório aplica o hash. Por isso initial_data não pode aplicar antes.
+            name=user_in.name,
             password_hash=get_password_hash(user_in.password),
             role=user_in.role,
             is_active=user_in.is_active
         )
 
-        if user_in.schedules:
+        if hasattr(user_in, 'schedules') and user_in.schedules:
             for sch in user_in.schedules:
                 db_sch = WorkSchedule(
                     day_of_week=sch.day_of_week,
@@ -58,7 +56,8 @@ class UserRepository:
             del update_data["password"]
 
         for field, value in update_data.items():
-            setattr(db_obj, field, value)
+            if hasattr(db_obj, field):
+                setattr(db_obj, field, value)
 
         if schedules_in is not None:
             db_obj.schedules = []
@@ -77,6 +76,5 @@ class UserRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
-
 
 user_repository = UserRepository()

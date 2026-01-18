@@ -217,3 +217,7 @@ __marimo__/
 
 spe.db
 /uploads
+
+# Mosquitto data and logs
+mosquitto/data/
+mosquitto/log/
