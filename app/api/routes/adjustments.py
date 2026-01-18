@@ -1,14 +1,13 @@
 import os
-from typing import Any, List
-
 from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
 from app.core.config import settings
-from app.domain.models.user import User
 from app.domain.models.enums import UserRole
+from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate, AdjustmentRequestResponse, \
     AdjustmentAttachmentResponse, AdjustmentWaiverCreate
@@ -70,7 +69,7 @@ def download_adjustment_attachment(
         raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
 
     attachment = adjustment.attachments[-1]
-    
+
     # Lógica Robusta:
     # Ignora o caminho completo salvo no banco (que pode ser de outro ambiente/Windows)
     # e reconstrói o caminho usando a configuração atual do servidor (Docker/Linux).
@@ -86,7 +85,7 @@ def download_adjustment_attachment(
             raise HTTPException(status_code=404, detail="Arquivo físico não encontrado no servidor")
 
     return FileResponse(
-        path=safe_file_path, 
+        path=safe_file_path,
         filename=filename,
         media_type='application/octet-stream'
     )
@@ -142,7 +141,8 @@ def edit_adjustment_request(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return adjustment_service.update_adjustment(db, id, request_in, current_user.id)
-    
+
+
 @router.delete("/{id}")
 def delete_adjustment(
         id: int,

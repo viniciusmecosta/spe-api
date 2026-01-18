@@ -1,7 +1,6 @@
 from datetime import date, time, datetime
-from typing import Optional, List
-
 from pydantic import BaseModel, computed_field
+from typing import Optional, List
 
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus
 

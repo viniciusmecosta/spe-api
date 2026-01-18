@@ -2,7 +2,6 @@ import os
 import shutil
 import uuid
 from datetime import datetime
-
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -43,16 +42,16 @@ class AdjustmentService:
             details=f"Absence waived for user {waiver_in.user_id} on {waiver_in.target_date} (Amount: {waiver_in.amount_hours})"
         )
         return adjustment
-        
+
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
             raise HTTPException(status_code=404, detail="Adjustment not found")
-            
+
         payroll_service.validate_period_open(db, request.target_date)
-        
+
         adjustment_repository.delete(db, adjustment_id)
-        
+
         audit_service.log(
             db, user_id=manager_id, action="DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
             details="Deleted adjustment/waiver"
@@ -121,7 +120,7 @@ class AdjustmentService:
         if request.adjustment_type == AdjustmentType.CERTIFICATE:
             if request.amount_hours is None or request.amount_hours <= 0:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail="Para aprovar um atestado, é obrigatório informar a quantidade de horas a abonar."
                 )
 
