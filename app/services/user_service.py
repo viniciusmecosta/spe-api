@@ -17,21 +17,20 @@ class UserService:
                 detail="The user with this username already exists.",
             )
 
-        schedules_in = user_in.schedules
+        schedules_in = getattr(user_in, 'schedules', None)
 
-        user_in.password = get_password_hash(user_in.password)
+        password_hash = get_password_hash(user_in.password)
 
         db_user = User(
             name=user_in.name,
             username=user_in.username,
-            password_hash=user_in.password,
+            password_hash=password_hash,
             role=user_in.role,
             is_active=user_in.is_active
         )
 
         if schedules_in:
             for sch in schedules_in:
-                # Validação de Segurança
                 if sch.daily_hours < 0 or sch.daily_hours > 24:
                     raise HTTPException(status_code=400, detail="Daily hours must be between 0 and 24")
 
@@ -69,7 +68,8 @@ class UserService:
             del update_data["password"]
 
         for field, value in update_data.items():
-            setattr(user, field, value)
+            if hasattr(user, field):
+                setattr(user, field, value)
 
         if schedules_in is not None:
             user.schedules.clear()

@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Any, Union
-
 from fastapi import Request
 from jose import jwt
 from passlib.context import CryptContext
+from typing import Any, Union
 
 from app.core.config import settings
 

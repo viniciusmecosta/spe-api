@@ -1,49 +1,33 @@
+from typing import Optional
 from datetime import datetime
-from typing import Optional, List
-
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 from app.domain.models.enums import UserRole
-from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate
-
 
 class UserBase(BaseModel):
-    username: str
-    name: str
-    role: UserRole = UserRole.EMPLOYEE
-    is_active: bool = True
-
-    @field_validator('username')
-    @classmethod
-    def username_to_lower(cls, v: str) -> str:
-        return v.lower()
-
+    username: Optional[str] = None
+    is_active: Optional[bool] = True
+    name: Optional[str] = None
+    role: Optional[UserRole] = UserRole.EMPLOYEE
 
 class UserCreate(UserBase):
+    username: str
     password: str
-    schedules: Optional[List[WorkScheduleCreate]] = []
+    role: UserRole = UserRole.EMPLOYEE
 
-
-class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    username: Optional[str] = None
+class UserUpdate(UserBase):
     password: Optional[str] = None
-    is_active: Optional[bool] = None
-    schedules: Optional[List[WorkScheduleCreate]] = None
 
-    @field_validator('username')
-    @classmethod
-    def username_to_lower(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            return v.lower()
-        return v
-
-
-class UserResponse(UserBase):
+class UserInDBBase(UserBase):
     id: int
-    created_at: datetime
-    updated_at: datetime
-    schedules: List[WorkSchedule] = []
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+class User(UserInDBBase):
+    pass
+
+class UserResponse(UserInDBBase):
+    can_manual_punch: bool = False

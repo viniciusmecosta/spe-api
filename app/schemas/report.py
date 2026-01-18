@@ -1,7 +1,6 @@
 from datetime import date
-from typing import List, Optional
-
 from pydantic import BaseModel
+from typing import List, Optional
 
 
 class DailyReportItem(BaseModel):
@@ -13,7 +12,7 @@ class DailyReportItem(BaseModel):
     entries: List[str]
     exits: List[str]
     punches: List[str]
-    
+
     adjustment_id: Optional[int] = None
 
     worked_hours: float
