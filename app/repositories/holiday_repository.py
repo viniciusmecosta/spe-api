@@ -1,6 +1,7 @@
 from datetime import date
-from sqlalchemy.orm import Session
 from typing import List
+
+from sqlalchemy.orm import Session
 
 from app.domain.models.holiday import Holiday
 from app.schemas.holiday import HolidayCreate

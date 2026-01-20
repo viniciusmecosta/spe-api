@@ -1,8 +1,8 @@
 import asyncio
 import logging
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.core.mqtt import mqtt
 from app.domain.models import UserBiometric

@@ -1,14 +1,15 @@
 import json
 import logging
-import pytz
 from datetime import datetime
+
+import pytz
 from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.mqtt import mqtt
 from app.database.session import SessionLocal
 from app.domain.models import UserBiometric
-from app.domain.models.enums import UserRole
+from app.domain.models.enums import UserRole, RecordType
 from app.repositories.user_repository import user_repository
 from app.schemas.mqtt import (
     PunchPayload, FeedbackPayload, DeviceActions, TimeResponsePayload,
@@ -34,8 +35,11 @@ async def handle_punch(client, topic, payload, qos, properties):
 
         if success and record:
             user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
-            time_formatted = record.timestamp.strftime('%H:%M')
-            type_label = "Entrada" if record.type == "entry" else "Saida"
+
+            time_formatted = record.record_datetime.strftime('%H:%M')
+
+            type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
+
             response = FeedbackPayload(
                 request_id=punch_data.request_id,
                 line1=f"Ola, {user_first_name[:11]}",

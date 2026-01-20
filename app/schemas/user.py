@@ -1,8 +1,10 @@
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel
 
 from app.domain.models.enums import UserRole
+
 
 class UserBase(BaseModel):
     username: Optional[str] = None
@@ -10,13 +12,16 @@ class UserBase(BaseModel):
     name: Optional[str] = None
     role: Optional[UserRole] = UserRole.EMPLOYEE
 
+
 class UserCreate(UserBase):
     username: str
     password: str
     role: UserRole = UserRole.EMPLOYEE
 
+
 class UserUpdate(UserBase):
     password: Optional[str] = None
+
 
 class UserInDBBase(UserBase):
     id: int
@@ -26,8 +31,10 @@ class UserInDBBase(UserBase):
     class Config:
         from_attributes = True
 
+
 class User(UserInDBBase):
     pass
+
 
 class UserResponse(UserInDBBase):
     can_manual_punch: bool = False

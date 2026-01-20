@@ -1,7 +1,8 @@
+from typing import Any, List
+
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
 from app.core.mqtt import mqtt
