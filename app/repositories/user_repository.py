@@ -1,9 +1,11 @@
 from typing import List, Optional
+
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.domain.models.user import User, WorkSchedule
 from app.schemas.user import UserCreate, UserUpdate
+
 
 class UserRepository:
     def get_by_username(self, db: Session, username: str) -> Optional[User]:
@@ -76,5 +78,6 @@ class UserRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
 
 user_repository = UserRepository()

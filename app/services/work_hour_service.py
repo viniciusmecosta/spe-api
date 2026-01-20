@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime, date, timedelta
+
+import pytz
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -21,7 +22,7 @@ class WorkHourService:
         user = user_repository.get(db, user_id)
         holidays = holiday_repository.get_all(db)
 
-        has_schedule = bool(user.work_schedules)
+        has_schedule = bool(user.schedules)
 
         total_seconds = 0.0
         entry_time = None
@@ -33,7 +34,6 @@ class WorkHourService:
                 delta = record.record_datetime - entry_time
                 seconds = delta.total_seconds()
 
-                # Ignora turnos maiores que 24h (provável erro de ponto)
                 if seconds <= 86400:
                     total_seconds += seconds
 
@@ -49,7 +49,7 @@ class WorkHourService:
 
             if not is_holiday and has_schedule:
                 weekday = current_date.weekday()
-                schedule = next((s for s in user.work_schedules if s.day_of_week == weekday), None)
+                schedule = next((s for s in user.schedules if s.day_of_week == weekday), None)
 
                 if schedule:
                     expected_hours += schedule.daily_hours
