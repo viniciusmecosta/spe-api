@@ -1,4 +1,5 @@
 import logging
+
 from fastapi_mqtt import FastMQTT, MQTTConfig
 
 from app.core.config import settings
