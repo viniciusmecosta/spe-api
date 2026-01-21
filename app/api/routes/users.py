@@ -1,7 +1,8 @@
+from typing import Any, List
+
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
 from app.core.mqtt import mqtt
@@ -71,6 +72,8 @@ def read_user_me(
     can_punch = False
 
     if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+        can_punch = True
+    elif current_user.can_manual_punch:
         can_punch = True
     else:
         can_punch = manual_auth_service.check_authorization(db, current_user.id)

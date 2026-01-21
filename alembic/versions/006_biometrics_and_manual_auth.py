@@ -1,6 +1,7 @@
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 revision = '006'
 down_revision = '005'
@@ -10,27 +11,29 @@ depends_on = None
 
 def upgrade() -> None:
     op.create_table('user_biometrics',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('template_data', sa.String(), nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+                    sa.Column('id', sa.Integer(), nullable=False),
+                    sa.Column('user_id', sa.Integer(), nullable=False),
+                    sa.Column('template_data', sa.String(), nullable=False),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                              nullable=True),
+                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.PrimaryKeyConstraint('id')
+                    )
     op.create_index(op.f('ix_user_biometrics_id'), 'user_biometrics', ['id'], unique=False)
 
     op.create_table('manual_authorizations',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('authorized_by_id', sa.Integer(), nullable=False),
-        sa.Column('start_time', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('end_time', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('reason', sa.String(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
-        sa.ForeignKeyConstraint(['authorized_by_id'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
+                    sa.Column('id', sa.Integer(), nullable=False),
+                    sa.Column('user_id', sa.Integer(), nullable=False),
+                    sa.Column('authorized_by_id', sa.Integer(), nullable=False),
+                    sa.Column('start_time', sa.DateTime(timezone=True), nullable=False),
+                    sa.Column('end_time', sa.DateTime(timezone=True), nullable=False),
+                    sa.Column('reason', sa.String(), nullable=True),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                              nullable=True),
+                    sa.ForeignKeyConstraint(['authorized_by_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.PrimaryKeyConstraint('id')
+                    )
     op.create_index(op.f('ix_manual_authorizations_id'), 'manual_authorizations', ['id'], unique=False)
 
     with op.batch_alter_table('time_records', schema=None) as batch_op:
@@ -52,9 +55,13 @@ def upgrade() -> None:
             batch_op.add_column(sa.Column('username', sa.String(), nullable=True))
             batch_op.create_unique_constraint('uq_users_username', ['username'])
 
+        if 'can_manual_punch' not in columns:
+            batch_op.add_column(sa.Column('can_manual_punch', sa.Boolean(), server_default=sa.true(), nullable=False))
+
 
 def downgrade() -> None:
     with op.batch_alter_table('users', schema=None) as batch_op:
+        batch_op.drop_column('can_manual_punch')
         batch_op.drop_constraint('uq_users_username', type_='unique')
         batch_op.drop_column('username')
 

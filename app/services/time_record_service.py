@@ -1,6 +1,7 @@
+from datetime import datetime
+
 import ntplib
 import pytz
-from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
 
@@ -33,16 +34,19 @@ class TimeRecordService:
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Managers e Maintainers sempre podem
         if user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
             return
 
-        # Employees precisam de autorizacao explicita
-        if not manual_auth_service.check_authorization(db, user_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registro manual não autorizado. Utilize a biometria ou solicite liberação ao gestor."
-            )
+        if user.can_manual_punch:
+            return
+
+        if manual_auth_service.check_authorization(db, user_id):
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registro manual não autorizado. Utilize a biometria ou solicite liberação ao gestor."
+        )
 
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id)
