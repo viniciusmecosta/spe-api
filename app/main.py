@@ -14,7 +14,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes import api_router
 from app.core.config import settings
 from app.core.mqtt import mqtt
-# Importa listeners para registrar os decorators @mqtt.subscribe
 from app.services.backup_service import backup_service
 
 logging.basicConfig(level=logging.INFO)
