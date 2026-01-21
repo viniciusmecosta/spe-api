@@ -73,6 +73,8 @@ def read_user_me(
 
     if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
         can_punch = True
+    elif current_user.can_manual_punch:
+        can_punch = True
     else:
         can_punch = manual_auth_service.check_authorization(db, current_user.id)
 
