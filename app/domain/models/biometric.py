@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text
+from sqlalchemy import Column, Integer, ForeignKey, String, LargeBinary, DateTime
 from sqlalchemy.orm import relationship
-
+from datetime import datetime
 from app.database.base import Base
 
 
@@ -9,9 +9,9 @@ class UserBiometric(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    sensor_index = Column(Integer, nullable=False, unique=True)
-    template_data = Column(Text, nullable=False)
-    label = Column(String, nullable=True)
+    sensor_index = Column(Integer, nullable=True)
+    template_data = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="biometrics")
     time_records = relationship("TimeRecord", back_populates="biometric")
