@@ -41,7 +41,7 @@ async def handle_punch(client, topic, payload, qos, properties):
                 line1=f"Ola, {user_first_name[:11]}",
                 line2=f"{type_label} {time_formatted}",
                 actions=DeviceActions(
-                    led_color="green", led_duration_ms=3000, buzzer_pattern=1, buzzer_duration_ms=500
+                    buzzer_pattern=1, buzzer_duration_ms=500
                 )
             )
         else:
@@ -50,7 +50,7 @@ async def handle_punch(client, topic, payload, qos, properties):
                 line1="Erro",
                 line2=message[:16],
                 actions=DeviceActions(
-                    led_color="red", led_duration_ms=3000, buzzer_pattern=2, buzzer_duration_ms=1000
+                    buzzer_pattern=2, buzzer_duration_ms=1000
                 )
             )
         mqtt.publish("mh7/ponto/response", response.model_dump_json(), qos=2)
@@ -125,7 +125,7 @@ async def handle_enroll_result(client, topic, payload, qos, properties):
                     line1="Cadastro OK",
                     line2=f"ID: {result.sensor_index}",
                     actions=DeviceActions(
-                        led_color="green", led_duration_ms=2000, buzzer_pattern=1, buzzer_duration_ms=500
+                        buzzer_pattern=1, buzzer_duration_ms=500
                     )
                 )
             else:
@@ -134,7 +134,7 @@ async def handle_enroll_result(client, topic, payload, qos, properties):
                     line1="Erro Cadastro",
                     line2=msg[:16],
                     actions=DeviceActions(
-                        led_color="red", led_duration_ms=2000, buzzer_pattern=2, buzzer_duration_ms=1000
+                        buzzer_pattern=2, buzzer_duration_ms=1000
                     )
                 )
         finally:
