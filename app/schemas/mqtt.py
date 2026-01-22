@@ -9,8 +9,6 @@ class PunchPayload(BaseModel):
 
 
 class DeviceActions(BaseModel):
-    led_color: str
-    led_duration_ms: int
     buzzer_pattern: int
     buzzer_duration_ms: int
 
