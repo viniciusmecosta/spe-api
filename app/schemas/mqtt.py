@@ -1,6 +1,5 @@
+from pydantic import BaseModel
 from typing import Optional, List
-
-from pydantic import BaseModel, Field
 
 
 class PunchPayload(BaseModel):
@@ -41,17 +40,6 @@ class BiometricSyncAck(BaseModel):
     error: Optional[str] = None
 
 
-class AdminAuthRequest(BaseModel):
-    request_id: str
-    sensor_index: int
-
-
-class AdminAuthResponse(BaseModel):
-    request_id: str
-    authorized: bool
-    user_name: str
-
-
 class EnrollStartPayload(BaseModel):
     user_id: int
     user_name: str
@@ -63,12 +51,3 @@ class EnrollResultPayload(BaseModel):
     template_data: str
     success: bool
     error: Optional[str] = None
-
-
-class UserItem(BaseModel):
-    id: int
-    name: str
-
-
-class UserListResponse(BaseModel):
-    users: List[UserItem]

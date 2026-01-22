@@ -1,73 +1,69 @@
-import asyncio
+import json
 import logging
-
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.mqtt import mqtt
-from app.domain.models import UserBiometric
-from app.schemas.mqtt import BiometricSyncData, BiometricSyncAck, EnrollResultPayload
+from app.domain.models.biometric import UserBiometric
+from app.domain.models.user import User
+from app.schemas.mqtt import BiometricSyncData, EnrollResultPayload
 
 logger = logging.getLogger(__name__)
 
 
 class BiometricService:
     async def start_restore_process(self, db: Session):
-        biometrics = db.query(UserBiometric).all()
-        logger.info(f"Iniciando restore de {len(biometrics)} biometrias com QoS 2.")
+        """ Envia todas as biometrias para o ESP32 """
+        logger.info("Iniciando sync de biometrias...")
+        biometrics = db.query(UserBiometric).join(User).filter(
+            User.is_active == True,
+            UserBiometric.template_data.isnot(None)
+        ).all()
 
-        for bio in biometrics:
+        total = len(biometrics)
+        for index, bio in enumerate(biometrics):
             payload = BiometricSyncData(
                 biometric_id=bio.id,
                 template_data=bio.template_data,
                 user_id=bio.user_id
             )
-            mqtt.publish("mh7/admin/sync/data", payload.model_dump_json(), qos=2)
-            await asyncio.sleep(0.1)
+            await mqtt.publish("mh7/admin/sync/data", payload.model_dump_json(), qos=2)
+            logger.debug(f"Enviado {index + 1}/{total}")
 
-    def process_sync_ack(self, db: Session, ack: BiometricSyncAck):
-        if not ack.success:
-            return
+        await mqtt.publish("mh7/admin/sync/end", json.dumps({"total": total}), qos=2)
 
-        biometric = db.query(UserBiometric).filter(UserBiometric.id == ack.biometric_id).first()
-        if not biometric:
-            return
-
-        if biometric.sensor_index != ack.sensor_index:
-            existing = db.query(UserBiometric).filter(UserBiometric.sensor_index == ack.sensor_index).first()
-            if existing and existing.id != biometric.id:
-                existing.sensor_index = -1 * existing.id
-                db.add(existing)
-                db.flush()
-
-            biometric.sensor_index = ack.sensor_index
-            try:
-                db.add(biometric)
+    def process_sync_ack(self, db: Session, ack_data):
+        """
+        IMPORTANTE: Atualiza o sensor_index no banco quando o ESP confirma o salvamento
+        """
+        if ack_data.success:
+            bio = db.query(UserBiometric).filter(UserBiometric.id == ack_data.biometric_id).first()
+            if bio:
+                bio.sensor_index = ack_data.sensor_index
                 db.commit()
-            except IntegrityError:
-                db.rollback()
+                logger.info(f"Biometria {ack_data.biometric_id} vinculada ao Slot {ack_data.sensor_index}")
+        else:
+            logger.error(f"Erro Sync: {ack_data.error}")
 
-    def save_enrolled_biometric(self, db: Session, payload: EnrollResultPayload):
-        if not payload.success:
-            return False, "Enrollment failed on device"
-
-        existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == payload.sensor_index).first()
-        if existing_bio:
-            db.delete(existing_bio)
-            db.flush()
-
-        new_bio = UserBiometric(
-            user_id=payload.user_id,
-            sensor_index=payload.sensor_index,
-            template_data=payload.template_data,
-            label=f"Enroll via Device"
-        )
+    def save_enrolled_biometric(self, db: Session, result: EnrollResultPayload):
+        """ Salva novo cadastro vindo do ESP32 """
         try:
+            if not result.success:
+                return False, result.error
+
+            user = db.query(User).filter(User.id == result.user_id).first()
+            if not user:
+                return False, "Usuario nao encontrado"
+
+            new_bio = UserBiometric(
+                user_id=user.id,
+                template_data=result.template_data,
+                sensor_index=result.sensor_index
+            )
             db.add(new_bio)
             db.commit()
-            return True, "Biometric saved"
+            return True, "Sucesso"
         except Exception as e:
-            db.rollback()
+            logger.error(f"Erro Enroll: {e}")
             return False, str(e)
 
 
