@@ -1,7 +1,7 @@
 from datetime import datetime
-
 from sqlalchemy import desc, and_, distinct, func
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
@@ -38,6 +38,16 @@ class TimeRecordRepository:
         return db.query(TimeRecord).filter(
             and_(
                 TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_date,
+                TimeRecord.record_datetime <= end_date
+            )
+        ).order_by(TimeRecord.record_datetime).all()
+
+    def get_by_users_and_range(self, db: Session, user_ids: List[int], start_date: datetime, end_date: datetime) -> \
+    List[TimeRecord]:
+        return db.query(TimeRecord).filter(
+            and_(
+                TimeRecord.user_id.in_(user_ids),
                 TimeRecord.record_datetime >= start_date,
                 TimeRecord.record_datetime <= end_date
             )
