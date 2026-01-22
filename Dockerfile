@@ -19,6 +19,7 @@ RUN mkdir -p uploads
 EXPOSE 8000
 
 COPY ./entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
