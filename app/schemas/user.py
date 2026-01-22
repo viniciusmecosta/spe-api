@@ -4,7 +4,7 @@ from typing import Optional, List
 from pydantic import BaseModel, field_validator
 
 from app.domain.models.enums import UserRole
-from app.schemas.work_schedule import WorkScheduleCreate
+from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 
 
 class UserBase(BaseModel):
@@ -58,4 +58,4 @@ class User(UserInDBBase):
 
 
 class UserResponse(UserInDBBase):
-    pass
+    schedules: List[WorkSchedule] = []
