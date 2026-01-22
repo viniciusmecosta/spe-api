@@ -1,5 +1,4 @@
 from datetime import date
-
 from sqlalchemy import desc, and_
 from sqlalchemy.orm import Session
 

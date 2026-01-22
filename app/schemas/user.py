@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import Optional, List
-
 from pydantic import BaseModel, field_validator
+from typing import Optional, List
 
 from app.domain.models.enums import UserRole
 from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule

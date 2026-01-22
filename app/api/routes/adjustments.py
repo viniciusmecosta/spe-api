@@ -1,9 +1,8 @@
 import os
-from typing import Any, List
-
 from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
 from app.core.config import settings
