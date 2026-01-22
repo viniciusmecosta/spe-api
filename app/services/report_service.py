@@ -1,13 +1,13 @@
 import locale
+import pytz
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-from typing import List
-
-import pytz
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -42,7 +42,7 @@ class ReportService:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
         minutes = total_minutes % 60
-        return f"{hours:02d}:{minutes:02d}"
+        return f"{hours}h:{minutes:02d}min"
 
     def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
         tz = pytz.timezone(settings.TIMEZONE)
@@ -191,7 +191,10 @@ class ReportService:
             elif is_holiday:
                 status = "Feriado"
             elif is_weekend:
-                status = "Fim de Semana"
+                if worked_seconds > 0:
+                    status = "Normal"
+                else:
+                    status = "Fim de Semana"
             elif worked_seconds == 0 and expected_seconds > 0:
                 status = "Falta"
             elif not has_schedule and worked_seconds == 0:
@@ -281,12 +284,21 @@ class ReportService:
         green_font = Font(color="008000", bold=True)
         blue_font = Font(color="0000FF", bold=True)
         weekend_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        holiday_fill = PatternFill(start_color="FFE0B2", end_color="FFE0B2", fill_type="solid")
 
-        headers_sum = ["Nome do Colaborador", "Dias Trabalhados", "Faltas", "Horas Previstas", "Horas Trabalhadas"]
+        ws_summary.merge_cells('A1:C1')
+        title_cell = ws_summary['A1']
+        title_cell.value = f"Relatório de Gestão - {month}/{year}"
+        title_cell.font = Font(size=14, bold=True)
+        title_cell.alignment = Alignment(horizontal='center')
+
+        ws_summary.append([])
+
+        headers_sum = ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"]
         ws_summary.append(headers_sum)
 
         for col_num, header in enumerate(headers_sum, 1):
-            cell = ws_summary.cell(row=1, column=col_num)
+            cell = ws_summary.cell(row=3, column=col_num)
             cell.font = header_font
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal='center')
@@ -298,18 +310,16 @@ class ReportService:
             ws_summary.append([
                 sum_data.user_name,
                 sum_data.days_worked,
-                sum_data.absences,
-                sum_data.total_expected_time,
                 sum_data.total_worked_time
             ])
 
             last_row = ws_summary.max_row
-            for col in range(1, 6):
+            for col in range(1, 4):
                 ws_summary.cell(row=last_row, column=col).border = border
 
-        for col in ws_summary.columns:
+        for i, col in enumerate(ws_summary.columns, 1):
             max_length = 0
-            column = col[0].column_letter
+            column = get_column_letter(i)
             for cell in col:
                 try:
                     if len(str(cell.value)) > max_length:
@@ -325,14 +335,13 @@ class ReportService:
             sheet_name = f"{user.id}-{user.name.split()[0]}"[:30]
             ws_det = wb.create_sheet(title=sheet_name)
 
-            ws_det.merge_cells('A1:G1')
+            ws_det.merge_cells('A1:F1')
             title_cell = ws_det['A1']
             title_cell.value = f"Folha de Ponto: {user.name} - {month}/{year}"
             title_cell.font = Font(size=14, bold=True)
             title_cell.alignment = Alignment(horizontal='center')
 
-            headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trabalhado (Min)", "Trabalhado (Tempo)",
-                           "Previsto (Tempo)"]
+            headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trabalhado (Min)", "Trabalhado (Tempo)"]
             ws_det.append(headers_det)
 
             for col_num, header in enumerate(headers_det, 1):
@@ -350,9 +359,8 @@ class ReportService:
                     day.day_name,
                     day.status,
                     punches_str,
-                    day.worked_minutes,
-                    day.worked_time,
-                    day.expected_time
+                    f"{day.worked_minutes} min",
+                    day.worked_time
                 ]
                 ws_det.append(row_data)
                 last_row = ws_det.max_row
@@ -366,21 +374,23 @@ class ReportService:
                 elif "Feriado" in day.status:
                     status_cell.font = blue_font
 
-                if day.is_weekend:
-                    for col in range(1, 8):
+                if day.is_holiday:
+                    for col in range(1, 7):
+                        ws_det.cell(row=last_row, column=col).fill = holiday_fill
+                elif day.is_weekend:
+                    for col in range(1, 7):
                         ws_det.cell(row=last_row, column=col).fill = weekend_fill
 
-                for col in range(1, 8):
+                for col in range(1, 7):
                     ws_det.cell(row=last_row, column=col).border = border
 
             ws_det.append([])
             ws_det.append(["TOTAIS", "", "", "",
-                           report.summary.total_worked_minutes,
-                           report.summary.total_worked_time,
-                           report.summary.total_expected_time])
+                           f"{report.summary.total_worked_minutes} min",
+                           report.summary.total_worked_time])
 
             last_row = ws_det.max_row
-            for col in range(1, 8):
+            for col in range(1, 7):
                 cell = ws_det.cell(row=last_row, column=col)
                 cell.font = Font(bold=True)
                 cell.border = border
@@ -389,9 +399,8 @@ class ReportService:
             ws_det.column_dimensions['B'].width = 15
             ws_det.column_dimensions['C'].width = 20
             ws_det.column_dimensions['D'].width = 40
-            ws_det.column_dimensions['E'].width = 15
+            ws_det.column_dimensions['E'].width = 18
             ws_det.column_dimensions['F'].width = 20
-            ws_det.column_dimensions['G'].width = 20
 
         output = BytesIO()
         wb.save(output)
