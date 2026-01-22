@@ -70,7 +70,7 @@ class AnomalyService:
                             user_name=user_name,
                             date=current_date,
                             type="LONG_INTERVAL",
-                            description=f"Intervalo de {fmt_time} (limite 7h)"
+                            description=f"Intervalo de {fmt_time}"
                         ))
 
                     total_worked_seconds += seconds
@@ -92,7 +92,7 @@ class AnomalyService:
                 user_name=user_name,
                 date=current_date,
                 type="EXCESSIVE_HOURS",
-                description=f"Trabalhou {fmt_total} (limite 8h30)"
+                description=f"Trabalhou {fmt_total}"
             ))
 
         return anomalies
