@@ -1,21 +1,20 @@
 import logging
 import os
+import pytz
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List
-
-import pytz
 from sqlalchemy import func
+from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
+from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.domain.models.enums import RecordType
 
 logger = logging.getLogger(__name__)
 
