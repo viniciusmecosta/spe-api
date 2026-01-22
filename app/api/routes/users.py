@@ -1,8 +1,7 @@
-from typing import Any, List
-
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
 from app.core.mqtt import mqtt
@@ -132,7 +131,18 @@ def enroll_user_biometric(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    payload = EnrollStartPayload(user_id=user.id, user_name=user.name)
+    short_name = user.name[:15] if user.name else "Funcionario"
+
+    payload = EnrollStartPayload(user_id=user.id, user_name=short_name)
     mqtt.publish("mh7/admin/enroll/start", payload.model_dump_json(), qos=2)
 
-    return {"status": "success", "message": "Enrollment command sent to device"}
+    return {"status": "success", "message": "Comando de cadastro enviado para o dispositivo"}
+
+
+@router.post("/sync-devices")
+def trigger_force_sync(
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager),
+) -> Any:
+    mqtt.publish("mh7/admin/sync/trigger", "{}", qos=2)
+    return {"status": "success", "message": "Comando de sincronização enviado para todos os dispositivos."}
