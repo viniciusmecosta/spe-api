@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import pytz
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.api import deps
+from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.schemas.mqtt import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
-    BiometricSyncData, BiometricSyncAck
+    BiometricSyncData, BiometricSyncAck, TimeResponsePayload
 )
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
@@ -44,7 +47,7 @@ def register_device_punch(
         )
 
 
-@router.post("/enroll", status_code=200)
+@router.post("/enroll", response_model=FeedbackPayload)
 def enroll_device_biometric(
         payload: EnrollResultPayload,
         db: Session = Depends(deps.get_db),
@@ -53,15 +56,20 @@ def enroll_device_biometric(
     success, msg = biometric_service.save_enrolled_biometric(db, payload)
 
     if success:
-        return {
-            "status": "success",
-            "message": "Cadastro OK",
-            "actions": {"buzzer_pattern": 1, "buzzer_duration_ms": 500}
-        }
+        return FeedbackPayload(
+            line1="Cadastro OK",
+            line2=f"ID: {payload.sensor_index}",
+            actions=DeviceActions(
+                buzzer_pattern=1, buzzer_duration_ms=500
+            )
+        )
     else:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": msg, "actions": {"buzzer_pattern": 2, "buzzer_duration_ms": 1000}}
+        return FeedbackPayload(
+            line1="Erro Cadastro",
+            line2=msg[:16],
+            actions=DeviceActions(
+                buzzer_pattern=2, buzzer_duration_ms=1000
+            )
         )
 
 
@@ -81,3 +89,15 @@ def sync_device_ack(
 ):
     biometric_service.process_sync_ack(db, payload)
     return {"status": "success"}
+
+
+@router.get("/time", response_model=TimeResponsePayload)
+def get_device_time(
+        api_key: str = Depends(deps.verify_api_key)
+):
+    tz = pytz.timezone(settings.TIMEZONE)
+    now = datetime.now(tz)
+    return TimeResponsePayload(
+        unix=int(now.timestamp()),
+        formatted=now.strftime("%d/%m/%Y %H:%M:%S")
+    )
