@@ -1,11 +1,15 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, Any
+
+
+class DevicePunchRequest(BaseModel):
+    sensor_index: int
 
 
 class PunchPayload(BaseModel):
-    request_id: str
     sensor_index: int
-    timestamp_device: int
+    biometric_id: Optional[int] = None
+    user_id: Optional[int] = None
 
 
 class DeviceActions(BaseModel):
@@ -14,10 +18,22 @@ class DeviceActions(BaseModel):
 
 
 class FeedbackPayload(BaseModel):
-    request_id: str
     line1: str
     line2: str
     actions: DeviceActions
+
+
+class EnrollStartPayload(BaseModel):
+    user_id: int
+    user_name: str
+
+
+class EnrollResultPayload(BaseModel):
+    user_id: int
+    sensor_index: int
+    success: bool
+    template_data: Optional[str] = None
+    error: Optional[str] = None
 
 
 class TimeResponsePayload(BaseModel):
@@ -34,18 +50,5 @@ class BiometricSyncData(BaseModel):
 class BiometricSyncAck(BaseModel):
     biometric_id: int
     sensor_index: int
-    success: bool
-    error: Optional[str] = None
-
-
-class EnrollStartPayload(BaseModel):
-    user_id: int
-    user_name: str
-
-
-class EnrollResultPayload(BaseModel):
-    user_id: int
-    sensor_index: int
-    template_data: str
     success: bool
     error: Optional[str] = None
