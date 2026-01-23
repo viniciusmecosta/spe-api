@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -20,7 +20,6 @@ def register_device_punch(
         db: Session = Depends(deps.get_db),
         api_key: str = Depends(deps.verify_api_key)
 ):
-    # Passamos apenas o sensor_index, o servico decide o horario
     success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index)
 
     if success and record:
@@ -36,7 +35,6 @@ def register_device_punch(
             )
         )
     else:
-        # Em caso de erro, retornamos feedback visual/sonoro de erro
         return FeedbackPayload(
             line1="Erro",
             line2=message[:16],

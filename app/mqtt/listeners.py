@@ -27,7 +27,7 @@ async def handle_punch(client, topic, payload, qos, properties):
         punch_data = PunchPayload(**data)
         db = SessionLocal()
         try:
-            success, message, record = punch_service.process_biometric_punch(db, punch_data)
+            success, message, record = punch_service.process_biometric_punch(db, punch_data.sensor_index)
         finally:
             db.close()
 
@@ -37,7 +37,6 @@ async def handle_punch(client, topic, payload, qos, properties):
             type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
 
             response = FeedbackPayload(
-                request_id=punch_data.request_id,
                 line1=f"Ola, {user_first_name[:11]}",
                 line2=f"{type_label} {time_formatted}",
                 actions=DeviceActions(
@@ -46,7 +45,6 @@ async def handle_punch(client, topic, payload, qos, properties):
             )
         else:
             response = FeedbackPayload(
-                request_id=punch_data.request_id,
                 line1="Erro",
                 line2=message[:16],
                 actions=DeviceActions(
@@ -121,7 +119,6 @@ async def handle_enroll_result(client, topic, payload, qos, properties):
 
             if success:
                 feedback_response = FeedbackPayload(
-                    request_id="enroll_result",
                     line1="Cadastro OK",
                     line2=f"ID: {result.sensor_index}",
                     actions=DeviceActions(
@@ -130,7 +127,6 @@ async def handle_enroll_result(client, topic, payload, qos, properties):
                 )
             else:
                 feedback_response = FeedbackPayload(
-                    request_id="enroll_result",
                     line1="Erro Cadastro",
                     line2=msg[:16],
                     actions=DeviceActions(
