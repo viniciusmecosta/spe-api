@@ -139,5 +139,21 @@ class TimeRecordService:
         audit_service.log(db, user_id=manager_id, action="DELETE_RECORD_ADMIN", entity="TIME_RECORD",
                           entity_id=record_id, details="Deleted time record")
 
+    def create_punch(self, db: Session, user_id: int, timestamp: datetime) -> TimeRecord:
+        last_record = time_record_repository.get_last_by_user(db, user_id)
+
+        record_type = RecordType.ENTRY
+        if last_record and last_record.record_type == RecordType.ENTRY:
+            record_type = RecordType.EXIT
+
+        return time_record_repository.create(
+            db,
+            user_id=user_id,
+            record_type=record_type,
+            record_datetime=timestamp,
+            ip_address="DEVICE",
+            is_time_verified=True
+        )
+
 
 time_record_service = TimeRecordService()
