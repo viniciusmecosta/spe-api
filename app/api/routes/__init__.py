@@ -10,7 +10,8 @@ from app.api.routes import (
     reports,
     payroll,
     work_hours,
-    anomalies
+    anomalies,
+    device
 )
 
 api_router = APIRouter()
@@ -25,3 +26,4 @@ api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["payroll"])
 api_router.include_router(work_hours.router, prefix="/work-hours", tags=["work-hours"])
 api_router.include_router(anomalies.router, prefix="/anomalies", tags=["anomalies"])
+api_router.include_router(device.router, prefix="/device", tags=["device"])

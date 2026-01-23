@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
 
+    DEVICE_API_KEY: str
+
     UPLOAD_DIR: str = os.path.join(ROOT_DIR, "uploads")
 
     SMTP_HOST: Optional[str] = None
@@ -46,6 +48,7 @@ except Exception:
         SECRET_KEY="insecure-default-key-change-this-in-production",
         FIRST_SUPERUSER="admin",
         FIRST_SUPERUSER_PASSWORD="adminpassword",
+        DEVICE_API_KEY="insecure-device-key",
         BACKEND_CORS_ORIGINS=["*"],
         MQTT_BROKER="mosquitto",
         MQTT_PORT=1883,
