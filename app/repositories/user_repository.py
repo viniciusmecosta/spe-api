@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from app.core.security import get_password_hash
 from app.domain.models.user import User, WorkSchedule
+from app.domain.models.biometric import UserBiometric
 from app.schemas.user import UserCreate, UserUpdate
 
 
@@ -39,6 +40,28 @@ class UserRepository:
                 )
                 db_user.schedules.append(db_sch)
 
+        if hasattr(user_in, 'biometrics') and user_in.biometrics:
+            seen_indices = set()
+            for bio in user_in.biometrics:
+                if bio.sensor_index is not None:
+                    if bio.sensor_index in seen_indices:
+                        raise ValueError(f"O index {bio.sensor_index} foi enviado duplicado na mesma requisicao.")
+                    seen_indices.add(bio.sensor_index)
+
+                    existing = db.query(UserBiometric).filter(
+                        UserBiometric.sensor_index == bio.sensor_index
+                    ).first()
+                    if existing:
+                        user_name = existing.user.name if existing.user else "Desconhecido"
+                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
+
+                db_bio = UserBiometric(
+                    sensor_index=bio.sensor_index,
+                    template_data=bio.template_data,
+                    description=bio.description
+                )
+                db_user.biometrics.append(db_bio)
+
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
@@ -51,6 +74,7 @@ class UserRepository:
             update_data = obj_in.model_dump(exclude_unset=True)
 
         schedules_in = update_data.pop("schedules", None)
+        biometrics_in = update_data.pop("biometrics", None)
 
         if "password" in update_data and update_data["password"]:
             update_data["password_hash"] = get_password_hash(update_data["password"])
@@ -72,6 +96,55 @@ class UserRepository:
 
                 new_sch = WorkSchedule(day_of_week=day, daily_hours=hours)
                 db_obj.schedules.append(new_sch)
+
+        if biometrics_in is not None:
+            current_biometrics = {b.id: b for b in db_obj.biometrics}
+            incoming_ids = set()
+            new_biometrics_list = []
+            seen_indices = set()
+
+            for bio_data in biometrics_in:
+                if isinstance(bio_data, dict):
+                    bio_id = bio_data.get('id')
+                    sensor_idx = bio_data.get('sensor_index')
+                    tmpl_data = bio_data.get('template_data')
+                    desc = bio_data.get('description')
+                else:
+                    bio_id = bio_data.id
+                    sensor_idx = bio_data.sensor_index
+                    tmpl_data = bio_data.template_data
+                    desc = bio_data.description
+
+                if sensor_idx is not None:
+                    if sensor_idx in seen_indices:
+                        raise ValueError(f"O index {sensor_idx} foi enviado duplicado na mesma requisicao.")
+                    seen_indices.add(sensor_idx)
+
+                    existing = db.query(UserBiometric).filter(
+                        UserBiometric.sensor_index == sensor_idx,
+                        UserBiometric.user_id != db_obj.id
+                    ).first()
+                    if existing:
+                        user_name = existing.user.name if existing.user else "Desconhecido"
+                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
+
+                if bio_id and bio_id in current_biometrics:
+                    incoming_ids.add(bio_id)
+                    existing = current_biometrics[bio_id]
+                    existing.sensor_index = sensor_idx
+                    if tmpl_data is not None:
+                        existing.template_data = tmpl_data
+                    existing.description = desc
+                    new_biometrics_list.append(existing)
+                else:
+                    new_bio = UserBiometric(
+                        sensor_index=sensor_idx,
+                        template_data=tmpl_data,
+                        description=desc
+                    )
+                    new_biometrics_list.append(new_bio)
+
+            db_obj.biometrics = new_biometrics_list
 
         db.add(db_obj)
         db.commit()

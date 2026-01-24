@@ -4,6 +4,7 @@ from typing import Optional, List
 
 from app.domain.models.enums import UserRole
 from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
+from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse
 
 
 class UserBase(BaseModel):
@@ -24,6 +25,7 @@ class UserCreate(UserBase):
     password: str
     role: UserRole = UserRole.EMPLOYEE
     schedules: List[WorkScheduleCreate] = []
+    biometrics: List[UserBiometricCreate] = []
 
 
 class UserUpdate(BaseModel):
@@ -34,6 +36,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     can_manual_punch: Optional[bool] = None
     schedules: Optional[List[WorkScheduleCreate]] = None
+    biometrics: Optional[List[UserBiometricUpdate]] = None
 
     @field_validator('username')
     @classmethod
@@ -58,3 +61,4 @@ class User(UserInDBBase):
 
 class UserResponse(UserInDBBase):
     schedules: List[WorkSchedule] = []
+    biometrics: List[UserBiometricResponse] = []

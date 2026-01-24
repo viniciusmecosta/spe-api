@@ -4,11 +4,9 @@ from sqlalchemy.orm import Session
 from typing import Any, List
 
 from app.api import deps
-from app.core.mqtt import mqtt
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.schemas.mqtt import EnrollStartPayload
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.services.manual_auth_service import manual_auth_service
 from app.services.user_service import user_service
@@ -40,8 +38,11 @@ def create_user(
             status_code=400,
             detail="O nome de usuário já existe no sistema.",
         )
-    user = user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
-    return user
+    try:
+        user = user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/me", response_model=UserResponse)
@@ -59,8 +60,11 @@ def update_user_me(
     if name is not None:
         user_in.name = name
 
-    user = user_repository.update(db, db_obj=current_user, obj_in=user_in)
-    return user
+    try:
+        user = user_repository.update(db, db_obj=current_user, obj_in=user_in)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/me", response_model=UserResponse)
@@ -110,51 +114,9 @@ def update_user(
     user = user_repository.get(db, user_id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    user = user_repository.update(db, db_obj=user, obj_in=user_in)
-    return user
-
-
-@router.post("/{user_id}/enroll", status_code=200)
-async def enroll_user_biometric(
-        user_id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager),
-) -> Any:
-    user = user_repository.get(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado para cadastro.")
-
-    short_name = user.name.split()[0]
-    if len(short_name) > 15:
-        short_name = short_name[:15]
-
-    payload = EnrollStartPayload(
-        user_id=user.id,
-        user_name=short_name
-    )
 
     try:
-        mqtt.publish("mh7/admin/enroll/start", payload.model_dump_json(), qos=2)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao comunicar com o dispositivo: {str(e)}")
-
-    return {
-        "status": "success",
-        "message": f"Comando enviado. O dispositivo aguarda a digital de {short_name}."
-    }
-
-
-@router.post("/sync-devices", status_code=200)
-async def trigger_global_sync(
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager),
-) -> Any:
-    try:
-        mqtt.publish("mh7/admin/sync/trigger", "{}", qos=2)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao enviar comando de sync: {str(e)}")
-
-    return {
-        "status": "success",
-        "message": "Processo de sincronização iniciado em todos os dispositivos."
-    }
+        user = user_repository.update(db, db_obj=user, obj_in=user_in)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
