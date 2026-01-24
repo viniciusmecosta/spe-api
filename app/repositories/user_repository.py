@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from app.core.security import get_password_hash
 from app.domain.models.user import User, WorkSchedule
@@ -41,7 +41,20 @@ class UserRepository:
                 db_user.schedules.append(db_sch)
 
         if hasattr(user_in, 'biometrics') and user_in.biometrics:
+            seen_indices = set()
             for bio in user_in.biometrics:
+                if bio.sensor_index is not None:
+                    if bio.sensor_index in seen_indices:
+                        raise ValueError(f"O index {bio.sensor_index} foi enviado duplicado na mesma requisicao.")
+                    seen_indices.add(bio.sensor_index)
+
+                    existing = db.query(UserBiometric).filter(
+                        UserBiometric.sensor_index == bio.sensor_index
+                    ).first()
+                    if existing:
+                        user_name = existing.user.name if existing.user else "Desconhecido"
+                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
+
                 db_bio = UserBiometric(
                     sensor_index=bio.sensor_index,
                     template_data=bio.template_data,
@@ -88,6 +101,7 @@ class UserRepository:
             current_biometrics = {b.id: b for b in db_obj.biometrics}
             incoming_ids = set()
             new_biometrics_list = []
+            seen_indices = set()
 
             for bio_data in biometrics_in:
                 if isinstance(bio_data, dict):
@@ -100,6 +114,19 @@ class UserRepository:
                     sensor_idx = bio_data.sensor_index
                     tmpl_data = bio_data.template_data
                     desc = bio_data.description
+
+                if sensor_idx is not None:
+                    if sensor_idx in seen_indices:
+                        raise ValueError(f"O index {sensor_idx} foi enviado duplicado na mesma requisicao.")
+                    seen_indices.add(sensor_idx)
+
+                    existing = db.query(UserBiometric).filter(
+                        UserBiometric.sensor_index == sensor_idx,
+                        UserBiometric.user_id != db_obj.id
+                    ).first()
+                    if existing:
+                        user_name = existing.user.name if existing.user else "Desconhecido"
+                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
 
                 if bio_id and bio_id in current_biometrics:
                     incoming_ids.add(bio_id)

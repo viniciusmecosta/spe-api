@@ -38,8 +38,11 @@ def create_user(
             status_code=400,
             detail="O nome de usuário já existe no sistema.",
         )
-    user = user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
-    return user
+    try:
+        user = user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/me", response_model=UserResponse)
@@ -57,8 +60,11 @@ def update_user_me(
     if name is not None:
         user_in.name = name
 
-    user = user_repository.update(db, db_obj=current_user, obj_in=user_in)
-    return user
+    try:
+        user = user_repository.update(db, db_obj=current_user, obj_in=user_in)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/me", response_model=UserResponse)
@@ -108,5 +114,9 @@ def update_user(
     user = user_repository.get(db, user_id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    user = user_repository.update(db, db_obj=user, obj_in=user_in)
-    return user
+
+    try:
+        user = user_repository.update(db, db_obj=user, obj_in=user_in)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
