@@ -85,7 +85,7 @@ class AnomalyService:
                 description="Entrada sem saída"
             ))
 
-        if total_worked_seconds > (8.5 * 3600):
+        if total_worked_seconds > (9 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
             anomalies.append(AnomalyResponse(
                 user_id=user_id,
