@@ -1,6 +1,6 @@
 import pytz
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -23,24 +23,36 @@ def register_device_punch(
         db: Session = Depends(deps.get_db),
         api_key: str = Depends(deps.verify_api_key)
 ):
-    success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index)
+    try:
+        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index)
 
-    if success and record:
-        user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
-        time_formatted = record.record_datetime.strftime('%H:%M')
-        type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
+        if success and record:
+            user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
+            time_formatted = record.record_datetime.strftime('%H:%M')
+            type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
 
-        return FeedbackPayload(
-            line1=f"Ola, {user_first_name[:11]}",
-            line2=f"{type_label} {time_formatted}",
-            actions=DeviceActions(
-                buzzer_pattern=1, buzzer_duration_ms=500
+            return FeedbackPayload(
+                line1=f"Ola, {user_first_name[:11]}",
+                line2=f"{type_label} {time_formatted}",
+                led="green",
+                actions=DeviceActions(
+                    buzzer_pattern=1, buzzer_duration_ms=500
+                )
             )
-        )
-    else:
+        else:
+            return FeedbackPayload(
+                line1="Erro",
+                line2=message[:16],
+                led="red",
+                actions=DeviceActions(
+                    buzzer_pattern=2, buzzer_duration_ms=1000
+                )
+            )
+    except Exception as e:
         return FeedbackPayload(
-            line1="Erro",
-            line2=message[:16],
+            line1="Erro Interno",
+            line2="Contate Admin",
+            led="red",
             actions=DeviceActions(
                 buzzer_pattern=2, buzzer_duration_ms=1000
             )
@@ -53,20 +65,32 @@ def enroll_device_biometric(
         db: Session = Depends(deps.get_db),
         api_key: str = Depends(deps.verify_api_key)
 ):
-    success, msg = biometric_service.save_enrolled_biometric(db, payload)
+    try:
+        success, msg = biometric_service.save_enrolled_biometric(db, payload)
 
-    if success:
-        return FeedbackPayload(
-            line1="Cadastro OK",
-            line2=f"ID: {payload.sensor_index}",
-            actions=DeviceActions(
-                buzzer_pattern=1, buzzer_duration_ms=500
+        if success:
+            return FeedbackPayload(
+                line1="Cadastro OK",
+                line2=f"ID: {payload.sensor_index}",
+                led="green",
+                actions=DeviceActions(
+                    buzzer_pattern=1, buzzer_duration_ms=500
+                )
             )
-        )
-    else:
+        else:
+            return FeedbackPayload(
+                line1="Erro Cadastro",
+                line2=msg[:16],
+                led="red",
+                actions=DeviceActions(
+                    buzzer_pattern=2, buzzer_duration_ms=1000
+                )
+            )
+    except Exception as e:
         return FeedbackPayload(
-            line1="Erro Cadastro",
-            line2=msg[:16],
+            line1="Erro Interno",
+            line2="Contate Admin",
+            led="red",
             actions=DeviceActions(
                 buzzer_pattern=2, buzzer_duration_ms=1000
             )

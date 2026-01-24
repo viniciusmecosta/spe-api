@@ -28,11 +28,6 @@ class Settings(BaseSettings):
     EMAIL_FROM: Optional[str] = None
     EMAIL_TO: Optional[str] = None
 
-    MQTT_BROKER: str
-    MQTT_PORT: int
-    MQTT_USERNAME: str
-    MQTT_PASSWORD: str
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -49,11 +44,7 @@ except Exception:
         FIRST_SUPERUSER="admin",
         FIRST_SUPERUSER_PASSWORD="adminpassword",
         DEVICE_API_KEY="insecure-device-key",
-        BACKEND_CORS_ORIGINS=["*"],
-        MQTT_BROKER="mosquitto",
-        MQTT_PORT=1883,
-        MQTT_USERNAME="backend",
-        MQTT_PASSWORD="password"
+        BACKEND_CORS_ORIGINS=["*"]
     )
 
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

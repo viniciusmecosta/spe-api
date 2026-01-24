@@ -32,4 +32,4 @@ class User(Base):
 
     schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="joined")
     time_records = relationship("TimeRecord", back_populates="user", foreign_keys="TimeRecord.user_id")
-    biometrics = relationship("UserBiometric", back_populates="user", cascade="all, delete-orphan")
+    biometrics = relationship("UserBiometric", back_populates="user", cascade="all, delete-orphan", lazy="joined")
