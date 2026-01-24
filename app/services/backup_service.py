@@ -35,8 +35,7 @@ class BackupService:
             src_conn.close()
 
             return backup_filename
-        except Exception as e:
-            logger.error(f"Erro no backup: {e}")
+        except Exception:
             return None
 
     def _get_yesterday_activity_html(self) -> str:
@@ -97,8 +96,7 @@ class BackupService:
             """
             return html
 
-        except Exception as e:
-            logger.error(f"Erro no relatório: {e}")
+        except Exception:
             return f"<p><em>Erro ao gerar relatório.</em></p>"
         finally:
             db.close()
@@ -142,15 +140,12 @@ class BackupService:
             server.sendmail(msg['From'], msg['To'], msg.as_string())
             server.quit()
 
-            logger.info("Email enviado com sucesso.")
-
-        except Exception as e:
-            logger.error(f"Erro ao enviar e-mail: {e}")
+        except Exception:
+            pass
 
     def send_database_backup(self):
         db_file = "spe.db"
         if not os.path.exists(db_file):
-            logger.error("Banco não encontrado.")
             return
 
         backup_path = self._create_safe_backup(db_file)

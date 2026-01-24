@@ -1,8 +1,9 @@
 import logging
 import os
+from contextlib import asynccontextmanager
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,18 +24,21 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     trigger = CronTrigger(
-        hour='10,14',
+        hour=5,
         minute=00,
         timezone=settings.TIMEZONE
     )
     scheduler.add_job(backup_service.send_database_backup, trigger=trigger, id="daily_backup")
     scheduler.start()
-    logger.info(f"Agendador iniciado (Backups agendados para 10h e 14h)")
+
+    try:
+        backup_service.send_database_backup()
+    except Exception:
+        pass
 
     yield
 
     scheduler.shutdown()
-    logger.info("Agendador encerrado.")
 
 
 app = FastAPI(
@@ -78,4 +82,3 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
-
