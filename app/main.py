@@ -1,7 +1,9 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, status
@@ -29,12 +31,20 @@ async def lifespan(app: FastAPI):
         timezone=settings.TIMEZONE
     )
     scheduler.add_job(backup_service.send_database_backup, trigger=trigger, id="daily_backup")
-    scheduler.start()
 
+    scheduler.start()
     try:
-        backup_service.send_database_backup()
-    except Exception:
-        pass
+        tz = pytz.timezone(settings.TIMEZONE)
+        run_time = datetime.now(tz) + timedelta(minutes=10)
+
+        scheduler.add_job(
+            backup_service.send_database_backup,
+            'date',
+            run_date=run_time,
+            id="delayed_startup_backup"
+        )
+    except Exception as e:
+        logger.error(f"Erro ao agendar backup atrasado: {e}")
 
     yield
 
