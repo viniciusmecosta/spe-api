@@ -26,25 +26,28 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     trigger = CronTrigger(
-        hour=5,
-        minute=00,
+        hour=9,
+        minute=0,
         timezone=settings.TIMEZONE
     )
-    scheduler.add_job(backup_service.send_database_backup, trigger=trigger, id="daily_backup")
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="daily_backup")
 
     scheduler.start()
     try:
         tz = pytz.timezone(settings.TIMEZONE)
-        run_time = datetime.now(tz) + timedelta(minutes=10)
+        now = datetime.now(tz)
+        today_9am = now.replace(hour=9, minute=0, second=0, microsecond=0)
 
-        scheduler.add_job(
-            backup_service.send_database_backup,
-            'date',
-            run_date=run_time,
-            id="delayed_startup_backup"
-        )
-    except Exception as e:
-        logger.error(f"Erro ao agendar backup atrasado: {e}")
+        if now > today_9am:
+            run_time = now + timedelta(minutes=10)
+            scheduler.add_job(
+                backup_service.run_daily_backup_routine,
+                'date',
+                run_date=run_time,
+                id="startup_backup_check"
+            )
+    except Exception:
+        pass
 
     yield
 

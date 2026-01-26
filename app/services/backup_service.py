@@ -1,20 +1,24 @@
 import logging
 import os
-import pytz
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from sqlalchemy import func
 from typing import Dict, List
+
+import pytz
+from sqlalchemy import func
 
 from app.core.config import settings
 from app.database.session import SessionLocal
+from app.domain.models.audit import AuditLog
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
+from app.repositories.audit_repository import audit_repository
+from app.schemas.audit import AuditLogCreate
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +105,9 @@ class BackupService:
         finally:
             db.close()
 
-    def _send_email(self, file_path: str, filename: str, report_html: str):
+    def _send_email(self, file_path: str, filename: str, report_html: str) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.EMAIL_TO]):
-            return
+            return False
 
         try:
             msg = MIMEMultipart()
@@ -139,26 +143,61 @@ class BackupService:
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(msg['From'], msg['To'], msg.as_string())
             server.quit()
+            return True
 
         except Exception:
-            pass
+            return False
 
-    def send_database_backup(self):
+    def send_database_backup(self) -> bool:
         db_file = "spe.db"
         if not os.path.exists(db_file):
-            return
+            return False
 
         backup_path = self._create_safe_backup(db_file)
         if not backup_path:
-            return
+            return False
 
+        success = False
         try:
             report_html = self._get_yesterday_activity_html()
             filename = "spe.db"
-            self._send_email(backup_path, filename, report_html)
+            success = self._send_email(backup_path, filename, report_html)
         finally:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
+        return success
+
+    def run_daily_backup_routine(self):
+        db = SessionLocal()
+        try:
+            tz = pytz.timezone(settings.TIMEZONE)
+            today = datetime.now(tz).date()
+
+            count = db.query(AuditLog).filter(
+                AuditLog.action == "DAILY_BACKUP",
+                func.date(AuditLog.timestamp) == today
+            ).count()
+
+            if count > 0:
+                return
+
+            sent = self.send_database_backup()
+
+            if sent:
+                system_user = db.query(User).order_by(User.id).first()
+                user_id = system_user.id if system_user else 1
+
+                audit_in = AuditLogCreate(
+                    user_id=user_id,
+                    action="DAILY_BACKUP",
+                    entity="SYSTEM",
+                    details="Backup diario automatico"
+                )
+                audit_repository.create(db, audit_in)
+        except Exception as e:
+            logger.error(f"Error backup routine: {e}")
+        finally:
+            db.close()
 
 
 backup_service = BackupService()
