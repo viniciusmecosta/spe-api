@@ -2,6 +2,7 @@ import pytz
 from datetime import date, datetime
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -10,19 +11,43 @@ from app.repositories.payroll_repository import payroll_repository
 
 
 class PayrollService:
+    def list_periods(self, db: Session) -> List[Dict[str, Any]]:
+        closed_periods = payroll_repository.get_all(db)
+
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+        current_month = now.month
+        current_year = now.year
+
+        is_current_closed = any(p.month == current_month and p.year == current_year for p in closed_periods)
+
+        result = []
+
+        if not is_current_closed:
+            result.append({
+                "month": current_month,
+                "year": current_year,
+                "is_closed": False,
+                "id": None,
+                "closed_at": None,
+                "closed_by_user_id": None
+            })
+
+        for p in closed_periods:
+            result.append(p)
+
+        return result
+
     def close_period(self, db: Session, month: int, year: int, current_user: User):
-        # Apenas Gestor ou Mantenedor podem fechar
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to close payroll."
             )
 
-        # Validação de Data: Só permite fechar se o mês já passou
         tz = pytz.timezone(settings.TIMEZONE)
         today = datetime.now(tz).date()
 
-        # Cria data do primeiro dia do mês requisitado e do mês atual para comparação
         request_date = date(year, month, 1)
         current_month_start = date(today.year, today.month, 1)
 
@@ -42,7 +67,6 @@ class PayrollService:
         return payroll_repository.create(db, month, year, current_user.id)
 
     def reopen_period(self, db: Session, month: int, year: int, current_user: User):
-        # APENAS Mantenedor pode reabrir
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -60,9 +84,6 @@ class PayrollService:
         return {"status": "success", "message": f"Payroll period {month}/{year} reopened successfully."}
 
     def validate_period_open(self, db: Session, target_date: date):
-        """
-        Lança exceção se o período da data alvo estiver fechado.
-        """
         closure = payroll_repository.get_by_month(db, target_date.month, target_date.year)
         if closure:
             raise HTTPException(
