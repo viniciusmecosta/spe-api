@@ -44,6 +44,22 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours}h:{minutes:02d}min"
 
+    def _apply_employee_filters(self, query, employee_ids: List[int] = None):
+        query = query.filter(User.role == UserRole.EMPLOYEE)
+
+        if settings.EXCLUDED_EMPLOYEE_IDS:
+            try:
+                excluded = [int(x) for x in settings.EXCLUDED_EMPLOYEE_IDS.split(",") if x.strip().isdigit()]
+                if excluded:
+                    query = query.filter(User.id.notin_(excluded))
+            except:
+                pass
+
+        if employee_ids:
+            query = query.filter(User.id.in_(employee_ids))
+
+        return query
+
     def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
         tz = pytz.timezone(settings.TIMEZONE)
         today = datetime.now(tz).date()
@@ -250,24 +266,20 @@ class ReportService:
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
                             employee_ids: List[int] = None) -> MonthlyReportResponse:
-        query = db.query(User).filter(
-            User.is_active == True,
-            User.role == UserRole.EMPLOYEE
-        )
-        if employee_ids:
-            query = query.filter(User.id.in_(employee_ids))
+        query = db.query(User)
+        query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
+
         payroll_data = []
         for user in users:
             report = self.get_advanced_user_report(db, user.id, month, year)
-            if report:
+            if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None) -> BytesIO:
-        query = db.query(User).filter(User.is_active == True, User.role == UserRole.EMPLOYEE)
-        if employee_ids:
-            query = query.filter(User.id.in_(employee_ids))
+        query = db.query(User)
+        query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 
         wb = Workbook()
@@ -306,6 +318,9 @@ class ReportService:
 
         for user in users:
             report = self.get_advanced_user_report(db, user.id, month, year)
+            if not report or report.summary.total_worked_minutes == 0:
+                continue
+
             sum_data = report.summary
             ws_summary.append([
                 sum_data.user_name,
@@ -330,7 +345,8 @@ class ReportService:
 
         for user in users:
             report = self.get_advanced_user_report(db, user.id, month, year)
-            if not report: continue
+            if not report or report.summary.total_worked_minutes == 0:
+                continue
 
             sheet_name = f"{user.id}-{user.name.split()[0]}"[:30]
             ws_det = wb.create_sheet(title=sheet_name)

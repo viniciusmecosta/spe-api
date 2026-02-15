@@ -1,6 +1,7 @@
 import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,11 +17,9 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
-
     DEVICE_API_KEY: str
-
     UPLOAD_DIR: str = os.path.join(ROOT_DIR, "uploads")
-
+    EXCLUDED_EMPLOYEE_IDS: Optional[str] = None
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: Optional[int] = 587
     SMTP_USER: Optional[str] = None
