@@ -114,8 +114,16 @@ class TimeRecordService:
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
             record_datetime=obj_in.record_datetime, ip_address="MANUAL_ADMIN", is_time_verified=True
         )
+        record.is_manual = True
+        record.edited_by = manager_id
+        record.edit_justification = obj_in.edit_justification
+        record.edit_reason = obj_in.edit_reason
+        db.add(record)
+        db.commit()
+        db.refresh(record)
         audit_service.log(db, user_id=manager_id, action="CREATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record.id, details=f"Created record for user {obj_in.user_id}")
+                          entity_id=record.id,
+                          details=f"Created record for user {obj_in.user_id} with justification {obj_in.edit_justification}")
         return record
 
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
@@ -125,9 +133,19 @@ class TimeRecordService:
         payroll_service.validate_period_open(db, record.record_datetime.date())
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
+        if not record.original_timestamp:
+            record.original_timestamp = record.record_datetime
+
         updated = time_record_repository.update(db, record, obj_in)
+        updated.is_manual = True
+        updated.edited_by = manager_id
+        db.add(updated)
+        db.commit()
+        db.refresh(updated)
         audit_service.log(db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record.id, details=f"Updated record details")
+                          entity_id=record.id,
+                          details=f"Updated record details with justification {updated.edit_justification}")
         return updated
 
     def delete_admin_record(self, db: Session, record_id: int, manager_id: int):

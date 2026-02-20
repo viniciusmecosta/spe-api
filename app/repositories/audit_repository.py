@@ -1,8 +1,9 @@
+from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.domain.models.audit import AuditLog
 from app.schemas.audit import AuditLogCreate
-
 
 class AuditRepository:
     def create(self, db: Session, obj_in: AuditLogCreate) -> AuditLog:
@@ -18,5 +19,22 @@ class AuditRepository:
         db.refresh(db_obj)
         return db_obj
 
+    def get_logs(self, db: Session, action: Optional[str] = None, order_by: str = "desc", skip: int = 0, limit: int = 100):
+        query = db.query(AuditLog)
+        if action:
+            query = query.filter(AuditLog.action == action)
+        if order_by.lower() == "asc":
+            query = query.order_by(asc(AuditLog.timestamp))
+        else:
+            query = query.order_by(desc(AuditLog.timestamp))
+        return query.offset(skip).limit(limit).all()
+
+    def get_manual_changes(self, db: Session, order_by: str = "desc", skip: int = 0, limit: int = 100):
+        query = db.query(AuditLog).filter(AuditLog.action.in_(["CREATE_RECORD_ADMIN", "UPDATE_RECORD_ADMIN"]))
+        if order_by.lower() == "asc":
+            query = query.order_by(asc(AuditLog.timestamp))
+        else:
+            query = query.order_by(desc(AuditLog.timestamp))
+        return query.offset(skip).limit(limit).all()
 
 audit_repository = AuditRepository()
