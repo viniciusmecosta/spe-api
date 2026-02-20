@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.domain.models.payroll import PayrollClosure
 
@@ -16,6 +17,12 @@ class PayrollRepository:
             PayrollClosure.month == month,
             PayrollClosure.year == year
         ).first()
+
+    def get_all(self, db: Session) -> List[PayrollClosure]:
+        return db.query(PayrollClosure).order_by(
+            PayrollClosure.year.desc(),
+            PayrollClosure.month.desc()
+        ).all()
 
     def delete(self, db: Session, month: int, year: int):
         db.query(PayrollClosure).filter(
