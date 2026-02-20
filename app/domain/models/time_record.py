@@ -3,8 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database.base import Base
-from app.domain.models.enums import RecordType
-
+from app.domain.models.enums import RecordType, EditJustification
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
@@ -21,6 +20,7 @@ class TimeRecord(Base):
     original_timestamp = Column(DateTime(timezone=True), nullable=True)
     is_manual = Column(Boolean, default=False)
     edited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    edit_justification = Column(Enum(EditJustification), nullable=True)
     edit_reason = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
