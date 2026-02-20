@@ -11,7 +11,7 @@ from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin
+from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
 from app.services.audit_service import audit_service
 from app.services.manual_auth_service import manual_auth_service
 from app.services.payroll_service import payroll_service
@@ -184,7 +184,7 @@ class TimeRecordService:
                           entity_id=record.id, details=details)
         return updated
 
-    def delete_admin_record(self, db: Session, record_id: int, manager_id: int):
+    def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Record not found")
@@ -197,9 +197,12 @@ class TimeRecordService:
         type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
         date_str = record.record_datetime.strftime("%d/%m/%Y %H:%M")
 
+        justification_str = obj_in.edit_justification.value if obj_in.edit_justification else "N/A"
+        reason_str = obj_in.edit_reason if obj_in.edit_reason else "Sem detalhes fornecidos"
+
         time_record_repository.delete(db, record_id)
 
-        details = f"'{manager_name}' excluiu o ponto do funcionário '{employee_name}' ({type_str} em {date_str})."
+        details = f"'{manager_name}' excluiu o ponto do funcionário '{employee_name}' ({type_str} em {date_str}). Justificativa: {justification_str} - {reason_str}"
 
         audit_service.log(db, user_id=manager_id, action="DELETE_RECORD_ADMIN", entity="TIME_RECORD",
                           entity_id=record_id, details=details)
