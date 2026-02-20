@@ -99,12 +99,9 @@ class TimeRecordService:
         db.refresh(record)
 
         employee = user_repository.get(db, record.user_id)
-        employee_name = employee.name if employee else f"ID {record.user_id}"
+        employee_name = employee.name if employee else "Desconhecido"
         old_type_str = "Entrada" if previous_type == RecordType.ENTRY else "Saída"
         new_type_str = "Entrada" if new_type == RecordType.ENTRY else "Saída"
-        date_str = record.record_datetime.strftime("%d/%m/%Y %H:%M")
-
-        details = f"Usuário '{current_user.name}' alternou o tipo de ponto de '{employee_name}' em {date_str} de '{old_type_str}' para '{new_type_str}'."
 
         audit_service.log(
             db,
@@ -112,7 +109,12 @@ class TimeRecordService:
             action="TOGGLE_RECORD",
             entity="TIME_RECORD",
             entity_id=record.id,
-            details=details
+            details="Alternou o tipo de registro de ponto no sistema.",
+            actor_name=current_user.name,
+            target_user_id=record.user_id,
+            target_user_name=employee_name,
+            record_time=record.record_datetime,
+            record_type=f"De {old_type_str} para {new_type_str}"
         )
         return record
 
@@ -132,18 +134,25 @@ class TimeRecordService:
 
         manager = user_repository.get(db, manager_id)
         employee = user_repository.get(db, obj_in.user_id)
-        manager_name = manager.name if manager else f"ID {manager_id}"
-        employee_name = employee.name if employee else f"ID {obj_in.user_id}"
 
         type_str = "Entrada" if obj_in.record_type == RecordType.ENTRY else "Saída"
-        date_str = obj_in.record_datetime.strftime("%d/%m/%Y %H:%M")
-        justification_str = obj_in.edit_justification.value if obj_in.edit_justification else "N/A"
-        reason_str = obj_in.edit_reason if obj_in.edit_reason else "Sem detalhes fornecidos"
+        justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
 
-        details = f"'{manager_name}' criou um ponto manual de '{type_str}' para o funcionário '{employee_name}' em {date_str}. Justificativa: {justification_str} - {reason_str}"
-
-        audit_service.log(db, user_id=manager_id, action="CREATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record.id, details=details)
+        audit_service.log(
+            db,
+            user_id=manager_id,
+            action="CREATE_RECORD_ADMIN",
+            entity="TIME_RECORD",
+            entity_id=record.id,
+            details="Criou um novo registro de ponto manual.",
+            actor_name=manager.name if manager else str(manager_id),
+            target_user_id=obj_in.user_id,
+            target_user_name=employee.name if employee else str(obj_in.user_id),
+            justification=justification_val,
+            reason=obj_in.edit_reason,
+            record_time=obj_in.record_datetime,
+            record_type=type_str
+        )
         return record
 
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
@@ -158,8 +167,6 @@ class TimeRecordService:
             record.original_timestamp = record.record_datetime
 
         employee_id = record.user_id
-        old_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-        old_time_str = record.record_datetime.strftime("%d/%m/%Y %H:%M")
 
         updated = time_record_repository.update(db, record, obj_in)
         updated.is_manual = True
@@ -170,18 +177,25 @@ class TimeRecordService:
 
         manager = user_repository.get(db, manager_id)
         employee = user_repository.get(db, employee_id)
-        manager_name = manager.name if manager else f"ID {manager_id}"
-        employee_name = employee.name if employee else f"ID {employee_id}"
 
         new_type_str = "Entrada" if updated.record_type == RecordType.ENTRY else "Saída"
-        new_time_str = updated.record_datetime.strftime("%d/%m/%Y %H:%M")
-        justification_str = updated.edit_justification.value if updated.edit_justification else "N/A"
-        reason_str = updated.edit_reason if updated.edit_reason else "Sem detalhes fornecidos"
+        justification_val = updated.edit_justification.value if updated.edit_justification else ""
 
-        details = f"'{manager_name}' editou o ponto do funcionário '{employee_name}'. De: [{old_type_str} em {old_time_str}] Para: [{new_type_str} em {new_time_str}]. Justificativa: {justification_str} - {reason_str}"
-
-        audit_service.log(db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record.id, details=details)
+        audit_service.log(
+            db,
+            user_id=manager_id,
+            action="UPDATE_RECORD_ADMIN",
+            entity="TIME_RECORD",
+            entity_id=record.id,
+            details="Editou as informações de um registro de ponto existente.",
+            actor_name=manager.name if manager else str(manager_id),
+            target_user_id=employee_id,
+            target_user_name=employee.name if employee else str(employee_id),
+            justification=justification_val,
+            reason=updated.edit_reason,
+            record_time=updated.record_datetime,
+            record_type=new_type_str
+        )
         return updated
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
@@ -192,20 +206,29 @@ class TimeRecordService:
 
         manager = user_repository.get(db, manager_id)
         employee = user_repository.get(db, record.user_id)
-        manager_name = manager.name if manager else f"ID {manager_id}"
-        employee_name = employee.name if employee else f"ID {record.user_id}"
-        type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-        date_str = record.record_datetime.strftime("%d/%m/%Y %H:%M")
 
-        justification_str = obj_in.edit_justification.value if obj_in.edit_justification else "N/A"
-        reason_str = obj_in.edit_reason if obj_in.edit_reason else "Sem detalhes fornecidos"
+        type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
+        record_time = record.record_datetime
+        target_id = record.user_id
+        justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
 
         time_record_repository.delete(db, record_id)
 
-        details = f"'{manager_name}' excluiu o ponto do funcionário '{employee_name}' ({type_str} em {date_str}). Justificativa: {justification_str} - {reason_str}"
-
-        audit_service.log(db, user_id=manager_id, action="DELETE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record_id, details=details)
+        audit_service.log(
+            db,
+            user_id=manager_id,
+            action="DELETE_RECORD_ADMIN",
+            entity="TIME_RECORD",
+            entity_id=record_id,
+            details="Excluiu permanentemente um registro de ponto.",
+            actor_name=manager.name if manager else str(manager_id),
+            target_user_id=target_id,
+            target_user_name=employee.name if employee else str(target_id),
+            justification=justification_val,
+            reason=obj_in.edit_reason,
+            record_time=record_time,
+            record_type=type_str
+        )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime) -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
