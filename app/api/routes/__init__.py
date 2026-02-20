@@ -11,7 +11,8 @@ from app.api.routes import (
     anomalies,
     reports,
     payroll,
-    device
+    device,
+    audit
 )
 
 api_router = APIRouter()
@@ -33,3 +34,4 @@ api_router.include_router(anomalies.router, prefix="/anomalies", tags=["Anomalie
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
+api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
