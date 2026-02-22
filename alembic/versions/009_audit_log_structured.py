@@ -1,11 +1,13 @@
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 revision = '009'
 down_revision = '008'
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     conn = op.get_bind()
@@ -27,6 +29,7 @@ def upgrade() -> None:
             batch_op.add_column(sa.Column('record_time', sa.DateTime(timezone=True), nullable=True))
         if 'record_type' not in columns:
             batch_op.add_column(sa.Column('record_type', sa.String(), nullable=True))
+
 
 def downgrade() -> None:
     conn = op.get_bind()

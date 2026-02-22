@@ -5,8 +5,7 @@ from typing import List, Dict
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.repositories.user_repository import user_repository
-from app.schemas.anomaly import AnomalyResponse, UserAnomalySummary, AnomalyBase
+from app.schemas.anomaly import AnomalyResponse
 
 
 class AnomalyService:

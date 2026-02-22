@@ -5,6 +5,7 @@ from sqlalchemy.sql import func
 from app.database.base import Base
 from app.domain.models.enums import RecordType, EditJustification
 
+
 class TimeRecord(Base):
     __tablename__ = "time_records"
 
