@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Set
 
 from app.core.security import get_password_hash
-from app.domain.models.user import User, WorkSchedule
 from app.domain.models.biometric import UserBiometric
+from app.domain.models.user import User, WorkSchedule
 from app.schemas.user import UserCreate, UserUpdate
 
 
