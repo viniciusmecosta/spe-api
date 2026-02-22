@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,32 +25,14 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    trigger = CronTrigger(
-        hour=9,
-        minute=0,
-        timezone=settings.TIMEZONE
-    )
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="daily_backup")
+    tz = pytz.timezone(settings.TIMEZONE)
+    start_time = datetime.now(tz) + timedelta(minutes=10)
+
+    trigger = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="hourly_backup_check")
 
     scheduler.start()
-    try:
-        tz = pytz.timezone(settings.TIMEZONE)
-        now = datetime.now(tz)
-        today_9am = now.replace(hour=9, minute=0, second=0, microsecond=0)
-
-        if now > today_9am:
-            run_time = now + timedelta(minutes=10)
-            scheduler.add_job(
-                backup_service.run_daily_backup_routine,
-                'date',
-                run_date=run_time,
-                id="startup_backup_check"
-            )
-    except Exception:
-        pass
-
     yield
-
     scheduler.shutdown()
 
 
@@ -73,21 +55,18 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"Validation error: {exc.errors()}")
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         content={"detail": "Validation Error", "errors": exc.errors()})
 
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    logger.error(f"Database error: {str(exc)}")
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "A database error occurred."})
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {str(exc)}")
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": f"An unexpected error occurred: {str(exc)}"})
 
