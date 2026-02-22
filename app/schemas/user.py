@@ -3,8 +3,8 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List
 
 from app.domain.models.enums import UserRole
-from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse
+from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 
 
 class UserBase(BaseModel):

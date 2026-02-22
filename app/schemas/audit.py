@@ -2,6 +2,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
+
 class AuditLogBase(BaseModel):
     user_id: int
     action: str
@@ -16,8 +17,10 @@ class AuditLogBase(BaseModel):
     record_time: Optional[datetime] = None
     record_type: Optional[str] = None
 
+
 class AuditLogCreate(AuditLogBase):
     pass
+
 
 class AuditLogResponse(AuditLogBase):
     id: int

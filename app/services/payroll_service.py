@@ -6,8 +6,8 @@ from typing import List, Dict, Any
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
-from app.domain.models.user import User
 from app.domain.models.time_record import TimeRecord
+from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
 
 

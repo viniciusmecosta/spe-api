@@ -44,7 +44,7 @@ class TimeRecordRepository:
         ).order_by(TimeRecord.record_datetime).all()
 
     def get_by_users_and_range(self, db: Session, user_ids: List[int], start_date: datetime, end_date: datetime) -> \
-    List[TimeRecord]:
+            List[TimeRecord]:
         return db.query(TimeRecord).filter(
             and_(
                 TimeRecord.user_id.in_(user_ids),
