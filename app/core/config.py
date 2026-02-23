@@ -8,6 +8,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "SPE - Sistema de Ponto Eletrônico"
+    APP_VERSION: str = "0.0.0"
     API_V1_STR: str = "/api/v1"
     TIMEZONE: str = "America/Fortaleza"
     SQLALCHEMY_DATABASE_URI: str = "sqlite:///./spe.db"
