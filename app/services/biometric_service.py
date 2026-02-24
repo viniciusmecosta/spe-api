@@ -5,6 +5,7 @@ from typing import List
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User
 from app.schemas.mqtt import BiometricSyncData, EnrollResultPayload
+from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,13 @@ class BiometricService:
             )
             db.add(new_bio)
             db.commit()
+            db.refresh(new_bio)
+
+            audit_service.log(
+                db, target_user_id=user.id, action="ENROLL", entity="BIOMETRIC",
+                entity_id=new_bio.id, new_data={"sensor_index": result.sensor_index}
+            )
+
             return True, "Sucesso"
         except Exception as e:
             logger.error(f"Erro Enroll: {e}")

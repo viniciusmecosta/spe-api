@@ -20,6 +20,9 @@ class HolidayRepository:
     def get_by_date(self, db: Session, check_date: date) -> Holiday | None:
         return db.query(Holiday).filter(Holiday.date == check_date).first()
 
+    def get_by_id(self, db: Session, id: int) -> Holiday | None:
+        return db.query(Holiday).filter(Holiday.id == id).first()
+
     def get_by_month(self, db: Session, month: int, year: int) -> List[Holiday]:
         start_date = date(year, month, 1)
         if month == 12:
