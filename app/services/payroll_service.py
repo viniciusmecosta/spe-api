@@ -9,6 +9,7 @@ from app.domain.models.enums import UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
+from app.services.audit_service import audit_service
 
 
 class PayrollService:
@@ -78,7 +79,13 @@ class PayrollService:
                 detail=f"Payroll period {month}/{year} is already closed."
             )
 
-        return payroll_repository.create(db, month, year, current_user.id)
+        closure = payroll_repository.create(db, month, year, current_user.id)
+
+        audit_service.log(
+            db, actor_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
+            new_data={"month": month, "year": year}
+        )
+        return closure
 
     def reopen_period(self, db: Session, month: int, year: int, current_user: User):
         if current_user.role != UserRole.MAINTAINER:
@@ -95,6 +102,11 @@ class PayrollService:
             )
 
         payroll_repository.delete(db, month, year)
+
+        audit_service.log(
+            db, actor_id=current_user.id, action="REOPEN", entity="PAYROLL",
+            old_data={"month": month, "year": year}
+        )
         return {"status": "success", "message": f"Payroll period {month}/{year} reopened successfully."}
 
     def validate_period_open(self, db: Session, target_date: date):

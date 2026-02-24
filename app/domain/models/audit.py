@@ -4,6 +4,7 @@ from sqlalchemy.sql import func
 
 from app.database.base import Base
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

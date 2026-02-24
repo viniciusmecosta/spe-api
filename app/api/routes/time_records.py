@@ -108,5 +108,5 @@ def deauthorize_manual_punch(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    manual_auth_service.revoke_permission(db, user_id)
+    manual_auth_service.revoke_permission(db, user_id, current_user.id)
     return {"status": "success", "message": "User authorization revoked"}
