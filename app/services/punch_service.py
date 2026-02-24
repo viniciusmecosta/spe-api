@@ -10,10 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class PunchService:
-    def process_biometric_punch(self, db: Session, sensor_index: int):
-        """
-        Processa a batida usando o horario do Servidor.
-        """
+    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: str = None):
         try:
             from app.domain.models.biometric import UserBiometric
 
@@ -34,7 +31,9 @@ class PunchService:
             new_record = time_record_service.create_punch(
                 db,
                 user_id=user.id,
-                timestamp=server_time
+                timestamp=server_time,
+                ip_address=ip_address,
+                biometric_id=biometric.id
             )
 
             return True, "Ponto Registrado", new_record

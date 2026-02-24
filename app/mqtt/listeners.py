@@ -19,15 +19,13 @@ logger = logging.getLogger(__name__)
 
 @mqtt.subscribe("mh7/ponto/punch", qos=2)
 async def handle_punch(client, topic, payload, qos, properties):
-    """
-    Recebe batida de ponto do ESP32.
-    """
     try:
         data = json.loads(payload.decode())
         punch_data = PunchPayload(**data)
         db = SessionLocal()
         try:
-            success, message, record = punch_service.process_biometric_punch(db, punch_data.sensor_index)
+            success, message, record = punch_service.process_biometric_punch(db, punch_data.sensor_index,
+                                                                             ip_address="MQTT")
         finally:
             db.close()
 
@@ -58,9 +56,6 @@ async def handle_punch(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/global/time/req", qos=2)
 async def handle_time_sync(client, topic, payload, qos, properties):
-    """
-    Responde com a hora atual para o ESP32 sincronizar o RTC.
-    """
     try:
         tz = pytz.timezone(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -72,10 +67,6 @@ async def handle_time_sync(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/admin/sync/start", qos=2)
 async def handle_sync_start(client, topic, payload, qos, properties):
-    """
-    O ESP32 entrou em modo SYNC e pediu os dados.
-    Envia todas as biometrias cadastradas uma por uma.
-    """
     db = SessionLocal()
     try:
         await biometric_service.start_restore_process(db)
@@ -87,9 +78,6 @@ async def handle_sync_start(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/admin/sync/ack", qos=2)
 async def handle_sync_ack(client, topic, payload, qos, properties):
-    """
-    O ESP32 confirmou que salvou uma biometria enviada no Sync.
-    """
     try:
         data = json.loads(payload.decode())
         ack_data = BiometricSyncAck(**data)
@@ -104,9 +92,6 @@ async def handle_sync_ack(client, topic, payload, qos, properties):
 
 @mqtt.subscribe("mh7/admin/enroll/result", qos=2)
 async def handle_enroll_result(client, topic, payload, qos, properties):
-    """
-    Recebe o template biométrico capturado pelo ESP32 após comando remoto.
-    """
     try:
         data = json.loads(payload.decode())
         result = EnrollResultPayload(**data)
