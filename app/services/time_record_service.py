@@ -16,7 +16,6 @@ from app.services.audit_service import audit_service
 from app.services.manual_auth_service import manual_auth_service
 from app.services.payroll_service import payroll_service
 
-
 class TimeRecordService:
     def _get_trusted_time(self):
         tz = pytz.timezone(settings.TIMEZONE)
@@ -110,11 +109,11 @@ class TimeRecordService:
         )
         return record
 
-    def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int) -> TimeRecord:
+    def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int, ip_address: str) -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
-            record_datetime=obj_in.record_datetime, ip_address="MANUAL_ADMIN", is_time_verified=True
+            record_datetime=obj_in.record_datetime, ip_address=ip_address, is_time_verified=True
         )
         record.is_manual = True
         record.edited_by = manager_id
@@ -216,7 +215,7 @@ class TimeRecordService:
             }
         )
 
-    def create_punch(self, db: Session, user_id: int, timestamp: datetime) -> TimeRecord:
+    def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str, biometric_id: int = None) -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
 
         record_type = RecordType.ENTRY
@@ -228,9 +227,9 @@ class TimeRecordService:
             user_id=user_id,
             record_type=record_type,
             record_datetime=timestamp,
-            ip_address="DEVICE",
-            is_time_verified=True
+            ip_address=ip_address,
+            is_time_verified=True,
+            biometric_id=biometric_id
         )
-
 
 time_record_service = TimeRecordService()

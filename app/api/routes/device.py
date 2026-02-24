@@ -1,11 +1,12 @@
 import pytz
 from datetime import datetime
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.api import deps
 from app.core.config import settings
+from app.core.security import get_client_ip
 from app.domain.models.enums import RecordType
 from app.schemas.mqtt import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
@@ -20,11 +21,13 @@ router = APIRouter()
 @router.post("/punch", response_model=FeedbackPayload)
 def register_device_punch(
         payload: DevicePunchRequest,
+        request: Request,
         db: Session = Depends(deps.get_db),
         api_key: str = Depends(deps.verify_api_key)
 ):
     try:
-        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index)
+        ip_address = get_client_ip(request)
+        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index, ip_address)
 
         if success and record:
             user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
@@ -48,7 +51,7 @@ def register_device_punch(
                     buzzer_pattern=2, buzzer_duration_ms=1000
                 )
             )
-    except Exception as e:
+    except Exception:
         return FeedbackPayload(
             line1="Erro Interno",
             line2="Contate Admin",
@@ -86,7 +89,7 @@ def enroll_device_biometric(
                     buzzer_pattern=2, buzzer_duration_ms=1000
                 )
             )
-    except Exception as e:
+    except Exception:
         return FeedbackPayload(
             line1="Erro Interno",
             line2="Contate Admin",
