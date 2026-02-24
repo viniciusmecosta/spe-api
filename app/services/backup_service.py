@@ -175,12 +175,11 @@ class BackupService:
             sent = self.send_database_backup()
 
             if sent:
-                system_user = db.query(User).order_by(User.id).first()
-                user_id = system_user.id if system_user else 1
                 target_email = settings.EMAIL_TO or "Email nao configurado"
 
                 audit_in = AuditLogCreate(
-                    actor_id=user_id,
+                    actor_id=None,
+                    actor_name="Sistema",
                     action="DAILY_BACKUP",
                     entity="SYSTEM",
                     new_data={"target_email": target_email}
