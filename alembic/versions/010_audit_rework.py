@@ -1,10 +1,12 @@
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = '010'
 down_revision = '009'
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     with op.batch_alter_table('audit_logs', schema=None) as batch_op:
@@ -14,6 +16,7 @@ def upgrade() -> None:
         batch_op.alter_column('user_id', existing_type=sa.Integer(), nullable=True)
         batch_op.create_foreign_key('fk_audit_actor', 'users', ['actor_id'], ['id'])
         batch_op.create_foreign_key('fk_audit_target', 'users', ['target_user_id'], ['id'])
+
 
 def downgrade() -> None:
     pass
