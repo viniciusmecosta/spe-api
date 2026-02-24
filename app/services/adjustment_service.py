@@ -38,8 +38,13 @@ class AdjustmentService:
         )
 
         audit_service.log(
-            db, user_id=manager_id, action="CREATE_WAIVER", entity="ADJUSTMENT", entity_id=adjustment.id,
-            details=f"Absence waived for user {waiver_in.user_id} on {waiver_in.target_date} (Amount: {waiver_in.amount_hours})"
+            db, actor_id=manager_id, target_user_id=waiver_in.user_id, action="CREATE_WAIVER",
+            entity="ADJUSTMENT", entity_id=adjustment.id,
+            new_data={
+                "target_date": str(waiver_in.target_date),
+                "amount_hours": waiver_in.amount_hours,
+                "reason": waiver_in.reason_text
+            }
         )
         return adjustment
 
@@ -50,11 +55,17 @@ class AdjustmentService:
 
         payroll_service.validate_period_open(db, request.target_date)
 
+        target_user_id = request.user_id
+        old_data = {
+            "type": request.adjustment_type.value,
+            "target_date": str(request.target_date)
+        }
+
         adjustment_repository.delete(db, adjustment_id)
 
         audit_service.log(
-            db, user_id=manager_id, action="DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
-            details="Deleted adjustment/waiver"
+            db, actor_id=manager_id, target_user_id=target_user_id, action="DELETE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
         )
 
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
@@ -105,8 +116,9 @@ class AdjustmentService:
         attachment = adjustment_repository.create_attachment(db, request_id, file_path, file.content_type)
 
         audit_service.log(
-            db, user_id=user_id, action="UPLOAD_ATTACHMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details=f"Uploaded file {safe_filename}"
+            db, actor_id=user_id, target_user_id=request.user_id, action="UPLOAD_ATTACHMENT",
+            entity="ADJUSTMENT", entity_id=request_id,
+            new_data={"file_name": safe_filename, "file_type": file.content_type}
         )
         return attachment
 
@@ -127,11 +139,13 @@ class AdjustmentService:
         if request.adjustment_type in [AdjustmentType.MISSING_ENTRY, AdjustmentType.MISSING_EXIT, AdjustmentType.BOTH]:
             self._create_punches_from_adjustment(db, request)
 
+        old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id)
 
         audit_service.log(
-            db, user_id=manager_id, action="APPROVE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details=f"Approved adjustment request ({request.adjustment_type})"
+            db, actor_id=manager_id, target_user_id=request.user_id, action="APPROVE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=request_id,
+            old_data={"status": old_status}, new_data={"status": updated.status.value}
         )
         return updated
 
@@ -162,11 +176,13 @@ class AdjustmentService:
 
         payroll_service.validate_period_open(db, request.target_date)
 
+        old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
 
         audit_service.log(
-            db, user_id=manager_id, action="REJECT_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details=f"Rejected: {comment}"
+            db, actor_id=manager_id, target_user_id=request.user_id, action="REJECT_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=request_id,
+            old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
         return updated
 
@@ -180,11 +196,24 @@ class AdjustmentService:
         if obj_in.target_date:
             payroll_service.validate_period_open(db, obj_in.target_date)
 
+        old_data = {
+            "adjustment_type": request.adjustment_type.value,
+            "target_date": str(request.target_date),
+            "amount_hours": request.amount_hours
+        }
+
         updated = adjustment_repository.update(db, request, obj_in)
 
+        new_data = {
+            "adjustment_type": updated.adjustment_type.value,
+            "target_date": str(updated.target_date),
+            "amount_hours": updated.amount_hours
+        }
+
         audit_service.log(
-            db, user_id=manager_id, action="UPDATE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=request_id,
-            details="Updated adjustment details"
+            db, actor_id=manager_id, target_user_id=request.user_id, action="UPDATE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=request_id,
+            old_data=old_data, new_data=new_data
         )
         return updated
 

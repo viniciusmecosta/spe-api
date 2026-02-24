@@ -98,23 +98,15 @@ class TimeRecordService:
         db.commit()
         db.refresh(record)
 
-        employee = user_repository.get(db, record.user_id)
-        employee_name = employee.name if employee else "Desconhecido"
-        old_type_str = "Entrada" if previous_type == RecordType.ENTRY else "Saída"
-        new_type_str = "Entrada" if new_type == RecordType.ENTRY else "Saída"
-
         audit_service.log(
             db,
-            user_id=current_user.id,
+            actor_id=current_user.id,
+            target_user_id=record.user_id,
             action="TOGGLE_RECORD",
             entity="TIME_RECORD",
             entity_id=record.id,
-            details="Alternou o tipo de registro de ponto no sistema.",
-            actor_name=current_user.name,
-            target_user_id=record.user_id,
-            target_user_name=employee_name,
-            record_time=record.record_datetime,
-            record_type=f"De {old_type_str} para {new_type_str}"
+            old_data={"record_type": previous_type.value},
+            new_data={"record_type": new_type.value}
         )
         return record
 
@@ -132,26 +124,21 @@ class TimeRecordService:
         db.commit()
         db.refresh(record)
 
-        manager = user_repository.get(db, manager_id)
-        employee = user_repository.get(db, obj_in.user_id)
-
-        type_str = "Entrada" if obj_in.record_type == RecordType.ENTRY else "Saída"
         justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
 
         audit_service.log(
             db,
-            user_id=manager_id,
+            actor_id=manager_id,
+            target_user_id=obj_in.user_id,
             action="CREATE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=record.id,
-            details="Criou um novo registro de ponto manual.",
-            actor_name=manager.name if manager else str(manager_id),
-            target_user_id=obj_in.user_id,
-            target_user_name=employee.name if employee else str(obj_in.user_id),
-            justification=justification_val,
-            reason=obj_in.edit_reason,
-            record_time=obj_in.record_datetime,
-            record_type=type_str
+            new_data={
+                "record_time": str(obj_in.record_datetime),
+                "record_type": obj_in.record_type.value,
+                "justification": justification_val,
+                "reason": obj_in.edit_reason
+            }
         )
         return record
 
@@ -168,6 +155,11 @@ class TimeRecordService:
 
         employee_id = record.user_id
 
+        old_data = {
+            "record_type": record.record_type.value,
+            "record_time": str(record.record_datetime)
+        }
+
         updated = time_record_repository.update(db, record, obj_in)
         updated.is_manual = True
         updated.edited_by = manager_id
@@ -175,26 +167,22 @@ class TimeRecordService:
         db.commit()
         db.refresh(updated)
 
-        manager = user_repository.get(db, manager_id)
-        employee = user_repository.get(db, employee_id)
-
-        new_type_str = "Entrada" if updated.record_type == RecordType.ENTRY else "Saída"
         justification_val = updated.edit_justification.value if updated.edit_justification else ""
 
         audit_service.log(
             db,
-            user_id=manager_id,
+            actor_id=manager_id,
+            target_user_id=employee_id,
             action="UPDATE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=record.id,
-            details="Editou as informações de um registro de ponto existente.",
-            actor_name=manager.name if manager else str(manager_id),
-            target_user_id=employee_id,
-            target_user_name=employee.name if employee else str(employee_id),
-            justification=justification_val,
-            reason=updated.edit_reason,
-            record_time=updated.record_datetime,
-            record_type=new_type_str
+            old_data=old_data,
+            new_data={
+                "record_type": updated.record_type.value,
+                "record_time": str(updated.record_datetime),
+                "justification": justification_val,
+                "reason": updated.edit_reason
+            }
         )
         return updated
 
@@ -204,30 +192,28 @@ class TimeRecordService:
             raise HTTPException(status_code=404, detail="Record not found")
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
-        manager = user_repository.get(db, manager_id)
-        employee = user_repository.get(db, record.user_id)
-
-        type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-        record_time = record.record_datetime
         target_id = record.user_id
         justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
+
+        old_data = {
+            "record_type": record.record_type.value,
+            "record_time": str(record.record_datetime)
+        }
 
         time_record_repository.delete(db, record_id)
 
         audit_service.log(
             db,
-            user_id=manager_id,
+            actor_id=manager_id,
+            target_user_id=target_id,
             action="DELETE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=record_id,
-            details="Excluiu permanentemente um registro de ponto.",
-            actor_name=manager.name if manager else str(manager_id),
-            target_user_id=target_id,
-            target_user_name=employee.name if employee else str(target_id),
-            justification=justification_val,
-            reason=obj_in.edit_reason,
-            record_time=record_time,
-            record_type=type_str
+            old_data=old_data,
+            new_data={
+                "justification": justification_val,
+                "reason": obj_in.edit_reason
+            }
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime) -> TimeRecord:

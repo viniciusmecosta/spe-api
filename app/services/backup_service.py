@@ -180,10 +180,10 @@ class BackupService:
                 target_email = settings.EMAIL_TO or "Email nao configurado"
 
                 audit_in = AuditLogCreate(
-                    user_id=user_id,
+                    actor_id=user_id,
                     action="DAILY_BACKUP",
                     entity="SYSTEM",
-                    details=f"Backup diario automatico enviado para {target_email}"
+                    new_data={"target_email": target_email}
                 )
                 audit_repository.create(db, audit_in)
         except Exception:
