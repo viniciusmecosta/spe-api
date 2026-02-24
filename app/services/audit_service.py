@@ -1,29 +1,22 @@
-from datetime import datetime
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, Any
 
 from app.repositories.audit_repository import audit_repository
 from app.schemas.audit import AuditLogCreate
 
 
 class AuditService:
-    def log(self, db: Session, user_id: int, action: str, entity: str, entity_id: Optional[int] = None,
-            details: Optional[str] = None, actor_name: Optional[str] = None, target_user_id: Optional[int] = None,
-            target_user_name: Optional[str] = None, justification: Optional[str] = None, reason: Optional[str] = None,
-            record_time: Optional[datetime] = None, record_type: Optional[str] = None):
+    def log(self, db: Session, action: str, entity: str, actor_id: Optional[int] = None,
+            target_user_id: Optional[int] = None, entity_id: Optional[int] = None,
+            old_data: Optional[Any] = None, new_data: Optional[Any] = None):
         obj_in = AuditLogCreate(
-            user_id=user_id,
+            actor_id=actor_id,
+            target_user_id=target_user_id,
             action=action,
             entity=entity,
             entity_id=entity_id,
-            details=details,
-            actor_name=actor_name,
-            target_user_id=target_user_id,
-            target_user_name=target_user_name,
-            justification=justification,
-            reason=reason,
-            record_time=record_time,
-            record_type=record_type
+            old_data=old_data,
+            new_data=new_data
         )
         return audit_repository.create(db, obj_in)
 
