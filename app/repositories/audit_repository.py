@@ -16,7 +16,15 @@ class AuditRepository:
             entity=obj_in.entity,
             entity_id=obj_in.entity_id,
             old_data=obj_in.old_data,
-            new_data=obj_in.new_data
+            new_data=obj_in.new_data,
+            user_id=obj_in.user_id if obj_in.user_id else obj_in.actor_id,
+            details=obj_in.details,
+            actor_name=obj_in.actor_name,
+            target_user_name=obj_in.target_user_name,
+            justification=obj_in.justification,
+            reason=obj_in.reason,
+            record_time=obj_in.record_time,
+            record_type=obj_in.record_type
         )
         db.add(db_obj)
         db.commit()
