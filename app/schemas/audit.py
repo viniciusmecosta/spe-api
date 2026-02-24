@@ -22,6 +22,15 @@ class AuditLogBase(BaseModel):
     old_data: Optional[Any] = None
     new_data: Optional[Any] = None
 
+    user_id: Optional[int] = None
+    details: Optional[str] = None
+    actor_name: Optional[str] = None
+    target_user_name: Optional[str] = None
+    justification: Optional[str] = None
+    reason: Optional[str] = None
+    record_time: Optional[datetime] = None
+    record_type: Optional[str] = None
+
 
 class AuditLogCreate(AuditLogBase):
     pass
