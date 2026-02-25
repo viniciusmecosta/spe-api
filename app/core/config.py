@@ -6,22 +6,22 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "SPE - Sistema de Ponto Eletrônico"
-    APP_VERSION: str = "0.0.0"
-    API_V1_STR: str = "/api/v1"
-    TIMEZONE: str = "America/Fortaleza"
-    SQLALCHEMY_DATABASE_URI: str = "sqlite:///./spe.db"
+    PROJECT_NAME: str
+    APP_VERSION: str
+    API_V1_STR: str
+    TIMEZONE: str
+    SQLALCHEMY_DATABASE_URI: str
     SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     DEVICE_API_KEY: str
-    UPLOAD_DIR: str = os.path.join(ROOT_DIR, "uploads")
+    UPLOAD_DIR: str
     EXCLUDED_EMPLOYEE_IDS: Optional[str] = None
     SMTP_HOST: Optional[str] = None
-    SMTP_PORT: Optional[int] = 587
+    SMTP_PORT: Optional[int] = None
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
@@ -35,15 +35,9 @@ class Settings(BaseSettings):
     )
 
 
-try:
-    settings = Settings()
-except Exception:
-    settings = Settings(
-        SECRET_KEY="insecure-default-key-change-this-in-production",
-        FIRST_SUPERUSER="admin",
-        FIRST_SUPERUSER_PASSWORD="adminpassword",
-        DEVICE_API_KEY="insecure-device-key",
-        BACKEND_CORS_ORIGINS=["*"]
-    )
+settings = Settings()
+
+if not os.path.isabs(settings.UPLOAD_DIR):
+    settings.UPLOAD_DIR = os.path.join(ROOT_DIR, settings.UPLOAD_DIR)
 
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

@@ -50,11 +50,9 @@ app = FastAPI(
     },
 )
 
-origins = ["*"]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,7 +74,7 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        content={"detail": f"An unexpected error occurred: {str(exc)}"})
+                        content={"detail": "An unexpected error occurred."})
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
