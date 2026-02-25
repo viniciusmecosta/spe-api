@@ -8,7 +8,7 @@ from app.api import deps
 from app.core.config import settings
 from app.core.security import get_client_ip
 from app.domain.models.enums import RecordType
-from app.schemas.mqtt import (
+from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
     BiometricSyncData, BiometricSyncAck, TimeResponsePayload
 )
