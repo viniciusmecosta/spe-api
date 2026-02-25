@@ -24,11 +24,11 @@ class UvicornHostFilter(logging.Filter):
         super().__init__()
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
+            s.connect(("10.255.255.255", 1))
             self.ip = s.getsockname()[0]
             s.close()
         except Exception:
-            self.ip = "localhost"
+            self.ip = "127.0.0.1"
 
     def filter(self, record):
         if record.msg == "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)":
