@@ -7,7 +7,7 @@ from typing import Any, Union
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-ALGORITHM = "HS256"
+ALGORITHM = settings.ALGORITHM
 
 
 def create_access_token(subject: Union[str, Any], expires_delta: timedelta = None) -> str:
@@ -29,10 +29,4 @@ def get_password_hash(password: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
     return request.client.host if request.client else "127.0.0.1"
