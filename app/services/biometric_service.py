@@ -4,7 +4,7 @@ from typing import List
 
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User
-from app.schemas.mqtt import BiometricSyncData, EnrollResultPayload
+from app.schemas.device import BiometricSyncData, EnrollResultPayload
 from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
