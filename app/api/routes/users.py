@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any, List
 
 from app.api import deps
+from app.core.security import get_password_hash
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
@@ -55,8 +56,9 @@ def update_user_me(
 ) -> Any:
     current_user_data = jsonable_encoder(current_user)
     user_in = UserUpdate(**current_user_data)
+
     if password is not None:
-        user_in.password = password
+        user_in.password = get_password_hash(password)
     if name is not None:
         user_in.name = name
 
@@ -114,6 +116,9 @@ def update_user(
     user = user_repository.get(db, user_id=user_id)
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
+        raise HTTPException(status_code=403, detail="Privilégios insuficientes para alterar este usuário")
 
     try:
         user = user_repository.update(db, db_obj=user, obj_in=user_in)
