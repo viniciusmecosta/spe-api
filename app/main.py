@@ -1,6 +1,7 @@
 import logging
 import os
 import pytz
+import socket
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
@@ -11,14 +12,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import api_router
 from app.core.config import settings
 from app.services.backup_service import backup_service
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
+class UvicornHostFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            self.ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            self.ip = "localhost"
+
+    def filter(self, record):
+        if record.msg == "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)":
+            if len(record.args) == 3 and record.args[1] == "0.0.0.0":
+                record.args = (record.args[0], self.ip, record.args[2])
+        return True
+
+
+logging.getLogger("uvicorn.error").addFilter(UvicornHostFilter())
+
+logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler()
 
 
@@ -53,10 +74,26 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == status.HTTP_404_NOT_FOUND:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "erro": "Rota não encontrada.",
+                "mensagem": "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
+            }
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -75,6 +112,16 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
 async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "An unexpected error occurred."})
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return {
+        "sistema": settings.PROJECT_NAME,
+        "versao": settings.APP_VERSION,
+        "status": "Online",
+        "documentacao": "/docs"
+    }
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
