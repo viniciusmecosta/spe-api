@@ -223,7 +223,20 @@ class TimeRecordService:
 
         record_type = RecordType.ENTRY
         if last_record and last_record.record_type == RecordType.ENTRY:
-            record_type = RecordType.EXIT
+            tz = pytz.timezone(settings.TIMEZONE)
+
+            last_time = last_record.record_datetime
+            if last_time.tzinfo is None:
+                last_time = pytz.utc.localize(last_time)
+            last_local_date = last_time.astimezone(tz).date()
+
+            curr_time = timestamp
+            if curr_time.tzinfo is None:
+                curr_time = pytz.utc.localize(curr_time)
+            curr_local_date = curr_time.astimezone(tz).date()
+
+            if last_local_date == curr_local_date:
+                record_type = RecordType.EXIT
 
         return time_record_repository.create(
             db,
