@@ -70,11 +70,7 @@ class BackupService:
                 if user.name not in user_activity:
                     user_activity[user.name] = []
 
-                local_time = record.record_datetime
-                if local_time.tzinfo is not None:
-                    local_time = local_time.astimezone(tz)
-
-                time_str = local_time.strftime("%H:%M")
+                time_str = record.record_datetime.strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
 
                 user_activity[user.name].append(f"{time_str} ({type_label})")
@@ -165,9 +161,9 @@ class BackupService:
 
             if last_backup:
                 log_time = last_backup.timestamp
-                if log_time.tzinfo is None:
-                    log_time = pytz.utc.localize(log_time)
-                log_date = log_time.astimezone(tz).date()
+                if log_time.tzinfo is not None:
+                    log_time = log_time.astimezone(tz)
+                log_date = log_time.date()
                 if log_date == today:
                     return
 
