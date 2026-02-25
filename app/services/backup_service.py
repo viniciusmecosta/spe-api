@@ -48,14 +48,14 @@ class BackupService:
             yesterday = yesterday_dt.date()
             formatted_date = yesterday.strftime("%d/%m/%Y")
 
-            start_utc = yesterday_dt.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
-            end_utc = yesterday_dt.replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(pytz.utc)
+            start_local = datetime.combine(yesterday, datetime.min.time())
+            end_local = datetime.combine(yesterday, datetime.max.time())
 
             records = (
                 db.query(TimeRecord, User)
                 .join(User, TimeRecord.user_id == User.id)
-                .filter(TimeRecord.record_datetime >= start_utc)
-                .filter(TimeRecord.record_datetime <= end_utc)
+                .filter(TimeRecord.record_datetime >= start_local)
+                .filter(TimeRecord.record_datetime <= end_local)
                 .order_by(User.name, TimeRecord.record_datetime)
                 .all()
             )
@@ -70,12 +70,7 @@ class BackupService:
                 if user.name not in user_activity:
                     user_activity[user.name] = []
 
-                local_time = record.record_datetime
-                if local_time.tzinfo is None:
-                    local_time = pytz.utc.localize(local_time)
-                local_time = local_time.astimezone(tz)
-
-                time_str = local_time.strftime("%H:%M")
+                time_str = record.record_datetime.strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
 
                 user_activity[user.name].append(f"{time_str} ({type_label})")
@@ -166,9 +161,9 @@ class BackupService:
 
             if last_backup:
                 log_time = last_backup.timestamp
-                if log_time.tzinfo is None:
-                    log_time = pytz.utc.localize(log_time)
-                log_date = log_time.astimezone(tz).date()
+                if log_time.tzinfo is not None:
+                    log_time = log_time.astimezone(tz)
+                log_date = log_time.date()
                 if log_date == today:
                     return
 

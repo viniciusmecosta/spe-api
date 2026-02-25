@@ -39,7 +39,15 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    lifespan=lifespan
+    lifespan=lifespan,
+    swagger_ui_parameters={
+        "docExpansion": "list",
+        "tryItOutEnabled": True,
+        "defaultModelsExpandDepth": -1,
+        "defaultModelExpandDepth": 0,
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+    },
 )
 
 origins = ["*"]
