@@ -1,3 +1,4 @@
+import secrets
 from fastapi import Depends, HTTPException, status, Security
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from jose import jwt, JWTError
@@ -78,7 +79,7 @@ def get_current_maintainer(
 
 
 async def verify_api_key(api_key: str = Security(api_key_header)):
-    if api_key != settings.DEVICE_API_KEY:
+    if not api_key or not secrets.compare_digest(api_key, settings.DEVICE_API_KEY):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API Key"
