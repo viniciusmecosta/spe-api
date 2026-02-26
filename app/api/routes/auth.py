@@ -5,6 +5,7 @@ from typing import Any
 
 from app.api import deps
 from app.core import security
+from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.token import Token
 from app.schemas.user import UserResponse
@@ -25,5 +26,5 @@ def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2Pass
 
 
 @router.get("/me", response_model=UserResponse)
-def read_users_me(current_user=Depends(deps.get_current_active_user)) -> Any:
+def read_users_me(current_user: User = Depends(deps.get_current_active_user)) -> Any:
     return current_user
