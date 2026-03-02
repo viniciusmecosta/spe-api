@@ -62,7 +62,7 @@ class AnomalyService:
                     delta = current_record.record_datetime - last_entry_time
                     seconds = delta.total_seconds()
 
-                    if seconds > 7 * 3600:
+                    if seconds > 8 * 3600:
                         fmt_time = self._format_duration(seconds)
                         anomalies.append(AnomalyResponse(
                             user_id=user_id,
@@ -84,7 +84,7 @@ class AnomalyService:
                 description="Entrada sem saída"
             ))
 
-        if total_worked_seconds > (9 * 3600):
+        if total_worked_seconds > (10 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
             anomalies.append(AnomalyResponse(
                 user_id=user_id,
