@@ -3,10 +3,11 @@ import os
 import pytz
 import smtplib
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from sqlalchemy.orm import Session
 from typing import Dict, List
 
 from app.core.config import settings
@@ -40,16 +41,17 @@ class BackupService:
         except Exception:
             return None
 
-    def _get_yesterday_activity_html(self) -> str:
-        db = SessionLocal()
+    def _generate_daily_report_html(self, db: Session, target_date: date) -> str:
         try:
-            tz = pytz.timezone(settings.TIMEZONE)
-            yesterday_dt = datetime.now(tz) - timedelta(days=1)
-            yesterday = yesterday_dt.date()
-            formatted_date = yesterday.strftime("%d/%m/%Y")
+            formatted_date = target_date.strftime("%d/%m/%Y")
+            day_name_map = {
+                0: "Segunda-feira", 1: "Terça-feira", 2: "Quarta-feira", 3: "Quinta-feira",
+                4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
+            }
+            day_name = day_name_map[target_date.weekday()]
 
-            start_local = datetime.combine(yesterday, datetime.min.time())
-            end_local = datetime.combine(yesterday, datetime.max.time())
+            start_local = datetime.combine(target_date, datetime.min.time())
+            end_local = datetime.combine(target_date, datetime.max.time())
 
             records = (
                 db.query(TimeRecord, User)
@@ -60,10 +62,12 @@ class BackupService:
                 .all()
             )
 
-            html = f"<h3 style=\"color: #333; margin-bottom: 10px;\">Relatório de Pontos - {formatted_date}</h3>"
+            html = f"<div style='margin-bottom: 20px;'>"
+            html += f"<h3 style=\"color: #333; margin-bottom: 5px;\">Relatório de Pontos - {day_name}, {formatted_date}</h3>"
 
             if not records:
-                return html + "<p><em>Sem registros de ponto ontem.</em></p>"
+                html += "<p style='font-size: 13px; color: #666;'><em>Sem registros de ponto neste dia.</em></p></div>"
+                return html
 
             user_activity: Dict[str, List[str]] = {}
             for record, user in records:
@@ -86,14 +90,14 @@ class BackupService:
                 html += f"<tr><td style=\"padding: 8px; border: 1px solid #ddd;\"><strong>{name}</strong></td><td style=\"padding: 8px; border: 1px solid #ddd;\">{punches_str}</td></tr>"
 
             html += "</tbody></table>"
+            html += "</div><hr style='border: 0; border-top: 1px solid #eee; margin: 20px 0;'>"
             return html
 
-        except Exception:
-            return "<p><em>Erro ao gerar relatório.</em></p>"
-        finally:
-            db.close()
+        except Exception as e:
+            logger.error(f"Erro ao gerar HTML do dia {target_date}: {e}")
+            return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
-    def _send_email(self, file_path: str, filename: str, report_html: str) -> bool:
+    def _send_email(self, file_path: str, filename: str, report_html: str, period_text: str) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.EMAIL_TO]):
             return False
 
@@ -105,9 +109,19 @@ class BackupService:
             tz = pytz.timezone(settings.TIMEZONE)
             current_date = datetime.now(tz).strftime("%d/%m/%Y")
 
-            msg['Subject'] = f"Backup SPE e Relatório - {current_date}"
+            msg['Subject'] = f"Backup SPE e Relatórios - {current_date}"
 
-            body_html = f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\"><p>Prezados,</p><p>Segue em anexo a cópia de segurança do banco de dados.</p>{report_html}<br><p style=\"font-size: 12px; color: #777;\">Atenciosamente,<br>SPE - Sistema de Ponto Eletrônico</p></body></html>"
+            body_html = (
+                f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\">"
+                f"<p>Prezados,</p>"
+                f"<p>Segue em anexo a cópia de segurança do banco de dados.</p>"
+                f"<p>{period_text}</p>"
+                f"<br>"
+                f"{report_html}"
+                f"<br>"
+                f"<p style=\"font-size: 12px; color: #777;\">Atenciosamente,<br>SPE - Sistema de Ponto Eletrônico</p>"
+                f"</body></html>"
+            )
 
             msg.attach(MIMEText(body_html, 'html'))
 
@@ -117,13 +131,17 @@ class BackupService:
                 msg.attach(part)
 
             server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
+            server.ehlo()
             server.starttls()
+            server.ehlo()
+
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(msg['From'], msg['To'], msg.as_string())
             server.quit()
             return True
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro ao enviar email: {e}")
             return False
 
     def send_database_backup(self) -> bool:
@@ -131,19 +149,64 @@ class BackupService:
         if not os.path.exists(db_file):
             return False
 
-        backup_path = self._create_safe_backup(db_file)
-        if not backup_path:
-            return False
-
-        success = False
+        db = SessionLocal()
         try:
-            report_html = self._get_yesterday_activity_html()
-            filename = "spe.db"
-            success = self._send_email(backup_path, filename, report_html)
+            tz = pytz.timezone(settings.TIMEZONE)
+            now = datetime.now(tz)
+            today = now.date()
+            yesterday = today - timedelta(days=1)
+
+            last_backup = db.query(AuditLog).filter(
+                AuditLog.action == "DAILY_BACKUP"
+            ).order_by(AuditLog.timestamp.desc()).first()
+
+            start_date = yesterday
+
+            if last_backup:
+                last_backup_local = last_backup.timestamp.astimezone(tz)
+                start_date = last_backup_local.date()
+
+            if start_date > yesterday:
+                start_date = yesterday
+
+            full_report_html = ""
+            current_check_date = start_date
+
+            while current_check_date <= yesterday:
+                daily_html = self._generate_daily_report_html(db, current_check_date)
+                full_report_html += daily_html
+                current_check_date += timedelta(days=1)
+
+            if not full_report_html:
+                full_report_html = "<p><em>Nenhum período pendente para relatório.</em></p>"
+
+            fmt_start = start_date.strftime("%d/%m/%Y")
+            fmt_end = yesterday.strftime("%d/%m/%Y")
+
+            if start_date < yesterday:
+                period_text = f"Abaixo estão os relatórios dos dias {fmt_start} a {fmt_end}:"
+            else:
+                period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+
+            backup_path = self._create_safe_backup(db_file)
+            if not backup_path:
+                return False
+
+            success = False
+            try:
+                filename = "spe.db"
+                success = self._send_email(backup_path, filename, full_report_html, period_text)
+            finally:
+                if os.path.exists(backup_path):
+                    os.remove(backup_path)
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Erro no processo de envio de backup: {e}")
+            return False
         finally:
-            if os.path.exists(backup_path):
-                os.remove(backup_path)
-        return success
+            db.close()
 
     def run_daily_backup_routine(self):
         db = SessionLocal()
@@ -161,9 +224,12 @@ class BackupService:
 
             if last_backup:
                 log_time = last_backup.timestamp
-                if log_time.tzinfo is not None:
-                    log_time = log_time.astimezone(tz)
-                log_date = log_time.date()
+                if log_time.tzinfo is None:
+                    log_time = pytz.utc.localize(log_time)
+
+                log_local = log_time.astimezone(tz)
+                log_date = log_local.date()
+
                 if log_date == today:
                     return
 
@@ -180,8 +246,8 @@ class BackupService:
                     new_data={"target_email": target_email}
                 )
                 audit_repository.create(db, audit_in)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Erro na rotina de backup: {e}")
         finally:
             db.close()
 
