@@ -1,3 +1,4 @@
+from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
 from typing import List, Optional, Set
 
@@ -14,8 +15,41 @@ class UserRepository:
     def get(self, db: Session, user_id: int) -> Optional[User]:
         return db.query(User).filter(User.id == user_id).first()
 
-    def get_multi(self, db: Session, skip: int = 0, limit: int = 100) -> List[User]:
-        return db.query(User).offset(skip).limit(limit).all()
+    def get_multi(
+            self,
+            db: Session,
+            skip: int = 0,
+            limit: int = 100,
+            is_active: Optional[bool] = None,
+            role: Optional[str] = None,
+            search: Optional[str] = None,
+            order_by: str = "id",
+            order_direction: str = "asc"
+    ) -> List[User]:
+        query = db.query(User)
+
+        if is_active is not None:
+            query = query.filter(User.is_active == is_active)
+
+        if role is not None:
+            query = query.filter(User.role == role)
+
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    User.name.ilike(search_term),
+                    User.username.ilike(search_term)
+                )
+            )
+
+        order_column = getattr(User, order_by, User.id)
+        if order_direction.lower() == "desc":
+            query = query.order_by(desc(order_column))
+        else:
+            query = query.order_by(asc(order_column))
+
+        return query.offset(skip).limit(limit).all()
 
     def get_active_users(self, db: Session) -> List[User]:
         return db.query(User).filter(User.is_active == True).all()
@@ -150,6 +184,5 @@ class UserRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
-
 
 user_repository = UserRepository()
