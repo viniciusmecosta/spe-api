@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List
+from typing import Any, List, Optional
 
 from app.api import deps
 from app.core.security import get_password_hash
@@ -14,17 +14,30 @@ from app.services.user_service import user_service
 
 router = APIRouter()
 
-
 @router.get("/", response_model=List[UserResponse])
 def read_users(
         db: Session = Depends(deps.get_db),
-        skip: int = 0,
-        limit: int = 100,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=1000),
+        is_active: Optional[bool] = Query(None),
+        role: Optional[UserRole] = Query(None),
+        search: Optional[str] = Query(None),
+        order_by: str = Query("id", pattern="^(id|name|username|created_at|updated_at)$"),
+        order_direction: str = Query("asc", pattern="^(asc|desc)$"),
         current_user: User = Depends(deps.get_current_manager),
 ) -> Any:
-    users = user_repository.get_multi(db, skip=skip, limit=limit)
+    role_value = role.value if role else None
+    users = user_repository.get_multi(
+        db,
+        skip=skip,
+        limit=limit,
+        is_active=is_active,
+        role=role_value,
+        search=search,
+        order_by=order_by,
+        order_direction=order_direction
+    )
     return users
-
 
 @router.post("/", response_model=UserResponse)
 def create_user(
@@ -44,7 +57,6 @@ def create_user(
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.put("/me", response_model=UserResponse)
 def update_user_me(
@@ -68,7 +80,6 @@ def update_user_me(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @router.get("/me", response_model=UserResponse)
 def read_user_me(
         db: Session = Depends(deps.get_db),
@@ -88,7 +99,6 @@ def read_user_me(
 
     return user_data
 
-
 @router.get("/{user_id}", response_model=UserResponse)
 def read_user_by_id(
         user_id: int,
@@ -103,7 +113,6 @@ def read_user_by_id(
         raise HTTPException(status_code=400, detail="Privilégios insuficientes")
 
     return user
-
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(
