@@ -14,6 +14,7 @@ class TimeRecord(Base):
     record_type = Column(Enum(RecordType), nullable=False)
     record_datetime = Column(DateTime(timezone=True), nullable=False)
     ip_address = Column(String, nullable=True)
+    device_name = Column(String, nullable=True)
     is_time_verified = Column(Boolean, default=False)
 
     biometric_id = Column(Integer, ForeignKey("user_biometrics.id"), nullable=True)
