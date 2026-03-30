@@ -1,4 +1,5 @@
 import bcrypt
+import socket
 from datetime import datetime, timedelta
 from fastapi import Request
 from jose import jwt
@@ -34,3 +35,14 @@ def get_password_hash(password: str) -> str:
 
 def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
+
+
+def get_client_device_name(ip: str) -> str:
+    if not ip:
+        return "Unknown"
+    if ip in ("127.0.0.1", "::1"):
+        return "localhost"
+    try:
+        return socket.gethostbyaddr(ip)[0]
+    except Exception:
+        return "Unknown"

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any, List
 
 from app.api import deps
-from app.core.security import get_client_ip
+from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin
@@ -71,7 +71,8 @@ def create_time_record_admin(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     ip_address = get_client_ip(request)
-    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address)
+    device_name = get_client_device_name(ip_address)
+    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name)
 
 
 @router.put("/admin/{record_id}", response_model=TimeRecordResponse)
