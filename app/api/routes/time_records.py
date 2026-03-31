@@ -71,7 +71,7 @@ def create_time_record_admin(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     ip_address = get_client_ip(request)
-    device_name = get_client_device_name(ip_address)
+    device_name = get_client_device_name(ip_address, request)
     return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name)
 
 

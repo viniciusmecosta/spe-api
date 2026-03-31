@@ -47,20 +47,12 @@ class TimeRecordService:
             detail="Registro manual não autorizado. Utilize a biometria ou solicite liberação ao gestor."
         )
 
-    def _resolve_device_name(self, ip_address: str) -> str | None:
-        if not ip_address:
-            return None
-        device_name = get_client_device_name(ip_address)
-        if device_name == "Unknown":
-            return None
-        return device_name
-
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id)
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
-        device_name = self._resolve_device_name(ip_address)
+        device_name = get_client_device_name(ip_address, request)
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
@@ -72,7 +64,7 @@ class TimeRecordService:
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
-        device_name = self._resolve_device_name(ip_address)
+        device_name = get_client_device_name(ip_address, request)
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
@@ -121,15 +113,12 @@ class TimeRecordService:
         return record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
-                            ip_address: str, device_name: str) -> TimeRecord:
+                            ip_address: str, device_name: Optional[str]) -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
-
-        resolved_device_name = self._resolve_device_name(
-            ip_address) if not device_name or device_name == "Unknown" else device_name
 
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
-            record_datetime=obj_in.record_datetime, ip_address=ip_address, device_name=resolved_device_name,
+            record_datetime=obj_in.record_datetime, ip_address=ip_address, device_name=device_name,
             is_time_verified=True
         )
         record.is_manual = True
@@ -253,7 +242,7 @@ class TimeRecordService:
             if last_local_date == curr_local_date:
                 record_type = RecordType.EXIT
 
-        device_name = self._resolve_device_name(ip_address)
+        device_name = get_client_device_name(ip_address)
 
         return time_record_repository.create(
             db,
