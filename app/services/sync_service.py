@@ -1,5 +1,6 @@
 import os
 import requests
+import sqlite3
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -8,6 +9,17 @@ from app.services.backup_service import backup_service
 
 
 class SyncService:
+    def _check_sqlite_integrity(self, db_path: str) -> bool:
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA integrity_check;")
+            result = cursor.fetchone()
+            conn.close()
+            return result and result[0] == "ok"
+        except Exception:
+            return False
+
     def receive_database(self, file: UploadFile):
         if settings.OPERATION_MODE != "CONSUMIDOR":
             raise HTTPException(status_code=403, detail="Apenas o Consumidor pode receber o banco de dados.")
@@ -20,6 +32,10 @@ class SyncService:
         try:
             with open(temp_path, "wb") as buffer:
                 buffer.write(file.file.read())
+
+            if not self._check_sqlite_integrity(temp_path):
+                os.remove(temp_path)
+                raise HTTPException(status_code=400, detail="Arquivo de banco de dados corrompido ou invalido.")
 
             engine.dispose()
             os.replace(temp_path, db_path)
