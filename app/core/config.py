@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     EMAIL_FROM: Optional[str] = None
     EMAIL_TO: Optional[str] = None
 
+    OPERATION_MODE: str = "STANDALONE"
+    CONSUMER_API_KEY: Optional[str] = None
+    CONSUMER_SERVER_URL: Optional[str] = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
