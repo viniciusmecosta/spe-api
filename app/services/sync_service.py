@@ -14,6 +14,8 @@ class SyncService:
 
         temp_path = "spe_temp.db"
         db_path = "spe.db"
+        wal_path = "spe.db-wal"
+        shm_path = "spe.db-shm"
 
         try:
             with open(temp_path, "wb") as buffer:
@@ -21,6 +23,11 @@ class SyncService:
 
             engine.dispose()
             os.replace(temp_path, db_path)
+
+            if os.path.exists(wal_path):
+                os.remove(wal_path)
+            if os.path.exists(shm_path):
+                os.remove(shm_path)
         except Exception as e:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
