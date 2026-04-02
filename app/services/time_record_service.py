@@ -1,6 +1,8 @@
+from datetime import datetime
+from typing import Optional
+
 import ntplib
 import pytz
-from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
 
