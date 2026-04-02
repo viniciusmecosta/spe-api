@@ -1,7 +1,8 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, Request, Query, HTTPException, status
-from sqlalchemy.orm import Session
 from typing import Any, List
+
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
