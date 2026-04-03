@@ -12,7 +12,8 @@ from app.api.routes import (
     reports,
     payroll,
     device,
-    audit
+    audit,
+    sync
 )
 
 api_router = APIRouter()
@@ -35,3 +36,4 @@ api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
+api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])

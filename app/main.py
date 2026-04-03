@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.routes import api_router
 from app.core.config import settings
 from app.services.backup_service import backup_service
+from app.services.sync_service import sync_service
 
 
 class UvicornHostFilter(logging.Filter):
@@ -50,6 +51,10 @@ async def lifespan(app: FastAPI):
 
     trigger = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
     scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="hourly_backup_check")
+
+    if settings.OPERATION_MODE == "EXPORTADOR":
+        trigger_sync = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
+        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_sync, id="hourly_sync_db")
 
     scheduler.start()
     yield

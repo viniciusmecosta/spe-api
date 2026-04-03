@@ -10,12 +10,14 @@ from app.schemas.time_record import TimeRecordUpdate
 
 class TimeRecordRepository:
     def create(self, db: Session, user_id: int, record_type: RecordType, record_datetime: datetime,
-               ip_address: str = None, is_time_verified: bool = False, biometric_id: int = None) -> TimeRecord:
+               ip_address: str = None, device_name: str = None, is_time_verified: bool = False,
+               biometric_id: int = None) -> TimeRecord:
         db_record = TimeRecord(
             user_id=user_id,
             record_type=record_type,
             record_datetime=record_datetime,
             ip_address=ip_address,
+            device_name=device_name,
             is_time_verified=is_time_verified,
             biometric_id=biometric_id
         )

@@ -17,7 +17,7 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
-
+consumer_api_key_header = APIKeyHeader(name="X-CONSUMER-API-KEY", auto_error=False)
 
 def get_db() -> Generator:
     try:
@@ -83,5 +83,14 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API Key"
+        )
+    return api_key
+
+
+async def verify_consumer_api_key(api_key: str = Security(consumer_api_key_header)):
+    if not settings.CONSUMER_API_KEY or not api_key or not secrets.compare_digest(api_key, settings.CONSUMER_API_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Consumer API Key"
         )
     return api_key
