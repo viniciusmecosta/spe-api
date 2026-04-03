@@ -9,6 +9,7 @@ class TimeRecordBase(BaseModel):
     record_type: RecordType
     record_datetime: datetime
     ip_address: Optional[str] = None
+    device_name: Optional[str] = None
 
 
 class TimeRecordCreate(BaseModel):

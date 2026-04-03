@@ -1,8 +1,10 @@
-import bcrypt
+import socket
 from datetime import datetime, timedelta
+from typing import Any, Union, Optional
+
+import bcrypt
 from fastapi import Request
 from jose import jwt
-from typing import Any, Union
 
 from app.core.config import settings
 
@@ -33,4 +35,36 @@ def get_password_hash(password: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
     return request.client.host if request.client else "127.0.0.1"
+
+
+def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
+    device_name = ""
+
+    if request:
+        device_name = request.headers.get("X-Device-Name", "")
+        if device_name.lower() == "localhost":
+            device_name = ""
+
+    if not device_name and ip:
+        if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+            try:
+                device_name = socket.gethostname()
+            except Exception:
+                pass
+        else:
+            try:
+                socket.setdefaulttimeout(1.5)
+                host_info = socket.gethostbyaddr(ip)
+                if host_info and host_info[0]:
+                    device_name = host_info[0].split('.')[0]
+            except Exception:
+                pass
+
+    if not device_name or device_name.lower() == "localhost":
+        device_name = "Desconhecido"
+
+    return device_name[:255]

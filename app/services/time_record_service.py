@@ -1,11 +1,13 @@
+from datetime import datetime
+from typing import Optional
+
 import ntplib
 import pytz
-from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.security import get_client_ip
+from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.time_record import TimeRecord, ManualAdjustment
 from app.domain.models.user import User
@@ -52,10 +54,11 @@ class TimeRecordService:
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
+        device_name = get_client_device_name(ip_address, request)
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.ENTRY, current_time, ip_address, is_time_verified=is_verified
+            db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, is_time_verified=is_verified
         )
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
@@ -63,10 +66,11 @@ class TimeRecordService:
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
+        device_name = get_client_device_name(ip_address, request)
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.EXIT, current_time, ip_address, is_time_verified=is_verified
+            db, user_id, RecordType.EXIT, current_time, ip_address, device_name, is_time_verified=is_verified
         )
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
@@ -111,11 +115,13 @@ class TimeRecordService:
         return record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
-                            ip_address: str) -> TimeRecord:
+                            ip_address: str, device_name: Optional[str]) -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
-            record_datetime=obj_in.record_datetime, ip_address=ip_address, is_time_verified=True
+            record_datetime=obj_in.record_datetime, ip_address=ip_address, device_name=device_name,
+            is_time_verified=True
         )
         record.is_manual = True
         record.edited_by = manager_id
@@ -238,12 +244,15 @@ class TimeRecordService:
             if last_local_date == curr_local_date:
                 record_type = RecordType.EXIT
 
+        device_name = get_client_device_name(ip_address)
+
         return time_record_repository.create(
             db,
             user_id=user_id,
             record_type=record_type,
             record_datetime=timestamp,
             ip_address=ip_address,
+            device_name=device_name,
             is_time_verified=True,
             biometric_id=biometric_id
         )
