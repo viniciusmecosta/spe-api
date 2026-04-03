@@ -26,6 +26,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     role = Column(String, default="EMPLOYEE")
     can_manual_punch = Column(Boolean, default=True)
+    can_export_report = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

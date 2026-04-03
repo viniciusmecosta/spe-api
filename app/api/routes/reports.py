@@ -1,10 +1,12 @@
 from datetime import datetime
+from typing import Any, List, Optional
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
+from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.schemas.report import (
     MonthlyReportResponse,
@@ -31,9 +33,6 @@ def get_my_report(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    Retorna o espelho de ponto detalhado do usuário logado.
-    """
     now = datetime.now()
     if not month: month = now.month
     if not year: year = now.year
@@ -49,8 +48,7 @@ def get_my_report(
 def get_monthly_global_report(
         month: int = Query(None, ge=1, le=12),
         year: int = Query(None, ge=2000),
-        employee_ids: Optional[List[int]] = Query(None,
-                                                  description="Lista de IDs para filtrar (ex: &employee_ids=2&employee_ids=3)"),
+        employee_ids: Optional[List[int]] = Query(None),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
@@ -67,11 +65,18 @@ def export_monthly_report_excel(
         year: int = Query(None, ge=2000),
         employee_ids: Optional[List[int]] = Query(None),
         db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
+        current_user: User = Depends(deps.get_current_active_user)
 ):
     now = datetime.now()
     if not month: month = now.month
     if not year: year = now.year
+
+    is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+
+    if not is_manager:
+        if not current_user.can_export_report:
+            raise HTTPException(status_code=403, detail="Você não tem permissão para solicitar este relatório.")
+        employee_ids = [current_user.id]
 
     file_stream = report_service.generate_excel_report(db, month, year, employee_ids)
 

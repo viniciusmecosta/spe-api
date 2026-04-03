@@ -1,6 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel, field_validator
 from typing import Optional, List
+
+from pydantic import BaseModel, field_validator
 
 from app.domain.models.enums import UserRole
 from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse
@@ -13,6 +14,7 @@ class UserBase(BaseModel):
     role: Optional[UserRole] = UserRole.EMPLOYEE
     is_active: Optional[bool] = True
     can_manual_punch: Optional[bool] = True
+    can_export_report: Optional[bool] = False
 
     @field_validator('username')
     @classmethod
@@ -35,6 +37,7 @@ class UserUpdate(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     can_manual_punch: Optional[bool] = None
+    can_export_report: Optional[bool] = None
     schedules: Optional[List[WorkScheduleCreate]] = None
     biometrics: Optional[List[UserBiometricUpdate]] = None
 
