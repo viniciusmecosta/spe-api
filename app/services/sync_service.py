@@ -1,11 +1,16 @@
+import logging
 import os
-import requests
 import sqlite3
+
+import requests
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
-from app.database.session import engine
+from app.database.session import engine, SessionLocal
+from app.services.audit_service import audit_service
 from app.services.backup_service import backup_service
+
+logger = logging.getLogger(__name__)
 
 
 class SyncService:
@@ -59,8 +64,10 @@ class SyncService:
 
         backup_path = backup_service._create_safe_backup("spe.db")
         if not backup_path:
+            logger.error("Falha ao criar backup local para sincronizacao.")
             return
 
+        db = SessionLocal()
         try:
             url = f"{settings.CONSUMER_SERVER_URL.rstrip('/')}{settings.API_V1_STR}/sync/database"
             headers = {"X-CONSUMER-API-KEY": settings.CONSUMER_API_KEY}
@@ -68,11 +75,30 @@ class SyncService:
                 files = {"file": ("spe.db", f, "application/octet-stream")}
                 response = requests.post(url, headers=headers, files=files, timeout=60)
                 response.raise_for_status()
-        except Exception:
-            pass
+
+            logger.info("Sincronizacao remota realizada com sucesso.")
+            audit_service.log(
+                db=db,
+                action="REMOTE_SYNC_SUCCESS",
+                entity="SYSTEM",
+                actor_name="Sistema",
+                details="Sincronizacao de banco de dados com o consumidor realizada com sucesso."
+            )
+
+        except Exception as e:
+            error_msg = f"Erro na sincronizacao remota: {str(e)}"
+            logger.error(error_msg)
+            audit_service.log(
+                db=db,
+                action="REMOTE_SYNC_ERROR",
+                entity="SYSTEM",
+                actor_name="Sistema",
+                details=error_msg
+            )
         finally:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
+            db.close()
 
 
 sync_service = SyncService()
