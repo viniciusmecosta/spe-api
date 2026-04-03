@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
@@ -26,7 +26,9 @@ class UserService:
             username=user_in.username,
             password_hash=password_hash,
             role=user_in.role,
-            is_active=user_in.is_active
+            is_active=user_in.is_active,
+            can_manual_punch=user_in.can_manual_punch,
+            can_export_report=user_in.can_export_report
         )
 
         if schedules_in:
