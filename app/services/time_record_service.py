@@ -1,10 +1,9 @@
-from datetime import datetime
-from typing import Optional
-
 import ntplib
 import pytz
+from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
@@ -30,7 +29,7 @@ class TimeRecordService:
         except Exception:
             return datetime.now(tz), False
 
-    def _validate_manual_punch_permission(self, db: Session, user_id: int):
+    def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -38,7 +37,15 @@ class TimeRecordService:
         if user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
             return
 
-        if user.can_manual_punch:
+        platform = request.headers.get("X-Platform", "desktop").lower()
+
+        can_punch = False
+        if platform == "mobile":
+            can_punch = user.can_manual_punch_mobile
+        else:
+            can_punch = user.can_manual_punch_desktop
+
+        if can_punch:
             return
 
         if manual_auth_service.check_authorization(db, user_id):
@@ -46,11 +53,11 @@ class TimeRecordService:
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registro manual não autorizado. Utilize a biometria ou solicite liberação ao gestor."
+            detail="Registro manual não autorizado para este dispositivo. Utilize a biometria ou solicite liberação ao gestor."
         )
 
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
-        self._validate_manual_punch_permission(db, user_id)
+        self._validate_manual_punch_permission(db, user_id, request)
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
@@ -62,7 +69,7 @@ class TimeRecordService:
         )
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
-        self._validate_manual_punch_permission(db, user_id)
+        self._validate_manual_punch_permission(db, user_id, request)
 
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)

@@ -85,17 +85,20 @@ def read_user_me(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    can_punch = False
+    can_punch_desktop = False
+    can_punch_mobile = False
 
     if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
-        can_punch = True
-    elif current_user.can_manual_punch:
-        can_punch = True
+        can_punch_desktop = True
+        can_punch_mobile = True
     else:
-        can_punch = manual_auth_service.check_authorization(db, current_user.id)
+        is_authorized = manual_auth_service.check_authorization(db, current_user.id)
+        can_punch_desktop = current_user.can_manual_punch_desktop or is_authorized
+        can_punch_mobile = current_user.can_manual_punch_mobile or is_authorized
 
     user_data = jsonable_encoder(current_user)
-    user_data['can_manual_punch'] = can_punch
+    user_data['can_manual_punch_desktop'] = can_punch_desktop
+    user_data['can_manual_punch_mobile'] = can_punch_mobile
 
     return user_data
 

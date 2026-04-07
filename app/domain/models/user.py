@@ -25,7 +25,8 @@ class User(Base):
     password_hash = Column(String)
     is_active = Column(Boolean, default=True)
     role = Column(String, default="EMPLOYEE")
-    can_manual_punch = Column(Boolean, default=True)
+    can_manual_punch_desktop = Column(Boolean, default=True)
+    can_manual_punch_mobile = Column(Boolean, default=False)
     can_export_report = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
