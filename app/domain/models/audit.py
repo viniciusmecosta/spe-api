@@ -1,9 +1,14 @@
+import pytz
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.database.base import Base
 
+
+def get_local_time():
+    return datetime.now(pytz.timezone(settings.TIMEZONE))
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
@@ -14,7 +19,7 @@ class AuditLog(Base):
     entity = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=True)
     details = Column(String, nullable=True)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    timestamp = Column(DateTime(timezone=True), default=get_local_time)
 
     actor_name = Column(String, nullable=True)
     target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)

@@ -1,9 +1,14 @@
+import pytz
+from datetime import datetime
 from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.database.base import Base
 
+
+def get_local_time():
+    return datetime.now(pytz.timezone(settings.TIMEZONE))
 
 class PayrollClosure(Base):
     __tablename__ = "payroll_closures"
@@ -14,7 +19,7 @@ class PayrollClosure(Base):
     is_closed = Column(Boolean, default=True, nullable=False)
 
     closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    closed_at = Column(DateTime(timezone=True), server_default=func.now())
+    closed_at = Column(DateTime(timezone=True), default=get_local_time)
 
     closed_by = relationship("User")
 
