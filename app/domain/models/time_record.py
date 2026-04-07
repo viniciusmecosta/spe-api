@@ -1,10 +1,15 @@
+import pytz
+from datetime import datetime
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Boolean, Enum
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.database.base import Base
 from app.domain.models.enums import RecordType, EditJustification
 
+
+def get_local_time():
+    return datetime.now(pytz.timezone(settings.TIMEZONE))
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
@@ -26,8 +31,8 @@ class TimeRecord(Base):
     edit_justification = Column(Enum(EditJustification), nullable=True)
     edit_reason = Column(String, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
     user = relationship("User", back_populates="time_records", foreign_keys=[user_id])
     editor = relationship("User", foreign_keys=[edited_by])
@@ -42,7 +47,7 @@ class ManualAdjustment(Base):
     previous_type = Column(Enum(RecordType), nullable=False)
     new_type = Column(Enum(RecordType), nullable=False)
     adjusted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    adjusted_at = Column(DateTime(timezone=True), server_default=func.now())
+    adjusted_at = Column(DateTime(timezone=True), default=get_local_time)
 
     time_record = relationship("TimeRecord", backref="manual_adjustments")
     adjusted_by = relationship("User", foreign_keys=[adjusted_by_user_id])
