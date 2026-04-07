@@ -1,10 +1,15 @@
+import pytz
+from datetime import datetime, date, time
 from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.database.base import Base
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus
 
+
+def get_local_time():
+    return datetime.now(pytz.timezone(settings.TIMEZONE))
 
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
@@ -16,13 +21,12 @@ class AdjustmentRequest(Base):
     entry_time = Column(Time, nullable=True)
     exit_time = Column(Time, nullable=True)
     reason_text = Column(String, nullable=True)
-    # Novo campo para definir quantidade de horas abonadas
     amount_hours = Column(Float, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
     manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     manager_comment = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=get_local_time)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
@@ -40,6 +44,6 @@ class AdjustmentAttachment(Base):
     adjustment_request_id = Column(Integer, ForeignKey("adjustment_requests.id"), nullable=False)
     file_path = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+    uploaded_at = Column(DateTime(timezone=True), default=get_local_time)
 
     request = relationship("AdjustmentRequest", backref="attachments")
