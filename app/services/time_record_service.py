@@ -62,10 +62,12 @@ class TimeRecordService:
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
+        platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, is_time_verified=is_verified
+            db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform,
+            is_time_verified=is_verified
         )
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
@@ -74,10 +76,12 @@ class TimeRecordService:
         current_time, is_verified = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
+        platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.EXIT, current_time, ip_address, device_name, is_time_verified=is_verified
+            db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform,
+            is_time_verified=is_verified
         )
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
@@ -128,6 +132,7 @@ class TimeRecordService:
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
             record_datetime=obj_in.record_datetime, ip_address=ip_address, device_name=device_name,
+            platform="desktop",
             is_time_verified=True
         )
         record.is_manual = True
@@ -260,6 +265,7 @@ class TimeRecordService:
             record_datetime=timestamp,
             ip_address=ip_address,
             device_name=device_name,
+            platform="desktop",
             is_time_verified=True,
             biometric_id=biometric_id
         )
