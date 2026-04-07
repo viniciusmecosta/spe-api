@@ -1,9 +1,14 @@
+import pytz
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
+from app.core.config import settings
 from app.database.base import Base
 
+
+def get_local_time():
+    return datetime.now(pytz.timezone(settings.TIMEZONE))
 
 class WorkSchedule(Base):
     __tablename__ = "work_schedules"
@@ -29,8 +34,8 @@ class User(Base):
     can_manual_punch_mobile = Column(Boolean, default=False)
     can_export_report = Column(Boolean, default=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
     schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="joined")
     time_records = relationship("TimeRecord", back_populates="user", foreign_keys="TimeRecord.user_id")
