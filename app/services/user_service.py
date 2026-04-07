@@ -27,7 +27,8 @@ class UserService:
             password_hash=password_hash,
             role=user_in.role,
             is_active=user_in.is_active,
-            can_manual_punch=user_in.can_manual_punch,
+            can_manual_punch_desktop=user_in.can_manual_punch_desktop,
+            can_manual_punch_mobile=user_in.can_manual_punch_mobile,
             can_export_report=user_in.can_export_report
         )
 
