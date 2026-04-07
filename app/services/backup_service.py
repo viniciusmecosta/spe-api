@@ -16,8 +16,7 @@ from app.domain.models.audit import AuditLog
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.repositories.audit_repository import audit_repository
-from app.schemas.audit import AuditLogCreate
+from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -144,26 +143,28 @@ class BackupService:
             logger.error(f"Erro ao enviar email: {e}")
             return False
 
-    def send_database_backup(self) -> bool:
+    def send_database_backup(self, db: Session = None) -> bool:
         db_file = "spe.db"
         if not os.path.exists(db_file):
             return False
 
-        db = SessionLocal()
+        session = db or SessionLocal()
         try:
             tz = pytz.timezone(settings.TIMEZONE)
             now = datetime.now(tz)
             today = now.date()
             yesterday = today - timedelta(days=1)
 
-            last_backup = db.query(AuditLog).filter(
+            last_backup = session.query(AuditLog).filter(
                 AuditLog.action == "DAILY_BACKUP"
             ).order_by(AuditLog.timestamp.desc()).first()
 
             start_date = yesterday
 
             if last_backup:
-                last_backup_local = last_backup.timestamp.astimezone(tz)
+                last_backup_local = last_backup.timestamp
+                if last_backup_local.tzinfo is not None:
+                    last_backup_local = last_backup_local.astimezone(tz)
                 start_date = last_backup_local.date()
 
             if start_date > yesterday:
@@ -173,7 +174,7 @@ class BackupService:
             current_check_date = start_date
 
             while current_check_date <= yesterday:
-                daily_html = self._generate_daily_report_html(db, current_check_date)
+                daily_html = self._generate_daily_report_html(session, current_check_date)
                 full_report_html += daily_html
                 current_check_date += timedelta(days=1)
 
@@ -206,7 +207,8 @@ class BackupService:
             logger.error(f"Erro no processo de envio de backup: {e}")
             return False
         finally:
-            db.close()
+            if db is None:
+                session.close()
 
     def run_daily_backup_routine(self):
         db = SessionLocal()
@@ -224,28 +226,27 @@ class BackupService:
 
             if last_backup:
                 log_time = last_backup.timestamp
-                if log_time.tzinfo is None:
-                    log_time = pytz.utc.localize(log_time)
+                if log_time.tzinfo is not None:
+                    log_time = log_time.astimezone(tz)
 
-                log_local = log_time.astimezone(tz)
-                log_date = log_local.date()
+                log_date = log_time.date()
 
                 if log_date == today:
                     return
 
-            sent = self.send_database_backup()
+            sent = self.send_database_backup(db)
 
             if sent:
                 target_email = settings.EMAIL_TO or "Email nao configurado"
 
-                audit_in = AuditLogCreate(
+                audit_service.log(
+                    db=db,
                     actor_id=None,
                     actor_name="Sistema",
                     action="DAILY_BACKUP",
                     entity="SYSTEM",
                     new_data={"target_email": target_email}
                 )
-                audit_repository.create(db, audit_in)
         except Exception as e:
             logger.error(f"Erro na rotina de backup: {e}")
         finally:
