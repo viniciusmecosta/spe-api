@@ -1,15 +1,16 @@
-# app/services/backup_service.py
 import logging
 import os
-import pytz
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta, date
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from sqlalchemy.orm import Session
+from email.utils import parseaddr, formataddr
 from typing import Dict, List
+
+import pytz
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -103,17 +104,23 @@ class BackupService:
 
         try:
             msg = MIMEMultipart()
-            msg['From'] = settings.EMAIL_FROM or settings.SMTP_USER
-            msg['To'] = settings.EMAIL_TO
 
+            raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
             tz = pytz.timezone(settings.TIMEZONE)
             current_date = datetime.now(tz).strftime("%d/%m/%Y")
-
             base_subject = f"Backup SPE e Relatórios - {current_date}"
+
             if settings.ENVIRONMENT.lower() == "dev":
-                msg['Subject'] = f"[DEV] {base_subject} --- AMBIENTE DE DESENVOLVIMENTO"
+                name, addr = parseaddr(raw_sender)
+                email_address = addr if addr else raw_sender
+                display_name = f"DEVELOPMENT {name}".strip() if name else "DEVELOPMENT"
+                msg['From'] = formataddr((display_name, email_address))
+                msg['Subject'] = f"[DEV] {base_subject}"
             else:
+                msg['From'] = raw_sender
                 msg['Subject'] = base_subject
+
+            msg['To'] = settings.EMAIL_TO
 
             body_html = (
                 f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\">"
