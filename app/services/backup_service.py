@@ -109,7 +109,11 @@ class BackupService:
             tz = pytz.timezone(settings.TIMEZONE)
             current_date = datetime.now(tz).strftime("%d/%m/%Y")
 
-            msg['Subject'] = f"Backup SPE e Relatórios - {current_date}"
+            base_subject = f"Backup SPE e Relatórios - {current_date}"
+            if settings.ENVIRONMENT.lower() == "dev":
+                msg['Subject'] = f"[DEV] {base_subject} --- AMBIENTE DE DESENVOLVIMENTO"
+            else:
+                msg['Subject'] = base_subject
 
             body_html = (
                 f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\">"
@@ -250,7 +254,8 @@ class BackupService:
                     actor_name="Sistema",
                     action="DAILY_BACKUP",
                     entity="SYSTEM",
-                    details=f"Backup diario enviado para: {target_email}"
+                    details=f"Backup diario enviado para: {target_email}",
+                    new_data={"target_email": target_email}
                 )
         except Exception as e:
             logger.error(f"Erro na rotina de backup: {e}")
