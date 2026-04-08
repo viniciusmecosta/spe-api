@@ -1,7 +1,22 @@
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 from typing import List, Optional
 
+
+class PunchDetail(BaseModel):
+    id: int
+    time: str
+    record_type: str
+    ip_address: Optional[str] = None
+    device_name: Optional[str] = None
+    platform: Optional[str] = None
+    is_manual: bool
+    is_time_verified: Optional[bool] = None
+    biometric_id: Optional[int] = None
+    original_timestamp: Optional[datetime] = None
+    edited_by: Optional[int] = None
+    edit_justification: Optional[str] = None
+    edit_reason: Optional[str] = None
 
 class DailyReportItem(BaseModel):
     date: date
@@ -12,6 +27,7 @@ class DailyReportItem(BaseModel):
     entries: List[str]
     exits: List[str]
     punches: List[str]
+    detailed_punches: Optional[List[PunchDetail]] = None
 
     adjustment_id: Optional[int] = None
 
@@ -24,7 +40,6 @@ class DailyReportItem(BaseModel):
     worked_minutes: int
     worked_time: str
     expected_time: str
-
 
 class UserPayrollSummary(BaseModel):
     user_id: int
@@ -45,17 +60,14 @@ class UserPayrollSummary(BaseModel):
     days_worked: int
     absences: int
 
-
 class AdvancedUserReportResponse(BaseModel):
     summary: UserPayrollSummary
     daily_details: List[DailyReportItem]
-
 
 class MonthlyReportResponse(BaseModel):
     month: int
     year: int
     payroll_data: List[UserPayrollSummary]
-
 
 class DashboardMetricsResponse(BaseModel):
     total_active_employees: int

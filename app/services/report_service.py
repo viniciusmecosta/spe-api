@@ -18,7 +18,7 @@ from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
-    DailyReportItem, DashboardMetricsResponse
+    DailyReportItem, DashboardMetricsResponse, PunchDetail
 )
 
 try:
@@ -82,7 +82,8 @@ class ReportService:
             date=today
         )
 
-    def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int) -> AdvancedUserReportResponse:
+    def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
+                                 current_user: User = None) -> AdvancedUserReportResponse:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -110,6 +111,8 @@ class ReportService:
 
         days_worked_count = 0
         absences_count = 0
+
+        is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
 
         current = start_date
         while current <= end_date:
@@ -144,6 +147,7 @@ class ReportService:
             entries = []
             exits = []
             punches = []
+            detailed_punches = []
             worked_seconds = 0.0
             entry_time = None
 
@@ -151,6 +155,23 @@ class ReportService:
                 time_str = rec.record_datetime.strftime("%H:%M")
                 suffix = "(E)" if rec.record_type == RecordType.ENTRY else "(S)"
                 punches.append(f"{time_str} {suffix}")
+
+                if is_maintainer:
+                    detailed_punches.append(PunchDetail(
+                        id=rec.id,
+                        time=rec.record_datetime.strftime("%H:%M:%S"),
+                        record_type=rec.record_type.value,
+                        ip_address=rec.ip_address,
+                        device_name=rec.device_name,
+                        platform=rec.platform,
+                        is_manual=rec.is_manual,
+                        is_time_verified=rec.is_time_verified,
+                        biometric_id=rec.biometric_id,
+                        original_timestamp=rec.original_timestamp,
+                        edited_by=rec.edited_by,
+                        edit_justification=rec.edit_justification.value if rec.edit_justification else None,
+                        edit_reason=rec.edit_reason
+                    ))
 
                 if rec.record_type == RecordType.ENTRY:
                     entries.append(time_str)
@@ -227,6 +248,7 @@ class ReportService:
                 entries=entries,
                 exits=exits,
                 punches=punches,
+                detailed_punches=detailed_punches if is_maintainer else None,
 
                 adjustment_id=adj_id,
 
@@ -265,19 +287,20 @@ class ReportService:
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
-                            employee_ids: List[int] = None) -> MonthlyReportResponse:
+                            employee_ids: List[int] = None, current_user: User = None) -> MonthlyReportResponse:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 
         payroll_data = []
         for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year)
+            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
             if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None) -> BytesIO:
+    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None,
+                              current_user: User = None) -> BytesIO:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
@@ -317,7 +340,7 @@ class ReportService:
             cell.border = border
 
         for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year)
+            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
             if not report or report.summary.total_worked_minutes == 0:
                 continue
 
@@ -344,7 +367,7 @@ class ReportService:
             ws_summary.column_dimensions[column].width = max_length + 3
 
         for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year)
+            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
             if not report or report.summary.total_worked_minutes == 0:
                 continue
 
