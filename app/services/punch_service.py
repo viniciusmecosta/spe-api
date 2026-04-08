@@ -33,7 +33,8 @@ class PunchService:
                 user_id=user.id,
                 timestamp=server_time,
                 ip_address=ip_address,
-                biometric_id=biometric.id
+                biometric_id=biometric.id,
+                platform="IOT"
             )
 
             return True, "Ponto Registrado", new_record
