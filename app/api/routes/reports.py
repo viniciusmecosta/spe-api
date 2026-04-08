@@ -1,9 +1,8 @@
 from datetime import datetime
-from typing import Any, List, Optional
-
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
@@ -17,7 +16,6 @@ from app.services.report_service import report_service
 
 router = APIRouter()
 
-
 def check_report_permission(current_user: User):
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
     if not is_manager and not current_user.can_export_report:
@@ -27,7 +25,6 @@ def check_report_permission(current_user: User):
         )
     return True
 
-
 @router.get("/dashboard", response_model=DashboardMetricsResponse)
 def get_dashboard(
         db: Session = Depends(deps.get_db),
@@ -35,7 +32,6 @@ def get_dashboard(
 ) -> Any:
     check_report_permission(current_user)
     return report_service.get_dashboard_metrics(db)
-
 
 @router.get("/me", response_model=AdvancedUserReportResponse)
 def get_my_report(
@@ -48,12 +44,11 @@ def get_my_report(
     if not month: month = now.month
     if not year: year = now.year
 
-    report = report_service.get_advanced_user_report(db, current_user.id, month, year)
+    report = report_service.get_advanced_user_report(db, current_user.id, month, year, current_user)
     if not report:
         raise HTTPException(status_code=404, detail="Report data not found")
 
     return report
-
 
 @router.get("/monthly", response_model=MonthlyReportResponse)
 def get_monthly_global_report(
@@ -68,8 +63,7 @@ def get_monthly_global_report(
     if not month: month = now.month
     if not year: year = now.year
 
-    return report_service.get_monthly_summary(db, month, year, employee_ids)
-
+    return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
 
 @router.get("/export/excel")
 def export_monthly_report_excel(
@@ -84,7 +78,7 @@ def export_monthly_report_excel(
     if not month: month = now.month
     if not year: year = now.year
 
-    file_stream = report_service.generate_excel_report(db, month, year, employee_ids)
+    file_stream = report_service.generate_excel_report(db, month, year, employee_ids, current_user)
 
     filename = f"folha_ponto_{month}_{year}.xlsx"
     return StreamingResponse(
@@ -92,7 +86,6 @@ def export_monthly_report_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
 
 @router.get("/user/{user_id}", response_model=AdvancedUserReportResponse)
 def get_user_detailed_report(
@@ -110,7 +103,7 @@ def get_user_detailed_report(
     if not month: month = now.month
     if not year: year = now.year
 
-    report = report_service.get_advanced_user_report(db, user_id, month, year)
+    report = report_service.get_advanced_user_report(db, user_id, month, year, current_user)
     if not report:
         raise HTTPException(status_code=404, detail="User not found or data missing")
 
