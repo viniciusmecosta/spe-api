@@ -28,7 +28,6 @@ def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2Pass
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
     else:
         if not user:
-            user = db.query(User).first()
             if not user:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                                     detail="No users found in database for DEV bypass")
