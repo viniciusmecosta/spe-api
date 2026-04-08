@@ -8,6 +8,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 class Settings(BaseSettings):
     PROJECT_NAME: str
     APP_VERSION: str
+    ENVIRONMENT: str = "prod"
     API_V1_STR: str
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
