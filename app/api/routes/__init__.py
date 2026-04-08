@@ -13,16 +13,16 @@ from app.api.routes import (
     payroll,
     device,
     audit,
-    sync
+    sync,
+    backup
 )
+from app.core.config import settings
 
 api_router = APIRouter()
 
-
 @api_router.get("/health", tags=["Health"])
 def health_check():
-    return {"status": "ok", "app": "SPE"}
-
+    return {"status": "ok", "app": "SPE", "version": settings.APP_VERSION}
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
@@ -37,3 +37,4 @@ api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
+api_router.include_router(backup.router, prefix="/backup", tags=["Backup"])

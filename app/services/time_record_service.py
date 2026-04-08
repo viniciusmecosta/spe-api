@@ -236,7 +236,7 @@ class TimeRecordService:
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
-                     biometric_id: int = None) -> TimeRecord:
+                     biometric_id: int = None, platform: str = "desktop") -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
 
         record_type = RecordType.ENTRY
@@ -265,7 +265,7 @@ class TimeRecordService:
             record_datetime=timestamp,
             ip_address=ip_address,
             device_name=device_name,
-            platform="desktop",
+            platform=platform,
             is_time_verified=True,
             biometric_id=biometric_id
         )
