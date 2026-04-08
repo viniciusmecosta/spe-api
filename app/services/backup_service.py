@@ -1,3 +1,4 @@
+# app/services/backup_service.py
 import logging
 import os
 import pytz
@@ -239,13 +240,17 @@ class BackupService:
             if sent:
                 target_email = settings.EMAIL_TO or "Email nao configurado"
 
+                system_user = db.query(User).first()
+                valid_user_id = system_user.id if system_user else 1
+
                 audit_service.log(
                     db=db,
-                    actor_id=None,
+                    user_id=valid_user_id,
+                    actor_id=valid_user_id,
                     actor_name="Sistema",
                     action="DAILY_BACKUP",
                     entity="SYSTEM",
-                    new_data={"target_email": target_email}
+                    details=f"Backup diario enviado para: {target_email}"
                 )
         except Exception as e:
             logger.error(f"Erro na rotina de backup: {e}")
