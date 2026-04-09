@@ -1,6 +1,5 @@
 import logging
 import os
-import pytz
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta, date
@@ -8,8 +7,10 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
-from sqlalchemy.orm import Session
 from typing import Dict, List
+
+import pytz
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -140,7 +141,7 @@ class BackupService:
                 part['Content-Disposition'] = f'attachment; filename="{filename}"'
                 msg.attach(part)
 
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
+            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
             server.ehlo()
             server.starttls()
             server.ehlo()
@@ -150,8 +151,14 @@ class BackupService:
             server.quit()
             return True
 
+        except smtplib.SMTPException as e:
+            logger.error(f"Erro de protocolo SMTP ao enviar email: {e}")
+            return False
+        except TimeoutError as e:
+            logger.error(f"Timeout ao tentar conectar ou enviar o email (arquivo muito grande ou rede instavel): {e}")
+            return False
         except Exception as e:
-            logger.error(f"Erro ao enviar email: {e}")
+            logger.error(f"Erro inesperado ao enviar email: {e}")
             return False
 
     def send_database_backup(self, db: Session = None) -> bool:
@@ -240,7 +247,6 @@ class BackupService:
                     log_time = log_time.astimezone(tz)
 
                 log_date = log_time.date()
-
                 if log_date == today:
                     return
 
