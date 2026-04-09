@@ -1,5 +1,6 @@
 import logging
 import os
+import pytz
 import smtplib
 import sqlite3
 from datetime import datetime, timedelta, date
@@ -7,10 +8,8 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
-from typing import Dict, List
-
-import pytz
 from sqlalchemy.orm import Session
+from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -201,38 +200,37 @@ class BackupService:
             else:
                 period_text = f"Abaixo está o relatório do dia {fmt_start}:"
 
-            backup_path = self._create_safe_backup(db_file)
-            if not backup_path:
-                return False
-
-            success = False
-            try:
-                filename = "spe.db"
-                success = self._send_email(backup_path, filename, full_report_html, period_text)
-            finally:
-                if os.path.exists(backup_path):
-                    os.remove(backup_path)
-
-            return success
-
-        except Exception as e:
-            logger.error(f"Erro no processo de envio de backup: {e}")
-            return False
         finally:
             if db is None:
                 session.close()
+            else:
+                session.commit()
+
+        backup_path = self._create_safe_backup(db_file)
+        if not backup_path:
+            return False
+
+        success = False
+        try:
+            filename = "spe.db"
+            success = self._send_email(backup_path, filename, full_report_html, period_text)
+        finally:
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+
+        return success
 
     def run_daily_backup_routine(self):
-        db = SessionLocal()
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+        today = now.date()
+
+        if now.hour < 9:
+            return
+
+        db_check = SessionLocal()
         try:
-            tz = pytz.timezone(settings.TIMEZONE)
-            now = datetime.now(tz)
-            today = now.date()
-
-            if now.hour < 9:
-                return
-
-            last_backup = db.query(AuditLog).filter(
+            last_backup = db_check.query(AuditLog).filter(
                 AuditLog.action == "DAILY_BACKUP"
             ).order_by(AuditLog.timestamp.desc()).first()
 
@@ -246,16 +244,22 @@ class BackupService:
                 if log_date == today:
                     return
 
-            sent = self.send_database_backup(db)
+            system_user = db_check.query(User).first()
+            valid_user_id = system_user.id if system_user else 1
+        except Exception as e:
+            logger.error(f"Erro na checagem da rotina de backup: {e}")
+            return
+        finally:
+            db_check.close()
 
-            if sent:
+        sent = self.send_database_backup()
+
+        if sent:
+            db_log = SessionLocal()
+            try:
                 target_email = settings.EMAIL_TO or "Email nao configurado"
-
-                system_user = db.query(User).first()
-                valid_user_id = system_user.id if system_user else 1
-
                 audit_service.log(
-                    db=db,
+                    db=db_log,
                     user_id=valid_user_id,
                     actor_id=valid_user_id,
                     actor_name="Sistema",
@@ -264,10 +268,10 @@ class BackupService:
                     details=f"Backup diario enviado para: {target_email}",
                     new_data={"target_email": target_email}
                 )
-        except Exception as e:
-            logger.error(f"Erro na rotina de backup: {e}")
-        finally:
-            db.close()
+            except Exception as e:
+                logger.error(f"Erro ao salvar log do backup: {e}")
+            finally:
+                db_log.close()
 
 
 backup_service = BackupService()
