@@ -1,19 +1,19 @@
 import os
 import sqlite3
-import requests
 from datetime import datetime, timedelta, date, time
 from typing import Dict, List
 
 import pytz
+import requests
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import SessionLocal
 from app.domain.models.enums import RecordType
+from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.domain.models.routine_log import RoutineLog
 
 
 class TelegramService:
@@ -72,7 +72,7 @@ class TelegramService:
             return False
 
     def _generate_report_text(self, db: Session, start_date: date, end_date: date,
-                              title_prefix: str = "Rotina Gerencial - Fechamento") -> str:
+                              title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
             start_dt = datetime.combine(start_date, time.min)
             end_dt = datetime.combine(end_date, time.max)
@@ -94,11 +94,10 @@ class TelegramService:
             else:
                 title_date = f"{fmt_start} a {fmt_end}"
 
-            text = f"📊 <b>{title_prefix} {title_date}</b>\n\n"
+            text = f"<b>{title_prefix} {title_date}</b>\n\n"
 
             if not records:
-                text += "Sem registros de ponto no período.\n\n"
-                text += "<i>A cópia de segurança consolidada do período segue em anexo.</i>"
+                text += "Sem registros de ponto no período."
                 return text
 
             user_activity: Dict[str, List[str]] = {}
@@ -107,7 +106,7 @@ class TelegramService:
                     user_activity[user.name] = []
 
                 time_str = record.record_datetime.strftime("%H:%M")
-                marker = "🟢" if record.record_type == RecordType.ENTRY else "🔴"
+                marker = "Ent:" if record.record_type == RecordType.ENTRY else "Sai:"
 
                 if start_date != end_date:
                     date_str = record.record_datetime.strftime("%d/%m")
@@ -119,7 +118,6 @@ class TelegramService:
                 punches_str = " | ".join(punches)
                 text += f"<b>{name}</b>\n{punches_str}\n\n"
 
-            text += "<i>A cópia de segurança consolidada do período segue em anexo.</i>"
             return text.strip()
         except Exception:
             return "Erro interno ao gerar relatório gerencial."
@@ -131,7 +129,7 @@ class TelegramService:
 
         tz = pytz.timezone(settings.TIMEZONE)
         now_str = datetime.now(tz).strftime('%H:%M')
-        caption = f"🗄️ Backup Automático - {now_str}"
+        caption = f"[Backup Automático] - {now_str}"
 
         success = self._send_document(backup_path, caption)
 
@@ -190,14 +188,7 @@ class TelegramService:
             report_text = self._generate_report_text(db, start_date, yesterday)
             text_success = self._send_text(report_text)
 
-            doc_success = False
-            backup_path = self._create_safe_backup()
-            if backup_path:
-                doc_success = self._send_document(backup_path, "🗄️ Cópia de Segurança Consolidada")
-                if os.path.exists(backup_path):
-                    os.remove(backup_path)
-
-            if text_success and doc_success:
+            if text_success:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_DAILY_REPORT",
                     target_date=yesterday,
@@ -208,7 +199,7 @@ class TelegramService:
                     routine_type="TELEGRAM_DAILY_REPORT",
                     target_date=yesterday,
                     status="FAILED",
-                    details=f"Text sent: {text_success}, Doc sent: {doc_success}"
+                    details=f"Text sent: {text_success}"
                 )
 
             db.add(log_entry)
@@ -226,7 +217,7 @@ class TelegramService:
 
         tz = pytz.timezone(settings.TIMEZONE)
         now_str = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
-        caption = f"🗄️ Backup Manual Solicitado - {now_str}"
+        caption = f"[Backup Manual Solicitado] - {now_str}"
 
         success = self._send_document(backup_path, caption)
 
@@ -257,19 +248,11 @@ class TelegramService:
             )
             text_success = self._send_text(report_text)
 
-            doc_success = False
-            backup_path = self._create_safe_backup()
-            if backup_path:
-                doc_success = self._send_document(backup_path,
-                                                  f"🗄️ Banco de Dados Consolidado ({start_date.strftime('%d/%m')} a {end_date.strftime('%d/%m')})")
-                if os.path.exists(backup_path):
-                    os.remove(backup_path)
-
             log_entry = RoutineLog(
                 routine_type="TELEGRAM_MANUAL_REPORT",
                 target_date=end_date,
-                status="SUCCESS" if (text_success and doc_success) else "FAILED",
-                details=f"Text sent: {text_success}, Doc sent: {doc_success}"
+                status="SUCCESS" if text_success else "FAILED",
+                details=f"Text sent: {text_success}"
             )
             db.add(log_entry)
             db.commit()
