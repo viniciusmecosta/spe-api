@@ -1,17 +1,18 @@
 from datetime import date
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_maintainer
 from app.domain.models.user import User
 from app.services.telegram_service import telegram_service
 
-router = APIRouter(prefix="/telegram", tags=["telegram"])
+router = APIRouter()
 
 
 @router.post("/manual-backup")
 def trigger_manual_backup(
         background_tasks: BackgroundTasks,
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(get_current_maintainer)
 ):
     background_tasks.add_task(telegram_service.execute_manual_backup)
     return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
@@ -22,7 +23,7 @@ def trigger_manual_report(
         background_tasks: BackgroundTasks,
         start_date: date = Query(..., description="Data inicial do período (YYYY-MM-DD)"),
         end_date: date = Query(..., description="Data final do período (YYYY-MM-DD)"),
-        current_user: User = Depends(get_current_user)
+        current_user: User = Depends(get_current_maintainer)
 ):
     if start_date > end_date:
         raise HTTPException(status_code=400, detail="A data de início não pode ser maior que a data de fim.")
