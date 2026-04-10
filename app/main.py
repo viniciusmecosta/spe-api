@@ -49,7 +49,7 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
-    start_time = datetime.now(tz) + timedelta(minutes=1)
+    start_time = datetime.now(tz) + timedelta(minutes=10)
 
     trigger_legacy = IntervalTrigger(minutes=60, start_date=start_time, timezone=tz)
     scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_legacy, id="legacy_daily_backup")
