@@ -1,11 +1,12 @@
 import logging
 import os
-import pytz
 import socket
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +19,7 @@ from app.api.routes import api_router
 from app.core.config import settings
 from app.services.backup_service import backup_service
 from app.services.sync_service import sync_service
+from app.services.telegram_service import telegram_service
 
 
 class UvicornHostFilter(logging.Filter):
@@ -47,10 +49,18 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
-    start_time = datetime.now(tz) + timedelta(minutes=10)
+    start_time = datetime.now(tz) + timedelta(minutes=1)
 
-    trigger = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="hourly_backup_check")
+    trigger_legacy = IntervalTrigger(minutes=60, start_date=start_time, timezone=tz)
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_legacy, id="legacy_daily_backup")
+
+    trigger_telegram_hourly = IntervalTrigger(minutes=60, start_date=start_time, timezone=tz)
+    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_telegram_hourly,
+                      id="telegram_hourly_backup")
+
+    trigger_telegram_report = IntervalTrigger(minutes=30, start_date=start_time, timezone=tz)
+    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_telegram_report,
+                      id="telegram_daily_report")
 
     if settings.OPERATION_MODE == "EXPORTADOR":
         trigger_sync = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
