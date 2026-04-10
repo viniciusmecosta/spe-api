@@ -18,8 +18,8 @@ from app.domain.models.routine_log import RoutineLog
 
 class TelegramService:
     def __init__(self):
-        self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-        self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
+        self.bot_token = settings.TELEGRAM_BOT_TOKEN
+        self.chat_id = settings.TELEGRAM_CHAT_ID
         self.db_path = "spe.db"
 
     def _create_safe_backup(self) -> str | None:
