@@ -71,21 +71,17 @@ class TelegramService:
         except Exception:
             return False
 
+    def _format_name(self, full_name: str) -> str:
+        parts = full_name.split()
+        if len(parts) <= 1:
+            return full_name
+        first_name = parts[0]
+        second_name = next((p for p in parts[1:] if len(p) > 3), parts[1])
+        return f"{first_name} {second_name}"
+
     def _generate_report_text(self, db: Session, start_date: date, end_date: date,
                               title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
-            start_dt = datetime.combine(start_date, time.min)
-            end_dt = datetime.combine(end_date, time.max)
-
-            records = (
-                db.query(TimeRecord, User)
-                .join(User, TimeRecord.user_id == User.id)
-                .filter(TimeRecord.record_datetime >= start_dt)
-                .filter(TimeRecord.record_datetime <= end_dt)
-                .order_by(User.name, TimeRecord.record_datetime)
-                .all()
-            )
-
             fmt_start = start_date.strftime("%d/%m/%Y")
             fmt_end = end_date.strftime("%d/%m/%Y")
 
@@ -96,27 +92,47 @@ class TelegramService:
 
             text = f"<b>{title_prefix} {title_date}</b>\n\n"
 
+            start_dt = datetime.combine(start_date, time.min)
+            end_dt = datetime.combine(end_date, time.max)
+
+            records = (
+                db.query(TimeRecord, User)
+                .join(User, TimeRecord.user_id == User.id)
+                .filter(TimeRecord.record_datetime >= start_dt)
+                .filter(TimeRecord.record_datetime <= end_dt)
+                .order_by(TimeRecord.record_datetime, User.name)
+                .all()
+            )
+
             if not records:
                 text += "Sem registros de ponto no período."
                 return text
 
-            user_activity: Dict[str, List[str]] = {}
+            daily_activity: Dict[str, Dict[str, List[str]]] = {}
             for record, user in records:
-                if user.name not in user_activity:
-                    user_activity[user.name] = []
-
+                date_str = record.record_datetime.strftime("%d/%m/%Y")
                 time_str = record.record_datetime.strftime("%H:%M")
-                marker = "Ent:" if record.record_type == RecordType.ENTRY else "Sai:"
+                marker = "E:" if record.record_type == RecordType.ENTRY else "S:"
 
-                if start_date != end_date:
-                    date_str = record.record_datetime.strftime("%d/%m")
-                    user_activity[user.name].append(f"{marker} {date_str} {time_str}")
-                else:
-                    user_activity[user.name].append(f"{marker} {time_str}")
+                fmt_name = self._format_name(user.name)
 
-            for name, punches in user_activity.items():
-                punches_str = " | ".join(punches)
-                text += f"<b>{name}</b>\n{punches_str}\n\n"
+                if date_str not in daily_activity:
+                    daily_activity[date_str] = {}
+
+                if fmt_name not in daily_activity[date_str]:
+                    daily_activity[date_str][fmt_name] = []
+
+                daily_activity[date_str][fmt_name].append(f"{marker} {time_str}")
+
+            for d_str, users_data in daily_activity.items():
+                if len(text) > 3900:
+                    break
+
+                text += f"<b>{d_str}</b>\n"
+                for name, punches in users_data.items():
+                    punches_str = " | ".join(punches)
+                    text += f"{name} - {punches_str}\n"
+                text += "\n"
 
             return text.strip()
         except Exception:
