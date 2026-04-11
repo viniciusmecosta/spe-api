@@ -3,7 +3,7 @@ import os
 import pytz
 import socket
 from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, status
@@ -48,17 +48,21 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
-    start_time = datetime.now(tz) + timedelta(minutes=10)
 
-    trigger_10_min = IntervalTrigger(minutes=10, start_date=start_time, timezone=tz)
+    trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
 
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_10_min, id="legacy_daily_backup")
-    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_10_min, id="telegram_hourly_backup")
-    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_10_min, id="telegram_daily_report")
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_aligned, id="daily_backup_email",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_aligned, id="hourly_backup_telegram",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_aligned, id="daily_report_telegram",
+                      max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":
-        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_10_min, id="hourly_sync_db")
-        scheduler.add_job(sync_service.check_and_sync_all, trigger=trigger_10_min, id="sync_time_records")
+        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_aligned, id="hourly_sync_db",
+                          max_instances=1, coalesce=True)
+        scheduler.add_job(sync_service.check_and_sync_all, trigger=trigger_aligned, id="sync_time_records",
+                          max_instances=1, coalesce=True)
 
     scheduler.start()
     yield
