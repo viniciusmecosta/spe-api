@@ -1,6 +1,5 @@
 import logging
 import os
-import pytz
 import smtplib
 import sqlite3
 import threading
@@ -10,9 +9,11 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
+from typing import Dict, List
+
+import pytz
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -28,6 +29,7 @@ class BackupService:
     def __init__(self):
         self._email_backup_lock = threading.Lock()
         self._manual_backup_lock = threading.Lock()
+        self._cleanup_lock = threading.Lock()
 
     def _create_safe_backup(self, source_db: str) -> str | None:
         try:
@@ -282,6 +284,50 @@ class BackupService:
             except Exception as e:
                 db_write.rollback()
                 logger.error(f'Backup - "Email diário" DB Error: {e}')
+            finally:
+                db_write.close()
+
+    def clean_old_logs(self, days_to_keep: int = 10):
+        with self._cleanup_lock:
+            tz = pytz.timezone(settings.TIMEZONE)
+            today = datetime.now(tz).date()
+
+            db_read = SessionLocal()
+            try:
+                ran_today = db_read.query(RoutineLog).filter(
+                    RoutineLog.routine_type == "CLEANUP_ROUTINE_LOGS",
+                    RoutineLog.status == "SUCCESS",
+                    RoutineLog.target_date == today
+                ).first()
+
+                if ran_today:
+                    return
+            except Exception as e:
+                logger.error(f"Erro ao verificar rotina de limpeza: {e}")
+                return
+            finally:
+                db_read.close()
+
+            db_write = SessionLocal()
+            try:
+                cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+                deleted_count = db_write.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date).delete()
+
+                log_entry = RoutineLog(
+                    routine_type="CLEANUP_ROUTINE_LOGS",
+                    target_date=today,
+                    status="SUCCESS",
+                    details=f"{deleted_count} logs apagados"
+                )
+                db_write.add(log_entry)
+                db_write.commit()
+
+                if deleted_count > 0:
+                    logger.info(
+                        f"Limpeza Automática: {deleted_count} registros antigos da tabela routine_logs foram apagados.")
+            except Exception as e:
+                db_write.rollback()
+                logger.error(f"Erro ao limpar routine_logs: {e}")
             finally:
                 db_write.close()
 

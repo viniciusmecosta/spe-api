@@ -1,11 +1,11 @@
 import logging
 import os
-import pytz
 import socket
+from contextlib import asynccontextmanager
+
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_aligned, id="hourly_backup_telegram",
                       max_instances=1, coalesce=True)
     scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_aligned, id="daily_report_telegram",
+                      max_instances=1, coalesce=True)
+
+    scheduler.add_job(backup_service.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":
