@@ -1,12 +1,13 @@
+import logging
 import os
-import sqlite3
-from datetime import datetime, timedelta, date, time
-from typing import Dict, List
-
 import pytz
 import requests
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, date, time
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -14,6 +15,8 @@ from app.domain.models.enums import RecordType
 from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
+
+logger = logging.getLogger("uvicorn.info")
 
 
 class TelegramService:
@@ -29,7 +32,8 @@ class TelegramService:
         try:
             tz = pytz.timezone(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
-            backup_filename = f"temp_backup_{timestamp}.db"
+            unique_id = uuid.uuid4().hex[:8]
+            backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
 
             src_conn = sqlite3.connect(self.db_path)
             dst_conn = sqlite3.connect(backup_filename)
@@ -139,12 +143,30 @@ class TelegramService:
             return "Erro interno ao gerar relatório gerencial."
 
     def execute_hourly_backup(self):
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+
+        db_read = SessionLocal()
+        try:
+            current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+            exists = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.execution_time >= current_hour_start
+            ).first()
+            if exists:
+                return
+        except Exception:
+            return
+        finally:
+            db_read.close()
+
         backup_path = self._create_safe_backup()
         if not backup_path:
+            logger.error('Backup - "Telegram horário" Error')
             return
 
-        tz = pytz.timezone(settings.TIMEZONE)
-        now_str = datetime.now(tz).strftime('%H:%M')
+        now_str = now.strftime('%H:%M')
         caption = f"[Backup Automático] - {now_str}"
 
         success = self._send_document(backup_path, caption)
@@ -152,19 +174,23 @@ class TelegramService:
         if os.path.exists(backup_path):
             os.remove(backup_path)
 
-        if success:
-            db = SessionLocal()
-            try:
+        db_write = SessionLocal()
+        try:
+            if success:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_HOURLY_BACKUP",
                     status="SUCCESS"
                 )
-                db.add(log_entry)
-                db.commit()
-            except Exception:
-                db.rollback()
-            finally:
-                db.close()
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.info('Backup - "Telegram horário" OK')
+            else:
+                logger.error('Backup - "Telegram horário" Error')
+        except Exception:
+            db_write.rollback()
+            logger.error('Backup - "Telegram horário" Error')
+        finally:
+            db_write.close()
 
     def send_managerial_report(self):
         tz = pytz.timezone(settings.TIMEZONE)
@@ -175,10 +201,10 @@ class TelegramService:
         if now.hour < 9:
             return
 
-        db = SessionLocal()
+        db_read = SessionLocal()
         try:
             today_start = datetime.combine(today, time.min)
-            ran_today = db.query(RoutineLog).filter(
+            ran_today = db_read.query(RoutineLog).filter(
                 RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
                 RoutineLog.status == "SUCCESS",
                 RoutineLog.execution_time >= today_start
@@ -187,7 +213,7 @@ class TelegramService:
             if ran_today:
                 return
 
-            last_success = db.query(RoutineLog).filter(
+            last_success = db_read.query(RoutineLog).filter(
                 RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
                 RoutineLog.status == "SUCCESS",
                 RoutineLog.target_date.isnot(None)
@@ -201,34 +227,44 @@ class TelegramService:
             if start_date > yesterday:
                 return
 
-            report_text = self._generate_report_text(db, start_date, yesterday)
-            text_success = self._send_text(report_text)
+            report_text = self._generate_report_text(db_read, start_date, yesterday)
+        except Exception:
+            return
+        finally:
+            db_read.close()
 
+        text_success = self._send_text(report_text)
+
+        db_write = SessionLocal()
+        try:
             if text_success:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_DAILY_REPORT",
                     target_date=yesterday,
                     status="SUCCESS"
                 )
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.info('Relatório - "Telegram diário" OK')
             else:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_DAILY_REPORT",
                     target_date=yesterday,
-                    status="FAILED",
-                    details=f"Text sent: {text_success}"
+                    status="FAILED"
                 )
-
-            db.add(log_entry)
-            db.commit()
-
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.error('Relatório - "Telegram diário" Error')
         except Exception:
-            db.rollback()
+            db_write.rollback()
+            logger.error('Relatório - "Telegram diário" Error')
         finally:
-            db.close()
+            db_write.close()
 
     def execute_manual_backup(self):
         backup_path = self._create_safe_backup()
         if not backup_path:
+            logger.error('Backup - "Telegram manual" Error')
             return
 
         tz = pytz.timezone(settings.TIMEZONE)
@@ -240,43 +276,58 @@ class TelegramService:
         if os.path.exists(backup_path):
             os.remove(backup_path)
 
-        db = SessionLocal()
+        db_write = SessionLocal()
         try:
             log_entry = RoutineLog(
                 routine_type="TELEGRAM_MANUAL_BACKUP",
                 status="SUCCESS" if success else "FAILED"
             )
-            db.add(log_entry)
-            db.commit()
+            db_write.add(log_entry)
+            db_write.commit()
+
+            if success:
+                logger.info('Backup - "Telegram manual" OK')
+            else:
+                logger.error('Backup - "Telegram manual" Error')
         except Exception:
-            db.rollback()
+            db_write.rollback()
         finally:
-            db.close()
+            db_write.close()
 
     def send_manual_report(self, start_date: date, end_date: date):
-        db = SessionLocal()
+        db_read = SessionLocal()
         try:
             report_text = self._generate_report_text(
-                db,
+                db_read,
                 start_date,
                 end_date,
                 title_prefix="Relatório Gerencial Manual -"
             )
-            text_success = self._send_text(report_text)
+        except Exception:
+            return
+        finally:
+            db_read.close()
 
+        text_success = self._send_text(report_text)
+
+        db_write = SessionLocal()
+        try:
             log_entry = RoutineLog(
                 routine_type="TELEGRAM_MANUAL_REPORT",
                 target_date=end_date,
-                status="SUCCESS" if text_success else "FAILED",
-                details=f"Text sent: {text_success}"
+                status="SUCCESS" if text_success else "FAILED"
             )
-            db.add(log_entry)
-            db.commit()
+            db_write.add(log_entry)
+            db_write.commit()
 
+            if text_success:
+                logger.info('Relatório - "Telegram manual" OK')
+            else:
+                logger.error('Relatório - "Telegram manual" Error')
         except Exception:
-            db.rollback()
+            db_write.rollback()
         finally:
-            db.close()
+            db_write.close()
 
 
 telegram_service = TelegramService()

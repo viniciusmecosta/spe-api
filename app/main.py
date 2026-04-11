@@ -1,12 +1,11 @@
 import logging
 import os
-import socket
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
-
 import pytz
+import socket
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,20 +50,15 @@ async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
     start_time = datetime.now(tz) + timedelta(minutes=10)
 
-    trigger_legacy = IntervalTrigger(minutes=60, start_date=start_time, timezone=tz)
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_legacy, id="legacy_daily_backup")
+    trigger_10_min = IntervalTrigger(minutes=10, start_date=start_time, timezone=tz)
 
-    trigger_telegram_hourly = IntervalTrigger(minutes=60, start_date=start_time, timezone=tz)
-    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_telegram_hourly,
-                      id="telegram_hourly_backup")
-
-    trigger_telegram_report = IntervalTrigger(minutes=30, start_date=start_time, timezone=tz)
-    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_telegram_report,
-                      id="telegram_daily_report")
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_10_min, id="legacy_daily_backup")
+    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_10_min, id="telegram_hourly_backup")
+    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_10_min, id="telegram_daily_report")
 
     if settings.OPERATION_MODE == "EXPORTADOR":
-        trigger_sync = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
-        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_sync, id="hourly_sync_db")
+        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_10_min, id="hourly_sync_db")
+        scheduler.add_job(sync_service.check_and_sync_all, trigger=trigger_10_min, id="sync_time_records")
 
     scheduler.start()
     yield

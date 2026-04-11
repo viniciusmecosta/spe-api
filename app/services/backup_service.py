@@ -1,26 +1,26 @@
 import logging
 import os
+import pytz
 import smtplib
 import sqlite3
-from datetime import datetime, timedelta, date
+import uuid
+from datetime import datetime, timedelta, date, time
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
-from typing import Dict, List
-
-import pytz
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
-from app.domain.models.audit import AuditLog
 from app.domain.models.enums import RecordType
+from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.services.audit_service import audit_service
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.info")
 
 
 class BackupService:
@@ -28,7 +28,8 @@ class BackupService:
         try:
             tz = pytz.timezone(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
-            backup_filename = f"temp_backup_{timestamp}.db"
+            unique_id = uuid.uuid4().hex[:8]
+            backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
 
             src_conn = sqlite3.connect(source_db)
             dst_conn = sqlite3.connect(backup_filename)
@@ -51,8 +52,8 @@ class BackupService:
             }
             day_name = day_name_map[target_date.weekday()]
 
-            start_local = datetime.combine(target_date, datetime.min.time())
-            end_local = datetime.combine(target_date, datetime.max.time())
+            start_local = datetime.combine(target_date, time.min)
+            end_local = datetime.combine(target_date, time.max)
 
             records = (
                 db.query(TimeRecord, User)
@@ -94,8 +95,7 @@ class BackupService:
             html += "</div><hr style='border: 0; border-top: 1px solid #eee; margin: 20px 0;'>"
             return html
 
-        except Exception as e:
-            logger.error(f"Erro ao gerar HTML do dia {target_date}: {e}")
+        except Exception:
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
     def _send_email(self, file_path: str, filename: str, report_html: str, period_text: str) -> bool:
@@ -145,54 +145,84 @@ class BackupService:
             server.ehlo()
             server.starttls()
             server.ehlo()
-
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.sendmail(msg['From'], msg['To'], msg.as_string())
             server.quit()
             return True
 
-        except smtplib.SMTPException as e:
-            logger.error(f"Erro de protocolo SMTP ao enviar email: {e}")
-            return False
-        except TimeoutError as e:
-            logger.error(f"Timeout ao tentar conectar ou enviar o email (arquivo muito grande ou rede instavel): {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Erro inesperado ao enviar email: {e}")
+        except Exception:
             return False
 
     def send_database_backup(self, db: Session = None) -> bool:
-        db_file = "spe.db"
-        if not os.path.exists(db_file):
-            return False
-
         session = db or SessionLocal()
         try:
             tz = pytz.timezone(settings.TIMEZONE)
             now = datetime.now(tz)
-            today = now.date()
-            yesterday = today - timedelta(days=1)
+            yesterday = now.date() - timedelta(days=1)
 
-            last_backup = session.query(AuditLog).filter(
-                AuditLog.action == "DAILY_BACKUP"
-            ).order_by(AuditLog.timestamp.desc()).first()
+            full_report_html = self._generate_daily_report_html(session, yesterday)
+            fmt_start = yesterday.strftime("%d/%m/%Y")
+            period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+        finally:
+            if db is None:
+                session.close()
 
-            start_date = yesterday
+        backup_path = self._create_safe_backup("spe.db")
+        if not backup_path:
+            logger.error('Backup - "Email manual" Error')
+            return False
 
-            if last_backup:
-                last_backup_local = last_backup.timestamp
-                if last_backup_local.tzinfo is not None:
-                    last_backup_local = last_backup_local.astimezone(tz)
-                start_date = last_backup_local.date()
+        success = self._send_email(backup_path, "spe.db", full_report_html, period_text)
+
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+        if success:
+            logger.info('Backup - "Email manual" OK')
+            return True
+        else:
+            logger.error('Backup - "Email manual" Error')
+            return False
+
+    def run_daily_backup_routine(self):
+        tz = pytz.timezone(settings.TIMEZONE)
+        now = datetime.now(tz)
+        today = now.date()
+        yesterday = today - timedelta(days=1)
+
+        if now.hour < 9:
+            return
+
+        db_read = SessionLocal()
+        try:
+            today_start = datetime.combine(today, time.min)
+            ran_today = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.execution_time >= today_start
+            ).first()
+
+            if ran_today:
+                return
+
+            last_success = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.target_date.isnot(None)
+            ).order_by(desc(RoutineLog.target_date)).first()
+
+            if last_success and last_success.target_date:
+                start_date = last_success.target_date + timedelta(days=1)
+            else:
+                start_date = yesterday
 
             if start_date > yesterday:
                 start_date = yesterday
 
             full_report_html = ""
             current_check_date = start_date
-
             while current_check_date <= yesterday:
-                daily_html = self._generate_daily_report_html(session, current_check_date)
+                daily_html = self._generate_daily_report_html(db_read, current_check_date)
                 full_report_html += daily_html
                 current_check_date += timedelta(days=1)
 
@@ -201,83 +231,50 @@ class BackupService:
 
             fmt_start = start_date.strftime("%d/%m/%Y")
             fmt_end = yesterday.strftime("%d/%m/%Y")
-
             if start_date < yesterday:
                 period_text = f"Abaixo estão os relatórios dos dias {fmt_start} a {fmt_end}:"
             else:
                 period_text = f"Abaixo está o relatório do dia {fmt_start}:"
-
+        except Exception:
+            return
         finally:
-            if db is None:
-                session.close()
-            else:
-                session.commit()
+            db_read.close()
 
-        backup_path = self._create_safe_backup(db_file)
+        backup_path = self._create_safe_backup("spe.db")
         if not backup_path:
-            return False
-
-        success = False
-        try:
-            filename = "spe.db"
-            success = self._send_email(backup_path, filename, full_report_html, period_text)
-        finally:
-            if os.path.exists(backup_path):
-                os.remove(backup_path)
-
-        return success
-
-    def run_daily_backup_routine(self):
-        tz = pytz.timezone(settings.TIMEZONE)
-        now = datetime.now(tz)
-        today = now.date()
-
-        if now.hour < 9:
+            logger.error('Backup - "Email diário" Error')
             return
 
-        db_check = SessionLocal()
+        success = self._send_email(backup_path, "spe.db", full_report_html, period_text)
+
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+        db_write = SessionLocal()
         try:
-            last_backup = db_check.query(AuditLog).filter(
-                AuditLog.action == "DAILY_BACKUP"
-            ).order_by(AuditLog.timestamp.desc()).first()
-
-            if last_backup:
-                log_time = last_backup.timestamp
-                if log_time.tzinfo is not None:
-                    log_time = log_time.astimezone(tz)
-
-                log_date = log_time.date()
-                if log_date == today:
-                    return
-
-            system_user = db_check.query(User).first()
-            valid_user_id = system_user.id if system_user else 1
-        except Exception as e:
-            logger.error(f"Erro na checagem da rotina de backup: {e}")
-            return
-        finally:
-            db_check.close()
-
-        sent = self.send_database_backup()
-
-        if sent:
-            db_log = SessionLocal()
-            try:
-                target_email = settings.EMAIL_TO or "Email nao configurado"
-                audit_service.log(
-                    db=db_log,
-                    user_id=valid_user_id,
-                    actor_id=valid_user_id,
-                    actor_name="Sistema",
-                    action="DAILY_BACKUP",
-                    entity="SYSTEM",
-                    details=f"Backup diario enviado para: {target_email}",
-                    new_data={"target_email": target_email}
+            if success:
+                log_entry = RoutineLog(
+                    routine_type="EMAIL_DAILY_BACKUP",
+                    target_date=yesterday,
+                    status="SUCCESS"
                 )
-            except Exception as e:
-                logger.error(f"Erro ao salvar log do backup: {e}")
-            finally:
-                db_log.close()
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.info('Backup - "Email diário" OK')
+            else:
+                log_entry = RoutineLog(
+                    routine_type="EMAIL_DAILY_BACKUP",
+                    target_date=yesterday,
+                    status="FAILED"
+                )
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.error('Backup - "Email diário" Error')
+        except Exception:
+            db_write.rollback()
+            logger.error('Backup - "Email diário" Error')
+        finally:
+            db_write.close()
 
 
 backup_service = BackupService()
