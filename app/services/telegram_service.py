@@ -58,7 +58,8 @@ class TelegramService:
             }
             response = requests.post(url, data=payload, timeout=15)
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.error(f"Telegram send text error: {e}")
             return False
 
     def _send_document(self, file_path: str, caption: str) -> bool:
@@ -72,7 +73,8 @@ class TelegramService:
                 files = {"document": file}
                 response = requests.post(url, data=payload, files=files, timeout=40)
             return response.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.error(f"Telegram send document error: {e}")
             return False
 
     def _format_name(self, full_name: str) -> str:
@@ -139,7 +141,8 @@ class TelegramService:
                 text += "\n"
 
             return text.strip()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
 
     def execute_hourly_backup(self):
@@ -148,15 +151,16 @@ class TelegramService:
 
         db_read = SessionLocal()
         try:
-            current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+            one_hour_ago = datetime.utcnow() - timedelta(minutes=59)
             exists = db_read.query(RoutineLog).filter(
                 RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
                 RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= current_hour_start
+                RoutineLog.execution_time >= one_hour_ago
             ).first()
             if exists:
                 return
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro ao verificar backup horário Telegram: {e}")
             return
         finally:
             db_read.close()
@@ -186,9 +190,9 @@ class TelegramService:
                 logger.info('Backup - "Telegram horário" OK')
             else:
                 logger.error('Backup - "Telegram horário" Error')
-        except Exception:
+        except Exception as e:
             db_write.rollback()
-            logger.error('Backup - "Telegram horário" Error')
+            logger.error(f'Backup - "Telegram horário" DB Error: {e}')
         finally:
             db_write.close()
 
@@ -203,11 +207,10 @@ class TelegramService:
 
         db_read = SessionLocal()
         try:
-            today_start = datetime.combine(today, time.min)
             ran_today = db_read.query(RoutineLog).filter(
                 RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
                 RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= today_start
+                RoutineLog.target_date == yesterday
             ).first()
 
             if ran_today:
@@ -228,7 +231,8 @@ class TelegramService:
                 return
 
             report_text = self._generate_report_text(db_read, start_date, yesterday)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro ao gerar report gerencial Telegram: {e}")
             return
         finally:
             db_read.close()
@@ -255,9 +259,9 @@ class TelegramService:
                 db_write.add(log_entry)
                 db_write.commit()
                 logger.error('Relatório - "Telegram diário" Error')
-        except Exception:
+        except Exception as e:
             db_write.rollback()
-            logger.error('Relatório - "Telegram diário" Error')
+            logger.error(f'Relatório - "Telegram diário" DB Error: {e}')
         finally:
             db_write.close()
 
@@ -289,8 +293,9 @@ class TelegramService:
                 logger.info('Backup - "Telegram manual" OK')
             else:
                 logger.error('Backup - "Telegram manual" Error')
-        except Exception:
+        except Exception as e:
             db_write.rollback()
+            logger.error(f"Erro ao salvar rotina manual: {e}")
         finally:
             db_write.close()
 
@@ -303,7 +308,8 @@ class TelegramService:
                 end_date,
                 title_prefix="Relatório Gerencial Manual -"
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro ao buscar report manual: {e}")
             return
         finally:
             db_read.close()
@@ -324,8 +330,9 @@ class TelegramService:
                 logger.info('Relatório - "Telegram manual" OK')
             else:
                 logger.error('Relatório - "Telegram manual" Error')
-        except Exception:
+        except Exception as e:
             db_write.rollback()
+            logger.error(f"Erro ao salvar rotina de relatorio manual: {e}")
         finally:
             db_write.close()
 

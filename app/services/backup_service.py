@@ -95,7 +95,8 @@ class BackupService:
             html += "</div><hr style='border: 0; border-top: 1px solid #eee; margin: 20px 0;'>"
             return html
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
     def _send_email(self, file_path: str, filename: str, report_html: str, period_text: str) -> bool:
@@ -150,7 +151,8 @@ class BackupService:
             server.quit()
             return True
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro SMTP: {e}")
             return False
 
     def send_database_backup(self, db: Session = None) -> bool:
@@ -195,11 +197,10 @@ class BackupService:
 
         db_read = SessionLocal()
         try:
-            today_start = datetime.combine(today, time.min)
             ran_today = db_read.query(RoutineLog).filter(
                 RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
                 RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= today_start
+                RoutineLog.target_date == yesterday
             ).first()
 
             if ran_today:
@@ -235,7 +236,8 @@ class BackupService:
                 period_text = f"Abaixo estão os relatórios dos dias {fmt_start} a {fmt_end}:"
             else:
                 period_text = f"Abaixo está o relatório do dia {fmt_start}:"
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro check backup diário: {e}")
             return
         finally:
             db_read.close()
@@ -270,9 +272,9 @@ class BackupService:
                 db_write.add(log_entry)
                 db_write.commit()
                 logger.error('Backup - "Email diário" Error')
-        except Exception:
+        except Exception as e:
             db_write.rollback()
-            logger.error('Backup - "Email diário" Error')
+            logger.error(f'Backup - "Email diário" DB Error: {e}')
         finally:
             db_write.close()
 
