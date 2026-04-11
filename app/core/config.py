@@ -1,6 +1,7 @@
 import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -27,6 +28,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
     EMAIL_TO: Optional[str] = None
+
+    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_CHAT_ID: Optional[str] = None
 
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_API_KEY: Optional[str] = None

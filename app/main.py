@@ -1,11 +1,11 @@
 import logging
 import os
-import pytz
 import socket
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +18,7 @@ from app.api.routes import api_router
 from app.core.config import settings
 from app.services.backup_service import backup_service
 from app.services.sync_service import sync_service
+from app.services.telegram_service import telegram_service
 
 
 class UvicornHostFilter(logging.Filter):
@@ -47,14 +48,24 @@ scheduler = BackgroundScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
-    start_time = datetime.now(tz) + timedelta(minutes=10)
 
-    trigger = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger, id="hourly_backup_check")
+    trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
+
+    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_aligned, id="daily_backup_email",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_aligned, id="hourly_backup_telegram",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_aligned, id="daily_report_telegram",
+                      max_instances=1, coalesce=True)
+
+    scheduler.add_job(backup_service.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
+                      max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":
-        trigger_sync = IntervalTrigger(hours=1, start_date=start_time, timezone=tz)
-        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_sync, id="hourly_sync_db")
+        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_aligned, id="hourly_sync_db",
+                          max_instances=1, coalesce=True)
+        scheduler.add_job(sync_service.check_and_sync_all, trigger=trigger_aligned, id="sync_time_records",
+                          max_instances=1, coalesce=True)
 
     scheduler.start()
     yield
