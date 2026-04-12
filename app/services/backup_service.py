@@ -168,7 +168,8 @@ class BackupService:
             try:
                 tz = pytz.timezone(settings.TIMEZONE)
                 now = datetime.now(tz)
-                yesterday = now.date() - timedelta(days=1)
+                now_local = now.replace(tzinfo=None)
+                yesterday = now_local.date() - timedelta(days=1)
 
                 full_report_html = self._generate_daily_report_html(session, yesterday)
                 fmt_start = yesterday.strftime("%d/%m/%Y")
@@ -198,10 +199,11 @@ class BackupService:
         with self._email_backup_lock:
             tz = pytz.timezone(settings.TIMEZONE)
             now = datetime.now(tz)
-            today = now.date()
+            now_local = now.replace(tzinfo=None)
+            today = now_local.date()
             yesterday = today - timedelta(days=1)
 
-            if now.hour < 9:
+            if now_local.hour < 9:
                 return
 
             db_read = SessionLocal()
@@ -267,7 +269,8 @@ class BackupService:
                     log_entry = RoutineLog(
                         routine_type="EMAIL_DAILY_BACKUP",
                         target_date=yesterday,
-                        status="SUCCESS"
+                        status="SUCCESS",
+                        execution_time=now_local
                     )
                     db_write.add(log_entry)
                     db_write.commit()
@@ -276,7 +279,8 @@ class BackupService:
                     log_entry = RoutineLog(
                         routine_type="EMAIL_DAILY_BACKUP",
                         target_date=yesterday,
-                        status="FAILED"
+                        status="FAILED",
+                        execution_time=now_local
                     )
                     db_write.add(log_entry)
                     db_write.commit()
@@ -287,10 +291,12 @@ class BackupService:
             finally:
                 db_write.close()
 
-    def clean_old_logs(self, days_to_keep: int = 10):
+    def clean_old_logs(self, days_to_keep: int = 15):
         with self._cleanup_lock:
             tz = pytz.timezone(settings.TIMEZONE)
-            today = datetime.now(tz).date()
+            now = datetime.now(tz)
+            now_local = now.replace(tzinfo=None)
+            today = now_local.date()
 
             db_read = SessionLocal()
             try:
@@ -310,13 +316,15 @@ class BackupService:
 
             db_write = SessionLocal()
             try:
-                cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+                cutoff_date = now_local - timedelta(days=days_to_keep)
+
                 deleted_count = db_write.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date).delete()
 
                 log_entry = RoutineLog(
                     routine_type="CLEANUP_ROUTINE_LOGS",
                     target_date=today,
                     status="SUCCESS",
+                    execution_time=now_local,
                     details=f"{deleted_count} logs apagados"
                 )
                 db_write.add(log_entry)

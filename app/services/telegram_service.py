@@ -1,14 +1,15 @@
 import logging
 import os
-import pytz
-import requests
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, date, time
+from typing import Dict, List
+
+import pytz
+import requests
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -18,7 +19,6 @@ from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 
 logger = logging.getLogger("uvicorn.info")
-
 
 class TelegramService:
     def __init__(self):
@@ -156,10 +156,11 @@ class TelegramService:
         with self._hourly_lock:
             tz = pytz.timezone(settings.TIMEZONE)
             now = datetime.now(tz)
+            now_local = now.replace(tzinfo=None)
 
             db_read = SessionLocal()
             try:
-                current_hour_start_local = now.replace(minute=0, second=0, microsecond=0).replace(tzinfo=None)
+                current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)
 
                 exists = db_read.query(RoutineLog).filter(
                     RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
@@ -179,7 +180,7 @@ class TelegramService:
                 logger.error('Backup - "Telegram horário" Error')
                 return
 
-            now_str = now.strftime('%H:%M')
+            now_str = now_local.strftime('%H:%M')
             caption = f"[Backup Automático] - {now_str}"
 
             success = self._send_document(backup_path, caption)
@@ -192,7 +193,8 @@ class TelegramService:
                 if success:
                     log_entry = RoutineLog(
                         routine_type="TELEGRAM_HOURLY_BACKUP",
-                        status="SUCCESS"
+                        status="SUCCESS",
+                        execution_time=now_local
                     )
                     db_write.add(log_entry)
                     db_write.commit()
@@ -209,10 +211,11 @@ class TelegramService:
         with self._daily_lock:
             tz = pytz.timezone(settings.TIMEZONE)
             now = datetime.now(tz)
-            today = now.date()
+            now_local = now.replace(tzinfo=None)
+            today = now_local.date()
             yesterday = today - timedelta(days=1)
 
-            if now.hour < 9:
+            if now_local.hour < 9:
                 return
 
             db_read = SessionLocal()
@@ -255,7 +258,8 @@ class TelegramService:
                     log_entry = RoutineLog(
                         routine_type="TELEGRAM_DAILY_REPORT",
                         target_date=yesterday,
-                        status="SUCCESS"
+                        status="SUCCESS",
+                        execution_time=now_local
                     )
                     db_write.add(log_entry)
                     db_write.commit()
@@ -264,7 +268,8 @@ class TelegramService:
                     log_entry = RoutineLog(
                         routine_type="TELEGRAM_DAILY_REPORT",
                         target_date=yesterday,
-                        status="FAILED"
+                        status="FAILED",
+                        execution_time=now_local
                     )
                     db_write.add(log_entry)
                     db_write.commit()
@@ -283,7 +288,9 @@ class TelegramService:
                 return
 
             tz = pytz.timezone(settings.TIMEZONE)
-            now_str = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
+            now = datetime.now(tz)
+            now_local = now.replace(tzinfo=None)
+            now_str = now_local.strftime('%d/%m/%Y %H:%M')
             caption = f"[Backup Manual Solicitado] - {now_str}"
 
             success = self._send_document(backup_path, caption)
@@ -295,7 +302,8 @@ class TelegramService:
             try:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_MANUAL_BACKUP",
-                    status="SUCCESS" if success else "FAILED"
+                    status="SUCCESS" if success else "FAILED",
+                    execution_time=now_local
                 )
                 db_write.add(log_entry)
                 db_write.commit()
@@ -312,6 +320,9 @@ class TelegramService:
 
     def send_manual_report(self, start_date: date, end_date: date):
         with self._manual_report_lock:
+            tz = pytz.timezone(settings.TIMEZONE)
+            now_local = datetime.now(tz).replace(tzinfo=None)
+
             db_read = SessionLocal()
             try:
                 report_text = self._generate_report_text(
@@ -333,7 +344,8 @@ class TelegramService:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_MANUAL_REPORT",
                     target_date=end_date,
-                    status="SUCCESS" if text_success else "FAILED"
+                    status="SUCCESS" if text_success else "FAILED",
+                    execution_time=now_local
                 )
                 db_write.add(log_entry)
                 db_write.commit()
@@ -347,6 +359,5 @@ class TelegramService:
                 logger.error(f"Erro ao salvar rotina de relatorio manual: {e}")
             finally:
                 db_write.close()
-
 
 telegram_service = TelegramService()
