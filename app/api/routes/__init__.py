@@ -15,7 +15,8 @@ from app.api.routes import (
     audit,
     sync,
     backup,
-    telegram_actions
+    telegram_actions,
+    routine_logs
 )
 from app.core.config import settings
 
@@ -40,3 +41,4 @@ api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
 api_router.include_router(backup.router, prefix="/backup", tags=["Backup"])
 api_router.include_router(telegram_actions.router, prefix="/telegram", tags=["Telegram"])
+api_router.include_router(routine_logs.router, prefix="/routine-logs", tags=["Routine Logs"])
