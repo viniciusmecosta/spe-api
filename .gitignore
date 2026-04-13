@@ -221,3 +221,7 @@ spe.db
 # Mosquitto data and logs
 mosquitto/data/
 mosquitto/log/
+
+# App Logs
+logs/
+*.log
