@@ -29,8 +29,14 @@ file_handler.setFormatter(log_formatter)
 
 logging.basicConfig(
     level=logging.INFO,
-    handlers=[file_handler]
+    handlers=[file_handler],
+    force=True
 )
+
+for name, logger_instance in logging.root.manager.loggerDict.items():
+    if isinstance(logger_instance, logging.Logger):
+        logger_instance.handlers = []
+        logger_instance.propagate = True
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler()
@@ -98,6 +104,11 @@ async def log_requests(request: Request, call_next):
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}", exc_info=True)
+    else:
+        logger.warning(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}")
+
     if exc.status_code == status.HTTP_404_NOT_FOUND:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,20 +125,21 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Erro de validação em {request.method} {request.url.path}: {exc.errors()}")
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         content={"detail": "Validation Error", "errors": exc.errors()})
 
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-    logger.error(f"Database error: {str(exc)}")
+    logger.error(f"Database error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "A database error occurred."})
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unexpected error: {str(exc)}")
+    logger.error(f"Unexpected error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "An unexpected error occurred."})
 
