@@ -18,6 +18,7 @@ class UserBiometric(Base):
     sensor_index = Column(Integer, nullable=True)
     template_data = Column(String, nullable=True)
     description = Column(String, nullable=True)
+    finger_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_local_time)
 
     user = relationship("User", back_populates="biometrics")

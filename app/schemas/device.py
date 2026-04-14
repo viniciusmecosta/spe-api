@@ -1,21 +1,17 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Any
-
 
 class DevicePunchResponse(BaseModel):
     message: Optional[str] = None
     led: str
     data: Optional[Any] = None
 
-
 class DevicePunchRequest(BaseModel):
     sensor_index: int
-
 
 class DeviceActions(BaseModel):
     buzzer_pattern: int
     buzzer_duration_ms: int
-
 
 class FeedbackPayload(BaseModel):
     line1: str
@@ -23,11 +19,9 @@ class FeedbackPayload(BaseModel):
     led: str
     actions: DeviceActions
 
-
 class EnrollStartPayload(BaseModel):
     user_id: int
     user_name: str
-
 
 class EnrollResultPayload(BaseModel):
     user_id: int
@@ -35,18 +29,16 @@ class EnrollResultPayload(BaseModel):
     success: bool
     template_data: Optional[str] = None
     error: Optional[str] = None
-
+    finger_id: Optional[int] = Field(None, ge=0, le=9)
 
 class TimeResponsePayload(BaseModel):
     unix: int
     formatted: str
 
-
 class BiometricSyncData(BaseModel):
     biometric_id: int
     template_data: str
     user_id: int
-
 
 class BiometricSyncAck(BaseModel):
     biometric_id: int

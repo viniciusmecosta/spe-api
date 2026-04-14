@@ -9,7 +9,6 @@ from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
-
 class BiometricService:
     def get_all_for_sync(self, db: Session) -> List[BiometricSyncData]:
         biometrics = db.query(UserBiometric).join(User).filter(
@@ -35,10 +34,19 @@ class BiometricService:
             if not user:
                 return False, "Usuario nao encontrado"
 
+            if result.finger_id is not None:
+                existing_finger = db.query(UserBiometric).filter(
+                    UserBiometric.user_id == user.id,
+                    UserBiometric.finger_id == result.finger_id
+                ).first()
+                if existing_finger:
+                    return False, f"O usuario ja possui uma biometria cadastrada para o dedo com ID {result.finger_id}"
+
             new_bio = UserBiometric(
                 user_id=user.id,
                 template_data=result.template_data,
-                sensor_index=result.sensor_index
+                sensor_index=result.sensor_index,
+                finger_id=result.finger_id
             )
             db.add(new_bio)
             db.commit()
@@ -46,13 +54,27 @@ class BiometricService:
 
             audit_service.log(
                 db, target_user_id=user.id, action="ENROLL", entity="BIOMETRIC",
-                entity_id=new_bio.id, new_data={"sensor_index": result.sensor_index}
+                entity_id=new_bio.id, new_data={"sensor_index": result.sensor_index, "finger_id": result.finger_id}
             )
 
             return True, "Sucesso"
         except Exception as e:
             logger.error(f"Erro Enroll: {e}")
             return False, str(e)
+
+    def get_available_sensor_indices(self, db: Session) -> List[int]:
+
+        used_indices_query = db.query(UserBiometric.sensor_index).filter(
+            UserBiometric.sensor_index.isnot(None)
+        ).all()
+
+        used_indices = {index[0] for index in used_indices_query if index[0] is not None}
+
+        all_possible_indices = set(range(1, 128))
+
+        available_indices = all_possible_indices - used_indices
+
+        return sorted(list(available_indices))
 
 
 biometric_service = BiometricService()
