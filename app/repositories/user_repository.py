@@ -5,7 +5,7 @@ from typing import List, Optional, Set
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User, WorkSchedule
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserUpdate
 
 
 class UserRepository:
@@ -27,79 +27,19 @@ class UserRepository:
             order_direction: str = "asc"
     ) -> List[User]:
         query = db.query(User)
-
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
-
         if role is not None:
             query = query.filter(User.role == role)
-
         if search:
             search_term = f"%{search}%"
-            query = query.filter(
-                or_(
-                    User.name.ilike(search_term),
-                    User.username.ilike(search_term)
-                )
-            )
-
+            query = query.filter(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
         order_column = getattr(User, order_by, User.id)
         if order_direction.lower() == "desc":
             query = query.order_by(desc(order_column))
         else:
             query = query.order_by(asc(order_column))
-
         return query.offset(skip).limit(limit).all()
-
-    def get_active_users(self, db: Session) -> List[User]:
-        return db.query(User).filter(User.is_active == True).all()
-
-    def count_active(self, db: Session) -> int:
-        return db.query(User).filter(User.is_active == True).count()
-
-    def create(self, db: Session, user_in: UserCreate) -> User:
-        db_user = User(
-            username=user_in.username,
-            name=user_in.name,
-            password_hash=get_password_hash(user_in.password),
-            role=user_in.role,
-            is_active=user_in.is_active
-        )
-
-        if hasattr(user_in, 'schedules') and user_in.schedules:
-            for sch in user_in.schedules:
-                db_sch = WorkSchedule(
-                    day_of_week=sch.day_of_week,
-                    daily_hours=sch.daily_hours
-                )
-                db_user.schedules.append(db_sch)
-
-        if hasattr(user_in, 'biometrics') and user_in.biometrics:
-            seen_indices = set()
-            for bio in user_in.biometrics:
-                if bio.sensor_index is not None:
-                    if bio.sensor_index in seen_indices:
-                        raise ValueError(f"O index {bio.sensor_index} foi enviado duplicado na mesma requisicao.")
-                    seen_indices.add(bio.sensor_index)
-
-                    existing = db.query(UserBiometric).filter(
-                        UserBiometric.sensor_index == bio.sensor_index
-                    ).first()
-                    if existing:
-                        user_name = existing.user.name if existing.user else "Desconhecido"
-                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
-
-                db_bio = UserBiometric(
-                    sensor_index=bio.sensor_index,
-                    template_data=bio.template_data,
-                    description=bio.description
-                )
-                db_user.biometrics.append(db_bio)
-
-        db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        return db_user
 
     def update(self, db: Session, db_obj: User, obj_in: UserUpdate | dict) -> User:
         if isinstance(obj_in, dict):
@@ -121,63 +61,43 @@ class UserRepository:
         if schedules_in is not None:
             db_obj.schedules = []
             for sch_data in schedules_in:
-                if isinstance(sch_data, dict):
-                    day = sch_data['day_of_week']
-                    hours = sch_data['daily_hours']
-                else:
-                    day = sch_data.day_of_week
-                    hours = sch_data.daily_hours
-
+                day = sch_data['day_of_week'] if isinstance(sch_data, dict) else sch_data.day_of_week
+                hours = sch_data['daily_hours'] if isinstance(sch_data, dict) else sch_data.daily_hours
                 new_sch = WorkSchedule(day_of_week=day, daily_hours=hours)
                 db_obj.schedules.append(new_sch)
 
         if biometrics_in is not None:
             current_biometrics = {b.id: b for b in db_obj.biometrics}
-            incoming_ids = set()
             new_biometrics_list = []
             seen_indices = set()
-
             for bio_data in biometrics_in:
-                if isinstance(bio_data, dict):
-                    bio_id = bio_data.get('id')
-                    sensor_idx = bio_data.get('sensor_index')
-                    tmpl_data = bio_data.get('template_data')
-                    desc = bio_data.get('description')
-                else:
-                    bio_id = bio_data.id
-                    sensor_idx = bio_data.sensor_index
-                    tmpl_data = bio_data.template_data
-                    desc = bio_data.description
+                bio_id = bio_data.get('id') if isinstance(bio_data, dict) else bio_data.id
+                sensor_idx = bio_data.get('sensor_index') if isinstance(bio_data, dict) else bio_data.sensor_index
+                tmpl_data = bio_data.get('template_data') if isinstance(bio_data, dict) else bio_data.template_data
+                desc = bio_data.get('description') if isinstance(bio_data, dict) else bio_data.description
+                f_id = bio_data.get('finger_id') if isinstance(bio_data, dict) else bio_data.finger_id
 
                 if sensor_idx is not None:
                     if sensor_idx in seen_indices:
-                        raise ValueError(f"O index {sensor_idx} foi enviado duplicado na mesma requisicao.")
+                        raise ValueError(f"O index {sensor_idx} duplicado na mesma requisicao.")
                     seen_indices.add(sensor_idx)
-
-                    existing = db.query(UserBiometric).filter(
-                        UserBiometric.sensor_index == sensor_idx,
-                        UserBiometric.user_id != db_obj.id
-                    ).first()
-                    if existing:
-                        user_name = existing.user.name if existing.user else "Desconhecido"
-                        raise ValueError(f"Index ja cadastrada para o usuario '{user_name}'")
+                    existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx,
+                                                                  UserBiometric.user_id != db_obj.id).first()
+                    if existing_bio:
+                        raise ValueError(f"Index ja cadastrada para outro usuario")
 
                 if bio_id and bio_id in current_biometrics:
-                    incoming_ids.add(bio_id)
                     existing = current_biometrics[bio_id]
                     existing.sensor_index = sensor_idx
                     if tmpl_data is not None:
                         existing.template_data = tmpl_data
                     existing.description = desc
+                    existing.finger_id = f_id
                     new_biometrics_list.append(existing)
                 else:
-                    new_bio = UserBiometric(
-                        sensor_index=sensor_idx,
-                        template_data=tmpl_data,
-                        description=desc
-                    )
+                    new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, description=desc,
+                                            finger_id=f_id)
                     new_biometrics_list.append(new_bio)
-
             db_obj.biometrics = new_biometrics_list
 
         db.add(db_obj)
