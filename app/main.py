@@ -2,7 +2,6 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from logging.handlers import RotatingFileHandler
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -17,30 +16,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.routes import api_router
 from app.core.config import settings
+from app.core.logger import setup_logging
 from app.services.backup_service import backup_service
 from app.services.sync_service import sync_service
 from app.services.telegram_service import telegram_service
 
-os.makedirs("logs", exist_ok=True)
-log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-
-file_handler = RotatingFileHandler("logs/spe.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
-file_handler.setFormatter(log_formatter)
-
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[file_handler],
-    force=True
-)
-
-for name, logger_instance in logging.root.manager.loggerDict.items():
-    if isinstance(logger_instance, logging.Logger):
-        logger_instance.handlers = []
-        logger_instance.propagate = True
-
+setup_logging()
 logger = logging.getLogger(__name__)
-scheduler = BackgroundScheduler()
 
+scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -68,7 +52,6 @@ async def lifespan(app: FastAPI):
     yield
     scheduler.shutdown()
 
-
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
@@ -91,7 +74,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -122,13 +104,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         content={"detail": exc.detail}
     )
 
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.warning(f"Erro de validação em {request.method} {request.url.path}: {exc.errors()}")
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         content={"detail": "Validation Error", "errors": exc.errors()})
-
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
@@ -136,13 +116,11 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "A database error occurred."})
 
-
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unexpected error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "An unexpected error occurred."})
-
 
 @app.get("/", include_in_schema=False)
 def root():
@@ -152,7 +130,6 @@ def root():
         "status": "Online",
         "documentacao": "/docs"
     }
-
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
