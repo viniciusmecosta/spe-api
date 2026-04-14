@@ -62,4 +62,19 @@ class BiometricService:
             logger.error(f"Erro Enroll: {e}")
             return False, str(e)
 
+    def get_available_sensor_indices(self, db: Session) -> List[int]:
+
+        used_indices_query = db.query(UserBiometric.sensor_index).filter(
+            UserBiometric.sensor_index.isnot(None)
+        ).all()
+
+        used_indices = {index[0] for index in used_indices_query if index[0] is not None}
+
+        all_possible_indices = set(range(1, 128))
+
+        available_indices = all_possible_indices - used_indices
+
+        return sorted(list(available_indices))
+
+
 biometric_service = BiometricService()
