@@ -1,7 +1,15 @@
-.PHONY: run docker-build docker-up docker-down migrate seed clean
+.PHONY: setup run run-prod docker-build docker-up docker-down migrate seed clean
+
+setup:
+	pip install uv
+	uv venv
+	uv pip install -r requirements.txt
 
 run:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
+
+run-prod:
+	granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
 migrate:
 	alembic revision --autogenerate -m "$(msg)"

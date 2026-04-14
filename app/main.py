@@ -1,7 +1,8 @@
 import logging
 import os
-import socket
+import time
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -20,26 +21,22 @@ from app.services.backup_service import backup_service
 from app.services.sync_service import sync_service
 from app.services.telegram_service import telegram_service
 
+os.makedirs("logs", exist_ok=True)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-class UvicornHostFilter(logging.Filter):
-    def __init__(self):
-        super().__init__()
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("10.255.255.255", 1))
-            self.ip = s.getsockname()[0]
-            s.close()
-        except Exception:
-            self.ip = "127.0.0.1"
+file_handler = RotatingFileHandler("logs/spe.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
+file_handler.setFormatter(log_formatter)
 
-    def filter(self, record):
-        if record.msg == "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)":
-            if len(record.args) == 3 and record.args[1] == "0.0.0.0":
-                record.args = (record.args[0], self.ip, record.args[2])
-        return True
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[file_handler],
+    force=True
+)
 
-
-logging.getLogger("uvicorn.error").addFilter(UvicornHostFilter())
+for name, logger_instance in logging.root.manager.loggerDict.items():
+    if isinstance(logger_instance, logging.Logger):
+        logger_instance.handlers = []
+        logger_instance.propagate = True
 
 logger = logging.getLogger(__name__)
 scheduler = BackgroundScheduler()
@@ -96,8 +93,22 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    host = request.client.host if request.client else "127.0.0.1"
+    logger.info(f"{host} - \"{request.method} {request.url.path}\" {response.status_code} {process_time:.4f}s")
+    return response
+
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}", exc_info=True)
+    else:
+        logger.warning(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}")
+
     if exc.status_code == status.HTTP_404_NOT_FOUND:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,18 +125,21 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Erro de validação em {request.method} {request.url.path}: {exc.errors()}")
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         content={"detail": "Validation Error", "errors": exc.errors()})
 
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
+    logger.error(f"Database error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "A database error occurred."})
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unexpected error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "An unexpected error occurred."})
 
