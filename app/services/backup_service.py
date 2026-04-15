@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -105,7 +105,7 @@ class BackupService:
             logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
-    def _send_email(self, file_path: str, filename: str, report_html: str, period_text: str) -> bool:
+    def _send_email(self, attachments: List[Tuple[str, str]], report_html: str, period_text: str) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.EMAIL_TO]):
             return False
 
@@ -132,7 +132,7 @@ class BackupService:
             body_html = (
                 f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\">"
                 f"<p>Prezados,</p>"
-                f"<p>Segue em anexo a cópia de segurança do banco de dados.</p>"
+                f"<p>Seguem em anexo a cópia de segurança do banco de dados e os logs operacionais.</p>"
                 f"<p>{period_text}</p>"
                 f"<br>"
                 f"{report_html}"
@@ -143,10 +143,12 @@ class BackupService:
 
             msg.attach(MIMEText(body_html, 'html'))
 
-            with open(file_path, "rb") as f:
-                part = MIMEApplication(f.read(), Name=filename)
-                part['Content-Disposition'] = f'attachment; filename="{filename}"'
-                msg.attach(part)
+            for file_path, filename in attachments:
+                if os.path.exists(file_path):
+                    with open(file_path, "rb") as f:
+                        part = MIMEApplication(f.read(), Name=filename)
+                        part['Content-Disposition'] = f'attachment; filename="{filename}"'
+                        msg.attach(part)
 
             server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
             server.ehlo()
@@ -182,7 +184,14 @@ class BackupService:
                 logger.error('Backup - "Email manual" Error')
                 return False
 
-            success = self._send_email(backup_path, "spe.db", full_report_html, period_text)
+            attachments = [(backup_path, "spe.db")]
+
+            log_filename = yesterday.strftime("%d%m%Y") + ".log"
+            log_path = os.path.join("logs", log_filename)
+            if os.path.exists(log_path):
+                attachments.append((log_path, log_filename))
+
+            success = self._send_email(attachments, full_report_html, period_text)
 
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -257,7 +266,14 @@ class BackupService:
                 logger.error('Backup - "Email diário" Error')
                 return
 
-            success = self._send_email(backup_path, "spe.db", full_report_html, period_text)
+            attachments = [(backup_path, "spe.db")]
+
+            log_filename = yesterday.strftime("%d%m%Y") + ".log"
+            log_path = os.path.join("logs", log_filename)
+            if os.path.exists(log_path):
+                attachments.append((log_path, f"log_{log_filename}"))
+
+            success = self._send_email(attachments, full_report_html, period_text)
 
             if os.path.exists(backup_path):
                 os.remove(backup_path)

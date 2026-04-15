@@ -252,6 +252,11 @@ class TelegramService:
 
             text_success = self._send_text(report_text)
 
+            log_filename = yesterday.strftime("%d%m%Y") + ".log"
+            log_path = os.path.join("logs", log_filename)
+            if os.path.exists(log_path):
+                self._send_document(log_path, f"Logs do sistema - {yesterday.strftime('%d/%m/%Y')}")
+
             db_write = SessionLocal()
             try:
                 if text_success:
