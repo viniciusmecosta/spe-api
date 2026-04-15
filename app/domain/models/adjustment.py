@@ -11,6 +11,7 @@ from app.domain.models.enums import AdjustmentType, AdjustmentStatus
 def get_local_time():
     return datetime.now(pytz.timezone(settings.TIMEZONE))
 
+
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
 

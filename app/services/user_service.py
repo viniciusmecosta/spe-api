@@ -221,4 +221,5 @@ class UserService:
         )
         return user
 
+
 user_service = UserService()

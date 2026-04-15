@@ -23,9 +23,11 @@ from app.core.config import settings
 
 api_router = APIRouter()
 
+
 @api_router.get("/health", tags=["Health"])
 def health_check():
     return {"status": "ok", "app": "SPE", "version": settings.APP_VERSION}
+
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])

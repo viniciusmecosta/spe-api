@@ -16,6 +16,7 @@ from app.services.report_service import report_service
 
 router = APIRouter()
 
+
 def check_report_permission(current_user: User):
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
     if not is_manager and not current_user.can_export_report:
@@ -25,6 +26,7 @@ def check_report_permission(current_user: User):
         )
     return True
 
+
 @router.get("/dashboard", response_model=DashboardMetricsResponse)
 def get_dashboard(
         db: Session = Depends(deps.get_db),
@@ -32,6 +34,7 @@ def get_dashboard(
 ) -> Any:
     check_report_permission(current_user)
     return report_service.get_dashboard_metrics(db)
+
 
 @router.get("/me", response_model=AdvancedUserReportResponse)
 def get_my_report(
@@ -50,6 +53,7 @@ def get_my_report(
 
     return report
 
+
 @router.get("/monthly", response_model=MonthlyReportResponse)
 def get_monthly_global_report(
         month: int = Query(None, ge=1, le=12),
@@ -64,6 +68,7 @@ def get_monthly_global_report(
     if not year: year = now.year
 
     return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
+
 
 @router.get("/export/excel")
 def export_monthly_report_excel(
@@ -86,6 +91,7 @@ def export_monthly_report_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
 
 @router.get("/user/{user_id}", response_model=AdvancedUserReportResponse)
 def get_user_detailed_report(

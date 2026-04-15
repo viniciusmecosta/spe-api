@@ -9,6 +9,7 @@ from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
+
 class BiometricService:
     def get_all_for_sync(self, db: Session) -> List[BiometricSyncData]:
         biometrics = db.query(UserBiometric).join(User).filter(

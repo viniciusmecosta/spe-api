@@ -14,6 +14,7 @@ from app.services.user_service import user_service
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[UserResponse])
 def read_users(
         db: Session = Depends(deps.get_db),
@@ -39,6 +40,7 @@ def read_users(
     )
     return users
 
+
 @router.post("/", response_model=UserResponse)
 def create_user(
         *,
@@ -57,6 +59,7 @@ def create_user(
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.put("/me", response_model=UserResponse)
 def update_user_me(
@@ -80,6 +83,7 @@ def update_user_me(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.get("/me", response_model=UserResponse)
 def read_user_me(
         db: Session = Depends(deps.get_db),
@@ -102,6 +106,7 @@ def read_user_me(
 
     return user_data
 
+
 @router.get("/{user_id}", response_model=UserResponse)
 def read_user_by_id(
         user_id: int,
@@ -116,6 +121,7 @@ def read_user_by_id(
         raise HTTPException(status_code=400, detail="Privilégios insuficientes")
 
     return user
+
 
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user(

@@ -15,7 +15,6 @@ def upgrade() -> None:
                     sa.Column('username', sa.String(), nullable=False),
                     sa.Column('password_hash', sa.String(), nullable=False),
                     sa.Column('role', sa.Enum('EMPLOYEE', 'MANAGER', name='userrole'), nullable=False),
-                    # weekly_workload_hours REMOVIDO
                     sa.Column('is_active', sa.Boolean(), nullable=False),
                     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
                               nullable=True),
@@ -103,5 +102,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Downgrade logic... (simplificado)
     pass

@@ -10,6 +10,7 @@ from app.database.base import Base
 def get_local_time():
     return datetime.now(pytz.timezone(settings.TIMEZONE))
 
+
 class WorkSchedule(Base):
     __tablename__ = "work_schedules"
 

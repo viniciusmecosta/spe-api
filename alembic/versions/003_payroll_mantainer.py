@@ -1,10 +1,3 @@
-"""add payroll closure and maintainer role
-
-Revision ID: 003
-Revises: 002
-Create Date: 2024-01-02 00:00:00.000000
-
-"""
 import sqlalchemy as sa
 
 from alembic import op
@@ -16,7 +9,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Cria tabela de fechamento de folha
     op.create_table('payroll_closures',
                     sa.Column('id', sa.Integer(), nullable=False),
                     sa.Column('month', sa.Integer(), nullable=False),

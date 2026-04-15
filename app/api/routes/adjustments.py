@@ -33,11 +33,6 @@ def waive_absence_admin(
 ) -> Any:
     return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
 
-
-# -------------------------------------
-# ANEXOS E ARQUIVOS
-# -------------------------------------
-
 @router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
 def upload_adjustment_attachment(
         id: int,
@@ -70,14 +65,10 @@ def download_adjustment_attachment(
 
     attachment = adjustment.attachments[-1]
 
-    # Lógica Robusta:
-    # Ignora o caminho completo salvo no banco (que pode ser de outro ambiente/Windows)
-    # e reconstrói o caminho usando a configuração atual do servidor (Docker/Linux).
     filename = os.path.basename(attachment.file_path)
     safe_file_path = os.path.join(settings.UPLOAD_DIR, filename)
 
     if not os.path.exists(safe_file_path):
-        # Tenta fallback para o caminho original se o reconstruído falhar
         if os.path.exists(attachment.file_path):
             safe_file_path = attachment.file_path
         else:
@@ -89,9 +80,6 @@ def download_adjustment_attachment(
         filename=filename,
         media_type='application/octet-stream'
     )
-
-
-# -------------------------------------
 
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(

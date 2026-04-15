@@ -22,7 +22,7 @@ class AdjustmentWaiverCreate(BaseModel):
     user_id: int
     target_date: date
     reason_text: str = "Abono Administrativo"
-    amount_hours: Optional[float] = None  # Permitir definir quantidade
+    amount_hours: Optional[float] = None
 
 
 class AdjustmentRequestUpdate(BaseModel):

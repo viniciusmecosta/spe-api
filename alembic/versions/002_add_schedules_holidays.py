@@ -9,7 +9,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Work Schedules
     op.create_table('work_schedules',
                     sa.Column('id', sa.Integer(), nullable=False),
                     sa.Column('user_id', sa.Integer(), nullable=False),
@@ -20,7 +19,6 @@ def upgrade() -> None:
                     )
     op.create_index(op.f('ix_work_schedules_id'), 'work_schedules', ['id'], unique=False)
 
-    # Holidays
     op.create_table('holidays',
                     sa.Column('id', sa.Integer(), nullable=False),
                     sa.Column('date', sa.Date(), nullable=False),

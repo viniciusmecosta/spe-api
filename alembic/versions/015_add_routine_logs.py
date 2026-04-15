@@ -1,10 +1,12 @@
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = '015'
 down_revision = '014'
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     op.create_table(
@@ -19,6 +21,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_routine_logs_id'), 'routine_logs', ['id'], unique=False)
     op.create_index(op.f('ix_routine_logs_routine_type'), 'routine_logs', ['routine_type'], unique=False)
+
 
 def downgrade() -> None:
     op.drop_index(op.f('ix_routine_logs_routine_type'), table_name='routine_logs')

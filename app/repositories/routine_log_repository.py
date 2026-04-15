@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
-from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc
+from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.domain.models.routine_log import RoutineLog

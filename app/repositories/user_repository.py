@@ -105,4 +105,5 @@ class UserRepository:
         db.refresh(db_obj)
         return db_obj
 
+
 user_repository = UserRepository()

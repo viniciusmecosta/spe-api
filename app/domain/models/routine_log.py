@@ -1,6 +1,5 @@
-from datetime import datetime
-
 import pytz
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Date
 
 from app.core.config import settings
@@ -10,6 +9,7 @@ from app.database.base import Base
 def get_local_time():
     tz = pytz.timezone(settings.TIMEZONE)
     return datetime.now(tz).replace(tzinfo=None)
+
 
 class RoutineLog(Base):
     __tablename__ = "routine_logs"

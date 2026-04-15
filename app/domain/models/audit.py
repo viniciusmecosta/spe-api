@@ -10,6 +10,7 @@ from app.database.base import Base
 def get_local_time():
     return datetime.now(pytz.timezone(settings.TIMEZONE))
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

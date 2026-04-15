@@ -8,6 +8,7 @@ from app.services.backup_service import backup_service
 
 router = APIRouter()
 
+
 @router.post("/trigger", response_model=dict)
 def trigger_manual_backup(
         db: Session = Depends(deps.get_db),

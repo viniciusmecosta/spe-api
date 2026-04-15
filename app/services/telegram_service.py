@@ -1,15 +1,14 @@
 import logging
 import os
+import pytz
+import requests
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, date, time
-from typing import Dict, List
-
-import pytz
-import requests
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -19,6 +18,7 @@ from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 
 logger = logging.getLogger("uvicorn.info")
+
 
 class TelegramService:
     def __init__(self):
@@ -359,5 +359,6 @@ class TelegramService:
                 logger.error(f"Erro ao salvar rotina de relatorio manual: {e}")
             finally:
                 db_write.close()
+
 
 telegram_service = TelegramService()

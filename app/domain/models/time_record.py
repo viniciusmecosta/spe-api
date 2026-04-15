@@ -11,6 +11,7 @@ from app.domain.models.enums import RecordType, EditJustification
 def get_local_time():
     return datetime.now(pytz.timezone(settings.TIMEZONE))
 
+
 class TimeRecord(Base):
     __tablename__ = "time_records"
 

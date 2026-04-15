@@ -10,6 +10,7 @@ from app.schemas.routine_log import RoutineLogResponse
 
 router = APIRouter()
 
+
 @router.get("/", response_model=List[RoutineLogResponse])
 def read_routine_logs(
         routine_type: Optional[str] = None,
