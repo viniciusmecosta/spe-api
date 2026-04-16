@@ -1,10 +1,9 @@
 import logging
 import logging.config
 import os
+import pytz
 import time
 from datetime import datetime, timedelta
-
-import pytz
 
 from app.core.config import settings
 

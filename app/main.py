@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     tz = pytz.timezone(settings.TIMEZONE)
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
     yield
     scheduler.shutdown()
 
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
@@ -74,6 +76,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()
@@ -82,6 +85,7 @@ async def log_requests(request: Request, call_next):
     host = request.client.host if request.client else "127.0.0.1"
     logger.info(f"{host} - \"{request.method} {request.url.path}\" {response.status_code} {process_time:.4f}s")
     return response
+
 
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -103,11 +107,13 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         content={"detail": exc.detail}
     )
 
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.warning(f"Erro de validação em {request.method} {request.url.path}: {exc.errors()}")
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                         content={"detail": "Validation Error", "errors": exc.errors()})
+
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
@@ -115,11 +121,13 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "A database error occurred."})
 
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unexpected error em {request.url.path}: {str(exc)}", exc_info=True)
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         content={"detail": "An unexpected error occurred."})
+
 
 @app.get("/", include_in_schema=False)
 def root():
@@ -129,6 +137,7 @@ def root():
         "status": "Online",
         "documentacao": "/docs"
     }
+
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 app.mount("/static", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
