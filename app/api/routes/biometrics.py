@@ -12,6 +12,6 @@ router = APIRouter()
 @router.get("/available-sensor-indices", response_model=List[int])
 def get_available_sensor_indices(
         db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_maintainer),
+        current_user: User = Depends(deps.get_current_manager),
 ) -> Any:
     return biometric_service.get_available_sensor_indices(db)

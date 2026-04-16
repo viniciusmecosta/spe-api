@@ -6,6 +6,7 @@ from typing import Any
 from app.api import deps
 from app.core import security
 from app.core.config import settings
+from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.token import Token
@@ -19,18 +20,18 @@ def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2Pass
     username = form_data.username.lower()
     user = user_repository.get_by_username(db, username=username)
 
-    is_dev = settings.ENVIRONMENT.lower() == "dev"
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
-    if not is_dev:
-        if not user or not security.verify_password(form_data.password, user.password_hash):
+    is_dev = settings.ENVIRONMENT.lower() == "dev"
+    allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
+
+    if not allow_bypass:
+        if not security.verify_password(form_data.password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-        if not user.is_active:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
-    else:
-        if not user:
-            if not user:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                                    detail="No users found in database for DEV bypass")
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
 
     access_token = security.create_access_token(subject=user.id)
     return {"access_token": access_token, "token_type": "bearer"}

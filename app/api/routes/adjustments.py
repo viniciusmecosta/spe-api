@@ -33,6 +33,7 @@ def waive_absence_admin(
 ) -> Any:
     return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
 
+
 @router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
 def upload_adjustment_attachment(
         id: int,
@@ -80,6 +81,7 @@ def download_adjustment_attachment(
         filename=filename,
         media_type='application/octet-stream'
     )
+
 
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(

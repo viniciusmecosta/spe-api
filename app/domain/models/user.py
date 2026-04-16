@@ -38,6 +38,6 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
-    schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="joined")
+    schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     time_records = relationship("TimeRecord", back_populates="user", foreign_keys="TimeRecord.user_id")
-    biometrics = relationship("UserBiometric", back_populates="user", cascade="all, delete-orphan", lazy="joined")
+    biometrics = relationship("UserBiometric", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
