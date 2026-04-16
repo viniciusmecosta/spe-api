@@ -6,6 +6,7 @@ from typing import Any
 from app.api import deps
 from app.core import security
 from app.core.config import settings
+from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.token import Token
@@ -23,8 +24,9 @@ def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2Pass
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
     is_dev = settings.ENVIRONMENT.lower() == "dev"
+    allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
 
-    if not is_dev:
+    if not allow_bypass:
         if not security.verify_password(form_data.password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
 
