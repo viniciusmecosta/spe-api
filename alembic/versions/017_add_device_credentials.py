@@ -1,4 +1,5 @@
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = '017'
@@ -11,8 +12,10 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('device_id', sa.String(), nullable=False),
         sa.Column('name', sa.String(), nullable=False),
+                    sa.Column('key_type', sa.Enum('DEVICE', 'CONSUMER', name='devicekeytype'), server_default='DEVICE',
+                              nullable=False),
         sa.Column('api_key_hash', sa.String(), nullable=False),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+                    sa.Column('is_active', sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
         sa.PrimaryKeyConstraint('id')
