@@ -1,6 +1,5 @@
 import logging
 import os
-import pytz
 import smtplib
 import sqlite3
 import threading
@@ -10,9 +9,11 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
+from typing import Dict, List, Tuple
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List, Tuple
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -21,7 +22,7 @@ from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 
-logger = logging.getLogger("uvicorn.info")
+logger = logging.getLogger(__name__)
 
 
 class BackupService:
@@ -32,7 +33,7 @@ class BackupService:
 
     def _create_safe_backup(self, source_db: str) -> str | None:
         try:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
             unique_id = uuid.uuid4().hex[:8]
             backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
@@ -113,7 +114,7 @@ class BackupService:
             msg = MIMEMultipart()
 
             raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             current_date = datetime.now(tz).strftime("%d/%m/%Y")
             base_subject = f"Backup SPE e Relatórios - {current_date}"
 
@@ -167,7 +168,7 @@ class BackupService:
         with self._manual_backup_lock:
             session = db or SessionLocal()
             try:
-                tz = pytz.timezone(settings.TIMEZONE)
+                tz = ZoneInfo(settings.TIMEZONE)
                 now = datetime.now(tz)
                 now_local = now.replace(tzinfo=None)
                 yesterday = now_local.date() - timedelta(days=1)
@@ -189,7 +190,7 @@ class BackupService:
             log_filename = yesterday.strftime("%d%m%Y") + ".log"
             log_path = os.path.join("logs", log_filename)
             if os.path.exists(log_path):
-                attachments.append((log_path, log_filename))
+                attachments.append((log_path, f"log_{log_filename}"))
 
             success = self._send_email(attachments, full_report_html, period_text)
 
@@ -205,7 +206,7 @@ class BackupService:
 
     def run_daily_backup_routine(self):
         with self._email_backup_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             today = now_local.date()
@@ -240,10 +241,18 @@ class BackupService:
                     start_date = yesterday
 
                 full_report_html = ""
+                attachments = []
                 current_check_date = start_date
+
                 while current_check_date <= yesterday:
                     daily_html = self._generate_daily_report_html(db_read, current_check_date)
                     full_report_html += daily_html
+
+                    log_filename = current_check_date.strftime("%d%m%Y") + ".log"
+                    log_path = os.path.join("logs", log_filename)
+                    if os.path.exists(log_path):
+                        attachments.append((log_path, f"log_{log_filename}"))
+
                     current_check_date += timedelta(days=1)
 
                 if not full_report_html:
@@ -252,9 +261,9 @@ class BackupService:
                 fmt_start = start_date.strftime("%d/%m/%Y")
                 fmt_end = yesterday.strftime("%d/%m/%Y")
                 if start_date < yesterday:
-                    period_text = f"Abaixo estão os relatórios dos dias {fmt_start} a {fmt_end}:"
+                    period_text = f"Abaixo estão os relatórios e logs dos dias {fmt_start} a {fmt_end}:"
                 else:
-                    period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+                    period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
             except Exception as e:
                 logger.error(f"Erro check backup diário: {e}")
                 return
@@ -266,12 +275,7 @@ class BackupService:
                 logger.error('Backup - "Email diário" Error')
                 return
 
-            attachments = [(backup_path, "spe.db")]
-
-            log_filename = yesterday.strftime("%d%m%Y") + ".log"
-            log_path = os.path.join("logs", log_filename)
-            if os.path.exists(log_path):
-                attachments.append((log_path, f"log_{log_filename}"))
+            attachments.insert(0, (backup_path, "spe.db"))
 
             success = self._send_email(attachments, full_report_html, period_text)
 
@@ -308,7 +312,7 @@ class BackupService:
 
     def clean_old_logs(self, days_to_keep: int = 15):
         with self._cleanup_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             today = now_local.date()

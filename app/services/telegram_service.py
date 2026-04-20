@@ -18,7 +18,7 @@ from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 
-logger = logging.getLogger("uvicorn.info")
+logger = logging.getLogger(__name__)
 
 
 class TelegramService:
@@ -65,7 +65,10 @@ class TelegramService:
                 "parse_mode": "HTML"
             }
             response = requests.post(url, data=payload, timeout=15)
-            return response.status_code == 200
+            is_success = 200 <= response.status_code <= 299
+            if not is_success:
+                logger.error(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
+            return is_success
         except Exception as e:
             logger.error(f"Telegram send text error: {e}")
             return False
@@ -80,7 +83,10 @@ class TelegramService:
                 payload = {"chat_id": self.chat_id, "caption": caption}
                 files = {"document": file}
                 response = requests.post(url, data=payload, files=files, timeout=40)
-            return response.status_code == 200
+            is_success = 200 <= response.status_code <= 299
+            if not is_success:
+                logger.error(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
+            return is_success
         except Exception as e:
             logger.error(f"Telegram send document error: {e}")
             return False
@@ -253,10 +259,13 @@ class TelegramService:
 
             text_success = self._send_text(report_text)
 
-            log_filename = yesterday.strftime("%d%m%Y") + ".log"
-            log_path = os.path.join("logs", log_filename)
-            if os.path.exists(log_path):
-                self._send_document(log_path, f"Logs do sistema - {yesterday.strftime('%d/%m/%Y')}")
+            current_log_date = start_date
+            while current_log_date <= yesterday:
+                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
+                log_path = os.path.join("logs", log_filename)
+                if os.path.exists(log_path):
+                    self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                current_log_date += timedelta(days=1)
 
             db_write = SessionLocal()
             try:
@@ -344,6 +353,14 @@ class TelegramService:
                 db_read.close()
 
             text_success = self._send_text(report_text)
+
+            current_log_date = start_date
+            while current_log_date <= end_date:
+                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
+                log_path = os.path.join("logs", log_filename)
+                if os.path.exists(log_path):
+                    self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                current_log_date += timedelta(days=1)
 
             db_write = SessionLocal()
             try:
