@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
-    DEVICE_API_KEY: str
     UPLOAD_DIR: str
     EXCLUDED_EMPLOYEE_IDS: Optional[str] = None
     SMTP_HOST: Optional[str] = None
@@ -32,7 +31,6 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: Optional[str] = None
 
     OPERATION_MODE: str = "STANDALONE"
-    CONSUMER_API_KEY: Optional[str] = None
     CONSUMER_SERVER_URL: Optional[str] = None
 
     model_config = SettingsConfigDict(
