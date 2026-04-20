@@ -80,7 +80,7 @@ def setup_logging() -> None:
         "loggers": {
             "apscheduler": {
                 "handlers": ["file_handler"],
-                "level": "INFO",
+                "level": "WARNING",
                 "propagate": False
             },
             "app": {
