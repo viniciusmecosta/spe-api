@@ -1,21 +1,24 @@
 import jwt
-from fastapi import Depends, HTTPException, status, Header
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status, Security
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from typing import Generator
 
 from app.core.config import settings
-from app.core.security import verify_password
+from app.core.security import get_api_key_hash
 from app.database.session import SessionLocal
 from app.domain.models.device import DeviceCredential
-from app.domain.models.enums import UserRole
+from app.domain.models.enums import UserRole, DeviceKeyType
 from app.domain.models.user import User
 from app.schemas.token import TokenPayload
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
+
+api_key_header = APIKeyHeader(name="X-API-KEY", scheme_name="DeviceApiKey", auto_error=False)
+consumer_api_key_header = APIKeyHeader(name="X-CONSUMER-API-KEY", scheme_name="ConsumerApiKey", auto_error=False)
 
 
 def get_db() -> Generator:
@@ -78,42 +81,38 @@ def get_current_maintainer(
 
 
 async def verify_device_api_key(
-        x_device_id: str = Header(..., description="Device Identifier"),
-        x_api_key: str = Header(..., description="Device API Key"),
+        api_key: str = Security(api_key_header),
         db: Session = Depends(get_db)
 ):
-    device = db.query(DeviceCredential).filter(DeviceCredential.device_id == x_device_id).first()
-    if not device or not device.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Device not found or inactive"
-        )
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device API Key missing")
 
-    if not verify_password(x_api_key, device.api_key_hash):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API Key"
-        )
+    hashed_key = get_api_key_hash(api_key)
+    device = db.query(DeviceCredential).filter(
+        DeviceCredential.api_key_hash == hashed_key,
+        DeviceCredential.key_type == DeviceKeyType.DEVICE
+    ).first()
+
+    if not device or not device.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Device API Key")
 
     return device
 
 
 async def verify_consumer_api_key(
-        x_consumer_id: str = Header(..., description="Consumer Identifier"),
-        x_consumer_api_key: str = Header(..., description="Consumer API Key"),
+        api_key: str = Security(consumer_api_key_header),
         db: Session = Depends(get_db)
 ):
-    consumer = db.query(DeviceCredential).filter(DeviceCredential.device_id == x_consumer_id).first()
-    if not consumer or not consumer.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Consumer not found or inactive"
-        )
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Consumer API Key missing")
 
-    if not verify_password(x_consumer_api_key, consumer.api_key_hash):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid Consumer API Key"
-        )
+    hashed_key = get_api_key_hash(api_key)
+    consumer = db.query(DeviceCredential).filter(
+        DeviceCredential.api_key_hash == hashed_key,
+        DeviceCredential.key_type == DeviceKeyType.CONSUMER
+    ).first()
+
+    if not consumer or not consumer.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Consumer API Key")
 
     return consumer
