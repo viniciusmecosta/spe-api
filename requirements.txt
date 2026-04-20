@@ -32,16 +32,15 @@ markupsafe==3.0.3
 mdurl==0.1.2
 ntplib==0.4.0
 openpyxl==3.1.5
-passlib==1.7.4
 pyasn1==0.6.3
 pycparser==3.0
 pydantic==2.13.0
 pydantic-core==2.46.0
 pydantic-extra-types==2.11.1
 pydantic-settings==2.13.1
+PyJWT==2.12.1
 pygments==2.20.0
 python-dotenv==1.2.2
-python-jose==3.5.0
 python-multipart==0.0.26
 pytz==2026.1.post1
 pyyaml==6.0.3
