@@ -1,8 +1,9 @@
-import pytz
 from datetime import date, datetime
+from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -14,7 +15,7 @@ from app.services.audit_service import audit_service
 
 class PayrollService:
     def list_periods(self, db: Session) -> List[Dict[str, Any]]:
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         current_month = now.month
         current_year = now.year
@@ -60,7 +61,7 @@ class PayrollService:
                 detail="Not authorized to close payroll."
             )
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
 
         request_date = date(year, month, 1)

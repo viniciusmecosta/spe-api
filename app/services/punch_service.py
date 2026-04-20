@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from pytz import timezone
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,7 +26,7 @@ class PunchService:
             if not user.is_active:
                 return False, "Bloqueado", None
 
-            tz = timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             server_time = datetime.now(tz)
 
             new_record = time_record_service.create_punch(

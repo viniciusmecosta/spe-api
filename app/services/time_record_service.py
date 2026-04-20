@@ -1,9 +1,10 @@
-import ntplib
-import pytz
 from datetime import datetime
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+import ntplib
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
@@ -20,11 +21,11 @@ from app.services.payroll_service import payroll_service
 
 class TimeRecordService:
     def _get_trusted_time(self):
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         try:
             client = ntplib.NTPClient()
             response = client.request('pool.ntp.org', version=3, timeout=2)
-            utc_time = datetime.fromtimestamp(response.tx_time, pytz.utc)
+            utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
             return utc_time.astimezone(tz), True
         except Exception:
             return datetime.now(tz), False
@@ -241,16 +242,16 @@ class TimeRecordService:
 
         record_type = RecordType.ENTRY
         if last_record and last_record.record_type == RecordType.ENTRY:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
 
             last_time = last_record.record_datetime
             if last_time.tzinfo is None:
-                last_time = pytz.utc.localize(last_time)
+                last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
             last_local_date = last_time.astimezone(tz).date()
 
             curr_time = timestamp
             if curr_time.tzinfo is None:
-                curr_time = pytz.utc.localize(curr_time)
+                curr_time = curr_time.replace(tzinfo=ZoneInfo("UTC"))
             curr_local_date = curr_time.astimezone(tz).date()
 
             if last_local_date == curr_local_date:

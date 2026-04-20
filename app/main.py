@@ -1,10 +1,10 @@
 import logging
-import os
-import pytz
 import time
+from contextlib import asynccontextmanager
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +28,7 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tz = pytz.timezone(settings.TIMEZONE)
+    tz = ZoneInfo(settings.TIMEZONE)
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
 

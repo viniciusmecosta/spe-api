@@ -1,14 +1,15 @@
 import logging
 import os
-import pytz
-import requests
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, date, time
+from typing import Dict, List
+from zoneinfo import ZoneInfo
+
+import requests
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -35,7 +36,7 @@ class TelegramService:
             return None
 
         try:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
             unique_id = uuid.uuid4().hex[:8]
             backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
@@ -154,7 +155,7 @@ class TelegramService:
 
     def execute_hourly_backup(self):
         with self._hourly_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
 
@@ -209,7 +210,7 @@ class TelegramService:
 
     def send_managerial_report(self):
         with self._daily_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             today = now_local.date()
@@ -292,7 +293,7 @@ class TelegramService:
                 logger.error('Backup - "Telegram manual" Error')
                 return
 
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             now_str = now_local.strftime('%d/%m/%Y %H:%M')
@@ -325,7 +326,7 @@ class TelegramService:
 
     def send_manual_report(self, start_date: date, end_date: date):
         with self._manual_report_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now_local = datetime.now(tz).replace(tzinfo=None)
 
             db_read = SessionLocal()
