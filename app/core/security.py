@@ -1,8 +1,8 @@
 import bcrypt
+import jwt
 import socket
 from datetime import datetime, timedelta
 from fastapi import Request
-from jose import jwt
 from typing import Any, Union, Optional
 
 from app.core.config import settings

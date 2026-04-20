@@ -7,6 +7,7 @@ from typing import List
 from app.api import deps
 from app.core.config import settings
 from app.core.security import get_client_ip
+from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType
 from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
@@ -23,7 +24,7 @@ def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
         db: Session = Depends(deps.get_db),
-        api_key: str = Depends(deps.verify_api_key)
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     try:
         ip_address = get_client_ip(request)
@@ -66,7 +67,7 @@ def register_device_punch(
 def enroll_device_biometric(
         payload: EnrollResultPayload,
         db: Session = Depends(deps.get_db),
-        api_key: str = Depends(deps.verify_api_key)
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     try:
         success, msg = biometric_service.save_enrolled_biometric(db, payload)
@@ -103,7 +104,7 @@ def enroll_device_biometric(
 @router.get("/sync", response_model=List[BiometricSyncData])
 def sync_device_data(
         db: Session = Depends(deps.get_db),
-        api_key: str = Depends(deps.verify_api_key)
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     return biometric_service.get_all_for_sync(db)
 
@@ -112,7 +113,7 @@ def sync_device_data(
 def sync_device_ack(
         payload: BiometricSyncAck,
         db: Session = Depends(deps.get_db),
-        api_key: str = Depends(deps.verify_api_key)
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     biometric_service.process_sync_ack(db, payload)
     return {"status": "success"}
@@ -120,7 +121,7 @@ def sync_device_ack(
 
 @router.get("/time", response_model=TimeResponsePayload)
 def get_device_time(
-        api_key: str = Depends(deps.verify_api_key)
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     tz = pytz.timezone(settings.TIMEZONE)
     now = datetime.now(tz)
