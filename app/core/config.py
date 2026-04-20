@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     UPLOAD_DIR: str
-    EXCLUDED_EMPLOYEE_IDS: Optional[str] = None
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: Optional[int] = None
     SMTP_USER: Optional[str] = None
@@ -39,7 +38,6 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore"
     )
-
 
 settings = Settings()
 

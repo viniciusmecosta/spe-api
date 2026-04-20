@@ -34,6 +34,7 @@ class User(Base):
     can_manual_punch_desktop = Column(Boolean, default=True)
     can_manual_punch_mobile = Column(Boolean, default=False)
     can_export_report = Column(Boolean, default=False)
+    is_exempt_from_rules = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)

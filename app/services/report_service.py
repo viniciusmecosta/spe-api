@@ -46,14 +46,7 @@ class ReportService:
 
     def _apply_employee_filters(self, query, employee_ids: List[int] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
-
-        if settings.EXCLUDED_EMPLOYEE_IDS:
-            try:
-                excluded = [int(x) for x in settings.EXCLUDED_EMPLOYEE_IDS.split(",") if x.strip().isdigit()]
-                if excluded:
-                    query = query.filter(User.id.notin_(excluded))
-            except:
-                pass
+        query = query.filter(User.is_exempt_from_rules == False)
 
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
@@ -66,7 +59,8 @@ class ReportService:
 
         active_users = db.query(User).filter(
             User.is_active == True,
-            User.role == UserRole.EMPLOYEE
+            User.role == UserRole.EMPLOYEE,
+            User.is_exempt_from_rules == False
         ).count()
 
         pending = adjustment_repository.count_pending(db)
@@ -445,6 +439,5 @@ class ReportService:
         wb.save(output)
         output.seek(0)
         return output
-
 
 report_service = ReportService()
