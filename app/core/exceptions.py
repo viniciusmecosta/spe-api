@@ -11,6 +11,24 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
+def _translate_pydantic_msg(msg: str) -> str:
+    translations = {
+        "field required": "Campo obrigatório",
+        "value is not a valid email address": "E-mail inválido",
+        "ensure this value has at least": "O tamanho mínimo não foi atingido",
+        "ensure this value has at most": "O tamanho máximo foi excedido",
+        "Input should be a valid string": "Deve ser um texto válido",
+        "Input should be a valid integer": "Deve ser um número inteiro",
+        "Input should be greater than": "O valor deve ser maior",
+        "Input should be less than": "O valor deve ser menor",
+        "String should have at least": "O texto deve ter pelo menos",
+        "String should have at most": "O texto deve ter no máximo"
+    }
+    for eng_key, pt_val in translations.items():
+        if eng_key in msg:
+            return pt_val
+    return msg
+
 def _get_error_type(status_code: int, custom_slug: Optional[str] = None) -> str:
     base_url = "https://api.spe.com/erros/"
     if custom_slug:
@@ -26,7 +44,6 @@ def _get_error_type(status_code: int, custom_slug: Optional[str] = None) -> str:
     }
     slug = slug_map.get(status_code, f"http-error-{status_code}")
     return f"{base_url}{slug}"
-
 
 def _get_error_title(status_code: int) -> str:
     titles_pt = {
@@ -45,7 +62,6 @@ def _get_error_title(status_code: int) -> str:
     except ValueError:
         return "Erro"
 
-
 def setup_exception_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -60,6 +76,10 @@ def setup_exception_handlers(app: FastAPI):
 
         if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
             detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
+        elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Incorrect username or password":
+            detail_msg = "Usuário ou senha incorretos."
+        elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Could not validate credentials":
+            detail_msg = "Não foi possível validar as credenciais de acesso."
 
         return JSONResponse(
             status_code=exc.status_code,
@@ -78,7 +98,7 @@ def setup_exception_handlers(app: FastAPI):
         invalid_params = [
             {
                 "loc": " -> ".join(map(str, err.get("loc", []))),
-                "msg": err.get("msg"),
+                "msg": _translate_pydantic_msg(err.get("msg", "")),
                 "type": err.get("type")
             }
             for err in exc.errors()
