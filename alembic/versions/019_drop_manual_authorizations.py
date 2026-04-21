@@ -1,8 +1,8 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = '019_drop_manual_authorizations'
-down_revision = '018_add_is_exempt_from_rules'
+revision = '019'
+down_revision = '018'
 branch_labels = None
 depends_on = None
 
