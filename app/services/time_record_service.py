@@ -15,7 +15,6 @@ from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
 from app.services.audit_service import audit_service
-from app.services.manual_auth_service import manual_auth_service
 from app.services.payroll_service import payroll_service
 
 
@@ -47,9 +46,6 @@ class TimeRecordService:
             can_punch = user.can_manual_punch_desktop
 
         if can_punch:
-            return
-
-        if manual_auth_service.check_authorization(db, user_id):
             return
 
         raise HTTPException(
