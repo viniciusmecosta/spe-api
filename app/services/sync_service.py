@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import requests  # type: ignore
+import requests
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -103,7 +103,7 @@ class SyncService:
             log_entry = RoutineLog(
                 routine_type="REMOTE_SYNC_DATABASE",
                 status="SUCCESS"
-            )  # type: ignore
+            )
             db_write.add(log_entry)
             db_write.commit()
             logger.info('Sincronização - "Enviar banco de dados" OK')
@@ -114,7 +114,7 @@ class SyncService:
             log_error = RoutineLog(
                 routine_type="REMOTE_SYNC_DATABASE",
                 status="FAILED"
-            )  # type: ignore
+            )
             db_write.add(log_error)
             db_write.commit()
         finally:
@@ -146,7 +146,7 @@ class SyncService:
                 log_entry = RoutineLog(
                     routine_type="SYNC_TIME_RECORDS",
                     status="SUCCESS"
-                )  # type: ignore
+                )
                 db_read.add(log_entry)
                 db_read.commit()
                 return
@@ -169,7 +169,7 @@ class SyncService:
             log_entry = RoutineLog(
                 routine_type="SYNC_TIME_RECORDS",
                 status="SUCCESS"
-            )  # type: ignore
+            )
             db_write.add(log_entry)
             db_write.commit()
             logger.info('Sincronização - "Registros de ponto" OK')

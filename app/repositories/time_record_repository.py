@@ -22,7 +22,7 @@ class TimeRecordRepository:
             platform=platform,
             is_time_verified=is_time_verified,
             biometric_id=biometric_id
-        )  # type: ignore
+        )
         db.add(db_record)
         db.commit()
         db.refresh(db_record)
