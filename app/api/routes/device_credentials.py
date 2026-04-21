@@ -18,19 +18,12 @@ def create_credential(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ):
-    existing = device_credential_repository.get_by_device_id(db, credential_in.device_id)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O identificador do dispositivo (device_id) já está em uso."
-        )
-
     device = device_credential_repository.create(db, credential_in)
 
     audit_service.log(
         db, actor_id=current_user.id, action="CREATE", entity="DEVICE_CREDENTIAL",
         entity_id=device.id,
-        new_data={"name": device.name, "device_id": device.device_id, "key_type": device.key_type.value}
+        new_data={"name": device.name, "key_type": device.key_type.value}
     )
     return device
 
@@ -76,7 +69,7 @@ def delete_credential(
     if not device:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credencial não encontrada.")
 
-    old_data = {"name": device.name, "device_id": device.device_id}
+    old_data = {"name": device.name}
 
     device_credential_repository.delete(db, id)
 

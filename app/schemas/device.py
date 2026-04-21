@@ -62,7 +62,6 @@ class BiometricSyncAck(BaseModel):
 
 class DeviceCredentialCreate(BaseModel):
     name: str
-    device_id: str
     key_type: DeviceKeyType
     api_key: str
     is_active: bool = True
@@ -75,7 +74,6 @@ class DeviceCredentialUpdate(BaseModel):
 
 class DeviceCredentialResponse(BaseModel):
     id: int
-    device_id: str
     name: str
     key_type: DeviceKeyType
     is_active: bool

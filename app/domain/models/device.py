@@ -16,7 +16,6 @@ class DeviceCredential(Base):
     __tablename__ = "device_credentials"
 
     id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
     key_type = Column(Enum(DeviceKeyType), nullable=False, default=DeviceKeyType.DEVICE)
     api_key_hash = Column(String, nullable=False)

@@ -12,7 +12,6 @@ class DeviceCredentialRepository:
         hashed_key = get_api_key_hash(obj_in.api_key)
         db_obj = DeviceCredential(
             name=obj_in.name,
-            device_id=obj_in.device_id,
             key_type=obj_in.key_type,
             api_key_hash=hashed_key,
             is_active=obj_in.is_active
@@ -21,9 +20,6 @@ class DeviceCredentialRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
-
-    def get_by_device_id(self, db: Session, device_id: str) -> Optional[DeviceCredential]:
-        return db.query(DeviceCredential).filter(DeviceCredential.device_id == device_id).first()
 
     def get(self, db: Session, id: int) -> Optional[DeviceCredential]:
         return db.query(DeviceCredential).filter(DeviceCredential.id == id).first()
