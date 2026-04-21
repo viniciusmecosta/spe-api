@@ -45,7 +45,10 @@ def get_current_user(
             detail="Could not validate credentials",
         )
 
-    user = db.query(User).filter(User.id == int(token_data.sub)).first()
+    if not token_data.sub:
+        raise HTTPException(status_code=403, detail="Invalid token subject")
+
+    user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

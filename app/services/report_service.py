@@ -2,7 +2,7 @@ import locale
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
@@ -45,7 +45,7 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours}h:{minutes:02d}min"
 
-    def _apply_employee_filters(self, query, employee_ids: List[int] = None):
+    def _apply_employee_filters(self, query, employee_ids: Optional[List[int]] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
         query = query.filter(User.is_exempt_from_rules.is_(False))
 
@@ -78,7 +78,7 @@ class ReportService:
         )
 
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
-                                 current_user: User = None) -> AdvancedUserReportResponse:
+                                 current_user: Optional[User] = None) -> Optional[AdvancedUserReportResponse]:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -282,7 +282,8 @@ class ReportService:
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
-                            employee_ids: List[int] = None, current_user: User = None) -> MonthlyReportResponse:
+                            employee_ids: Optional[List[int]] = None,
+                            current_user: Optional[User] = None) -> MonthlyReportResponse:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
@@ -294,8 +295,8 @@ class ReportService:
                 payroll_data.append(report.summary)
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None,
-                              current_user: User = None) -> BytesIO:
+    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
+                              current_user: Optional[User] = None) -> BytesIO:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()

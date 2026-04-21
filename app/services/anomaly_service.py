@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from sqlalchemy.orm import Session
 
@@ -97,7 +97,7 @@ class AnomalyService:
 
         return anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: int = None) -> List[
+    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None) -> List[
         AnomalyResponse]:
         query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:

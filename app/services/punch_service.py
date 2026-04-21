@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class PunchService:
-    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: str = None):
+    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: Optional[str] = None):
         try:
             from app.domain.models.biometric import UserBiometric
 
@@ -33,7 +34,7 @@ class PunchService:
                 db,
                 user_id=user.id,
                 timestamp=server_time,
-                ip_address=ip_address,
+                ip_address=ip_address if ip_address else "0.0.0.0",
                 biometric_id=biometric.id,
                 platform="IOT"
             )

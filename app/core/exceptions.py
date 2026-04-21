@@ -1,5 +1,6 @@
 import http
 import logging
+from typing import Optional
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -10,7 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
-def _get_error_type(status_code: int, custom_slug: str = None) -> str:
+def _get_error_type(status_code: int, custom_slug: Optional[str] = None) -> str:
     base_url = "https://api.spe.com/erros/"
     if custom_slug:
         return f"{base_url}{custom_slug}"

@@ -16,7 +16,7 @@ class DeviceCredentialRepository:
             key_type=obj_in.key_type,
             api_key_hash=hashed_key,
             is_active=obj_in.is_active
-        )
+        )  # type: ignore
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

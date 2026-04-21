@@ -3,10 +3,11 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import get_password_hash
 from app.database.session import SessionLocal
 from app.domain.models.enums import UserRole
+from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.schemas.user import UserCreate
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,15 +20,16 @@ def init_db(db: Session) -> None:
     if not user:
         logger.info(f"Creating initial superuser: {username}")
 
-        user_in = UserCreate(
+        db_user = User(
             username=username,
             name="Mantenedor do Sistema",
-            password=settings.FIRST_SUPERUSER_PASSWORD,
+            password_hash=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
             role=UserRole.MAINTAINER,
             is_active=True
         )
 
-        user_repository.create(db, user_in)
+        db.add(db_user)
+        db.commit()
         logger.info("Initial maintainer created successfully.")
     else:
         logger.info(f"Superuser {username} already exists. Skipping creation.")
