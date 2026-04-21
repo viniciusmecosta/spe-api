@@ -19,6 +19,7 @@ from app.services.punch_service import punch_service
 
 router = APIRouter()
 
+
 @router.post("/punch", response_model=FeedbackPayload)
 def register_device_punch(
         payload: DevicePunchRequest,
@@ -62,6 +63,7 @@ def register_device_punch(
             )
         )
 
+
 @router.post("/enroll", response_model=FeedbackPayload)
 def enroll_device_biometric(
         payload: EnrollResultPayload,
@@ -99,12 +101,14 @@ def enroll_device_biometric(
             )
         )
 
+
 @router.get("/sync", response_model=List[BiometricSyncData])
 def sync_device_data(
         db: Session = Depends(deps.get_db),
         device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
     return biometric_service.get_all_for_sync(db)
+
 
 @router.post("/sync/ack", status_code=200)
 def sync_device_ack(
@@ -114,6 +118,7 @@ def sync_device_ack(
 ):
     biometric_service.process_sync_ack(db, payload)
     return {"status": "success"}
+
 
 @router.get("/time", response_model=TimeResponsePayload)
 def get_device_time(

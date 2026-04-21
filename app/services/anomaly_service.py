@@ -1,6 +1,7 @@
-from datetime import date, timedelta, datetime
-from sqlalchemy.orm import Session
+from datetime import date, datetime
 from typing import List, Dict
+
+from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.user import User

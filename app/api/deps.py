@@ -1,9 +1,10 @@
+from typing import Generator
+
 import jwt
 from fastapi import Depends, HTTPException, status, Security
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
-from typing import Generator
 
 from app.core.config import settings
 from app.core.security import get_api_key_hash

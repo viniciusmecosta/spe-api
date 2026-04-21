@@ -1,6 +1,7 @@
 from datetime import datetime
-from sqlalchemy.orm import Session
 from typing import Optional, Any
+
+from sqlalchemy.orm import Session
 
 from app.repositories.audit_repository import audit_repository
 from app.schemas.audit import AuditLogCreate

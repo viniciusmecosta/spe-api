@@ -1,14 +1,15 @@
 from datetime import datetime
+from typing import Any, List
+
+from app.services.manual_auth_service import manual_auth_service
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin
-from app.services.manual_auth_service import manual_auth_service
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()

@@ -1,13 +1,15 @@
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = '019_drop_manual_authorizations'
 down_revision = '018_add_is_exempt_from_rules'
 branch_labels = None
 depends_on = None
 
+
 def upgrade():
     op.drop_table('manual_authorizations')
+
 
 def downgrade():
     op.create_table(

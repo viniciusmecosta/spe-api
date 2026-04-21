@@ -39,6 +39,7 @@ app.add_middleware(
 
 setup_exception_handlers(app)
 
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()

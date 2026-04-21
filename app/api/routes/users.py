@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
+from typing import Any, List, Optional
+
+from app.services.manual_auth_service import manual_auth_service
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.core.security import get_password_hash
@@ -9,7 +11,6 @@ from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
-from app.services.manual_auth_service import manual_auth_service
 from app.services.user_service import user_service
 
 router = APIRouter()

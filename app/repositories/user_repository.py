@@ -1,6 +1,7 @@
+from typing import List, Optional
+
 from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
-from typing import List, Optional, Set
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric

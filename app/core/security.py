@@ -1,10 +1,11 @@
-import bcrypt
 import hashlib
-import jwt
 import socket
 from datetime import datetime, timedelta
-from fastapi import Request
 from typing import Any, Union, Optional
+
+import bcrypt
+import jwt
+from fastapi import Request
 
 from app.core.config import settings
 
@@ -36,6 +37,7 @@ def get_password_hash(password: str) -> str:
 
 def get_api_key_hash(api_key: str) -> str:
     return hashlib.sha256(api_key.encode('utf-8')).hexdigest()
+
 
 def get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")

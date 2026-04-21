@@ -1,6 +1,7 @@
+from typing import Any, List
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
 from app.domain.models.user import User

@@ -441,4 +441,5 @@ class ReportService:
         output.seek(0)
         return output
 
+
 report_service = ReportService()
