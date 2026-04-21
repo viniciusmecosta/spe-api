@@ -1,8 +1,9 @@
-import pytz
 from datetime import datetime
+from typing import List
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.api import deps
 from app.core.config import settings
@@ -118,7 +119,7 @@ def sync_device_ack(
 def get_device_time(
         device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
-    tz = pytz.timezone(settings.TIMEZONE)
+    tz = ZoneInfo(settings.TIMEZONE)
     now = datetime.now(tz)
     return TimeResponsePayload(
         unix=int(now.timestamp()),

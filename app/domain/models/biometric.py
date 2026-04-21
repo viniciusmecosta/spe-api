@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import Column, Integer, ForeignKey, String, DateTime
 from sqlalchemy.orm import relationship
 
@@ -8,7 +9,7 @@ from app.database.base import Base
 
 
 def get_local_time():
-    return datetime.now(pytz.timezone(settings.TIMEZONE))
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
 
 
 class UserBiometric(Base):

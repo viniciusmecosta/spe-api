@@ -1,13 +1,16 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
-import pytz
 
 from app.core.config import settings
 from app.database.base import Base
 from app.domain.models.enums import DeviceKeyType
 
+
 def get_local_time():
-    return datetime.now(pytz.timezone(settings.TIMEZONE))
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
+
 
 class DeviceCredential(Base):
     __tablename__ = "device_credentials"

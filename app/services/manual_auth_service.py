@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -11,7 +12,7 @@ class ManualAuthService:
     def grant_permission(self, db: Session, user_id: int, manager_id: int) -> ManualPunchAuthorization:
         self.revoke_permission(db, user_id, manager_id)
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         valid_until = now + timedelta(days=3650)
 
@@ -47,7 +48,7 @@ class ManualAuthService:
                 )
 
     def check_authorization(self, db: Session, user_id: int) -> bool:
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
         auth = db.query(ManualPunchAuthorization).filter(

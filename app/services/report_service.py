@@ -1,13 +1,14 @@
 import locale
-import pytz
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
+from typing import List
+from zoneinfo import ZoneInfo
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -54,7 +55,7 @@ class ReportService:
         return query
 
     def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
 
         active_users = db.query(User).filter(
@@ -65,8 +66,8 @@ class ReportService:
 
         pending = adjustment_repository.count_pending(db)
 
-        today_start = tz.localize(datetime.combine(today, datetime.min.time()))
-        today_end = tz.localize(datetime.combine(today, datetime.max.time()))
+        today_start = datetime.combine(today, datetime.min.time(), tzinfo=tz)
+        today_end = datetime.combine(today, datetime.max.time(), tzinfo=tz)
         present = time_record_repository.count_unique_users_in_range(db, today_start, today_end)
 
         return DashboardMetricsResponse(
@@ -85,11 +86,11 @@ class ReportService:
 
         has_schedule = bool(user.schedules)
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         today_date = datetime.now(tz).date()
 
-        start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
-        end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
         all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)

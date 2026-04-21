@@ -1,9 +1,10 @@
 import logging
 import os
-import pytz
-import requests
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import requests
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -67,7 +68,7 @@ class SyncService:
         if not settings.CONSUMER_SERVER_URL or not settings.CONSUMER_API_KEY:
             return
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
         db_read = SessionLocal()
@@ -125,7 +126,7 @@ class SyncService:
         if settings.OPERATION_MODE != "EXPORTADOR":
             return
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
         db_read = SessionLocal()
