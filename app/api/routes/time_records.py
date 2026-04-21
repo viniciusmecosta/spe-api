@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Any, List
 
-from app.services.manual_auth_service import manual_auth_service
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -95,23 +94,3 @@ def delete_time_record_admin(
 ) -> Any:
     time_record_service.delete_admin_record(db, record_id, request_body, current_user.id)
     return {"status": "success", "message": "Record deleted"}
-
-
-@router.post("/admin/authorize/{user_id}")
-def authorize_manual_punch(
-        user_id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    manual_auth_service.grant_permission(db, user_id, current_user.id)
-    return {"status": "success", "message": "User authorized for manual punch"}
-
-
-@router.post("/admin/deauthorize/{user_id}")
-def deauthorize_manual_punch(
-        user_id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    manual_auth_service.revoke_permission(db, user_id, current_user.id)
-    return {"status": "success", "message": "User authorization revoked"}
