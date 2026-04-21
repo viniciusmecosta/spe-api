@@ -99,7 +99,7 @@ class AnomalyService:
 
     def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: int = None) -> List[
         AnomalyResponse]:
-        query = db.query(User).filter(User.is_active == True, User.role == UserRole.EMPLOYEE)
+        query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:
             query = query.filter(User.id == user_id)
         users = query.all()

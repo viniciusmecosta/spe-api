@@ -45,8 +45,10 @@ def get_my_report(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     now = datetime.now()
-    if not month: month = now.month
-    if not year: year = now.year
+    if not month:
+        month = now.month
+    if not year:
+        year = now.year
 
     report = report_service.get_advanced_user_report(db, current_user.id, month, year, current_user)
     if not report:
@@ -65,8 +67,10 @@ def get_monthly_global_report(
 ) -> Any:
     check_report_permission(current_user)
     now = datetime.now()
-    if not month: month = now.month
-    if not year: year = now.year
+    if not month:
+        month = now.month
+    if not year:
+        year = now.year
 
     return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
 
@@ -81,8 +85,10 @@ def export_monthly_report_excel(
 ):
     check_report_permission(current_user)
     now = datetime.now()
-    if not month: month = now.month
-    if not year: year = now.year
+    if not month:
+        month = now.month
+    if not year:
+        year = now.year
 
     file_stream = report_service.generate_excel_report(db, month, year, employee_ids, current_user)
 
@@ -107,8 +113,10 @@ def get_user_detailed_report(
         raise HTTPException(status_code=403, detail="Sem permissão para ver relatório de outros usuários.")
 
     now = datetime.now()
-    if not month: month = now.month
-    if not year: year = now.year
+    if not month:
+        month = now.month
+    if not year:
+        year = now.year
 
     report = report_service.get_advanced_user_report(db, user_id, month, year, current_user)
     if not report:

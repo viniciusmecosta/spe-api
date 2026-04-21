@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class BiometricService:
     def get_all_for_sync(self, db: Session) -> List[BiometricSyncData]:
         biometrics = db.query(UserBiometric).join(User).filter(
-            User.is_active == True,
+            User.is_active.is_(True),
             UserBiometric.template_data.isnot(None)
         ).all()
 

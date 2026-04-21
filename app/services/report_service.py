@@ -24,7 +24,7 @@ from app.schemas.report import (
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
-except:
+except Exception:
     pass
 
 
@@ -47,7 +47,7 @@ class ReportService:
 
     def _apply_employee_filters(self, query, employee_ids: List[int] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
-        query = query.filter(User.is_exempt_from_rules == False)
+        query = query.filter(User.is_exempt_from_rules.is_(False))
 
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
@@ -59,9 +59,9 @@ class ReportService:
         today = datetime.now(tz).date()
 
         active_users = db.query(User).filter(
-            User.is_active == True,
+            User.is_active.is_(True),
             User.role == UserRole.EMPLOYEE,
-            User.is_exempt_from_rules == False
+            User.is_exempt_from_rules.is_(False)
         ).count()
 
         pending = adjustment_repository.count_pending(db)
@@ -357,7 +357,7 @@ class ReportService:
                 try:
                     if len(str(cell.value)) > max_length:
                         max_length = len(str(cell.value))
-                except:
+                except Exception:
                     pass
             ws_summary.column_dimensions[column].width = max_length + 3
 

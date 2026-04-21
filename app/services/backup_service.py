@@ -71,7 +71,7 @@ class BackupService:
                 .all()
             )
 
-            html = f"<div style='margin-bottom: 20px;'>"
+            html = "<div style='margin-bottom: 20px;'>"
             html += f"<h3 style=\"color: #333; margin-bottom: 5px;\">Relatório de Pontos - {day_name}, {formatted_date}</h3>"
 
             if not records:
