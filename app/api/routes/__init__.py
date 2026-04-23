@@ -12,6 +12,7 @@ from app.api.routes import (
     reports,
     payroll,
     device,
+    device_credentials,
     audit,
     sync,
     backup,
@@ -40,6 +41,7 @@ api_router.include_router(anomalies.router, prefix="/anomalies", tags=["Anomalie
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
+api_router.include_router(device_credentials.router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
 api_router.include_router(backup.router, prefix="/backup", tags=["Backup"])

@@ -1,14 +1,16 @@
-import secrets
-from fastapi import Depends, HTTPException, status, Security
-from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
-from jose import jwt, JWTError
-from pydantic import ValidationError
-from sqlalchemy.orm import Session
 from typing import Generator
 
+import jwt
+from fastapi import Depends, HTTPException, status, Security
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
+from app.core.security import get_api_key_hash
 from app.database.session import SessionLocal
-from app.domain.models.enums import UserRole
+from app.domain.models.device import DeviceCredential
+from app.domain.models.enums import UserRole, DeviceKeyType
 from app.domain.models.user import User
 from app.schemas.token import TokenPayload
 
@@ -37,13 +39,16 @@ def get_current_user(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         token_data = TokenPayload(**payload)
-    except (JWTError, ValidationError):
+    except (jwt.PyJWTError, ValidationError):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Could not validate credentials",
         )
 
-    user = db.query(User).filter(User.id == int(token_data.sub)).first()
+    if not token_data.sub:
+        raise HTTPException(status_code=403, detail="Invalid token subject")
+
+    user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -79,19 +84,39 @@ def get_current_maintainer(
     return current_user
 
 
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    if not api_key or not secrets.compare_digest(api_key, settings.DEVICE_API_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid API Key"
-        )
-    return api_key
+async def verify_device_api_key(
+        api_key: str = Security(api_key_header),
+        db: Session = Depends(get_db)
+):
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device API Key missing")
+
+    hashed_key = get_api_key_hash(api_key)
+    device = db.query(DeviceCredential).filter(
+        DeviceCredential.api_key_hash == hashed_key,
+        DeviceCredential.key_type == DeviceKeyType.DEVICE
+    ).first()
+
+    if not device or not device.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Device API Key")
+
+    return device
 
 
-async def verify_consumer_api_key(api_key: str = Security(consumer_api_key_header)):
-    if not settings.CONSUMER_API_KEY or not api_key or not secrets.compare_digest(api_key, settings.CONSUMER_API_KEY):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid Consumer API Key"
-        )
-    return api_key
+async def verify_consumer_api_key(
+        api_key: str = Security(consumer_api_key_header),
+        db: Session = Depends(get_db)
+):
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Consumer API Key missing")
+
+    hashed_key = get_api_key_hash(api_key)
+    consumer = db.query(DeviceCredential).filter(
+        DeviceCredential.api_key_hash == hashed_key,
+        DeviceCredential.key_type == DeviceKeyType.CONSUMER
+    ).first()
+
+    if not consumer or not consumer.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Consumer API Key")
+
+    return consumer

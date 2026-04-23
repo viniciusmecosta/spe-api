@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,10 +13,10 @@ from app.schemas.work_hour import WorkHourBalanceResponse
 
 class WorkHourService:
     def calculate_balance(self, db: Session, user_id: int, start_date: date, end_date: date) -> WorkHourBalanceResponse:
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
 
-        start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
-        end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         user = user_repository.get(db, user_id)

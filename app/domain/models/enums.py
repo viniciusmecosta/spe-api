@@ -36,3 +36,8 @@ class EditJustification(str, enum.Enum):
     REGISTRATION_MISTAKE = "REGISTRATION_MISTAKE"
     IRRELEVANT_RECORD = "IRRELEVANT_RECORD"
     OTHER = "OTHER"
+
+
+class DeviceKeyType(str, enum.Enum):
+    DEVICE = "DEVICE"
+    CONSUMER = "CONSUMER"

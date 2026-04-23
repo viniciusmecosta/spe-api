@@ -1,9 +1,10 @@
-import ntplib
-import pytz
 from datetime import datetime
+from typing import Optional
+from zoneinfo import ZoneInfo
+
+import ntplib
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
@@ -14,17 +15,16 @@ from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
 from app.services.audit_service import audit_service
-from app.services.manual_auth_service import manual_auth_service
 from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:
     def _get_trusted_time(self):
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         try:
             client = ntplib.NTPClient()
             response = client.request('pool.ntp.org', version=3, timeout=2)
-            utc_time = datetime.fromtimestamp(response.tx_time, pytz.utc)
+            utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
             return utc_time.astimezone(tz), True
         except Exception:
             return datetime.now(tz), False
@@ -46,9 +46,6 @@ class TimeRecordService:
             can_punch = user.can_manual_punch_desktop
 
         if can_punch:
-            return
-
-        if manual_auth_service.check_authorization(db, user_id):
             return
 
         raise HTTPException(
@@ -131,7 +128,8 @@ class TimeRecordService:
 
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
-            record_datetime=obj_in.record_datetime, ip_address=ip_address, device_name=device_name,
+            record_datetime=obj_in.record_datetime, ip_address=ip_address,
+            device_name=device_name if device_name else "",
             platform="desktop",
             is_time_verified=True
         )
@@ -236,21 +234,21 @@ class TimeRecordService:
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
-                     biometric_id: int = None, platform: str = "desktop") -> TimeRecord:
+                     biometric_id: Optional[int] = None, platform: str = "desktop") -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
 
         record_type = RecordType.ENTRY
         if last_record and last_record.record_type == RecordType.ENTRY:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
 
             last_time = last_record.record_datetime
             if last_time.tzinfo is None:
-                last_time = pytz.utc.localize(last_time)
+                last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
             last_local_date = last_time.astimezone(tz).date()
 
             curr_time = timestamp
             if curr_time.tzinfo is None:
-                curr_time = pytz.utc.localize(curr_time)
+                curr_time = curr_time.replace(tzinfo=ZoneInfo("UTC"))
             curr_local_date = curr_time.astimezone(tz).date()
 
             if last_local_date == curr_local_date:

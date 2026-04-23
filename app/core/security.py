@@ -1,16 +1,18 @@
-import bcrypt
+import hashlib
 import socket
 from datetime import datetime, timedelta
-from fastapi import Request
-from jose import jwt
 from typing import Any, Union, Optional
+
+import bcrypt
+import jwt
+from fastapi import Request
 
 from app.core.config import settings
 
 ALGORITHM = settings.ALGORITHM
 
 
-def create_access_token(subject: Union[str, Any], expires_delta: timedelta = None) -> str:
+def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -31,6 +33,10 @@ def get_password_hash(password: str) -> str:
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
+
+
+def get_api_key_hash(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode('utf-8')).hexdigest()
 
 
 def get_client_ip(request: Request) -> str:

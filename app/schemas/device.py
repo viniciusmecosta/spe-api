@@ -1,5 +1,9 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import Optional, Any
+
+from pydantic import BaseModel, Field
+
+from app.domain.models.enums import DeviceKeyType
 
 
 class DevicePunchResponse(BaseModel):
@@ -54,3 +58,27 @@ class BiometricSyncAck(BaseModel):
     sensor_index: int
     success: bool
     error: Optional[str] = None
+
+
+class DeviceCredentialCreate(BaseModel):
+    name: str
+    key_type: DeviceKeyType
+    api_key: str
+    is_active: bool = True
+
+
+class DeviceCredentialUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class DeviceCredentialResponse(BaseModel):
+    id: int
+    name: str
+    key_type: DeviceKeyType
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

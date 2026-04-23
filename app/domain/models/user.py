@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 
@@ -8,7 +9,7 @@ from app.database.base import Base
 
 
 def get_local_time():
-    return datetime.now(pytz.timezone(settings.TIMEZONE))
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
 
 
 class WorkSchedule(Base):
@@ -34,6 +35,7 @@ class User(Base):
     can_manual_punch_desktop = Column(Boolean, default=True)
     can_manual_punch_mobile = Column(Boolean, default=False)
     can_export_report = Column(Boolean, default=False)
+    is_exempt_from_rules = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)

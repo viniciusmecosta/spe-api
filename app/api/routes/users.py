@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
+from typing import Any, List, Optional
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.core.security import get_password_hash
@@ -9,7 +10,6 @@ from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
-from app.services.manual_auth_service import manual_auth_service
 from app.services.user_service import user_service
 
 router = APIRouter()
@@ -96,9 +96,8 @@ def read_user_me(
         can_punch_desktop = True
         can_punch_mobile = True
     else:
-        is_authorized = manual_auth_service.check_authorization(db, current_user.id)
-        can_punch_desktop = current_user.can_manual_punch_desktop or is_authorized
-        can_punch_mobile = current_user.can_manual_punch_mobile or is_authorized
+        can_punch_desktop = current_user.can_manual_punch_desktop
+        can_punch_mobile = current_user.can_manual_punch_mobile
 
     user_data = jsonable_encoder(current_user)
     user_data['can_manual_punch_desktop'] = can_punch_desktop

@@ -1,9 +1,10 @@
 import logging
 import os
-import pytz
-import requests
 import sqlite3
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+import requests
 from fastapi import UploadFile, HTTPException
 
 from app.core.config import settings
@@ -12,7 +13,7 @@ from app.domain.models.routine_log import RoutineLog
 from app.repositories.time_record_repository import time_record_repository
 from app.services.backup_service import backup_service
 
-logger = logging.getLogger("uvicorn.info")
+logger = logging.getLogger(__name__)
 
 
 class SyncService:
@@ -67,7 +68,7 @@ class SyncService:
         if not settings.CONSUMER_SERVER_URL or not settings.CONSUMER_API_KEY:
             return
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
         db_read = SessionLocal()
@@ -125,7 +126,7 @@ class SyncService:
         if settings.OPERATION_MODE != "EXPORTADOR":
             return
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
         db_read = SessionLocal()

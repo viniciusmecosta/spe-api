@@ -2,7 +2,8 @@ import os
 import shutil
 import uuid
 from datetime import datetime
-from fastapi import UploadFile, HTTPException, status
+
+from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings

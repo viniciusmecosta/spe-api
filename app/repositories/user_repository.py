@@ -1,6 +1,7 @@
+from typing import List, Optional
+
 from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
-from typing import List, Optional, Set
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
@@ -84,7 +85,7 @@ class UserRepository:
                     existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx,
                                                                   UserBiometric.user_id != db_obj.id).first()
                     if existing_bio:
-                        raise ValueError(f"Index ja cadastrada para outro usuario")
+                        raise ValueError("Index ja cadastrada para outro usuario")
 
                 if bio_id and bio_id in current_biometrics:
                     existing = current_biometrics[bio_id]

@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import List, Optional
+
 from sqlalchemy import desc, and_, distinct, func
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
@@ -10,8 +11,8 @@ from app.schemas.time_record import TimeRecordUpdate
 
 class TimeRecordRepository:
     def create(self, db: Session, user_id: int, record_type: RecordType, record_datetime: datetime,
-               ip_address: str = None, device_name: str = None, platform: str = None, is_time_verified: bool = False,
-               biometric_id: int = None) -> TimeRecord:
+               ip_address: Optional[str] = None, device_name: Optional[str] = None, platform: Optional[str] = None,
+               is_time_verified: bool = False, biometric_id: Optional[int] = None) -> TimeRecord:
         db_record = TimeRecord(
             user_id=user_id,
             record_type=record_type,

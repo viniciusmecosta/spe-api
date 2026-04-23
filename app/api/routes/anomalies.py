@@ -1,8 +1,9 @@
 from calendar import monthrange
 from datetime import date, timedelta
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.api.deps import get_db, get_current_user
 from app.domain.models.enums import UserRole

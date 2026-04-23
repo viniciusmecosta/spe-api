@@ -1,13 +1,14 @@
 import locale
-import pytz
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
+from typing import List, Optional
+from zoneinfo import ZoneInfo
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -23,7 +24,7 @@ from app.schemas.report import (
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
-except:
+except Exception:
     pass
 
 
@@ -44,16 +45,9 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours}h:{minutes:02d}min"
 
-    def _apply_employee_filters(self, query, employee_ids: List[int] = None):
+    def _apply_employee_filters(self, query, employee_ids: Optional[List[int]] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
-
-        if settings.EXCLUDED_EMPLOYEE_IDS:
-            try:
-                excluded = [int(x) for x in settings.EXCLUDED_EMPLOYEE_IDS.split(",") if x.strip().isdigit()]
-                if excluded:
-                    query = query.filter(User.id.notin_(excluded))
-            except:
-                pass
+        query = query.filter(User.is_exempt_from_rules.is_(False))
 
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
@@ -61,18 +55,19 @@ class ReportService:
         return query
 
     def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
 
         active_users = db.query(User).filter(
-            User.is_active == True,
-            User.role == UserRole.EMPLOYEE
+            User.is_active.is_(True),
+            User.role == UserRole.EMPLOYEE,
+            User.is_exempt_from_rules.is_(False)
         ).count()
 
         pending = adjustment_repository.count_pending(db)
 
-        today_start = tz.localize(datetime.combine(today, datetime.min.time()))
-        today_end = tz.localize(datetime.combine(today, datetime.max.time()))
+        today_start = datetime.combine(today, datetime.min.time(), tzinfo=tz)
+        today_end = datetime.combine(today, datetime.max.time(), tzinfo=tz)
         present = time_record_repository.count_unique_users_in_range(db, today_start, today_end)
 
         return DashboardMetricsResponse(
@@ -83,7 +78,7 @@ class ReportService:
         )
 
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
-                                 current_user: User = None) -> AdvancedUserReportResponse:
+                                 current_user: Optional[User] = None) -> Optional[AdvancedUserReportResponse]:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -91,11 +86,11 @@ class ReportService:
 
         has_schedule = bool(user.schedules)
 
-        tz = pytz.timezone(settings.TIMEZONE)
+        tz = ZoneInfo(settings.TIMEZONE)
         today_date = datetime.now(tz).date()
 
-        start_dt = tz.localize(datetime.combine(start_date, datetime.min.time()))
-        end_dt = tz.localize(datetime.combine(end_date, datetime.max.time()))
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
         all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
@@ -287,7 +282,8 @@ class ReportService:
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
-                            employee_ids: List[int] = None, current_user: User = None) -> MonthlyReportResponse:
+                            employee_ids: Optional[List[int]] = None,
+                            current_user: Optional[User] = None) -> MonthlyReportResponse:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
@@ -299,8 +295,8 @@ class ReportService:
                 payroll_data.append(report.summary)
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: List[int] = None,
-                              current_user: User = None) -> BytesIO:
+    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
+                              current_user: Optional[User] = None) -> BytesIO:
         query = db.query(User)
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
@@ -362,7 +358,7 @@ class ReportService:
                 try:
                     if len(str(cell.value)) > max_length:
                         max_length = len(str(cell.value))
-                except:
+                except Exception:
                     pass
             ws_summary.column_dimensions[column].width = max_length + 3
 

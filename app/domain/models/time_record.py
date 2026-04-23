@@ -1,5 +1,6 @@
-import pytz
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Boolean, Enum
 from sqlalchemy.orm import relationship
 
@@ -9,7 +10,7 @@ from app.domain.models.enums import RecordType, EditJustification
 
 
 def get_local_time():
-    return datetime.now(pytz.timezone(settings.TIMEZONE))
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
 
 
 class TimeRecord(Base):

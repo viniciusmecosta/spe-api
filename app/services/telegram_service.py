@@ -1,14 +1,15 @@
 import logging
 import os
-import pytz
-import requests
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timedelta, date, time
+from typing import Dict, List
+from zoneinfo import ZoneInfo
+
+import requests
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
-from typing import Dict, List
 
 from app.core.config import settings
 from app.database.session import SessionLocal
@@ -17,7 +18,7 @@ from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 
-logger = logging.getLogger("uvicorn.info")
+logger = logging.getLogger(__name__)
 
 
 class TelegramService:
@@ -35,7 +36,7 @@ class TelegramService:
             return None
 
         try:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
             unique_id = uuid.uuid4().hex[:8]
             backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
@@ -64,7 +65,10 @@ class TelegramService:
                 "parse_mode": "HTML"
             }
             response = requests.post(url, data=payload, timeout=15)
-            return response.status_code == 200
+            is_success = 200 <= response.status_code <= 299
+            if not is_success:
+                logger.error(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
+            return is_success
         except Exception as e:
             logger.error(f"Telegram send text error: {e}")
             return False
@@ -79,7 +83,10 @@ class TelegramService:
                 payload = {"chat_id": self.chat_id, "caption": caption}
                 files = {"document": file}
                 response = requests.post(url, data=payload, files=files, timeout=40)
-            return response.status_code == 200
+            is_success = 200 <= response.status_code <= 299
+            if not is_success:
+                logger.error(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
+            return is_success
         except Exception as e:
             logger.error(f"Telegram send document error: {e}")
             return False
@@ -154,7 +161,7 @@ class TelegramService:
 
     def execute_hourly_backup(self):
         with self._hourly_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
 
@@ -209,7 +216,7 @@ class TelegramService:
 
     def send_managerial_report(self):
         with self._daily_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             today = now_local.date()
@@ -252,10 +259,13 @@ class TelegramService:
 
             text_success = self._send_text(report_text)
 
-            log_filename = yesterday.strftime("%d%m%Y") + ".log"
-            log_path = os.path.join("logs", log_filename)
-            if os.path.exists(log_path):
-                self._send_document(log_path, f"Logs do sistema - {yesterday.strftime('%d/%m/%Y')}")
+            current_log_date = start_date
+            while current_log_date <= yesterday:
+                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
+                log_path = os.path.join("logs", log_filename)
+                if os.path.exists(log_path):
+                    self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                current_log_date += timedelta(days=1)
 
             db_write = SessionLocal()
             try:
@@ -292,7 +302,7 @@ class TelegramService:
                 logger.error('Backup - "Telegram manual" Error')
                 return
 
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
             now_str = now_local.strftime('%d/%m/%Y %H:%M')
@@ -325,7 +335,7 @@ class TelegramService:
 
     def send_manual_report(self, start_date: date, end_date: date):
         with self._manual_report_lock:
-            tz = pytz.timezone(settings.TIMEZONE)
+            tz = ZoneInfo(settings.TIMEZONE)
             now_local = datetime.now(tz).replace(tzinfo=None)
 
             db_read = SessionLocal()
@@ -343,6 +353,14 @@ class TelegramService:
                 db_read.close()
 
             text_success = self._send_text(report_text)
+
+            current_log_date = start_date
+            while current_log_date <= end_date:
+                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
+                log_path = os.path.join("logs", log_filename)
+                if os.path.exists(log_path):
+                    self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                current_log_date += timedelta(days=1)
 
             db_write = SessionLocal()
             try:

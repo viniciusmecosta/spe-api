@@ -1,9 +1,9 @@
 import logging
 import logging.config
 import os
-import pytz
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 
@@ -12,7 +12,7 @@ class DailyRotatingFileHandler(logging.FileHandler):
     def __init__(self, log_dir, backup_count=30, **kwargs):
         self.log_dir = log_dir
         self.backup_count = backup_count
-        self.tz = pytz.timezone(settings.TIMEZONE)
+        self.tz = ZoneInfo(settings.TIMEZONE)
         os.makedirs(self.log_dir, exist_ok=True)
         self.baseFilename = self.get_current_filename()
         self.calculate_next_rollover()
@@ -80,7 +80,7 @@ def setup_logging() -> None:
         "loggers": {
             "apscheduler": {
                 "handlers": ["file_handler"],
-                "level": "INFO",
+                "level": "WARNING",
                 "propagate": False
             },
             "app": {

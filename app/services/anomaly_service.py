@@ -1,6 +1,7 @@
-from datetime import date, timedelta, datetime
+from datetime import date, datetime
+from typing import List, Dict, Optional
+
 from sqlalchemy.orm import Session
-from typing import List, Dict
 
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.user import User
@@ -96,9 +97,9 @@ class AnomalyService:
 
         return anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: int = None) -> List[
+    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None) -> List[
         AnomalyResponse]:
-        query = db.query(User).filter(User.is_active == True, User.role == UserRole.EMPLOYEE)
+        query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:
             query = query.filter(User.id == user_id)
         users = query.all()
