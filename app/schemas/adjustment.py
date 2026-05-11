@@ -1,4 +1,5 @@
-from datetime import date, time, datetime
+from datetime import date, datetime
+from datetime import time as dt_time
 from pydantic import BaseModel, computed_field, model_validator
 from typing import Optional, List
 
@@ -9,9 +10,10 @@ class AdjustmentRequestBase(BaseModel):
     adjustment_type: AdjustmentType
     target_date: date
     record_type: Optional[RecordType] = None
-    time: Optional[time] = None
+    time: Optional[dt_time] = None
     amount_hours: Optional[float] = None
     reason_text: Optional[str] = None
+
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
     @model_validator(mode='after')
@@ -26,11 +28,13 @@ class AdjustmentRequestCreate(AdjustmentRequestBase):
                 raise ValueError("Este tipo de ajuste requer observação obrigatória.")
         return self
 
+
 class AdjustmentWaiverCreate(BaseModel):
     user_id: int
     target_date: date
     amount_hours: float
     reason_text: str
+
 
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
@@ -47,6 +51,7 @@ class AdjustmentAttachmentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class AdjustmentRequestResponse(AdjustmentRequestBase):
     id: int
