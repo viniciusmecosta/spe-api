@@ -1,8 +1,9 @@
 import os
+from typing import Any, List
+
 from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
 from app.core.config import settings
@@ -81,7 +82,7 @@ def read_my_adjustments(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    return adjustment_repository.get_all_by_user(db, current_user.id, skip, limit)
+    return adjustment_service.get_my_enriched(db, current_user.id, skip, limit)
 
 @router.get("/", response_model=List[AdjustmentRequestResponse])
 def read_all_adjustments(
@@ -90,7 +91,7 @@ def read_all_adjustments(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return adjustment_repository.get_all(db, skip, limit)
+    return adjustment_service.get_all_enriched(db, skip, limit)
 
 @router.put("/{id}/approve", response_model=AdjustmentRequestResponse)
 def approve_adjustment(

@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 from datetime import datetime
+
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
@@ -17,10 +18,45 @@ from app.services.payroll_service import payroll_service
 
 
 class AdjustmentService:
+    def _enrich_adjustments_with_records(self, db: Session, adjustments: list[AdjustmentRequest]) -> list[
+        AdjustmentRequest]:
+        if not adjustments:
+            return []
+
+        user_ids = {a.user_id for a in adjustments}
+        min_date = min(a.target_date for a in adjustments)
+        max_date = max(a.target_date for a in adjustments)
+
+        min_dt = datetime.combine(min_date, datetime.min.time())
+        max_dt = datetime.combine(max_date, datetime.max.time())
+
+        records = db.query(TimeRecord).filter(
+            TimeRecord.user_id.in_(user_ids),
+            TimeRecord.record_datetime >= min_dt,
+            TimeRecord.record_datetime <= max_dt
+        ).order_by(TimeRecord.record_datetime.asc()).all()
+
+        for adj in adjustments:
+            adj.time_records = [
+                r for r in records
+                if r.user_id == adj.user_id and r.record_datetime.date() == adj.target_date
+            ]
+
+        return adjustments
+
+    def get_all_enriched(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
+        adjustments = adjustment_repository.get_all(db, skip, limit)
+        return self._enrich_adjustments_with_records(db, adjustments)
+
+    def get_my_enriched(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
+        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit)
+        return self._enrich_adjustments_with_records(db, adjustments)
+
     def create_adjustment_request(self, db: Session, user_id: int,
                                   obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
         payroll_service.validate_period_open(db, obj_in.target_date)
-        return adjustment_repository.create(db, user_id, obj_in)
+        adjustment = adjustment_repository.create(db, user_id, obj_in)
+        return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
     def create_manager_waiver(self, db: Session, waiver_in: AdjustmentWaiverCreate,
                               manager_id: int) -> AdjustmentRequest:
@@ -47,7 +83,7 @@ class AdjustmentService:
                 "reason": waiver_in.reason_text
             }
         )
-        return adjustment
+        return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
         request = adjustment_repository.get(db, adjustment_id)
@@ -143,7 +179,7 @@ class AdjustmentService:
             entity="ADJUSTMENT", entity_id=request_id,
             old_data={"status": old_status}, new_data={"status": updated.status.value}
         )
-        return updated
+        return self._enrich_adjustments_with_records(db, [updated])[0]
 
     def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest):
         target_dt = datetime.combine(request.target_date, request.time)
@@ -178,6 +214,6 @@ class AdjustmentService:
             entity="ADJUSTMENT", entity_id=request_id,
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
-        return updated
+        return self._enrich_adjustments_with_records(db, [updated])[0]
 
 adjustment_service = AdjustmentService()

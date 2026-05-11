@@ -38,6 +38,14 @@ class TimeRecordDeleteAdmin(BaseModel):
     edit_reason: Optional[str] = None
 
 
+class TimeRecordSimple(BaseModel):
+    record_type: RecordType
+    record_datetime: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class TimeRecordResponse(TimeRecordBase):
     id: int
     user_id: int
