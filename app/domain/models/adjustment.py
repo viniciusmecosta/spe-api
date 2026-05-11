@@ -6,12 +6,10 @@ from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.models.enums import AdjustmentType, AdjustmentStatus
-
+from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
 
 def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
-
 
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
@@ -19,11 +17,11 @@ class AdjustmentRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     adjustment_type = Column(Enum(AdjustmentType), nullable=False)
+    record_type = Column(Enum(RecordType), nullable=True)
     target_date = Column(Date, nullable=False)
-    entry_time = Column(Time, nullable=True)
-    exit_time = Column(Time, nullable=True)
-    reason_text = Column(String, nullable=True)
+    time = Column(Time, nullable=True)
     amount_hours = Column(Float, nullable=True)
+    reason_text = Column(String, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
     manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -37,7 +35,6 @@ class AdjustmentRequest(Base):
     @property
     def user_name(self):
         return self.user.name if self.user else "Desconhecido"
-
 
 class AdjustmentAttachment(Base):
     __tablename__ = "adjustment_attachments"

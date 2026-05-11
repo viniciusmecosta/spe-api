@@ -1,11 +1,10 @@
 from datetime import date
-
 from sqlalchemy import desc, and_
 from sqlalchemy.orm import Session
 
 from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
 from app.domain.models.enums import AdjustmentStatus
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate
+from app.schemas.adjustment import AdjustmentRequestCreate
 
 
 class AdjustmentRepository:
@@ -13,11 +12,11 @@ class AdjustmentRepository:
         db_obj = AdjustmentRequest(
             user_id=user_id,
             adjustment_type=obj_in.adjustment_type,
+            record_type=obj_in.record_type,
             target_date=obj_in.target_date,
-            entry_time=obj_in.entry_time,
-            exit_time=obj_in.exit_time,
-            reason_text=obj_in.reason_text,
-            amount_hours=obj_in.amount_hours
+            time=obj_in.time,
+            amount_hours=obj_in.amount_hours,
+            reason_text=obj_in.reason_text
         )
         db.add(db_obj)
         db.commit()
@@ -56,21 +55,6 @@ class AdjustmentRepository:
             )
         ).all()
 
-    def update(self, db: Session, db_obj: AdjustmentRequest,
-               obj_in: AdjustmentRequestUpdate | dict) -> AdjustmentRequest:
-        if isinstance(obj_in, dict):
-            update_data = obj_in
-        else:
-            update_data = obj_in.model_dump(exclude_unset=True)
-
-        for field, value in update_data.items():
-            setattr(db_obj, field, value)
-
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
-
     def update_status(self, db: Session, db_obj: AdjustmentRequest, status: AdjustmentStatus, manager_id: int,
                       comment: str | None = None) -> AdjustmentRequest:
         db_obj.status = status
@@ -95,6 +79,5 @@ class AdjustmentRepository:
     def delete(self, db: Session, id: int):
         db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).delete()
         db.commit()
-
 
 adjustment_repository = AdjustmentRepository()

@@ -2,16 +2,16 @@ import os
 import shutil
 import uuid
 from datetime import datetime
-
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType
+from app.domain.models.time_record import TimeRecord
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestUpdate, AdjustmentWaiverCreate
+from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentWaiverCreate
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
@@ -29,8 +29,8 @@ class AdjustmentService:
         adj_in = AdjustmentRequestCreate(
             adjustment_type=AdjustmentType.WAIVER,
             target_date=waiver_in.target_date,
-            reason_text=waiver_in.reason_text,
-            amount_hours=waiver_in.amount_hours
+            amount_hours=waiver_in.amount_hours,
+            reason_text=waiver_in.reason_text
         )
 
         adjustment = adjustment_repository.create(db, waiver_in.user_id, adj_in)
@@ -95,7 +95,6 @@ class AdjustmentService:
         file.file.seek(0)
 
         is_valid = False
-
         if file_ext == "pdf" and header.startswith(b"%PDF"):
             is_valid = True
         elif file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -130,15 +129,11 @@ class AdjustmentService:
 
         payroll_service.validate_period_open(db, request.target_date)
 
-        if request.adjustment_type == AdjustmentType.CERTIFICATE:
-            if request.amount_hours is None or request.amount_hours <= 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Para aprovar um atestado, é obrigatório informar a quantidade de horas a abonar."
-                )
-
-        if request.adjustment_type in [AdjustmentType.MISSING_ENTRY, AdjustmentType.MISSING_EXIT, AdjustmentType.BOTH]:
-            self._create_punches_from_adjustment(db, request)
+        if request.adjustment_type == AdjustmentType.WAIVER:
+            if not request.attachments:
+                raise HTTPException(status_code=400, detail="Para aprovar um abono, é obrigatório haver anexo.")
+        else:
+            self._execute_adjustment_action(db, request)
 
         old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id)
@@ -150,25 +145,23 @@ class AdjustmentService:
         )
         return updated
 
-    def _create_punches_from_adjustment(self, db: Session, request: AdjustmentRequest):
-        user_id = request.user_id
-        target_date = request.target_date
+    def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest):
+        target_dt = datetime.combine(request.target_date, request.time)
 
-        if request.adjustment_type in [AdjustmentType.MISSING_ENTRY, AdjustmentType.BOTH]:
-            if request.entry_time:
-                entry_dt = datetime.combine(target_date, request.entry_time)
-                time_record_repository.create(
-                    db, user_id=user_id, record_type=RecordType.ENTRY,
-                    record_datetime=entry_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
-                )
-
-        if request.adjustment_type in [AdjustmentType.MISSING_EXIT, AdjustmentType.BOTH]:
-            if request.exit_time:
-                exit_dt = datetime.combine(target_date, request.exit_time)
-                time_record_repository.create(
-                    db, user_id=user_id, record_type=RecordType.EXIT,
-                    record_datetime=exit_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
-                )
+        if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
+            record = db.query(TimeRecord).filter(
+                TimeRecord.user_id == request.user_id,
+                TimeRecord.record_type == request.record_type,
+                TimeRecord.record_datetime == target_dt
+            ).first()
+            if record:
+                db.delete(record)
+                db.commit()
+        else:
+            time_record_repository.create(
+                db, user_id=request.user_id, record_type=request.record_type,
+                record_datetime=target_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
+            )
 
     def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
@@ -186,37 +179,5 @@ class AdjustmentService:
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
         return updated
-
-    def update_adjustment(self, db: Session, request_id: int, obj_in: AdjustmentRequestUpdate,
-                          manager_id: int) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
-        if not request:
-            raise HTTPException(status_code=404, detail="Request not found")
-
-        payroll_service.validate_period_open(db, request.target_date)
-        if obj_in.target_date:
-            payroll_service.validate_period_open(db, obj_in.target_date)
-
-        old_data = {
-            "adjustment_type": request.adjustment_type.value,
-            "target_date": str(request.target_date),
-            "amount_hours": request.amount_hours
-        }
-
-        updated = adjustment_repository.update(db, request, obj_in)
-
-        new_data = {
-            "adjustment_type": updated.adjustment_type.value,
-            "target_date": str(updated.target_date),
-            "amount_hours": updated.amount_hours
-        }
-
-        audit_service.log(
-            db, actor_id=manager_id, target_user_id=request.user_id, action="UPDATE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=request_id,
-            old_data=old_data, new_data=new_data
-        )
-        return updated
-
 
 adjustment_service = AdjustmentService()
