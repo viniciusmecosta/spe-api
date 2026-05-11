@@ -1,38 +1,41 @@
-from datetime import date, time, datetime
+from datetime import date, datetime
+from datetime import time as dt_time
 from typing import Optional, List
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, computed_field, model_validator
 
-from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
+from app.schemas.time_record import TimeRecordSimple
 
 
 class AdjustmentRequestBase(BaseModel):
     adjustment_type: AdjustmentType
     target_date: date
-    reason_text: Optional[str] = None
-    entry_time: Optional[time] = None
-    exit_time: Optional[time] = None
+    record_type: Optional[RecordType] = None
+    time: Optional[dt_time] = None
     amount_hours: Optional[float] = None
+    reason_text: Optional[str] = None
 
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
-    pass
+    @model_validator(mode='after')
+    def validate_rules(self) -> 'AdjustmentRequestCreate':
+        if self.adjustment_type == AdjustmentType.WAIVER:
+            if not self.amount_hours or not self.reason_text:
+                raise ValueError("Abono requer quantidade de horas e observação.")
+        else:
+            if not self.record_type or self.time is None:
+                raise ValueError("Ajuste de ponto requer tipo (Entrada/Saída) e horário.")
+            if self.adjustment_type in [AdjustmentType.OTHER, AdjustmentType.DELETE_PUNCH] and not self.reason_text:
+                raise ValueError("Este tipo de ajuste requer observação obrigatória.")
+        return self
 
 
 class AdjustmentWaiverCreate(BaseModel):
     user_id: int
     target_date: date
-    reason_text: str = "Abono Administrativo"
-    amount_hours: Optional[float] = None
-
-
-class AdjustmentRequestUpdate(BaseModel):
-    adjustment_type: Optional[AdjustmentType] = None
-    target_date: Optional[date] = None
-    entry_time: Optional[time] = None
-    exit_time: Optional[time] = None
-    reason_text: Optional[str] = None
-    amount_hours: Optional[float] = None
+    amount_hours: float
+    reason_text: str
 
 
 class AdjustmentAttachmentResponse(BaseModel):
@@ -62,6 +65,7 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     created_at: datetime
     reviewed_at: Optional[datetime] = None
     attachments: List[AdjustmentAttachmentResponse] = []
+    time_records: List[TimeRecordSimple] = []
 
     class Config:
         from_attributes = True

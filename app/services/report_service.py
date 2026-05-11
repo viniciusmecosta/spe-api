@@ -2,13 +2,12 @@ import locale
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
-from typing import List, Optional
-from zoneinfo import ZoneInfo
-
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -26,7 +25,6 @@ try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
 except Exception:
     pass
-
 
 class ReportService:
     def _get_month_range(self, month: int, year: int):
@@ -120,15 +118,12 @@ class ReportService:
 
             adjustment_day = next((adj for adj in approved_adjustments
                                    if adj.target_date == current
-                                   and adj.adjustment_type in [AdjustmentType.CERTIFICATE, AdjustmentType.WAIVER]),
+                                   and adj.adjustment_type == AdjustmentType.WAIVER),
                                   None)
 
-            is_certificate = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.CERTIFICATE
-            is_waiver = adjustment_day is not None and adjustment_day.adjustment_type == AdjustmentType.WAIVER
-
+            is_waiver = adjustment_day is not None
             adj_id = adjustment_day.id if adjustment_day else None
-
-            is_excused = is_certificate or is_waiver
+            is_excused = is_waiver
 
             weekday = current.weekday()
             is_weekend = weekday >= 5
@@ -216,10 +211,7 @@ class ReportService:
                 status = ""
             elif is_waiver:
                 formatted_waiver = self._format_duration(waiver_credit)
-                status = f"Abonado ({formatted_waiver})"
-            elif is_certificate:
-                formatted_waiver = self._format_duration(waiver_credit)
-                status = f"Atestado ({formatted_waiver})"
+                status = f"Abonado/Atestado ({formatted_waiver})"
             elif is_holiday:
                 status = "Feriado"
             elif is_weekend:
@@ -441,6 +433,5 @@ class ReportService:
         wb.save(output)
         output.seek(0)
         return output
-
 
 report_service = ReportService()
