@@ -2,12 +2,13 @@ import locale
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from io import BytesIO
+from typing import List, Optional
+from zoneinfo import ZoneInfo
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -19,7 +20,7 @@ from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse, PunchDetail,
-    HistoryResponse, HistoryDay, HistoryPunch
+    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch
 )
 from app.services.anomaly_service import anomaly_service
 
@@ -44,7 +45,7 @@ class ReportService:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
         minutes = total_minutes % 60
-        return f"{hours}h:{minutes:02d}min"
+        return f"{hours:02d}:{minutes:02d}"
 
     def _apply_employee_filters(self, query, employee_ids: Optional[List[int]] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
@@ -78,18 +79,62 @@ class ReportService:
             date=today
         )
 
+    def get_my_dashboard(self, db: Session, current_user: User) -> MyDashboardResponse:
+        tz = ZoneInfo(settings.TIMEZONE)
+        now = datetime.now(tz)
+        today_date = now.date()
+        start_of_month = date(now.year, now.month, 1)
+
+        start_dt_today = datetime.combine(today_date, datetime.min.time(), tzinfo=tz)
+        end_dt_today = datetime.combine(today_date, datetime.max.time(), tzinfo=tz)
+
+        today_records = time_record_repository.get_by_range(db, current_user.id, start_dt_today, end_dt_today)
+        today_records.sort(key=lambda x: x.record_datetime)
+
+        today_punches = []
+        for rec in today_records:
+            today_punches.append(TodayPunch(
+                id=rec.id,
+                time=rec.record_datetime.strftime("%H:%M"),
+                record_type=rec.record_type.value
+            ))
+
+        next_punch_type = "ENTRY"
+        if today_records:
+            last_record = today_records[-1]
+            if last_record.record_type == RecordType.ENTRY:
+                next_punch_type = "EXIT"
+
+        month_anomalies = []
+        if today_date > start_of_month:
+            anomalies = anomaly_service.get_anomalies(db, start_of_month, today_date - timedelta(days=1),
+                                                      current_user.id)
+            month_anomalies = [a.description for a in anomalies]
+
+        return MyDashboardResponse(
+            full_name=current_user.name,
+            next_punch_type=next_punch_type,
+            today_punches=today_punches,
+            month_anomalies=month_anomalies
+        )
+
     def get_history_report(self, db: Session, user_id: int, month: Optional[int], year: Optional[int],
                            current_user: User) -> HistoryResponse:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
+        today_date = now.date()
         if not month:
             month = now.month
         if not year:
             year = now.year
 
         start_date, end_date = self._get_month_range(month, year)
-        if end_date > now.date():
-            end_date = now.date()
+
+        if year == now.year and month == now.month:
+            if end_date > now.date():
+                end_date = now.date()
+        elif datetime(year, month, 1).date() > now.date():
+            return HistoryResponse(month=month, year=year, total_worked_time="00:00", days=[])
 
         user = user_repository.get(db, user_id)
         if not user:
@@ -115,7 +160,12 @@ class ReportService:
             day_records.sort(key=lambda x: x.record_datetime)
 
             holiday = next((h for h in holidays if h.date == current), None)
-            day_anomalies = [a for a in anomalies if a.date == current]
+
+            if current < today_date:
+                day_anomalies = [a for a in anomalies if a.date == current]
+            else:
+                day_anomalies = []
+
             abono = next((adj for adj in adjustments if
                           adj.target_date == current and adj.adjustment_type == AdjustmentType.WAIVER), None)
 
@@ -143,7 +193,6 @@ class ReportService:
                         "platform": rec.platform,
                         "is_time_verified": rec.is_time_verified,
                         "biometric_id": rec.biometric_id,
-                        "original_timestamp": rec.original_timestamp,
                         "edited_by": rec.edited_by,
                         "edit_justification": rec.edit_justification.value if rec.edit_justification else None,
                         "edit_reason": rec.edit_reason
@@ -284,7 +333,6 @@ class ReportService:
                         is_manual=rec.is_manual,
                         is_time_verified=rec.is_time_verified,
                         biometric_id=rec.biometric_id,
-                        original_timestamp=rec.original_timestamp,
                         edited_by=rec.edited_by,
                         edit_justification=rec.edit_justification.value if rec.edit_justification else None,
                         edit_reason=rec.edit_reason

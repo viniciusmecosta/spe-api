@@ -1,8 +1,9 @@
 from datetime import datetime
+from typing import Any, List, Optional
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
@@ -11,12 +12,12 @@ from app.schemas.report import (
     MonthlyReportResponse,
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
-    HistoryResponse
+    HistoryResponse,
+    MyDashboardResponse
 )
 from app.services.report_service import report_service
 
 router = APIRouter()
-
 
 def check_report_permission(current_user: User):
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
@@ -27,7 +28,6 @@ def check_report_permission(current_user: User):
         )
     return True
 
-
 @router.get("/dashboard", response_model=DashboardMetricsResponse)
 def get_dashboard(
         db: Session = Depends(deps.get_db),
@@ -37,6 +37,13 @@ def get_dashboard(
     return report_service.get_dashboard_metrics(db)
 
 
+@router.get("/my/dashboard", response_model=MyDashboardResponse)
+def get_my_dashboard(
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    return report_service.get_my_dashboard(db, current_user)
+
 @router.get("/history/me", response_model=HistoryResponse)
 def get_my_history(
         month: Optional[int] = Query(None, ge=1, le=12),
@@ -45,7 +52,6 @@ def get_my_history(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return report_service.get_history_report(db, current_user.id, month, year, current_user)
-
 
 @router.get("/history/user/{user_id}", response_model=HistoryResponse)
 def get_user_history(
@@ -59,7 +65,6 @@ def get_user_history(
     if not is_manager and not current_user.can_export_report and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Sem permissão para acessar o histórico deste usuário.")
     return report_service.get_history_report(db, user_id, month, year, current_user)
-
 
 @router.get("/me", response_model=AdvancedUserReportResponse)
 def get_my_report(
@@ -80,7 +85,6 @@ def get_my_report(
 
     return report
 
-
 @router.get("/monthly", response_model=MonthlyReportResponse)
 def get_monthly_global_report(
         month: int = Query(None, ge=1, le=12),
@@ -97,7 +101,6 @@ def get_monthly_global_report(
         year = now.year
 
     return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
-
 
 @router.get("/export/excel")
 def export_monthly_report_excel(
@@ -122,7 +125,6 @@ def export_monthly_report_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
 
 @router.get("/user/{user_id}", response_model=AdvancedUserReportResponse)
 def get_user_detailed_report(
