@@ -122,7 +122,6 @@ class ReportService:
     def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
         query = db.query(User).filter(
             User.role == UserRole.EMPLOYEE,
-            User.is_active.is_(True),
             User.is_exempt_from_rules.is_(False)
         )
         users = query.all()
@@ -135,25 +134,22 @@ class ReportService:
             if report:
                 user_minutes = report.summary.total_worked_minutes
                 if user_minutes >= 60:
-                    name_parts = user.name.strip().split()
-                    short_name = " ".join(name_parts[:2]) if len(name_parts) >= 2 else user.name
-
+                    user_hours_rounded = user_minutes // 60
                     employees_data.append(EmployeeHours(
                         user_id=user.id,
-                        short_name=short_name,
-                        total_hours=round(user_minutes / 60.0, 2),
-                        formatted_time=report.summary.total_worked_time
+                        short_name=user.name,
+                        total_hours=float(user_hours_rounded),
+                        formatted_time=f"{user_hours_rounded}h"
                     ))
                     team_total_minutes += user_minutes
 
         t_hours = team_total_minutes // 60
-        t_mins = team_total_minutes % 60
 
         return TeamHoursResponse(
             month=month,
             year=year,
-            team_total_hours=round(team_total_minutes / 60.0, 2),
-            team_formatted_time=f"{t_hours:02d}:{t_mins:02d}",
+            team_total_hours=float(t_hours),
+            team_formatted_time=f"{t_hours}h",
             employees=employees_data
         )
 
