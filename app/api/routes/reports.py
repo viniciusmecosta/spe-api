@@ -9,7 +9,6 @@ from app.api import deps
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.schemas.report import (
-    MonthlyReportResponse,
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
     HistoryResponse,
@@ -66,43 +65,6 @@ def get_user_history(
     if not is_manager and not current_user.can_export_report and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Sem permissão para acessar o histórico deste usuário.")
     return report_service.get_history_report(db, user_id, month, year, current_user)
-
-@router.get("/me", response_model=AdvancedUserReportResponse)
-def get_my_report(
-        month: int = Query(None, ge=1, le=12),
-        year: int = Query(None, ge=2000),
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_active_user)
-) -> Any:
-    now = datetime.now()
-    if not month:
-        month = now.month
-    if not year:
-        year = now.year
-
-    report = report_service.get_advanced_user_report(db, current_user.id, month, year, current_user)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report data not found")
-
-    return report
-
-@router.get("/monthly", response_model=MonthlyReportResponse)
-def get_monthly_global_report(
-        month: int = Query(None, ge=1, le=12),
-        year: int = Query(None, ge=2000),
-        employee_ids: Optional[List[int]] = Query(None),
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_active_user)
-) -> Any:
-    check_report_permission(current_user)
-    now = datetime.now()
-    if not month:
-        month = now.month
-    if not year:
-        year = now.year
-
-    return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
-
 
 @router.get("/team-hours", response_model=TeamHoursResponse)
 def get_team_hours(
