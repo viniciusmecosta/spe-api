@@ -1,8 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
-
 from pydantic import BaseModel
-
 
 class PunchDetail(BaseModel):
     id: int
@@ -108,7 +106,6 @@ class TodayPunch(BaseModel):
     time: str
     record_type: str
 
-
 class AnomalyItem(BaseModel):
     date: str
     description: str
@@ -118,3 +115,16 @@ class MyDashboardResponse(BaseModel):
     next_punch_type: str
     today_punches: List[TodayPunch]
     month_anomalies: List[AnomalyItem]
+
+class EmployeeHours(BaseModel):
+    user_id: int
+    short_name: str
+    total_hours: float
+    formatted_time: str
+
+class TeamHoursResponse(BaseModel):
+    month: int
+    year: int
+    team_total_hours: float
+    team_formatted_time: str
+    employees: List[EmployeeHours]

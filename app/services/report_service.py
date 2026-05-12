@@ -1,13 +1,9 @@
 import locale
 from calendar import monthrange
 from datetime import date, timedelta, datetime
-from io import BytesIO
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -20,7 +16,8 @@ from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse, PunchDetail,
-    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch, AnomalyItem
+    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch, AnomalyItem,
+    TeamHoursResponse, EmployeeHours
 )
 from app.services.anomaly_service import anomaly_service
 
@@ -122,6 +119,44 @@ class ReportService:
             month_anomalies=month_anomalies
         )
 
+    def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
+        query = db.query(User).filter(
+            User.role == UserRole.EMPLOYEE,
+            User.is_active.is_(True),
+            User.is_exempt_from_rules.is_(False)
+        )
+        users = query.all()
+
+        employees_data = []
+        team_total_minutes = 0
+
+        for user in users:
+            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
+            if report:
+                user_minutes = report.summary.total_worked_minutes
+                if user_minutes >= 60:
+                    name_parts = user.name.strip().split()
+                    short_name = " ".join(name_parts[:2]) if len(name_parts) >= 2 else user.name
+
+                    employees_data.append(EmployeeHours(
+                        user_id=user.id,
+                        short_name=short_name,
+                        total_hours=round(user_minutes / 60.0, 2),
+                        formatted_time=report.summary.total_worked_time
+                    ))
+                    team_total_minutes += user_minutes
+
+        t_hours = team_total_minutes // 60
+        t_mins = team_total_minutes % 60
+
+        return TeamHoursResponse(
+            month=month,
+            year=year,
+            team_total_hours=round(team_total_minutes / 60.0, 2),
+            team_formatted_time=f"{t_hours:02d}:{t_mins:02d}",
+            employees=employees_data
+        )
+
     def get_history_report(self, db: Session, user_id: int, month: Optional[int], year: Optional[int],
                            current_user: User) -> HistoryResponse:
         tz = ZoneInfo(settings.TIMEZONE)
@@ -219,6 +254,8 @@ class ReportService:
                 status = "Final de semana"
             elif abono:
                 status = "Abonado"
+            elif current == today_date:
+                status = ""
             else:
                 status = "Falta"
 
@@ -290,6 +327,7 @@ class ReportService:
         current = start_date
         while current <= end_date:
             is_future = current > today_date
+            is_today = current == today_date
 
             day_records = [r for r in all_records if r.record_datetime.date() == current]
             day_records.sort(key=lambda x: x.record_datetime)
@@ -366,7 +404,7 @@ class ReportService:
             if worked_seconds > 0:
                 days_worked_count += 1
 
-            if worked_seconds == 0 and expected_seconds > 0 and not is_weekend and not is_holiday and not is_excused and not is_future:
+            if worked_seconds == 0 and expected_seconds > 0 and not is_weekend and not is_holiday and not is_excused and not is_future and not is_today:
                 absences_count += 1
 
             day_worked_hours = worked_seconds / 3600.0
@@ -399,7 +437,10 @@ class ReportService:
                 else:
                     status = "Fim de Semana"
             elif worked_seconds == 0 and expected_seconds > 0:
-                status = "Falta"
+                if is_today:
+                    status = ""
+                else:
+                    status = "Falta"
             elif not has_schedule and worked_seconds == 0:
                 status = "-"
 
@@ -465,153 +506,6 @@ class ReportService:
             if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
-
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
-                              current_user: Optional[User] = None) -> BytesIO:
-        query = db.query(User)
-        query = self._apply_employee_filters(query, employee_ids)
-        users = query.all()
-
-        wb = Workbook()
-        ws_summary = wb.active
-        ws_summary.title = "Resumo Folha"
-
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="003366", end_color="003366",
-                                  fill_type="solid")
-        border_style = Side(style='thin', color="000000")
-        border = Border(left=border_style, right=border_style, top=border_style, bottom=border_style)
-
-        red_font = Font(color="FF0000", bold=True)
-        green_font = Font(color="008000", bold=True)
-        blue_font = Font(color="0000FF", bold=True)
-        weekend_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-        holiday_fill = PatternFill(start_color="FFE0B2", end_color="FFE0B2", fill_type="solid")
-
-        ws_summary.merge_cells('A1:C1')
-        title_cell = ws_summary['A1']
-        title_cell.value = f"Relatório de Gestão - {month}/{year}"
-        title_cell.font = Font(size=14, bold=True)
-        title_cell.alignment = Alignment(horizontal='center')
-
-        ws_summary.append([])
-
-        headers_sum = ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"]
-        ws_summary.append(headers_sum)
-
-        for col_num, header in enumerate(headers_sum, 1):
-            cell = ws_summary.cell(row=3, column=col_num)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal='center')
-            cell.border = border
-
-        for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
-            if not report or report.summary.total_worked_minutes == 0:
-                continue
-
-            sum_data = report.summary
-            ws_summary.append([
-                sum_data.user_name,
-                sum_data.days_worked,
-                sum_data.total_worked_time
-            ])
-
-            last_row = ws_summary.max_row
-            for col in range(1, 4):
-                ws_summary.cell(row=last_row, column=col).border = border
-
-        for i, col in enumerate(ws_summary.columns, 1):
-            max_length = 0
-            column = get_column_letter(i)
-            for cell in col:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except Exception:
-                    pass
-            ws_summary.column_dimensions[column].width = max_length + 3
-
-        for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
-            if not report or report.summary.total_worked_minutes == 0:
-                continue
-
-            sheet_name = f"{user.id}-{user.name.split()[0]}"[:30]
-            ws_det = wb.create_sheet(title=sheet_name)
-
-            ws_det.merge_cells('A1:F1')
-            title_cell = ws_det['A1']
-            title_cell.value = f"Folha de Ponto: {user.name} - {month}/{year}"
-            title_cell.font = Font(size=14, bold=True)
-            title_cell.alignment = Alignment(horizontal='center')
-
-            headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trabalhado (Min)", "Trabalhado (Tempo)"]
-            ws_det.append(headers_det)
-
-            for col_num, header in enumerate(headers_det, 1):
-                cell = ws_det.cell(row=2, column=col_num)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-
-            for day in report.daily_details:
-                punches_str = " | ".join(day.punches)
-
-                row_data = [
-                    day.date.strftime("%d/%m/%Y"),
-                    day.day_name,
-                    day.status,
-                    punches_str,
-                    f"{day.worked_minutes} min",
-                    day.worked_time
-                ]
-                ws_det.append(row_data)
-                last_row = ws_det.max_row
-
-                status_cell = ws_det.cell(row=last_row, column=3)
-
-                if "Falta" in day.status:
-                    status_cell.font = red_font
-                elif "Atestado" in day.status or "Abonado" in day.status:
-                    status_cell.font = green_font
-                elif "Feriado" in day.status:
-                    status_cell.font = blue_font
-
-                if day.is_holiday:
-                    for col in range(1, 7):
-                        ws_det.cell(row=last_row, column=col).fill = holiday_fill
-                elif day.is_weekend:
-                    for col in range(1, 7):
-                        ws_det.cell(row=last_row, column=col).fill = weekend_fill
-
-                for col in range(1, 7):
-                    ws_det.cell(row=last_row, column=col).border = border
-
-            ws_det.append([])
-            ws_det.append(["TOTAIS", "", "", "",
-                           f"{report.summary.total_worked_minutes} min",
-                           report.summary.total_worked_time])
-
-            last_row = ws_det.max_row
-            for col in range(1, 7):
-                cell = ws_det.cell(row=last_row, column=col)
-                cell.font = Font(bold=True)
-                cell.border = border
-
-            ws_det.column_dimensions['A'].width = 12
-            ws_det.column_dimensions['B'].width = 15
-            ws_det.column_dimensions['C'].width = 20
-            ws_det.column_dimensions['D'].width = 40
-            ws_det.column_dimensions['E'].width = 18
-            ws_det.column_dimensions['F'].width = 20
-
-        output = BytesIO()
-        wb.save(output)
-        output.seek(0)
-        return output
 
 
 report_service = ReportService()

@@ -13,8 +13,10 @@ from app.schemas.report import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
     HistoryResponse,
-    MyDashboardResponse
+    MyDashboardResponse,
+    TeamHoursResponse
 )
+from app.services.excel_service import excel_service
 from app.services.report_service import report_service
 
 router = APIRouter()
@@ -35,7 +37,6 @@ def get_dashboard(
 ) -> Any:
     check_report_permission(current_user)
     return report_service.get_dashboard_metrics(db)
-
 
 @router.get("/my/dashboard", response_model=MyDashboardResponse)
 def get_my_dashboard(
@@ -102,6 +103,23 @@ def get_monthly_global_report(
 
     return report_service.get_monthly_summary(db, month, year, employee_ids, current_user)
 
+
+@router.get("/team-hours", response_model=TeamHoursResponse)
+def get_team_hours(
+        month: Optional[int] = Query(None, ge=1, le=12),
+        year: Optional[int] = Query(None, ge=2000),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    check_report_permission(current_user)
+    now = datetime.now()
+    if not month:
+        month = now.month
+    if not year:
+        year = now.year
+
+    return report_service.get_team_worked_hours(db, month, year, current_user)
+
 @router.get("/export/excel")
 def export_monthly_report_excel(
         month: int = Query(None, ge=1, le=12),
@@ -117,7 +135,7 @@ def export_monthly_report_excel(
     if not year:
         year = now.year
 
-    file_stream = report_service.generate_excel_report(db, month, year, employee_ids, current_user)
+    file_stream = excel_service.generate_excel_report(db, month, year, employee_ids, current_user)
 
     filename = f"folha_ponto_{month}_{year}.xlsx"
     return StreamingResponse(
