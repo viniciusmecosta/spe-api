@@ -1,14 +1,24 @@
 from io import BytesIO
+from typing import List, Optional
+
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.domain.models.user import User
 from app.services.report_service import report_service
 
+
 class ExcelService:
+    def _format_time_br(self, time_str: str) -> str:
+        if not time_str or ":" not in time_str:
+            return time_str
+        parts = time_str.split(":")
+        if len(parts) >= 2:
+            return f"{parts[0]}h:{parts[1]}min"
+        return time_str
+
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
                               current_user: Optional[User] = None) -> BytesIO:
         query = db.query(User)
@@ -57,7 +67,7 @@ class ExcelService:
             ws_summary.append([
                 sum_data.user_name,
                 sum_data.days_worked,
-                sum_data.total_worked_time
+                self._format_time_br(sum_data.total_worked_time)
             ])
 
             last_row = ws_summary.max_row
@@ -108,7 +118,7 @@ class ExcelService:
                     day.status,
                     punches_str,
                     f"{day.worked_minutes} min",
-                    day.worked_time
+                    self._format_time_br(day.worked_time)
                 ]
                 ws_det.append(row_data)
                 last_row = ws_det.max_row
@@ -135,7 +145,7 @@ class ExcelService:
             ws_det.append([])
             ws_det.append(["TOTAIS", "", "", "",
                            f"{report.summary.total_worked_minutes} min",
-                           report.summary.total_worked_time])
+                           self._format_time_br(report.summary.total_worked_time)])
 
             last_row = ws_det.max_row
             for col in range(1, 7):
