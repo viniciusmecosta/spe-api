@@ -1,7 +1,6 @@
 from datetime import date, datetime
-from typing import List, Optional
-
 from pydantic import BaseModel
+from typing import List, Optional
 
 
 class PunchDetail(BaseModel):
@@ -80,3 +79,38 @@ class DashboardMetricsResponse(BaseModel):
     pending_adjustments: int
     employees_present_today: int
     date: date
+
+
+class HistoryPunch(BaseModel):
+    id: int
+    time: str
+    record_type: str
+    ip_address: Optional[str] = None
+    device_name: Optional[str] = None
+    platform: Optional[str] = None
+    is_manual: Optional[bool] = None
+    is_time_verified: Optional[bool] = None
+    biometric_id: Optional[int] = None
+    original_timestamp: Optional[datetime] = None
+    edited_by: Optional[int] = None
+    edit_justification: Optional[str] = None
+    edit_reason: Optional[str] = None
+
+
+class HistoryDay(BaseModel):
+    date: date
+    day_name: str
+    status: str
+    worked_time: str
+    punches: List[HistoryPunch]
+    has_anomaly: bool
+    anomalies: List[str]
+    abono_hours: Optional[float] = None
+    abono_id: Optional[int] = None
+
+
+class HistoryResponse(BaseModel):
+    month: int
+    year: int
+    total_worked_time: str
+    days: List[HistoryDay]

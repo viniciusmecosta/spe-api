@@ -1,9 +1,8 @@
 from datetime import datetime
-from typing import Any, List, Optional
-
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
@@ -11,7 +10,8 @@ from app.domain.models.user import User
 from app.schemas.report import (
     MonthlyReportResponse,
     AdvancedUserReportResponse,
-    DashboardMetricsResponse
+    DashboardMetricsResponse,
+    HistoryResponse
 )
 from app.services.report_service import report_service
 
@@ -35,6 +35,30 @@ def get_dashboard(
 ) -> Any:
     check_report_permission(current_user)
     return report_service.get_dashboard_metrics(db)
+
+
+@router.get("/history/me", response_model=HistoryResponse)
+def get_my_history(
+        month: Optional[int] = Query(None, ge=1, le=12),
+        year: Optional[int] = Query(None, ge=2000),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    return report_service.get_history_report(db, current_user.id, month, year, current_user)
+
+
+@router.get("/history/user/{user_id}", response_model=HistoryResponse)
+def get_user_history(
+        user_id: int,
+        month: Optional[int] = Query(None, ge=1, le=12),
+        year: Optional[int] = Query(None, ge=2000),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
+) -> Any:
+    is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+    if not is_manager and not current_user.can_export_report and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Sem permissão para acessar o histórico deste usuário.")
+    return report_service.get_history_report(db, user_id, month, year, current_user)
 
 
 @router.get("/me", response_model=AdvancedUserReportResponse)
