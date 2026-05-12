@@ -103,15 +103,18 @@ class HistoryResponse(BaseModel):
     total_worked_time: str
     days: List[HistoryDay]
 
-
 class TodayPunch(BaseModel):
     id: int
     time: str
     record_type: str
 
 
+class AnomalyItem(BaseModel):
+    date: str
+    description: str
+
 class MyDashboardResponse(BaseModel):
     full_name: str
     next_punch_type: str
     today_punches: List[TodayPunch]
-    month_anomalies: List[str]
+    month_anomalies: List[AnomalyItem]

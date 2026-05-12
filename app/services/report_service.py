@@ -20,7 +20,7 @@ from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse, PunchDetail,
-    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch
+    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch, AnomalyItem
 )
 from app.services.anomaly_service import anomaly_service
 
@@ -109,7 +109,11 @@ class ReportService:
         if today_date > start_of_month:
             anomalies = anomaly_service.get_anomalies(db, start_of_month, today_date - timedelta(days=1),
                                                       current_user.id)
-            month_anomalies = [a.description for a in anomalies]
+            for a in anomalies:
+                month_anomalies.append(AnomalyItem(
+                    date=a.date.strftime("%d/%m/%Y"),
+                    description=a.description
+                ))
 
         return MyDashboardResponse(
             full_name=current_user.name,
