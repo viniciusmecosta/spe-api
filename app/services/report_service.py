@@ -157,9 +157,9 @@ class ReportService:
             if day_records:
                 status = "Normal"
             elif holiday:
-                status = f"Feriado: {holiday.name}"
+                status = "Feriado"
             elif is_weekend:
-                status = f"Final de semana: {day_name}"
+                status = "Final de semana"
             elif abono:
                 status = "Abonado"
             else:
@@ -173,7 +173,10 @@ class ReportService:
             history_days.append(HistoryDay(
                 date=current,
                 day_name=day_name,
+                is_holiday=bool(holiday),
+                is_weekend=is_weekend,
                 status=status,
+                holiday_name=holiday.name if holiday else None,
                 worked_time=worked_time_str,
                 punches=punches,
                 has_anomaly=len(day_anomalies) > 0,

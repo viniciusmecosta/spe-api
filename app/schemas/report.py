@@ -100,7 +100,10 @@ class HistoryPunch(BaseModel):
 class HistoryDay(BaseModel):
     date: date
     day_name: str
+    is_holiday: bool
+    is_weekend: bool
     status: str
+    holiday_name: Optional[str] = None
     worked_time: str
     punches: List[HistoryPunch]
     has_anomaly: bool
