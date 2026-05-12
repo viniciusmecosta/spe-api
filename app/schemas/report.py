@@ -102,6 +102,7 @@ class HistoryDay(BaseModel):
     day_name: str
     is_holiday: bool
     is_weekend: bool
+    is_absent: bool
     status: str
     holiday_name: Optional[str] = None
     worked_time: str

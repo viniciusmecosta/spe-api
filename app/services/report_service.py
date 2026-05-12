@@ -133,13 +133,13 @@ class ReportService:
                     "id": rec.id,
                     "time": rec.record_datetime.strftime("%H:%M"),
                     "record_type": rec.record_type.value,
+                    "is_manual": rec.is_manual,
                 }
                 if is_manager:
                     punch_data.update({
                         "ip_address": rec.ip_address,
                         "device_name": rec.device_name,
                         "platform": rec.platform,
-                        "is_manual": rec.is_manual,
                         "is_time_verified": rec.is_time_verified,
                         "biometric_id": rec.biometric_id,
                         "original_timestamp": rec.original_timestamp,
@@ -175,6 +175,7 @@ class ReportService:
                 day_name=day_name,
                 is_holiday=bool(holiday),
                 is_weekend=is_weekend,
+                is_absent=(status == "Falta"),
                 status=status,
                 holiday_name=holiday.name if holiday else None,
                 worked_time=worked_time_str,
