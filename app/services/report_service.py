@@ -150,6 +150,9 @@ class ReportService:
                     })
                 punches.append(HistoryPunch(**punch_data))
 
+            if abono and abono.amount_hours:
+                worked_seconds += (abono.amount_hours * 3600)
+
             total_worked_seconds += worked_seconds
 
             day_name = self._get_day_name(current)
