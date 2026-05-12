@@ -80,4 +80,5 @@ class AdjustmentRepository:
         db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).delete()
         db.commit()
 
+
 adjustment_repository = AdjustmentRepository()

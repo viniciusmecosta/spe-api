@@ -2,7 +2,6 @@ import os
 import shutil
 import uuid
 from datetime import datetime
-
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
@@ -215,5 +214,6 @@ class AdjustmentService:
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
+
 
 adjustment_service = AdjustmentService()

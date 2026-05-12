@@ -1,9 +1,8 @@
 import logging
 from datetime import datetime
+from sqlalchemy.orm import Session
 from typing import Optional
 from zoneinfo import ZoneInfo
-
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.time_record_service import time_record_service

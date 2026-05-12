@@ -28,6 +28,7 @@ try:
 except Exception:
     pass
 
+
 class ReportService:
     def _get_month_range(self, month: int, year: int):
         start_date = date(year, month, 1)
@@ -556,5 +557,6 @@ class ReportService:
         wb.save(output)
         output.seek(0)
         return output
+
 
 report_service = ReportService()

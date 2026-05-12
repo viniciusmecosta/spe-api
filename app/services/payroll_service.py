@@ -1,9 +1,8 @@
 from datetime import date, datetime
-from typing import List, Dict, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole

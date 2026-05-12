@@ -1,7 +1,6 @@
-from typing import Any, List
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
 from app.domain.models.enums import UserRole

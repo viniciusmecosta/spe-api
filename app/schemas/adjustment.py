@@ -1,8 +1,7 @@
 from datetime import date, datetime
 from datetime import time as dt_time
-from typing import Optional, List
-
 from pydantic import BaseModel, computed_field, model_validator
+from typing import Optional, List
 
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
 from app.schemas.time_record import TimeRecordSimple

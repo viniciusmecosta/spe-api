@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
-
 from sqlalchemy import desc, and_, distinct, func
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
