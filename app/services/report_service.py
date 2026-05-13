@@ -104,8 +104,9 @@ class ReportService:
 
         month_anomalies = []
         if today_date > start_of_month:
-            anomalies = anomaly_service.get_anomalies(db, start_of_month, today_date - timedelta(days=1),
-                                                      current_user.id)
+            anomalies = anomaly_service.get_anomalies(
+                db, start_of_month, today_date - timedelta(days=1), current_user.id, ignore_excessive_hours=True
+            )
             for a in anomalies:
                 month_anomalies.append(AnomalyItem(
                     date=a.date.strftime("%d/%m/%Y"),
@@ -182,7 +183,11 @@ class ReportService:
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
         adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
-        anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id)
+
+        # Ignorar anomalia "Trabalhou Excessivamente" quando o próprio usuário estiver vendo o relatório
+        ignore_excessive = (current_user.id == user_id)
+        anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id,
+                                                  ignore_excessive_hours=ignore_excessive)
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 

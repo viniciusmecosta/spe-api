@@ -1,6 +1,7 @@
 from datetime import date, datetime
-from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
+
+from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.user import User
@@ -15,8 +16,8 @@ class AnomalyService:
         minutes = total_minutes % 60
         return f"{hours}h{minutes:02d}"
 
-    def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
-        AnomalyResponse]:
+    def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List,
+                             ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
         anomalies = []
         records.sort(key=lambda x: x.record_datetime)
 
@@ -84,7 +85,7 @@ class AnomalyService:
                 description="Entrada sem saída"
             ))
 
-        if total_worked_seconds > (10 * 3600):
+        if not ignore_excessive_hours and total_worked_seconds > (10 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
             anomalies.append(AnomalyResponse(
                 user_id=user_id,
@@ -96,8 +97,8 @@ class AnomalyService:
 
         return anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None) -> List[
-        AnomalyResponse]:
+    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
+                      ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
         query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:
             query = query.filter(User.id == user_id)
@@ -127,7 +128,7 @@ class AnomalyService:
         for uid in target_user_ids:
             user_name = user_map.get(uid, "Unknown")
             for rdate, day_records in records_map[uid].items():
-                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records)
+                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours)
                 all_anomalies.extend(day_anomalies)
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
