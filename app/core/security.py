@@ -1,11 +1,10 @@
+import bcrypt
 import hashlib
+import jwt
 import socket
 from datetime import datetime, timedelta
-from typing import Any, Union, Optional
-
-import bcrypt
-import jwt
 from fastapi import Request
+from typing import Any, Union, Optional
 
 from app.core.config import settings
 

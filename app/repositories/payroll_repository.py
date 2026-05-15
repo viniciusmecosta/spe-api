@@ -1,6 +1,5 @@
-from typing import List
-
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.domain.models.payroll import PayrollClosure
 

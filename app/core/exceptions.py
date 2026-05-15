@@ -1,12 +1,11 @@
 import http
 import logging
-from typing import Optional
-
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +28,7 @@ def _translate_pydantic_msg(msg: str) -> str:
             return pt_val
     return msg
 
+
 def _get_error_type(status_code: int, custom_slug: Optional[str] = None) -> str:
     base_url = "https://api.spe.com/erros/"
     if custom_slug:
@@ -44,6 +44,7 @@ def _get_error_type(status_code: int, custom_slug: Optional[str] = None) -> str:
     }
     slug = slug_map.get(status_code, f"http-error-{status_code}")
     return f"{base_url}{slug}"
+
 
 def _get_error_title(status_code: int) -> str:
     titles_pt = {
@@ -61,6 +62,7 @@ def _get_error_title(status_code: int) -> str:
         return http.HTTPStatus(status_code).phrase
     except ValueError:
         return "Erro"
+
 
 def setup_exception_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)

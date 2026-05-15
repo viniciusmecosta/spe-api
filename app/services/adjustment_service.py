@@ -1,7 +1,7 @@
 import os
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
@@ -44,6 +44,20 @@ class AdjustmentService:
 
         return adjustments
 
+    def _validate_waiver_limit(self, db: Session, user_id: int, target_date: date, amount_hours: float | None):
+        if not amount_hours:
+            return
+
+        existing_waivers = adjustment_repository.get_waivers_by_user_and_date(db, user_id, target_date)
+        existing_hours = sum(w.amount_hours for w in existing_waivers if w.amount_hours)
+
+        if existing_hours + amount_hours > 10.0:
+            remaining = max(0.0, 10.0 - existing_hours)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Limite máximo de 10 horas de abono por dia excedido. Horas disponíveis para esta data: {remaining}h."
+            )
+
     def get_all_enriched(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
         adjustments = adjustment_repository.get_all(db, skip, limit)
         return self._enrich_adjustments_with_records(db, adjustments)
@@ -55,12 +69,18 @@ class AdjustmentService:
     def create_adjustment_request(self, db: Session, user_id: int,
                                   obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
         payroll_service.validate_period_open(db, obj_in.target_date)
+
+        if obj_in.adjustment_type == AdjustmentType.WAIVER:
+            self._validate_waiver_limit(db, user_id, obj_in.target_date, obj_in.amount_hours)
+
         adjustment = adjustment_repository.create(db, user_id, obj_in)
         return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
     def create_manager_waiver(self, db: Session, waiver_in: AdjustmentWaiverCreate,
                               manager_id: int) -> AdjustmentRequest:
         payroll_service.validate_period_open(db, waiver_in.target_date)
+
+        self._validate_waiver_limit(db, waiver_in.user_id, waiver_in.target_date, waiver_in.amount_hours)
 
         adj_in = AdjustmentRequestCreate(
             adjustment_type=AdjustmentType.WAIVER,
@@ -215,5 +235,6 @@ class AdjustmentService:
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
+
 
 adjustment_service = AdjustmentService()

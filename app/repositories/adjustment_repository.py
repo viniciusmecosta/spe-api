@@ -1,9 +1,10 @@
 from datetime import date
+
 from sqlalchemy import desc, and_
 from sqlalchemy.orm import Session
 
 from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
-from app.domain.models.enums import AdjustmentStatus
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.schemas.adjustment import AdjustmentRequestCreate
 
 
@@ -55,6 +56,16 @@ class AdjustmentRepository:
             )
         ).all()
 
+    def get_waivers_by_user_and_date(self, db: Session, user_id: int, target_date: date) -> list[AdjustmentRequest]:
+        return db.query(AdjustmentRequest).filter(
+            and_(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date == target_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.WAIVER,
+                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.APPROVED])
+            )
+        ).all()
+
     def update_status(self, db: Session, db_obj: AdjustmentRequest, status: AdjustmentStatus, manager_id: int,
                       comment: str | None = None) -> AdjustmentRequest:
         db_obj.status = status
@@ -79,5 +90,6 @@ class AdjustmentRepository:
     def delete(self, db: Session, id: int):
         db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).delete()
         db.commit()
+
 
 adjustment_repository = AdjustmentRepository()

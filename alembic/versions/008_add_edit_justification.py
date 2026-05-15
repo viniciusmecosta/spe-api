@@ -1,6 +1,7 @@
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 revision = '008'
 down_revision = '007'

@@ -1,15 +1,16 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
 
+
 def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
+
 
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
@@ -35,6 +36,7 @@ class AdjustmentRequest(Base):
     @property
     def user_name(self):
         return self.user.name if self.user else "Desconhecido"
+
 
 class AdjustmentAttachment(Base):
     __tablename__ = "adjustment_attachments"

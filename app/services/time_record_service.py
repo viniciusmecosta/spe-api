@@ -1,10 +1,9 @@
-from datetime import datetime
-from typing import Optional
-from zoneinfo import ZoneInfo
-
 import ntplib
+from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
+from typing import Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name

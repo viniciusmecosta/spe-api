@@ -1,8 +1,7 @@
-from typing import Any, List, Optional
-
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from typing import Any, List, Optional
 
 from app.api import deps
 from app.core.security import get_password_hash

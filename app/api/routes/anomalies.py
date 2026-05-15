@@ -30,41 +30,6 @@ def _get_query_dates(month: int, year: int) -> tuple[date, date]:
     return start_date, end_date
 
 
-@router.get("/my", response_model=List[AnomalyResponse])
-def get_my_anomalies(
-        month: int,
-        year: int,
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-):
-    start_date, end_date = _get_query_dates(month, year)
-
-    if start_date > end_date:
-        return []
-
-    all_anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id=current_user.id)
-
-    employee_types = ["MISSING_ENTRY", "DOUBLE_ENTRY", "DOUBLE_EXIT", "MISSING_EXIT"]
-
-    filtered = [a for a in all_anomalies if a.type in employee_types]
-    return filtered
-
-
-@router.get("/recent", response_model=List[AnomalyResponse])
-def get_recent_anomalies(
-        db: Session = Depends(get_db),
-        current_user: User = Depends(get_current_user),
-):
-    if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    today = date.today()
-    end_date = today - timedelta(days=1)
-    start_date = end_date - timedelta(days=6)
-
-    return anomaly_service.get_anomalies(db, start_date, end_date)
-
-
 @router.get("/all", response_model=List[AnomalyResponse])
 def get_all_anomalies(
         month: int,

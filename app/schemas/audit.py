@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import Optional, Any
-
 from pydantic import BaseModel
+from typing import Optional, Any
 
 
 class UserSnapshot(BaseModel):

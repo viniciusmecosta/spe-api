@@ -1,8 +1,7 @@
 from datetime import date, datetime, time
-from typing import List, Optional
-
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 from app.domain.models.routine_log import RoutineLog
 

@@ -1,8 +1,7 @@
 from datetime import date, datetime, time
-from typing import Optional
-
 from sqlalchemy import desc, asc
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.domain.models.audit import AuditLog
 from app.schemas.audit import AuditLogCreate
