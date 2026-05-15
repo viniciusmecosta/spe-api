@@ -74,7 +74,6 @@ class UserRepository:
                 bio_id = bio_data.get('id') if isinstance(bio_data, dict) else bio_data.id
                 sensor_idx = bio_data.get('sensor_index') if isinstance(bio_data, dict) else bio_data.sensor_index
                 tmpl_data = bio_data.get('template_data') if isinstance(bio_data, dict) else bio_data.template_data
-                desc = bio_data.get('description') if isinstance(bio_data, dict) else bio_data.description
                 f_id = bio_data.get('finger_id') if isinstance(bio_data, dict) else bio_data.finger_id
 
                 if sensor_idx is not None:
@@ -91,12 +90,10 @@ class UserRepository:
                     existing.sensor_index = sensor_idx
                     if tmpl_data is not None:
                         existing.template_data = tmpl_data
-                    existing.description = desc
                     existing.finger_id = f_id
                     new_biometrics_list.append(existing)
                 else:
-                    new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, description=desc,
-                                            finger_id=f_id)
+                    new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
                     new_biometrics_list.append(new_bio)
             db_obj.biometrics = new_biometrics_list
 
