@@ -184,7 +184,6 @@ class ReportService:
         holidays = holiday_repository.get_by_month(db, month, year)
         adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
 
-        # Ignorar anomalia "Trabalhou Excessivamente" quando o próprio usuário estiver vendo o relatório
         ignore_excessive = (current_user.id == user_id)
         anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id,
                                                   ignore_excessive_hours=ignore_excessive)
@@ -224,14 +223,12 @@ class ReportService:
                     "id": rec.id,
                     "time": rec.record_datetime.strftime("%H:%M"),
                     "record_type": rec.record_type.value,
-                    "is_manual": rec.is_manual,
                 }
                 if is_manager:
                     punch_data.update({
                         "ip_address": rec.ip_address,
                         "device_name": rec.device_name,
                         "platform": rec.platform,
-                        "is_time_verified": rec.is_time_verified,
                         "biometric_id": rec.biometric_id,
                         "edited_by": rec.edited_by,
                         "edit_justification": rec.edit_justification.value if rec.edit_justification else None,
@@ -373,8 +370,6 @@ class ReportService:
                         ip_address=rec.ip_address,
                         device_name=rec.device_name,
                         platform=rec.platform,
-                        is_manual=rec.is_manual,
-                        is_time_verified=rec.is_time_verified,
                         biometric_id=rec.biometric_id,
                         edited_by=rec.edited_by,
                         edit_justification=rec.edit_justification.value if rec.edit_justification else None,

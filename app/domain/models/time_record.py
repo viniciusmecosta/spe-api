@@ -1,7 +1,8 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Boolean, Enum
-from sqlalchemy.orm import relationship
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum
+from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
@@ -22,12 +23,9 @@ class TimeRecord(Base):
     ip_address = Column(String, nullable=True)
     device_name = Column(String, nullable=True)
     platform = Column(String, nullable=True)
-    is_time_verified = Column(Boolean, default=False)
 
     biometric_id = Column(Integer, ForeignKey("user_biometrics.id"), nullable=True)
 
-    original_timestamp = Column(DateTime(timezone=True), nullable=True)
-    is_manual = Column(Boolean, default=False)
     edited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     edit_justification = Column(Enum(EditJustification), nullable=True)
     edit_reason = Column(String, nullable=True)

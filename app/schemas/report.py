@@ -1,6 +1,8 @@
-from datetime import date, datetime
+from datetime import date
 from typing import List, Optional
+
 from pydantic import BaseModel
+
 
 class PunchDetail(BaseModel):
     id: int
@@ -9,8 +11,6 @@ class PunchDetail(BaseModel):
     ip_address: Optional[str] = None
     device_name: Optional[str] = None
     platform: Optional[str] = None
-    is_manual: bool
-    is_time_verified: Optional[bool] = None
     biometric_id: Optional[int] = None
     edited_by: Optional[int] = None
     edit_justification: Optional[str] = None
@@ -73,8 +73,6 @@ class HistoryPunch(BaseModel):
     ip_address: Optional[str] = None
     device_name: Optional[str] = None
     platform: Optional[str] = None
-    is_manual: Optional[bool] = None
-    is_time_verified: Optional[bool] = None
     biometric_id: Optional[int] = None
     edited_by: Optional[int] = None
     edit_justification: Optional[str] = None

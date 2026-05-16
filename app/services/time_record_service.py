@@ -1,9 +1,10 @@
-import ntplib
 from datetime import datetime
-from fastapi import HTTPException, status, Request
-from sqlalchemy.orm import Session
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+import ntplib
+from fastapi import HTTPException, status, Request
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
@@ -18,15 +19,15 @@ from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:
-    def _get_trusted_time(self):
+    def _get_trusted_time(self) -> datetime:
         tz = ZoneInfo(settings.TIMEZONE)
         try:
             client = ntplib.NTPClient()
             response = client.request('pool.ntp.org', version=3, timeout=2)
             utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
-            return utc_time.astimezone(tz), True
+            return utc_time.astimezone(tz)
         except Exception:
-            return datetime.now(tz), False
+            return datetime.now(tz)
 
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
@@ -55,29 +56,27 @@ class TimeRecordService:
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
 
-        current_time, is_verified = self._get_trusted_time()
+        current_time = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform,
-            is_time_verified=is_verified
+            db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform
         )
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
 
-        current_time, is_verified = self._get_trusted_time()
+        current_time = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
         return time_record_repository.create(
-            db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform,
-            is_time_verified=is_verified
+            db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform
         )
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
@@ -129,10 +128,8 @@ class TimeRecordService:
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
             record_datetime=obj_in.record_datetime, ip_address=ip_address,
             device_name=device_name if device_name else "",
-            platform="desktop",
-            is_time_verified=True
+            platform="desktop"
         )
-        record.is_manual = True
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
         record.edit_reason = obj_in.edit_reason
@@ -166,9 +163,6 @@ class TimeRecordService:
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
-        if not record.original_timestamp:
-            record.original_timestamp = record.record_datetime
-
         employee_id = record.user_id
 
         old_data = {
@@ -177,7 +171,6 @@ class TimeRecordService:
         }
 
         updated = time_record_repository.update(db, record, obj_in)
-        updated.is_manual = True
         updated.edited_by = manager_id
         db.add(updated)
         db.commit()
@@ -263,7 +256,6 @@ class TimeRecordService:
             ip_address=ip_address,
             device_name=device_name,
             platform=platform,
-            is_time_verified=True,
             biometric_id=biometric_id
         )
 
