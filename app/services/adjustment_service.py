@@ -216,7 +216,7 @@ class AdjustmentService:
         else:
             time_record_repository.create(
                 db, user_id=request.user_id, record_type=request.record_type,
-                record_datetime=target_dt, ip_address="ADJUSTMENT_APPROVED", is_time_verified=True
+                record_datetime=target_dt, ip_address="ADJUSTMENT_APPROVED"
             )
 
     def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:

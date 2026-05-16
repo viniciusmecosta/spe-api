@@ -164,6 +164,9 @@ class TelegramService:
             now = datetime.now(tz)
             now_local = now.replace(tzinfo=None)
 
+            if now_local.hour < 6 or now_local.hour > 19:
+                return
+
             db_read = SessionLocal()
             try:
                 current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)

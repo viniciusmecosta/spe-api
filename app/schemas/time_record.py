@@ -1,6 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
 
 from app.domain.models.enums import RecordType, EditJustification
 
@@ -49,7 +50,6 @@ class TimeRecordResponse(TimeRecordBase):
     id: int
     user_id: int
     created_at: datetime
-    is_manual: bool
     edited_by: Optional[int] = None
     edit_justification: Optional[EditJustification] = None
     edit_reason: Optional[str] = None

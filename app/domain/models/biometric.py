@@ -18,7 +18,6 @@ class UserBiometric(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     sensor_index = Column(Integer, nullable=True)
     template_data = Column(String, nullable=True)
-    description = Column(String, nullable=True)
     finger_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_local_time)
 

@@ -71,7 +71,6 @@ class UserService:
                 db_bio = UserBiometric(
                     sensor_index=bio.sensor_index,
                     template_data=bio.template_data,
-                    description=bio.description,
                     finger_id=bio.finger_id
                 )
                 db_user.biometrics.append(db_bio)
@@ -142,7 +141,6 @@ class UserService:
                 bio_id = bio_data.get('id') if isinstance(bio_data, dict) else bio_data.id
                 sensor_idx = bio_data.get('sensor_index') if isinstance(bio_data, dict) else bio_data.sensor_index
                 tmpl_data = bio_data.get('template_data') if isinstance(bio_data, dict) else bio_data.template_data
-                desc = bio_data.get('description') if isinstance(bio_data, dict) else bio_data.description
                 finger_id = bio_data.get('finger_id') if isinstance(bio_data, dict) else bio_data.finger_id
 
                 if sensor_idx is not None:
@@ -170,14 +168,12 @@ class UserService:
                     existing.sensor_index = sensor_idx
                     if tmpl_data is not None:
                         existing.template_data = tmpl_data
-                    existing.description = desc
                     existing.finger_id = finger_id
                     new_biometrics_list.append(existing)
                 else:
                     new_bio = UserBiometric(
                         sensor_index=sensor_idx,
                         template_data=tmpl_data,
-                        description=desc,
                         finger_id=finger_id
                     )
                     new_biometrics_list.append(new_bio)
