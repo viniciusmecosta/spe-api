@@ -1,14 +1,13 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from typing import Any, List, Optional
 
 from app.api import deps
-from app.core.security import get_password_hash
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.schemas.user import UserCreate, UserUpdate, UserResponse
+from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserUpdateMe
 from app.services.user_service import user_service
 
 router = APIRouter()
@@ -64,20 +63,19 @@ def create_user(
 def update_user_me(
         *,
         db: Session = Depends(deps.get_db),
-        password: str = Body(None),
-        name: str = Body(None),
+        user_in: UserUpdateMe,
         current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
-    current_user_data = jsonable_encoder(current_user)
-    user_in = UserUpdate(**current_user_data)
-
-    if password is not None:
-        user_in.password = get_password_hash(password)
-    if name is not None:
-        user_in.name = name
+    update_data = UserUpdate(
+        name=user_in.name,
+        password=user_in.password,
+        email=user_in.email,
+        endereco=user_in.endereco
+    )
 
     try:
-        user = user_repository.update(db, db_obj=current_user, obj_in=user_in)
+        user = user_service.update_user(db, user_id=current_user.id, user_in=update_data,
+                                        current_user_id=current_user.id)
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -137,7 +135,7 @@ def update_user(
         raise HTTPException(status_code=403, detail="Privilégios insuficientes para alterar este usuário")
 
     try:
-        user = user_repository.update(db, db_obj=user, obj_in=user_in)
+        user = user_service.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
