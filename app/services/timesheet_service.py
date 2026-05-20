@@ -1,0 +1,351 @@
+from calendar import monthrange
+from datetime import date, datetime, timedelta
+import io
+import re
+from zoneinfo import ZoneInfo
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
+from app.core.config import settings
+from app.domain.models.enums import RecordType, AdjustmentType
+from app.domain.models.user import User
+from app.repositories.adjustment_repository import adjustment_repository
+from app.repositories.company_repository import company_repository
+from app.repositories.holiday_repository import holiday_repository
+from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
+
+
+class TimesheetService:
+    def _get_day_name(self, dt: date) -> str:
+        days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
+        return days[dt.isoweekday() % 7]
+
+    def _format_duration(self, total_seconds: float) -> str:
+        total_minutes = int(round(total_seconds / 60))
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        return f"{hours:02d}h:{minutes:02d}min"
+
+    def _format_cnpj(self, cnpj: str) -> str:
+        if not cnpj: return "-"
+        c = re.sub(r'[^0-9]', '', cnpj)
+        if len(c) == 14:
+            return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
+        return cnpj
+
+    def _format_cpf(self, cpf: str) -> str:
+        if not cpf: return "-"
+        c = re.sub(r'[^0-9]', '', cpf)
+        if len(c) == 11:
+            return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
+        return cpf
+
+    def _format_pis(self, pis: str) -> str:
+        if not pis: return "-"
+        c = re.sub(r'[^0-9]', '', pis)
+        if len(c) == 11:
+            return f"{c[:3]}.{c[3:8]}.{c[8:10]}-{c[10:]}"
+        return pis
+
+    def _format_phone(self, phone: str) -> str:
+        if not phone: return "-"
+        c = re.sub(r'[^0-9]', '', phone)
+        if len(c) == 11:
+            return f"({c[:2]}) {c[2:7]}-{c[7:]}"
+        elif len(c) == 10:
+            return f"({c[:2]}) {c[2:6]}-{c[6:]}"
+        return phone
+
+    def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
+        user = user_repository.get(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+        tz = ZoneInfo(settings.TIMEZONE)
+        today = datetime.now(tz).date()
+
+        start_date = date(year, month, 1)
+        _, last_day = monthrange(year, month)
+        end_date = date(year, month, last_day)
+
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+        holidays = holiday_repository.get_by_month(db, month, year)
+        adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
+        company = company_repository.get_current(db)
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        story = []
+
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            'DocTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            leading=22,
+            alignment=1,
+            spaceAfter=20
+        )
+
+        section_heading_style = ParagraphStyle(
+            'SectionHeading',
+            fontSize=10,
+            leading=14,
+            fontName='Helvetica-Bold',
+            textColor=colors.HexColor("#1A365D"),
+            spaceAfter=4
+        )
+
+        header_style = ParagraphStyle(
+            'HeaderStyle',
+            fontSize=11,
+            leading=15,
+            textColor=colors.HexColor("#222222")
+        )
+
+        bold_header_style = ParagraphStyle(
+            'BoldHeaderStyle',
+            fontSize=11,
+            leading=15,
+            fontName='Helvetica-Bold',
+            textColor=colors.HexColor("#000000")
+        )
+
+        table_text_style = ParagraphStyle(
+            'TableText',
+            fontSize=10,
+            leading=14,
+            alignment=1
+        )
+
+        table_header_style = ParagraphStyle(
+            'TableHeader',
+            fontSize=11,
+            leading=14,
+            fontName='Helvetica-Bold',
+            alignment=1,
+            textColor=colors.white
+        )
+
+        story.append(Paragraph("ESPELHO DE PONTO ELETRÔNICO", title_style))
+
+        company_name = company.name if company else "Empresa Não Cadastrada"
+        company_cnpj = self._format_cnpj(company.cnpj if company else "")
+        company_addr = company.address if company else "-"
+        company_phone = self._format_phone(company.phone if company else "")
+
+        story.append(Paragraph("DADOS DA EMPRESA", section_heading_style))
+        company_info = [
+            [Paragraph(f"<b>Razão Social:</b> {company_name}", header_style),
+             Paragraph(f"<b>CNPJ:</b> {company_cnpj}", header_style)],
+            [Paragraph(f"<b>Endereço:</b> {company_addr}", header_style),
+             Paragraph(f"<b>Telefone:</b> {company_phone}", header_style)]
+        ]
+        comp_table = Table(company_info, colWidths=[320, 215])
+        comp_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
+        ]))
+        story.append(comp_table)
+        story.append(Spacer(1, 15))
+
+        role_map = {
+            "EMPLOYEE": "Funcionário",
+            "MANAGER": "Gestor",
+            "MAINTAINER": "Mantenedor"
+        }
+        translated_role = role_map.get(user.role, user.role)
+
+        user_cpf_formatted = self._format_cpf(user.cpf)
+        user_pis_formatted = self._format_pis(user.pis)
+
+        story.append(Paragraph("DADOS DO COLABORADOR", section_heading_style))
+        employee_info = [
+            [Paragraph(f"<b>Colaborador:</b> {user.name}", header_style),
+             Paragraph(f"<b>CPF:</b> {user_cpf_formatted}", header_style)],
+            [Paragraph(f"<b>PIS:</b> {user_pis_formatted}", header_style),
+             Paragraph(f"<b>Cargo:</b> {translated_role}", header_style)]
+        ]
+        emp_table = Table(employee_info, colWidths=[320, 215])
+        emp_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
+        ]))
+        story.append(emp_table)
+        story.append(Spacer(1, 15))
+
+        period_info = [
+            [Paragraph(f"<b>Mês/Ano de Referência:</b> {month:02d}/{year}", header_style),
+             Paragraph(f"<b>Data de Emissão:</b> {today.strftime('%d/%m/%Y')}", header_style)]
+        ]
+        per_table = Table(period_info, colWidths=[320, 215])
+        per_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.append(per_table)
+        story.append(Spacer(1, 15))
+
+        data_table = [[
+            Paragraph("Data", table_header_style),
+            Paragraph("Dia", table_header_style),
+            Paragraph("Registros de Ponto (Entrada - Saída)", table_header_style),
+            Paragraph("Trabalhado", table_header_style)
+        ]]
+
+        t_style = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A365D")),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]
+
+        total_worked_seconds = 0.0
+        current_date = start_date
+        row_index = 1
+
+        while current_date <= end_date:
+            day_records = [r for r in records if r.record_datetime.date() == current_date]
+            day_records.sort(key=lambda x: x.record_datetime)
+
+            holiday_obj = next((h for h in holidays if h.date == current_date), None)
+            is_holiday = holiday_obj is not None
+            weekday = current_date.weekday()
+            is_weekend = weekday >= 5
+
+            adjustment = next((adj for adj in adjustments if
+                               adj.target_date == current_date and adj.adjustment_type == AdjustmentType.WAIVER), None)
+            is_waiver = adjustment is not None
+
+            worked_seconds = 0.0
+            entry_time = None
+            punch_blocks = []
+
+            for rec in day_records:
+                time_str = rec.record_datetime.strftime("%H:%M")
+
+                if rec.record_type == RecordType.ENTRY:
+                    if entry_time is not None:
+                        punch_blocks.append(f"{entry_time.strftime('%H:%M')} - --:--")
+                    entry_time = rec.record_datetime
+                elif rec.record_type == RecordType.EXIT:
+                    if entry_time is not None:
+                        worked_seconds += (rec.record_datetime - entry_time).total_seconds()
+                        punch_blocks.append(f"{entry_time.strftime('%H:%M')} - {time_str}")
+                        entry_time = None
+                    else:
+                        punch_blocks.append(f"--:-- - {time_str}")
+
+            if entry_time is not None:
+                punch_blocks.append(f"{entry_time.strftime('%H:%M')} - --:--")
+
+            if is_waiver:
+                if adjustment.amount_hours and adjustment.amount_hours > 0:
+                    worked_seconds += (adjustment.amount_hours * 3600)
+                else:
+                    has_sched = bool(user.schedules)
+                    if has_sched:
+                        sched = next((s for s in user.schedules if s.day_of_week == weekday), None)
+                        if sched and worked_seconds < (sched.daily_hours * 3600):
+                            worked_seconds = sched.daily_hours * 3600
+
+            total_worked_seconds += worked_seconds
+
+            if is_weekend:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
+
+            if is_holiday and not punch_blocks:
+                punches_str = f"Feriado: {holiday_obj.name}"
+            else:
+                punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
+
+            worked_time_str = self._format_duration(worked_seconds)
+
+            data_table.append([
+                Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
+                Paragraph(self._get_day_name(current_date), table_text_style),
+                Paragraph(punches_str, table_text_style),
+                Paragraph(worked_time_str, table_text_style)
+            ])
+
+            current_date += timedelta(days=1)
+            row_index += 1
+
+        t = Table(data_table, colWidths=[75, 75, 285, 100])
+        t.setStyle(TableStyle(t_style))
+        story.append(t)
+        story.append(Spacer(1, 20))
+
+        total_duration_str = self._format_duration(total_worked_seconds)
+        summary_info = [
+            [Paragraph("<b>Total de Horas Trabalhadas:</b>", bold_header_style),
+             Paragraph(total_duration_str, header_style)]
+        ]
+        sum_table = Table(summary_info, colWidths=[175, 360])
+        sum_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(sum_table)
+        story.append(Spacer(1, 35))
+
+        term_style = ParagraphStyle(
+            'TermStyle',
+            fontSize=10,
+            leading=14,
+            alignment=4,
+            textColor=colors.HexColor("#444444")
+        )
+        story.append(Paragraph(
+            "Reconheço a exatidão das anotações de horários registradas neste documento, servindo o mesmo como espelho de ponto mensal regulamentar. Declaro estar ciente de que as informações contidas refletem fielmente as jornadas executadas, passível de validação manual ou assinatura eletrônica via Gov.br.",
+            term_style))
+        story.append(Spacer(1, 60))
+
+        sig_text_style = ParagraphStyle(
+            'SigText',
+            fontSize=10,
+            leading=14,
+            alignment=1,
+            textColor=colors.HexColor("#555555")
+        )
+        sig_line = [
+            [Paragraph("_______________________________________<br/>Assinatura do Colaborador / Gov.br",
+                       sig_text_style),
+             Paragraph("_______________________________________<br/>Representante da Empresa", sig_text_style)]
+        ]
+        sig_table = Table(sig_line, colWidths=[265, 270])
+        story.append(sig_table)
+
+        def _add_pdf_meta(canvas, document):
+            canvas.setTitle("Espelho de Ponto Eletrônico")
+            canvas.setAuthor(company_name)
+
+        doc.build(story, onFirstPage=_add_pdf_meta, onLaterPages=_add_pdf_meta)
+        buffer.seek(0)
+        return buffer
+
+
+timesheet_service = TimesheetService()
