@@ -1,18 +1,20 @@
-from calendar import monthrange
-from datetime import date, datetime, timedelta
 import io
 import re
-from zoneinfo import ZoneInfo
+import zipfile
+from calendar import monthrange
+from datetime import date, datetime, timedelta
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
-
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.models.enums import RecordType, AdjustmentType
+from app.domain.models.enums import RecordType, AdjustmentType, UserRole
+from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.company_repository import company_repository
@@ -301,7 +303,9 @@ class TimesheetService:
 
         total_duration_str = self._format_duration(total_worked_seconds)
         summary_info = [
-            [Paragraph("<b>Total de Horas Trabalhadas:</b>", bold_header_style),
+            [Paragraph("<b>Total de Horas Trabalhadas:</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=11, leading=15, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
              Paragraph(total_duration_str, header_style)]
         ]
         sum_table = Table(summary_info, colWidths=[175, 360])
@@ -346,6 +350,48 @@ class TimesheetService:
         doc.build(story, onFirstPage=_add_pdf_meta, onLaterPages=_add_pdf_meta)
         buffer.seek(0)
         return buffer
+
+    def generate_all_timesheets_pdf_zip(self, db: Session, month: int, year: int,
+                                        employee_ids: Optional[List[int]]) -> io.BytesIO:
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_date = date(year, month, 1)
+        _, last_day = monthrange(year, month)
+        end_date = date(year, month, last_day)
+
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        query = db.query(User).join(TimeRecord, User.id == TimeRecord.user_id).filter(
+            User.role == UserRole.EMPLOYEE,
+            User.is_exempt_from_rules.is_(False),
+            TimeRecord.record_datetime >= start_dt,
+            TimeRecord.record_datetime <= end_dt
+        ).distinct()
+
+        if employee_ids:
+            query = query.filter(User.id.in_(employee_ids))
+
+        users = query.all()
+
+        if not users:
+            raise HTTPException(status_code=404,
+                                detail="Nenhum registro de ponto encontrado para gerar os espelhos neste mês.")
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for user in users:
+                try:
+                    pdf_buffer = self.generate_user_timesheet_pdf(db, user.id, month, year)
+                    safe_name = "".join([c for c in user.name if c.isalpha() or c.isdigit() or c == ' ']).rstrip()
+                    safe_name = safe_name.replace(" ", "_")
+
+                    filename = f"espelho_ponto_{safe_name}_{month:02d}_{year}.pdf"
+                    zip_file.writestr(filename, pdf_buffer.getvalue())
+                except Exception:
+                    continue
+
+        zip_buffer.seek(0)
+        return zip_buffer
 
 
 timesheet_service = TimesheetService()
