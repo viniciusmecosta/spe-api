@@ -169,7 +169,7 @@ class AdjustmentService:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        attachment = adjustment_repository.create_attachment(db, request_id, file_path, file.content_type)
+        attachment = adjustment_repository.create_attachment(db, request_id, safe_filename, file.content_type)
 
         audit_service.log(
             db, actor_id=user_id, target_user_id=request.user_id, action="UPLOAD_ATTACHMENT",
