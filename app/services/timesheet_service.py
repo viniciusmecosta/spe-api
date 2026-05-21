@@ -1,4 +1,5 @@
 import io
+import os
 import re
 import zipfile
 from calendar import monthrange
@@ -7,7 +8,7 @@ from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from zoneinfo import ZoneInfo
@@ -115,14 +116,6 @@ class TimesheetService:
             textColor=colors.HexColor("#222222")
         )
 
-        bold_header_style = ParagraphStyle(
-            'BoldHeaderStyle',
-            fontSize=11,
-            leading=15,
-            fontName='Helvetica-Bold',
-            textColor=colors.HexColor("#000000")
-        )
-
         table_text_style = ParagraphStyle(
             'TableText',
             fontSize=10,
@@ -139,9 +132,28 @@ class TimesheetService:
             textColor=colors.white
         )
 
-        story.append(Paragraph("ESPELHO DE PONTO ELETRÔNICO", title_style))
-
         company_name = company.name if company else "Empresa Não Cadastrada"
+        document_title = f"{company_name} - Registro de Ponto"
+
+        if company and company.logo_path:
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            if os.path.exists(full_logo_path):
+                try:
+                    logo_img = Image(full_logo_path, width=50, height=50)
+                    header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
+                    header_table.setStyle(TableStyle([
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('ALIGN', (1, 0), (1, 0), 'RIGHT')
+                    ]))
+                    story.append(header_table)
+                    story.append(Spacer(1, 10))
+                except Exception:
+                    story.append(Paragraph(document_title, title_style))
+            else:
+                story.append(Paragraph(document_title, title_style))
+        else:
+            story.append(Paragraph(document_title, title_style))
+
         company_cnpj = self._format_cnpj(company.cnpj if company else "")
         company_addr = company.address if company else "-"
         company_phone = self._format_phone(company.phone if company else "")
@@ -336,7 +348,7 @@ class TimesheetService:
             textColor=colors.HexColor("#555555")
         )
         sig_line = [
-            [Paragraph("_______________________________________<br/>Assinatura do Colaborador / Gov.br",
+            [Paragraph("_______________________________________<br/>Assinatura do Colaborador",
                        sig_text_style),
              Paragraph("_______________________________________<br/>Representante da Empresa", sig_text_style)]
         ]
@@ -344,7 +356,7 @@ class TimesheetService:
         story.append(sig_table)
 
         def _add_pdf_meta(canvas, document):
-            canvas.setTitle("Espelho de Ponto Eletrônico")
+            canvas.setTitle(f"{company_name} - Registro de Ponto")
             canvas.setAuthor(company_name)
 
         doc.build(story, onFirstPage=_add_pdf_meta, onLaterPages=_add_pdf_meta)

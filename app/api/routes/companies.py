@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -34,3 +34,12 @@ def update_company(
     current_user: User = Depends(deps.get_current_maintainer)
 ):
     return company_service.update_company(db, obj_in, current_user.id)
+
+
+@router.post("/logo", response_model=CompanyResponse)
+def upload_company_logo(
+        file: UploadFile = File(...),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_maintainer)
+):
+    return company_service.upload_logo(db, file, current_user.id)

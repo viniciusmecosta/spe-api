@@ -1,5 +1,7 @@
 from sqlalchemy import Column, Integer, String
+
 from app.database.base import Base
+
 
 class Company(Base):
     __tablename__ = "companies"
@@ -9,3 +11,4 @@ class Company(Base):
     cnpj = Column(String, unique=True, index=True, nullable=False)
     address = Column(String, nullable=False)
     phone = Column(String, nullable=True)
+    logo_path = Column(String, nullable=True)

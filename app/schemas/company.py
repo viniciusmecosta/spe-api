@@ -28,6 +28,7 @@ class CompanyBase(BaseModel):
     cnpj: str
     address: str
     phone: Optional[str] = None
+    logo_path: Optional[str] = None
 
     @field_validator('cnpj')
     @classmethod
@@ -45,6 +46,7 @@ class CompanyUpdate(BaseModel):
     cnpj: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
+    logo_path: Optional[str] = None
 
     @field_validator('cnpj')
     @classmethod
