@@ -1,5 +1,7 @@
 import logging
+import os
 import time
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +14,8 @@ from app.core.logger import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -60,4 +64,4 @@ def root():
 
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
-app.mount("/static", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

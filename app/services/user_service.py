@@ -18,6 +18,14 @@ class UserService:
                 detail="The user with this username already exists.",
             )
 
+        if getattr(user_in, 'email', None):
+            if db.query(User).filter(User.email == user_in.email).first():
+                raise HTTPException(status_code=400, detail="E-mail já está em uso.")
+
+        if getattr(user_in, 'cpf', None):
+            if db.query(User).filter(User.cpf == user_in.cpf).first():
+                raise HTTPException(status_code=400, detail="CPF já está em uso.")
+
         schedules_in = getattr(user_in, 'schedules', None)
         biometrics_in = getattr(user_in, 'biometrics', None)
 
@@ -26,6 +34,10 @@ class UserService:
         db_user = User(
             name=user_in.name,
             username=user_in.username,
+            email=user_in.email,
+            cpf=user_in.cpf,
+            pis=user_in.pis,
+            endereco=user_in.endereco,
             password_hash=password_hash,
             role=user_in.role,
             is_active=user_in.is_active,
@@ -99,6 +111,16 @@ class UserService:
             existing = user_repository.get_by_username(db, username=user_in.username)
             if existing:
                 raise HTTPException(status_code=400, detail="Username already exists.")
+
+        if user_in.email and user_in.email != user.email:
+            existing_email = db.query(User).filter(User.email == user_in.email).first()
+            if existing_email:
+                raise HTTPException(status_code=400, detail="E-mail já está em uso.")
+
+        if user_in.cpf and user_in.cpf != user.cpf:
+            existing_cpf = db.query(User).filter(User.cpf == user_in.cpf).first()
+            if existing_cpf:
+                raise HTTPException(status_code=400, detail="CPF já está em uso.")
 
         update_data = user_in.model_dump(exclude_unset=True)
         schedules_in = update_data.pop("schedules", None)

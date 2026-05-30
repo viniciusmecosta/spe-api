@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.session import SessionLocal
-from app.domain.models.enums import RecordType
+from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
@@ -107,8 +107,9 @@ class BackupService:
             logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
-    def _send_email(self, attachments: List[Tuple[str, str]], report_html: str, period_text: str) -> bool:
-        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.EMAIL_TO]):
+    def _send_email(self, to_emails: List[str], attachments: List[Tuple[str, str]], report_html: str,
+                    period_text: str) -> bool:
+        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]) or not to_emails:
             return False
 
         try:
@@ -132,7 +133,7 @@ class BackupService:
                     msg['From'] = ""
                 msg['Subject'] = base_subject
 
-            msg['To'] = settings.EMAIL_TO
+            msg['To'] = ", ".join(to_emails)
 
             body_html = (
                 f"<html><body style=\"font-family: Arial, sans-serif; color: #333;\">"
@@ -163,7 +164,7 @@ class BackupService:
             server.starttls()
             server.ehlo()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(msg['From'], msg['To'], msg.as_string())
+            server.sendmail(msg['From'], to_emails, msg.as_string())
             server.quit()
             return True
 
@@ -172,13 +173,20 @@ class BackupService:
             return False
 
     def send_database_backup(self, db: Optional[Session] = None) -> bool:
-        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.EMAIL_TO]):
+        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             raise HTTPException(status_code=400,
                                 detail="Serviço de email não configurado. Verifique as variáveis de ambiente (SMTP).")
 
         with self._manual_backup_lock:
             session = db or SessionLocal()
             try:
+                maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                         User.email.isnot(None)).all()
+                to_emails = [m.email for m in maintainers if m.email]
+
+                if not to_emails:
+                    raise HTTPException(status_code=400, detail="Nenhum mantenedor com e-mail cadastrado.")
+
                 tz = ZoneInfo(settings.TIMEZONE)
                 now = datetime.now(tz)
                 now_local = now.replace(tzinfo=None)
@@ -204,7 +212,7 @@ class BackupService:
             if os.path.exists(log_path):
                 attachments.append((log_path, f"log_{log_filename}"))
 
-            success = self._send_email(attachments, full_report_html, period_text)
+            success = self._send_email(to_emails, attachments, full_report_html, period_text)
 
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -236,6 +244,14 @@ class BackupService:
                 ).first()
 
                 if ran_today:
+                    return
+
+                maintainers = db_read.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                         User.email.isnot(None)).all()
+                to_emails = [m.email for m in maintainers if m.email]
+
+                if not to_emails:
+                    logger.warning("Nenhum mantenedor com e-mail cadastrado. Abortando rotina.")
                     return
 
                 last_success = db_read.query(RoutineLog).filter(
@@ -289,7 +305,7 @@ class BackupService:
 
             attachments.insert(0, (backup_path, "spe.db"))
 
-            success = self._send_email(attachments, full_report_html, period_text)
+            success = self._send_email(to_emails, attachments, full_report_html, period_text)
 
             if os.path.exists(backup_path):
                 os.remove(backup_path)

@@ -7,6 +7,7 @@ from app.api.routes import (
     auth,
     backup,
     biometrics,
+    companies,
     device,
     device_credentials,
     holidays,
@@ -16,6 +17,7 @@ from app.api.routes import (
     sync,
     telegram_actions,
     time_records,
+    timesheets,
     users
 )
 from app.core.config import settings
@@ -34,6 +36,7 @@ api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(backup.router, prefix="/backup", tags=["Backup"])
 api_router.include_router(biometrics.router, prefix="/biometric", tags=["Biometric"])
+api_router.include_router(companies.router, prefix="/companies", tags=["Companies"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
 api_router.include_router(device_credentials.router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(holidays.router, prefix="/holidays", tags=["Holidays"])
@@ -43,4 +46,5 @@ api_router.include_router(routine_logs.router, prefix="/routine-logs", tags=["Ro
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
 api_router.include_router(telegram_actions.router, prefix="/telegram", tags=["Telegram"])
 api_router.include_router(time_records.router, prefix="/time-records", tags=["Time Records"])
+api_router.include_router(timesheets.router, prefix="/timesheets", tags=["Timesheets"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])

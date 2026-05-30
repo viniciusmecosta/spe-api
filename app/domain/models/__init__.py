@@ -1,6 +1,7 @@
 from .adjustment import AdjustmentRequest, AdjustmentAttachment
 from .audit import AuditLog
 from .biometric import UserBiometric
+from .company import Company
 from .device import DeviceCredential
 from .holiday import Holiday
 from .payroll import PayrollClosure
@@ -13,6 +14,7 @@ __all__ = [
     "AdjustmentAttachment",
     "AuditLog",
     "UserBiometric",
+    "Company",
     "DeviceCredential",
     "Holiday",
     "PayrollClosure",
