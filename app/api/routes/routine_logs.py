@@ -1,7 +1,8 @@
 from datetime import date
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.api import deps
 from app.domain.models.user import User

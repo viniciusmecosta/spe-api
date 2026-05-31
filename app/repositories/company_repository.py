@@ -1,7 +1,10 @@
-from sqlalchemy.orm import Session
 from typing import Optional
+
+from sqlalchemy.orm import Session
+
 from app.domain.models.company import Company
 from app.schemas.company import CompanyCreate, CompanyUpdate
+
 
 class CompanyRepository:
     def get_current(self, db: Session) -> Optional[Company]:
@@ -27,5 +30,6 @@ class CompanyRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
 
 company_repository = CompanyRepository()

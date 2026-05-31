@@ -20,6 +20,7 @@ from app.services.report_service import report_service
 
 router = APIRouter()
 
+
 def check_report_permission(current_user: User):
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
     if not is_manager and not current_user.can_export_report:
@@ -29,6 +30,7 @@ def check_report_permission(current_user: User):
         )
     return True
 
+
 @router.get("/dashboard", response_model=DashboardMetricsResponse)
 def get_dashboard(
         db: Session = Depends(deps.get_db),
@@ -37,12 +39,14 @@ def get_dashboard(
     check_report_permission(current_user)
     return report_service.get_dashboard_metrics(db)
 
+
 @router.get("/my/dashboard", response_model=MyDashboardResponse)
 def get_my_dashboard(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return report_service.get_my_dashboard(db, current_user)
+
 
 @router.get("/history/me", response_model=HistoryResponse)
 def get_my_history(
@@ -52,6 +56,7 @@ def get_my_history(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return report_service.get_history_report(db, current_user.id, month, year, current_user)
+
 
 @router.get("/history/user/{user_id}", response_model=HistoryResponse)
 def get_user_history(
@@ -65,6 +70,7 @@ def get_user_history(
     if not is_manager and not current_user.can_export_report and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Sem permissão para acessar o histórico deste usuário.")
     return report_service.get_history_report(db, user_id, month, year, current_user)
+
 
 @router.get("/team-hours", response_model=TeamHoursResponse)
 def get_team_hours(
@@ -81,6 +87,7 @@ def get_team_hours(
         year = now.year
 
     return report_service.get_team_worked_hours(db, month, year, current_user)
+
 
 @router.get("/export/excel")
 def export_monthly_report_excel(
@@ -105,6 +112,7 @@ def export_monthly_report_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
 
 @router.get("/user/{user_id}", response_model=AdvancedUserReportResponse)
 def get_user_detailed_report(

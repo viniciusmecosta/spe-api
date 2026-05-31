@@ -1,6 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
 from typing import Optional, Any
+
+from pydantic import BaseModel, Field
 
 from app.domain.models.enums import DeviceKeyType
 

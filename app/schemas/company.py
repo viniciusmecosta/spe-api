@@ -1,6 +1,8 @@
 import re
-from pydantic import BaseModel, field_validator
 from typing import Optional
+
+from pydantic import BaseModel, field_validator
+
 
 def validate_cnpj_logic(cnpj: str) -> bool:
     cnpj = re.sub(r'[^0-9]', '', cnpj)
@@ -23,6 +25,7 @@ def validate_cnpj_logic(cnpj: str) -> bool:
         return False
     return True
 
+
 class CompanyBase(BaseModel):
     name: str
     cnpj: str
@@ -38,8 +41,10 @@ class CompanyBase(BaseModel):
             raise ValueError('CNPJ inválido')
         return v_clean
 
+
 class CompanyCreate(CompanyBase):
     pass
+
 
 class CompanyUpdate(BaseModel):
     name: Optional[str] = None
@@ -57,6 +62,7 @@ class CompanyUpdate(BaseModel):
                 raise ValueError('CNPJ inválido')
             return v_clean
         return v
+
 
 class CompanyResponse(CompanyBase):
     id: int

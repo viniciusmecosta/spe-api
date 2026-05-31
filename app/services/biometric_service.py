@@ -1,6 +1,7 @@
 import logging
-from sqlalchemy.orm import Session
 from typing import List
+
+from sqlalchemy.orm import Session
 
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User

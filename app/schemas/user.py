@@ -1,7 +1,8 @@
 import re
 from datetime import datetime
-from pydantic import BaseModel, field_validator, EmailStr
 from typing import Optional, List
+
+from pydantic import BaseModel, field_validator, EmailStr
 
 from app.domain.models.enums import UserRole
 from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse

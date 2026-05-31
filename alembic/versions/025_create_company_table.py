@@ -6,6 +6,7 @@ down_revision = '024'
 branch_labels = None
 depends_on = None
 
+
 def upgrade() -> None:
     op.create_table(
         'companies',
@@ -18,6 +19,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_companies_cnpj'), 'companies', ['cnpj'], unique=True)
     op.create_index(op.f('ix_companies_id'), 'companies', ['id'], unique=False)
+
 
 def downgrade() -> None:
     op.drop_index(op.f('ix_companies_id'), table_name='companies')

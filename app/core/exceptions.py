@@ -1,11 +1,12 @@
 import http
 import logging
+from typing import Optional
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

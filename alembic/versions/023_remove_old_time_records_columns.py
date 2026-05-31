@@ -6,6 +6,7 @@ down_revision = '022'
 branch_labels = None
 depends_on = None
 
+
 def upgrade() -> None:
     with op.batch_alter_table('time_records', schema=None) as batch_op:
         batch_op.drop_column('original_timestamp')

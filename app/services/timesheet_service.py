@@ -4,14 +4,15 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+from typing import List, Optional
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, AdjustmentType, UserRole

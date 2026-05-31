@@ -1,6 +1,7 @@
 from datetime import datetime, date, timedelta
-from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
+
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType

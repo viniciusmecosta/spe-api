@@ -1,6 +1,7 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 
 from app.core.config import settings
 from app.database.base import Base

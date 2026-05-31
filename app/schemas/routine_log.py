@@ -1,6 +1,7 @@
 from datetime import date, datetime
-from pydantic import BaseModel, ConfigDict
 from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
 class RoutineLogBase(BaseModel):

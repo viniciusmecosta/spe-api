@@ -1,7 +1,8 @@
+from typing import Any, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole

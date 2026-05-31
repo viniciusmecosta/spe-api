@@ -1,7 +1,8 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base

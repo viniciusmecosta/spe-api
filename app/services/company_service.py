@@ -1,9 +1,10 @@
 import os
 import shutil
 import uuid
+from typing import Optional
+
 from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.core.config import settings
 from app.domain.models.company import Company

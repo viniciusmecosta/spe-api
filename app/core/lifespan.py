@@ -1,8 +1,9 @@
+from contextlib import asynccontextmanager
+from zoneinfo import ZoneInfo
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.services.backup_service import backup_service

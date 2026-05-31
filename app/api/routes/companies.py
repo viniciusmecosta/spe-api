@@ -24,8 +24,8 @@ def _enrich_logo_url(company, request: Request) -> Optional[CompanyResponse]:
 @router.get("/", response_model=Optional[CompanyResponse])
 def get_company(
         request: Request,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user)
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_active_user)
 ):
     company = company_service.get_company(db)
     return _enrich_logo_url(company, request)
@@ -33,10 +33,10 @@ def get_company(
 
 @router.post("/", response_model=CompanyResponse)
 def create_company(
-    obj_in: CompanyCreate,
+        obj_in: CompanyCreate,
         request: Request,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_maintainer)
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_maintainer)
 ):
     company = company_service.create_company(db, obj_in, current_user.id)
     return _enrich_logo_url(company, request)
@@ -44,10 +44,10 @@ def create_company(
 
 @router.put("/", response_model=CompanyResponse)
 def update_company(
-    obj_in: CompanyUpdate,
+        obj_in: CompanyUpdate,
         request: Request,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_maintainer)
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_maintainer)
 ):
     company = company_service.update_company(db, obj_in, current_user.id)
     return _enrich_logo_url(company, request)
