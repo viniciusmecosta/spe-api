@@ -18,6 +18,7 @@ from app.services.payroll_service import payroll_service
 
 
 class AdjustmentService:
+
     def _enrich_adjustments_with_records(self, db: Session, adjustments: list[AdjustmentRequest]) -> list[
         AdjustmentRequest]:
         if not adjustments:
@@ -79,7 +80,6 @@ class AdjustmentService:
     def create_manager_waiver(self, db: Session, waiver_in: AdjustmentWaiverCreate,
                               manager_id: int) -> AdjustmentRequest:
         payroll_service.validate_period_open(db, waiver_in.target_date)
-
         self._validate_waiver_limit(db, waiver_in.user_id, waiver_in.target_date, waiver_in.amount_hours)
 
         adj_in = AdjustmentRequestCreate(
@@ -109,7 +109,6 @@ class AdjustmentService:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
             raise HTTPException(status_code=404, detail="Adjustment not found")
-
         payroll_service.validate_period_open(db, request.target_date)
 
         target_user_id = request.user_id
@@ -141,16 +140,16 @@ class AdjustmentService:
 
         file_ext = filename.split(".")[-1]
         allowed_extensions = {"pdf", "jpg", "jpeg", "png"}
-
         if file_ext not in allowed_extensions:
             raise HTTPException(
                 status_code=400,
                 detail="Tipo de arquivo não permitido. Use apenas PDF, JPG ou PNG."
             )
+
         header = file.file.read(10)
         file.file.seek(0)
-
         is_valid = False
+
         if file_ext == "pdf" and header.startswith(b"%PDF"):
             is_valid = True
         elif file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -163,6 +162,7 @@ class AdjustmentService:
                 status_code=400,
                 detail="O conteúdo do arquivo não corresponde à extensão ou está corrompido."
             )
+
         safe_filename = f"{uuid.uuid4()}.{file_ext}"
         file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
 
@@ -178,11 +178,11 @@ class AdjustmentService:
         )
         return attachment
 
-    def approve_adjustment(self, db: Session, request_id: int, manager_id: int) -> AdjustmentRequest:
+    def approve_adjustment(self, db: Session, request_id: int, manager_id: int,
+                           comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
             raise HTTPException(status_code=404, detail="Request not found")
-
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
@@ -192,18 +192,17 @@ class AdjustmentService:
             self._execute_adjustment_action(db, request)
 
         old_status = request.status.value
-        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id)
+        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
 
         audit_service.log(
             db, actor_id=manager_id, target_user_id=request.user_id, action="APPROVE_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=request_id,
-            old_data={"status": old_status}, new_data={"status": updated.status.value}
+            old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
     def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest):
         target_dt = datetime.combine(request.target_date, request.time)
-
         if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
             record = db.query(TimeRecord).filter(
                 TimeRecord.user_id == request.user_id,
@@ -223,7 +222,6 @@ class AdjustmentService:
         request = adjustment_repository.get(db, request_id)
         if not request:
             raise HTTPException(status_code=404, detail="Request not found")
-
         payroll_service.validate_period_open(db, request.target_date)
 
         old_status = request.status.value

@@ -16,7 +16,6 @@ from app.services.adjustment_service import adjustment_service
 
 router = APIRouter()
 
-
 @router.post("/", response_model=AdjustmentRequestResponse)
 def create_adjustment_request(
         request_in: AdjustmentRequestCreate,
@@ -24,7 +23,6 @@ def create_adjustment_request(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return adjustment_service.create_adjustment_request(db, current_user.id, request_in)
-
 
 @router.post("/admin/waive", response_model=AdjustmentRequestResponse)
 def waive_absence_admin(
@@ -34,7 +32,6 @@ def waive_absence_admin(
 ) -> Any:
     return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
 
-
 @router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
 def upload_adjustment_attachment(
         id: int,
@@ -43,7 +40,6 @@ def upload_adjustment_attachment(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return adjustment_service.upload_attachment(db, id, file, current_user.id)
-
 
 @router.get("/{id}/download", response_class=FileResponse)
 def download_adjustment_attachment(
@@ -63,7 +59,6 @@ def download_adjustment_attachment(
         raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
 
     attachment = adjustment.attachments[-1]
-
     filename = os.path.basename(attachment.file_path)
     safe_file_path = os.path.join(settings.UPLOAD_DIR, filename)
 
@@ -79,7 +74,6 @@ def download_adjustment_attachment(
         media_type='application/octet-stream'
     )
 
-
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(
         skip: int = 0,
@@ -88,7 +82,6 @@ def read_my_adjustments(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return adjustment_service.get_my_enriched(db, current_user.id, skip, limit)
-
 
 @router.get("/", response_model=List[AdjustmentRequestResponse])
 def read_all_adjustments(
@@ -99,15 +92,14 @@ def read_all_adjustments(
 ) -> Any:
     return adjustment_service.get_all_enriched(db, skip, limit)
 
-
 @router.put("/{id}/approve", response_model=AdjustmentRequestResponse)
 def approve_adjustment(
         id: int,
+        comment: str | None = Body(None, embed=True),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return adjustment_service.approve_adjustment(db, id, current_user.id)
-
+    return adjustment_service.approve_adjustment(db, id, current_user.id, comment)
 
 @router.put("/{id}/reject", response_model=AdjustmentRequestResponse)
 def reject_adjustment(
@@ -117,7 +109,6 @@ def reject_adjustment(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return adjustment_service.reject_adjustment(db, id, current_user.id, comment)
-
 
 @router.delete("/{id}")
 def delete_adjustment(

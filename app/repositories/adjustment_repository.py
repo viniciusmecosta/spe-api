@@ -1,9 +1,9 @@
 from datetime import date
 
-from sqlalchemy import desc, and_
+from sqlalchemy import desc, and_, func
 from sqlalchemy.orm import Session
 
-from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment
+from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment, get_local_time
 from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.schemas.adjustment import AdjustmentRequestCreate
 
@@ -30,14 +30,14 @@ class AdjustmentRepository:
     def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
         return db.query(AdjustmentRequest) \
             .filter(AdjustmentRequest.user_id == user_id) \
-            .order_by(desc(AdjustmentRequest.created_at)) \
+            .order_by(desc(func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at))) \
             .offset(skip) \
             .limit(limit) \
             .all()
 
     def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
         return db.query(AdjustmentRequest) \
-            .order_by(desc(AdjustmentRequest.created_at)) \
+            .order_by(desc(func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at))) \
             .offset(skip) \
             .limit(limit) \
             .all()
@@ -71,6 +71,7 @@ class AdjustmentRepository:
         db_obj.status = status
         db_obj.manager_id = manager_id
         db_obj.manager_comment = comment
+        db_obj.reviewed_at = get_local_time()
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
