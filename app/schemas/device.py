@@ -24,6 +24,7 @@ class DeviceActions(BaseModel):
 class FeedbackPayload(BaseModel):
     line1: str
     line2: str
+    line3: str
     led: str
     actions: DeviceActions
 

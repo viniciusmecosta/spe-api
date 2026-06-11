@@ -37,8 +37,9 @@ def register_device_punch(
             type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
 
             return FeedbackPayload(
-                line1=f"Ola, {user_first_name[:11]}",
-                line2=f"{type_label} {time_formatted}",
+                line1=user_first_name[:16],
+                line2=time_formatted,
+                line3=type_label,
                 led="green",
                 actions=DeviceActions(
                     buzzer_pattern=1, buzzer_duration_ms=500
@@ -48,6 +49,7 @@ def register_device_punch(
             return FeedbackPayload(
                 line1="Erro",
                 line2=message[:16],
+                line3="",
                 led="red",
                 actions=DeviceActions(
                     buzzer_pattern=2, buzzer_duration_ms=1000
@@ -57,6 +59,7 @@ def register_device_punch(
         return FeedbackPayload(
             line1="Erro Interno",
             line2="Contate Admin",
+            line3="",
             led="red",
             actions=DeviceActions(
                 buzzer_pattern=2, buzzer_duration_ms=1000
@@ -77,6 +80,7 @@ def enroll_device_biometric(
             return FeedbackPayload(
                 line1="Cadastro OK",
                 line2=f"ID: {payload.sensor_index}",
+                line3="",
                 led="green",
                 actions=DeviceActions(
                     buzzer_pattern=1, buzzer_duration_ms=500
@@ -86,6 +90,7 @@ def enroll_device_biometric(
             return FeedbackPayload(
                 line1="Erro Cadastro",
                 line2=msg[:16],
+                line3="",
                 led="red",
                 actions=DeviceActions(
                     buzzer_pattern=2, buzzer_duration_ms=1000
@@ -95,6 +100,7 @@ def enroll_device_biometric(
         return FeedbackPayload(
             line1="Erro Interno",
             line2="Contate Admin",
+            line3="",
             led="red",
             actions=DeviceActions(
                 buzzer_pattern=2, buzzer_duration_ms=1000
