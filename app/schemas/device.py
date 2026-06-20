@@ -83,3 +83,12 @@ class DeviceCredentialResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ManagerVerifyRequest(BaseModel):
+    sensor_index: int
+
+
+class ManagerVerifyResponse(BaseModel):
+    is_allowed: bool
+    message: str

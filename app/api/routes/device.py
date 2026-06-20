@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.core.config import settings
 from app.core.security import get_client_ip
+from app.domain.models.biometric import UserBiometric
 from app.domain.models.device import DeviceCredential
-from app.domain.models.enums import RecordType
+from app.domain.models.enums import RecordType, UserRole
+from app.domain.models.user import User
 from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
-    BiometricSyncData, BiometricSyncAck, TimeResponsePayload
+    BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
+    ManagerVerifyRequest, ManagerVerifyResponse
 )
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
@@ -135,4 +138,40 @@ def get_device_time(
     return TimeResponsePayload(
         unix=int(now.timestamp()),
         formatted=now.strftime("%d/%m/%Y %H:%M:%S")
+    )
+
+
+@router.post("/verify-manager", response_model=ManagerVerifyResponse)
+def verify_manager_access(
+        payload: ManagerVerifyRequest,
+        db: Session = Depends(deps.get_db),
+        device: DeviceCredential = Depends(deps.verify_device_api_key)
+):
+    managers_with_bio = db.query(User).join(UserBiometric).filter(
+        User.role.in_([UserRole.MANAGER, UserRole.MAINTAINER]),
+        User.is_active == True
+    ).first()
+
+    if not managers_with_bio:
+        return ManagerVerifyResponse(
+            is_allowed=True,
+            message="Nenhum gestor cadastrado. Acesso liberado."
+        )
+
+    biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == payload.sensor_index).first()
+    if not biometric:
+        return ManagerVerifyResponse(
+            is_allowed=False,
+            message="Biometria não encontrada."
+        )
+
+    if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
+        return ManagerVerifyResponse(
+            is_allowed=True,
+            message="Acesso autorizado."
+        )
+
+    return ManagerVerifyResponse(
+        is_allowed=False,
+        message="Acesso negado."
     )
