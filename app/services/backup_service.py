@@ -322,7 +322,6 @@ class BackupService:
                     )
                     db_write.add(log_entry)
                     db_write.commit()
-                    logger.info('Backup - "Email diário" OK')
                 else:
                     log_entry = RoutineLog(
                         routine_type="EMAIL_DAILY_BACKUP",

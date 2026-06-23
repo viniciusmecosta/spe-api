@@ -208,7 +208,6 @@ class TelegramService:
                     )
                     db_write.add(log_entry)
                     db_write.commit()
-                    logger.info('Backup - "Telegram horário" OK')
                 else:
                     logger.error('Backup - "Telegram horário" Error')
             except Exception as e:
