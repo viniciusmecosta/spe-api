@@ -4,7 +4,7 @@ from datetime import date, timedelta, datetime
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -121,7 +121,7 @@ class ReportService:
         )
 
     def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
-        query = db.query(User).filter(
+        query = db.query(User).options(joinedload(User.schedules)).filter(
             User.role == UserRole.EMPLOYEE,
             User.is_exempt_from_rules.is_(False)
         )
@@ -492,7 +492,7 @@ class ReportService:
     def get_monthly_summary(self, db: Session, month: int, year: int,
                             employee_ids: Optional[List[int]] = None,
                             current_user: Optional[User] = None) -> MonthlyReportResponse:
-        query = db.query(User)
+        query = db.query(User).options(joinedload(User.schedules))
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 

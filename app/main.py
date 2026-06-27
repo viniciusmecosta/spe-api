@@ -3,6 +3,7 @@ import os
 import time
 
 from fastapi import FastAPI, Request
+from fastapi.responses import ORJSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI(
+    default_response_class=ORJSONResponse,
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",

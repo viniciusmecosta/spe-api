@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.user import User
+from sqlalchemy.orm import joinedload
 from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
 
@@ -33,7 +34,7 @@ class ExcelService:
 
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
                               current_user: Optional[User] = None) -> BytesIO:
-        query = db.query(User)
+        query = db.query(User).options(joinedload(User.schedules))
         query = report_service._apply_employee_filters(query, employee_ids)
         users = query.all()
 
