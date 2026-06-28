@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 from app.domain.models.firmware import Firmware
@@ -9,6 +9,9 @@ class FirmwareRepository:
 
     def get_latest(self, db: Session) -> Optional[Firmware]:
         return db.query(Firmware).order_by(desc(Firmware.created_at)).first()
+
+    def get_all(self, db: Session) -> List[Firmware]:
+        return db.query(Firmware).order_by(desc(Firmware.created_at)).all()
 
     def create(self, db: Session, version: str, file_path: str) -> Firmware:
         db_obj = Firmware(version=version, file_path=file_path)

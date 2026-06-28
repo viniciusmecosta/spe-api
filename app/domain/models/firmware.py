@@ -8,6 +8,6 @@ class Firmware(Base):
     __tablename__ = "firmwares"
 
     id = Column(Integer, primary_key=True, index=True)
-    version = Column(String, unique=True, nullable=False)
+    version = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), default=get_local_time)

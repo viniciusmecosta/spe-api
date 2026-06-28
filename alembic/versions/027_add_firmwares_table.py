@@ -15,8 +15,7 @@ def upgrade() -> None:
         sa.Column('version', sa.String(), nullable=False),
         sa.Column('file_path', sa.String(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=True),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('version')
+        sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_firmwares_id'), 'firmwares', ['id'], unique=False)
 
