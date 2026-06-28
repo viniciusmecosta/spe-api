@@ -10,6 +10,7 @@ from app.api.routes import (
     companies,
     device,
     device_credentials,
+    firmware,
     holidays,
     payroll,
     reports,
@@ -39,6 +40,7 @@ api_router.include_router(biometrics.router, prefix="/biometric", tags=["Biometr
 api_router.include_router(companies.router, prefix="/companies", tags=["Companies"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
 api_router.include_router(device_credentials.router, prefix="/device-credentials", tags=["Device Credentials"])
+api_router.include_router(firmware.router, prefix="/firmware", tags=["Firmware OTA"])
 api_router.include_router(holidays.router, prefix="/holidays", tags=["Holidays"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])

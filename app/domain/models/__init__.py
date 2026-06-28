@@ -3,6 +3,7 @@ from .audit import AuditLog
 from .biometric import UserBiometric
 from .company import Company
 from .device import DeviceCredential
+from .firmware import Firmware
 from .holiday import Holiday
 from .payroll import PayrollClosure
 from .routine_log import RoutineLog
@@ -16,6 +17,7 @@ __all__ = [
     "UserBiometric",
     "Company",
     "DeviceCredential",
+    "Firmware",
     "Holiday",
     "PayrollClosure",
     "RoutineLog",
