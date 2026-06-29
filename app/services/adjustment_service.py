@@ -11,7 +11,7 @@ from app.domain.models.adjustment import AdjustmentRequest
 from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.domain.models.time_record import TimeRecord
 from app.repositories.adjustment_repository import adjustment_repository
-from app.repositories.time_record_repository import time_record_repository
+from app.repositories.time_record_repository import time_record_repository, get_local_time
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentWaiverCreate
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
@@ -34,7 +34,8 @@ class AdjustmentService:
         records = db.query(TimeRecord).filter(
             TimeRecord.user_id.in_(user_ids),
             TimeRecord.record_datetime >= min_dt,
-            TimeRecord.record_datetime <= max_dt
+            TimeRecord.record_datetime <= max_dt,
+            TimeRecord.is_ignored == False
         ).order_by(TimeRecord.record_datetime.asc()).all()
 
         for adj in adjustments:
@@ -189,7 +190,7 @@ class AdjustmentService:
             if not request.attachments:
                 raise HTTPException(status_code=400, detail="Para aprovar um abono, é obrigatório haver anexo.")
         else:
-            self._execute_adjustment_action(db, request)
+            self._execute_adjustment_action(db, request, manager_id)
 
         old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
@@ -201,16 +202,19 @@ class AdjustmentService:
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
-    def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest):
+    def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
         target_dt = datetime.combine(request.target_date, request.time)
         if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
             record = db.query(TimeRecord).filter(
                 TimeRecord.user_id == request.user_id,
                 TimeRecord.record_type == request.record_type,
-                TimeRecord.record_datetime == target_dt
+                TimeRecord.record_datetime == target_dt,
+                TimeRecord.is_ignored == False
             ).first()
             if record:
-                db.delete(record)
+                record.is_ignored = True
+                record.deleted_at = get_local_time()
+                record.deleted_by = manager_id
                 db.commit()
         else:
             time_record_repository.create(

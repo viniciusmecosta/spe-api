@@ -5,7 +5,7 @@ from sqlalchemy import desc, and_, distinct, func
 from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType
-from app.domain.models.time_record import TimeRecord
+from app.domain.models.time_record import TimeRecord, get_local_time
 from app.schemas.time_record import TimeRecordUpdate
 
 
@@ -31,19 +31,24 @@ class TimeRecordRepository:
         return db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
 
     def get_last_by_user(self, db: Session, user_id: int) -> TimeRecord | None:
-        return db.query(TimeRecord).filter(TimeRecord.user_id == user_id).order_by(
-            desc(TimeRecord.record_datetime)).first()
+        return db.query(TimeRecord).filter(
+            TimeRecord.user_id == user_id,
+            TimeRecord.is_ignored == False
+        ).order_by(desc(TimeRecord.record_datetime)).first()
 
     def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
-        return db.query(TimeRecord).filter(TimeRecord.user_id == user_id).order_by(
-            desc(TimeRecord.record_datetime)).offset(skip).limit(limit).all()
+        return db.query(TimeRecord).filter(
+            TimeRecord.user_id == user_id,
+            TimeRecord.is_ignored == False
+        ).order_by(desc(TimeRecord.record_datetime)).offset(skip).limit(limit).all()
 
     def get_by_range(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[TimeRecord]:
         return db.query(TimeRecord).filter(
             and_(
                 TimeRecord.user_id == user_id,
                 TimeRecord.record_datetime >= start_date,
-                TimeRecord.record_datetime <= end_date
+                TimeRecord.record_datetime <= end_date,
+                TimeRecord.is_ignored == False
             )
         ).order_by(TimeRecord.record_datetime).all()
 
@@ -53,7 +58,8 @@ class TimeRecordRepository:
             and_(
                 TimeRecord.user_id.in_(user_ids),
                 TimeRecord.record_datetime >= start_date,
-                TimeRecord.record_datetime <= end_date
+                TimeRecord.record_datetime <= end_date,
+                TimeRecord.is_ignored == False
             )
         ).order_by(TimeRecord.record_datetime).all()
 
@@ -61,7 +67,8 @@ class TimeRecordRepository:
         return db.query(func.count(distinct(TimeRecord.user_id))).filter(
             and_(
                 TimeRecord.record_datetime >= start_date,
-                TimeRecord.record_datetime <= end_date
+                TimeRecord.record_datetime <= end_date,
+                TimeRecord.is_ignored == False
             )
         ).scalar()
 
@@ -75,9 +82,13 @@ class TimeRecordRepository:
         db.refresh(db_obj)
         return db_obj
 
-    def delete(self, db: Session, record_id: int):
-        db.query(TimeRecord).filter(TimeRecord.id == record_id).delete()
-        db.commit()
+    def delete(self, db: Session, record_id: int, manager_id: int):
+        record = db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
+        if record:
+            record.deleted_at = get_local_time()
+            record.deleted_by = manager_id
+            record.is_ignored = True
+            db.commit()
 
 
 time_record_repository = TimeRecordRepository()

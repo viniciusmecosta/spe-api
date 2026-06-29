@@ -94,10 +94,24 @@ class TimeRecordService:
 
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
-        record.record_type = new_type
+        
+        record.is_ignored = True
+        
+        new_record = TimeRecord(
+            user_id=record.user_id,
+            record_type=new_type,
+            record_datetime=record.record_datetime,
+            ip_address=record.ip_address,
+            device_name=record.device_name,
+            platform=record.platform,
+            biometric_id=record.biometric_id,
+            edited_by=current_user.id
+        )
+        db.add(new_record)
+        db.flush()
 
         adjustment = ManualAdjustment(
-            time_record_id=record.id,
+            time_record_id=new_record.id,
             previous_type=previous_type,
             new_type=new_type,
             adjusted_by_user_id=current_user.id
@@ -106,7 +120,7 @@ class TimeRecordService:
         db.add(adjustment)
         db.add(record)
         db.commit()
-        db.refresh(record)
+        db.refresh(new_record)
 
         audit_service.log(
             db,
@@ -114,11 +128,11 @@ class TimeRecordService:
             target_user_id=record.user_id,
             action="TOGGLE_RECORD",
             entity="TIME_RECORD",
-            entity_id=record.id,
+            entity_id=new_record.id,
             old_data={"record_type": previous_type.value},
             new_data={"record_type": new_type.value}
         )
-        return record
+        return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
                             ip_address: str, device_name: Optional[str]) -> TimeRecord:
@@ -170,13 +184,27 @@ class TimeRecordService:
             "record_time": str(record.record_datetime)
         }
 
-        updated = time_record_repository.update(db, record, obj_in)
-        updated.edited_by = manager_id
-        db.add(updated)
-        db.commit()
-        db.refresh(updated)
+        record.is_ignored = True
 
-        justification_val = updated.edit_justification.value if updated.edit_justification else ""
+        new_record = TimeRecord(
+            user_id=record.user_id,
+            record_type=obj_in.record_type if obj_in.record_type else record.record_type,
+            record_datetime=obj_in.record_datetime if obj_in.record_datetime else record.record_datetime,
+            ip_address=record.ip_address,
+            device_name=record.device_name,
+            platform=record.platform,
+            biometric_id=record.biometric_id,
+            edited_by=manager_id,
+            edit_justification=obj_in.edit_justification if obj_in.edit_justification else record.edit_justification,
+            edit_reason=obj_in.edit_reason if obj_in.edit_reason else record.edit_reason
+        )
+
+        db.add(new_record)
+        db.add(record)
+        db.commit()
+        db.refresh(new_record)
+
+        justification_val = new_record.edit_justification.value if new_record.edit_justification else ""
 
         audit_service.log(
             db,
@@ -184,16 +212,16 @@ class TimeRecordService:
             target_user_id=employee_id,
             action="UPDATE_RECORD_ADMIN",
             entity="TIME_RECORD",
-            entity_id=record.id,
+            entity_id=new_record.id,
             old_data=old_data,
             new_data={
-                "record_type": updated.record_type.value,
-                "record_time": str(updated.record_datetime),
+                "record_type": new_record.record_type.value,
+                "record_time": str(new_record.record_datetime),
                 "justification": justification_val,
-                "reason": updated.edit_reason
+                "reason": new_record.edit_reason
             }
         )
-        return updated
+        return new_record
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
         record = time_record_repository.get(db, record_id)
@@ -209,7 +237,7 @@ class TimeRecordService:
             "record_time": str(record.record_datetime)
         }
 
-        time_record_repository.delete(db, record_id)
+        time_record_repository.delete(db, record_id, manager_id)
 
         audit_service.log(
             db,
