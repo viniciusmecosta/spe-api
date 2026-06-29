@@ -42,16 +42,3 @@ class TimeRecord(Base):
     deleter = relationship("User", foreign_keys=[deleted_by])
     biometric = relationship("UserBiometric", back_populates="time_records")
 
-
-class ManualAdjustment(Base):
-    __tablename__ = "manual_adjustments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    time_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=False)
-    previous_type = Column(Enum(RecordType), nullable=False)
-    new_type = Column(Enum(RecordType), nullable=False)
-    adjusted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    adjusted_at = Column(DateTime(timezone=True), default=get_local_time)
-
-    time_record = relationship("TimeRecord", backref="manual_adjustments")
-    adjusted_by = relationship("User", foreign_keys=[adjusted_by_user_id])

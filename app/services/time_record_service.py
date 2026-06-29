@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.time_record import TimeRecord, ManualAdjustment
+from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
@@ -110,14 +110,6 @@ class TimeRecordService:
         db.add(new_record)
         db.flush()
 
-        adjustment = ManualAdjustment(
-            time_record_id=new_record.id,
-            previous_type=previous_type,
-            new_type=new_type,
-            adjusted_by_user_id=current_user.id
-        )
-
-        db.add(adjustment)
         db.add(record)
         db.commit()
         db.refresh(new_record)
