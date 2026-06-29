@@ -28,7 +28,10 @@ class TimeRecordRepository:
         return db_record
 
     def get(self, db: Session, record_id: int) -> TimeRecord | None:
-        return db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
+        return db.query(TimeRecord).filter(
+            TimeRecord.id == record_id,
+            TimeRecord.is_ignored == False
+        ).first()
 
     def get_last_by_user(self, db: Session, user_id: int) -> TimeRecord | None:
         return db.query(TimeRecord).filter(
@@ -83,7 +86,10 @@ class TimeRecordRepository:
         return db_obj
 
     def delete(self, db: Session, record_id: int, manager_id: int):
-        record = db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
+        record = db.query(TimeRecord).filter(
+            TimeRecord.id == record_id,
+            TimeRecord.is_ignored == False
+        ).first()
         if record:
             record.deleted_at = get_local_time()
             record.deleted_by = manager_id
