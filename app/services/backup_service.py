@@ -69,6 +69,7 @@ class BackupService:
                 .join(User, TimeRecord.user_id == User.id)
                 .filter(TimeRecord.record_datetime >= start_local)
                 .filter(TimeRecord.record_datetime <= end_local)
+                .filter(TimeRecord.is_ignored == False)
                 .order_by(User.name, TimeRecord.record_datetime)
                 .all()
             )

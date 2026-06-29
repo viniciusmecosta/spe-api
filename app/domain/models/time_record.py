@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum, Boolean, Index
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -15,6 +15,10 @@ def get_local_time():
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
+    __table_args__ = (
+        Index('idx_tr_user_date', 'user_id', 'record_datetime'),
+        Index('idx_tr_ignored', 'is_ignored'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -30,23 +34,15 @@ class TimeRecord(Base):
     edit_justification = Column(Enum(EditJustification), nullable=True)
     edit_reason = Column(String, nullable=True)
 
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_ignored = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
     user = relationship("User", back_populates="time_records", foreign_keys=[user_id])
     editor = relationship("User", foreign_keys=[edited_by])
+    deleter = relationship("User", foreign_keys=[deleted_by])
     biometric = relationship("UserBiometric", back_populates="time_records")
 
-
-class ManualAdjustment(Base):
-    __tablename__ = "manual_adjustments"
-
-    id = Column(Integer, primary_key=True, index=True)
-    time_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=False)
-    previous_type = Column(Enum(RecordType), nullable=False)
-    new_type = Column(Enum(RecordType), nullable=False)
-    adjusted_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    adjusted_at = Column(DateTime(timezone=True), default=get_local_time)
-
-    time_record = relationship("TimeRecord", backref="manual_adjustments")
-    adjusted_by = relationship("User", foreign_keys=[adjusted_by_user_id])

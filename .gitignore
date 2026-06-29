@@ -216,6 +216,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 spe.db
+*.db-shm
+*.db-wal
+temp_backup_*.db
 /uploads
 
 # Mosquitto data and logs
@@ -225,3 +228,4 @@ mosquitto/log/
 # App Logs
 logs/
 *.log
+agents/

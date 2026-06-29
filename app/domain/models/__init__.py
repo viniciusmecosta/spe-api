@@ -7,7 +7,7 @@ from .firmware import Firmware
 from .holiday import Holiday
 from .payroll import PayrollClosure
 from .routine_log import RoutineLog
-from .time_record import TimeRecord, ManualAdjustment
+from .time_record import TimeRecord
 from .user import User, WorkSchedule
 
 __all__ = [
@@ -22,7 +22,7 @@ __all__ = [
     "PayrollClosure",
     "RoutineLog",
     "TimeRecord",
-    "ManualAdjustment",
+
     "User",
     "WorkSchedule",
 ]
