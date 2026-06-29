@@ -20,7 +20,7 @@ class PayrollService:
         current_month = now.month
         current_year = now.year
 
-        all_records = db.query(TimeRecord.record_datetime).all()
+        all_records = db.query(TimeRecord.record_datetime).filter(TimeRecord.is_ignored == False).all()
         periods_with_data = {(dt[0].year, dt[0].month) for dt in all_records if dt[0]}
 
         periods_with_data.add((current_year, current_month))

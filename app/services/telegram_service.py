@@ -120,6 +120,7 @@ class TelegramService:
                 .join(User, TimeRecord.user_id == User.id)
                 .filter(TimeRecord.record_datetime >= start_dt)
                 .filter(TimeRecord.record_datetime <= end_dt)
+                .filter(TimeRecord.is_ignored == False)
                 .order_by(TimeRecord.record_datetime, User.name)
                 .all()
             )

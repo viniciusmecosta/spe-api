@@ -378,7 +378,8 @@ class TimesheetService:
             User.role == UserRole.EMPLOYEE,
             User.is_exempt_from_rules.is_(False),
             TimeRecord.record_datetime >= start_dt,
-            TimeRecord.record_datetime <= end_dt
+            TimeRecord.record_datetime <= end_dt,
+            TimeRecord.is_ignored == False
         ).distinct()
 
         if employee_ids:
