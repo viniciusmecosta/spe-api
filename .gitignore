@@ -225,3 +225,4 @@ mosquitto/log/
 # App Logs
 logs/
 *.log
+agents/
