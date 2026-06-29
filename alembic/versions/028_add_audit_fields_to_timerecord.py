@@ -8,9 +8,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('time_records', sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))
-    op.add_column('time_records', sa.Column('deleted_by', sa.Integer(), sa.ForeignKey('users.id'), nullable=True))
-    op.add_column('time_records', sa.Column('is_ignored', sa.Boolean(), nullable=False, server_default=sa.text('0')))
+    with op.batch_alter_table('time_records') as batch_op:
+        batch_op.add_column(sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))
+    
+    with op.batch_alter_table('time_records') as batch_op:
+        batch_op.add_column(sa.Column('deleted_by', sa.Integer(), sa.ForeignKey('users.id', name='fk_time_records_deleted_by_users'), nullable=True))
+        
+    with op.batch_alter_table('time_records') as batch_op:
+        batch_op.add_column(sa.Column('is_ignored', sa.Boolean(), nullable=False, server_default=sa.text('0')))
 
 
 def downgrade() -> None:

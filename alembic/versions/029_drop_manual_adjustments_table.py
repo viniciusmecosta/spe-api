@@ -1,18 +1,9 @@
-"""drop manual_adjustments table
-
-Revision ID: 029_drop_manual_adjustments
-Revises: 028_add_audit_fields
-Create Date: 2026-06-29 14:02:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.engine.reflection import Inspector
 
-
-# revision identifiers, used by Alembic.
-revision = '029_drop_manual_adjustments'
-down_revision = '028_add_audit_fields'
+revision = '029'
+down_revision = '028'
 branch_labels = None
 depends_on = None
 
