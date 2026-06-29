@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float
+from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float, Index
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -15,6 +15,10 @@ def get_local_time():
 
 class AdjustmentRequest(Base):
     __tablename__ = "adjustment_requests"
+    __table_args__ = (
+        Index('idx_adj_user_date', 'user_id', 'target_date'),
+        Index('idx_adj_status', 'status'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)

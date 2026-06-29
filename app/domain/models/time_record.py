@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum, Boolean
+from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum, Boolean, Index
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -15,6 +15,10 @@ def get_local_time():
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
+    __table_args__ = (
+        Index('idx_tr_user_date', 'user_id', 'record_datetime'),
+        Index('idx_tr_ignored', 'is_ignored'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
