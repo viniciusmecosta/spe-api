@@ -26,7 +26,7 @@ class CompanyService:
             )
         company = company_repository.create(db, obj_in)
         audit_service.log(
-            db, actor_id=current_user_id, action="CREATE", entity="COMPANY", entity_id=company.id,
+            db, user_id=current_user_id, action="CREATE", entity="COMPANY", entity_id=company.id,
             new_data=obj_in.model_dump()
         )
         return company
@@ -58,7 +58,7 @@ class CompanyService:
         }
 
         audit_service.log(
-            db, actor_id=current_user_id, action="UPDATE", entity="COMPANY", entity_id=company.id,
+            db, user_id=current_user_id, action="UPDATE", entity="COMPANY", entity_id=company.id,
             old_data=old_data, new_data=new_data
         )
         return company
@@ -105,7 +105,7 @@ class CompanyService:
         db.refresh(existing)
 
         audit_service.log(
-            db, actor_id=current_user_id, action="UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
+            db, user_id=current_user_id, action="UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
             old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
         )
         return existing

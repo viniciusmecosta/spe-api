@@ -96,7 +96,7 @@ class AdjustmentService:
         )
 
         audit_service.log(
-            db, actor_id=manager_id, target_user_id=waiver_in.user_id, action="CREATE_WAIVER",
+            db, user_id=manager_id, action="CREATE_WAIVER",
             entity="ADJUSTMENT", entity_id=adjustment.id,
             new_data={
                 "target_date": str(waiver_in.target_date),
@@ -121,7 +121,7 @@ class AdjustmentService:
         adjustment_repository.delete(db, adjustment_id)
 
         audit_service.log(
-            db, actor_id=manager_id, target_user_id=target_user_id, action="DELETE_ADJUSTMENT",
+            db, user_id=manager_id, action="DELETE_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
         )
 
@@ -173,7 +173,7 @@ class AdjustmentService:
         attachment = adjustment_repository.create_attachment(db, request_id, safe_filename, file.content_type)
 
         audit_service.log(
-            db, actor_id=user_id, target_user_id=request.user_id, action="UPLOAD_ATTACHMENT",
+            db, user_id=user_id, action="UPLOAD_ATTACHMENT",
             entity="ADJUSTMENT", entity_id=request_id,
             new_data={"file_name": safe_filename, "file_type": file.content_type}
         )
@@ -196,7 +196,7 @@ class AdjustmentService:
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
 
         audit_service.log(
-            db, actor_id=manager_id, target_user_id=request.user_id, action="APPROVE_ADJUSTMENT",
+            db, user_id=manager_id, action="APPROVE_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=request_id,
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )
@@ -232,7 +232,7 @@ class AdjustmentService:
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
 
         audit_service.log(
-            db, actor_id=manager_id, target_user_id=request.user_id, action="REJECT_ADJUSTMENT",
+            db, user_id=manager_id, action="REJECT_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=request_id,
             old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
         )

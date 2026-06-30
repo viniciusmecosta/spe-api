@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.services.audit_service import audit_service
 from app.services.backup_service import backup_service
 
 router = APIRouter()
@@ -21,13 +20,5 @@ def trigger_manual_backup(
             detail="Falha ao gerar ou enviar o backup."
         )
 
-    audit_service.log(
-        db=db,
-        actor_id=current_user.id,
-        actor_name=current_user.name,
-        action="MANUAL_BACKUP",
-        entity="SYSTEM",
-        new_data={"status": "success"}
-    )
 
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}

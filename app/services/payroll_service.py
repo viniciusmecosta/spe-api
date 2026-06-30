@@ -83,7 +83,7 @@ class PayrollService:
         closure = payroll_repository.create(db, month, year, current_user.id)
 
         audit_service.log(
-            db, actor_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
+            db, user_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
             new_data={"month": month, "year": year}
         )
         return closure
@@ -105,7 +105,7 @@ class PayrollService:
         payroll_repository.delete(db, month, year)
 
         audit_service.log(
-            db, actor_id=current_user.id, action="REOPEN", entity="PAYROLL",
+            db, user_id=current_user.id, action="REOPEN", entity="PAYROLL",
             old_data={"month": month, "year": year}
         )
         return {"status": "success", "message": f"Payroll period {month}/{year} reopened successfully."}

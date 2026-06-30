@@ -61,7 +61,7 @@ class FirmwareService:
         firmware = firmware_repository.create(db, version=version, file_path=relative_file_path)
 
         audit_service.log(
-            db, actor_id=current_user_id, action="UPLOAD", entity="FIRMWARE", entity_id=firmware.id,
+            db, user_id=current_user_id, action="UPLOAD", entity="FIRMWARE", entity_id=firmware.id,
             new_data={"version": version, "file_path": relative_file_path}
         )
 
@@ -85,7 +85,7 @@ class FirmwareService:
         firmware = firmware_repository.create(db, version=version, file_path=relative_file_path)
 
         audit_service.log(
-            db, actor_id=current_user_id, action="UPDATE", entity="FIRMWARE", entity_id=firmware.id,
+            db, user_id=current_user_id, action="UPDATE", entity="FIRMWARE", entity_id=firmware.id,
             new_data={"version": version, "file_path": relative_file_path, "previous_file_path": firmware_old.file_path}
         )
 

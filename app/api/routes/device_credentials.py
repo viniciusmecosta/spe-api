@@ -21,7 +21,7 @@ def create_credential(
     device = device_credential_repository.create(db, credential_in)
 
     audit_service.log(
-        db, actor_id=current_user.id, action="CREATE", entity="DEVICE_CREDENTIAL",
+        db, user_id=current_user.id, action="CREATE", entity="DEVICE_CREDENTIAL",
         entity_id=device.id,
         new_data={"name": device.name, "key_type": device.key_type.value}
     )
@@ -52,7 +52,7 @@ def update_credential(
     updated_device = device_credential_repository.update(db, device, credential_in)
 
     audit_service.log(
-        db, actor_id=current_user.id, action="UPDATE", entity="DEVICE_CREDENTIAL",
+        db, user_id=current_user.id, action="UPDATE", entity="DEVICE_CREDENTIAL",
         entity_id=updated_device.id, old_data=old_data,
         new_data={"name": updated_device.name, "is_active": updated_device.is_active}
     )
@@ -74,7 +74,7 @@ def delete_credential(
     device_credential_repository.delete(db, id)
 
     audit_service.log(
-        db, actor_id=current_user.id, action="DELETE", entity="DEVICE_CREDENTIAL",
+        db, user_id=current_user.id, action="DELETE", entity="DEVICE_CREDENTIAL",
         entity_id=id, old_data=old_data
     )
     return {"status": "success"}

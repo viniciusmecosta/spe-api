@@ -92,7 +92,7 @@ class UserService:
         db.refresh(db_user)
 
         audit_service.log(
-            db, actor_id=current_user_id, target_user_id=db_user.id, action="CREATE",
+            db, user_id=current_user_id, action="CREATE",
             entity="USER", entity_id=db_user.id,
             new_data={
                 "username": db_user.username,
@@ -214,7 +214,7 @@ class UserService:
         }
 
         audit_service.log(
-            db, actor_id=current_user_id, target_user_id=user.id, action="UPDATE",
+            db, user_id=current_user_id, action="UPDATE",
             entity="USER", entity_id=user.id,
             old_data=old_data, new_data=new_data
         )
@@ -233,7 +233,7 @@ class UserService:
         db.refresh(user)
 
         audit_service.log(
-            db, actor_id=current_user_id, target_user_id=user.id, action="DISABLE",
+            db, user_id=current_user_id, action="DISABLE",
             entity="USER", entity_id=user.id,
             old_data=old_data, new_data={"is_active": False}
         )
