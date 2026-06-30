@@ -62,9 +62,15 @@ class TimeRecordService:
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
-        return time_record_repository.create(
+        record = time_record_repository.create(
             db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform
         )
+        audit_service.log(
+            db, user_id=user_id, action="REGISTER_ENTRY",
+            entity="TIME_RECORD", entity_id=record.id,
+            new_data={"record_time": str(current_time), "platform": platform}
+        )
+        return record
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
@@ -75,9 +81,15 @@ class TimeRecordService:
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
 
-        return time_record_repository.create(
+        record = time_record_repository.create(
             db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform
         )
+        audit_service.log(
+            db, user_id=user_id, action="REGISTER_EXIT",
+            entity="TIME_RECORD", entity_id=record.id,
+            new_data={"record_time": str(current_time), "platform": platform}
+        )
+        return record
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
@@ -116,8 +128,7 @@ class TimeRecordService:
 
         audit_service.log(
             db,
-            actor_id=current_user.id,
-            target_user_id=record.user_id,
+            user_id=current_user.id,
             action="TOGGLE_RECORD",
             entity="TIME_RECORD",
             entity_id=new_record.id,
@@ -147,8 +158,7 @@ class TimeRecordService:
 
         audit_service.log(
             db,
-            actor_id=manager_id,
-            target_user_id=obj_in.user_id,
+            user_id=manager_id,
             action="CREATE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=record.id,
@@ -200,8 +210,7 @@ class TimeRecordService:
 
         audit_service.log(
             db,
-            actor_id=manager_id,
-            target_user_id=employee_id,
+            user_id=manager_id,
             action="UPDATE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=new_record.id,
@@ -233,8 +242,7 @@ class TimeRecordService:
 
         audit_service.log(
             db,
-            actor_id=manager_id,
-            target_user_id=target_id,
+            user_id=manager_id,
             action="DELETE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=record_id,
@@ -268,7 +276,7 @@ class TimeRecordService:
 
         device_name = get_client_device_name(ip_address)
 
-        return time_record_repository.create(
+        record = time_record_repository.create(
             db,
             user_id=user_id,
             record_type=record_type,
@@ -278,6 +286,17 @@ class TimeRecordService:
             platform=platform,
             biometric_id=biometric_id
         )
+        audit_service.log(
+            db, user_id=user_id, action="CREATE_PUNCH",
+            entity="TIME_RECORD", entity_id=record.id,
+            new_data={
+                "record_time": str(timestamp), 
+                "record_type": record_type.value,
+                "platform": platform,
+                "biometric_id": biometric_id
+            }
+        )
+        return record
 
 
 time_record_service = TimeRecordService()
