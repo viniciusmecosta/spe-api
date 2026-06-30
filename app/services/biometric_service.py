@@ -58,7 +58,7 @@ class BiometricService:
             db.refresh(new_bio)
 
             audit_service.log(
-                db, target_user_id=user.id, action="ENROLL", entity="BIOMETRIC",
+                db, user_id=user.id, action="ENROLL", entity="BIOMETRIC",
                 entity_id=new_bio.id, new_data={"sensor_index": result.sensor_index, "finger_id": result.finger_id}
             )
 
