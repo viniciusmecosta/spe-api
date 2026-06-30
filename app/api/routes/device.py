@@ -19,6 +19,7 @@ from app.schemas.device import (
 )
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
+from app.services.audit_service import audit_service
 
 router = APIRouter()
 
@@ -153,6 +154,10 @@ def verify_manager_access(
     ).first()
 
     if not managers_with_bio:
+        audit_service.log(
+            db, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
+            new_data={"sensor_index": payload.sensor_index, "status": "allowed", "reason": "no_managers"}
+        )
         return ManagerVerifyResponse(
             is_allowed=True,
             message="Nenhum gestor cadastrado. Acesso liberado."
@@ -160,17 +165,29 @@ def verify_manager_access(
 
     biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == payload.sensor_index).first()
     if not biometric:
+        audit_service.log(
+            db, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
+            new_data={"sensor_index": payload.sensor_index, "status": "denied", "reason": "biometric_not_found"}
+        )
         return ManagerVerifyResponse(
             is_allowed=False,
             message="Biometria não encontrada."
         )
 
     if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
+        audit_service.log(
+            db, user_id=biometric.user.id, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
+            new_data={"sensor_index": payload.sensor_index, "status": "allowed"}
+        )
         return ManagerVerifyResponse(
             is_allowed=True,
             message="Acesso autorizado."
         )
 
+    audit_service.log(
+        db, user_id=biometric.user.id, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
+        new_data={"sensor_index": payload.sensor_index, "status": "denied", "reason": "insufficient_permissions"}
+    )
     return ManagerVerifyResponse(
         is_allowed=False,
         message="Acesso negado."

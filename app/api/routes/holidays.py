@@ -20,7 +20,7 @@ def create_holiday(
 ) -> Any:
     holiday = holiday_repository.create(db, holiday_in)
     audit_service.log(
-        db, actor_id=current_user.id, action="CREATE", entity="HOLIDAY", entity_id=holiday.id,
+        db, user_id=current_user.id, action="CREATE", entity="HOLIDAY", entity_id=holiday.id,
         new_data={"date": str(holiday.date), "name": holiday.name}
     )
     return holiday
@@ -45,7 +45,7 @@ def delete_holiday(
         old_data = {"date": str(holiday.date), "name": holiday.name}
         holiday_repository.delete(db, id)
         audit_service.log(
-            db, actor_id=current_user.id, action="DELETE", entity="HOLIDAY", entity_id=id,
+            db, user_id=current_user.id, action="DELETE", entity="HOLIDAY", entity_id=id,
             old_data=old_data
         )
     return {"status": "success"}
