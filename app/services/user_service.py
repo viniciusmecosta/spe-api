@@ -15,7 +15,7 @@ class UserService:
         if user:
             raise HTTPException(
                 status_code=400,
-                detail="The user with this username already exists.",
+                detail="Um usuário com este nome de usuário já existe.",
             )
 
         if getattr(user_in, 'email', None):
@@ -49,7 +49,7 @@ class UserService:
         if schedules_in:
             for sch in schedules_in:
                 if sch.daily_hours < 0 or sch.daily_hours > 24:
-                    raise HTTPException(status_code=400, detail="Daily hours must be between 0 and 24")
+                    raise HTTPException(status_code=400, detail="As horas diárias devem estar entre 0 e 24.")
 
                 db_sch = WorkSchedule(
                     day_of_week=sch.day_of_week,

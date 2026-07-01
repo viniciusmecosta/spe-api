@@ -175,7 +175,7 @@ class ReportService:
         user = user_repository.get(db, user_id)
         if not user:
             from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)

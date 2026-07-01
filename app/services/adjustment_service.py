@@ -109,7 +109,7 @@ class AdjustmentService:
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Adjustment not found")
+            raise HTTPException(status_code=404, detail="Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
 
         target_user_id = request.user_id
@@ -128,10 +128,10 @@ class AdjustmentService:
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Adjustment request not found")
+            raise HTTPException(status_code=404, detail="Solicitação de abono não encontrada.")
 
         if request.user_id != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized")
+            raise HTTPException(status_code=403, detail="Acesso negado.")
 
         payroll_service.validate_period_open(db, request.target_date)
 
@@ -183,7 +183,7 @@ class AdjustmentService:
                            comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Request not found")
+            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
@@ -225,7 +225,7 @@ class AdjustmentService:
     def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Request not found")
+            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
         payroll_service.validate_period_open(db, request.target_date)
 
         old_status = request.status.value

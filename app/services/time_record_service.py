@@ -32,7 +32,7 @@ class TimeRecordService:
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         if user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
             return
@@ -84,13 +84,13 @@ class TimeRecordService:
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time record not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro de ponto não encontrado.")
 
         is_owner = record.user_id == current_user.id
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
         if not is_owner and not is_manager:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado.")
 
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
@@ -164,7 +164,7 @@ class TimeRecordService:
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise HTTPException(status_code=404, detail="Record not found")
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
         payroll_service.validate_period_open(db, record.record_datetime.date())
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
@@ -217,7 +217,7 @@ class TimeRecordService:
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise HTTPException(status_code=404, detail="Record not found")
+            raise HTTPException(status_code=404, detail="Registro não encontrado.")
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
         target_id = record.user_id

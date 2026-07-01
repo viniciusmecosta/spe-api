@@ -58,7 +58,7 @@ class PayrollService:
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to close payroll."
+                detail="Acesso negado: Usuário não tem permissão para fechar a folha de ponto."
             )
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -70,14 +70,14 @@ class PayrollService:
         if request_date >= current_month_start:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot close payroll for the current or future months ({month}/{year}). Only past months can be closed."
+                detail=f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
         existing = payroll_repository.get_by_month(db, month, year)
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Payroll period {month}/{year} is already closed."
+                detail=f"A folha de ponto referente a {month:02d}/{year} já está fechada."
             )
 
         closure = payroll_repository.create(db, month, year, current_user.id)
@@ -92,14 +92,14 @@ class PayrollService:
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only Maintainers can reopen payroll periods."
+                detail="Acesso negado: Apenas mantenedores podem reabrir folhas de ponto."
             )
 
         existing = payroll_repository.get_by_month(db, month, year)
         if not existing:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Payroll period {month}/{year} is not closed."
+                detail=f"A folha de ponto referente a {month:02d}/{year} não está fechada."
             )
 
         closure_id = existing.id
@@ -109,14 +109,14 @@ class PayrollService:
             db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
             old_data={"month": month, "year": year}
         )
-        return {"status": "success", "message": f"Payroll period {month}/{year} reopened successfully."}
+        return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 
     def validate_period_open(self, db: Session, target_date: date):
         closure = payroll_repository.get_by_month(db, target_date.month, target_date.year)
         if closure:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Action blocked: Payroll for {target_date.month}/{target_date.year} is CLOSED."
+                detail=f"Ação bloqueada: A folha de ponto referente a {target_date.month:02d}/{target_date.year} está FECHADA."
             )
 
 
