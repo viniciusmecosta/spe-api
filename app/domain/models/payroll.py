@@ -23,8 +23,10 @@ class PayrollClosure(Base):
     closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     closed_at = Column(DateTime(timezone=True), default=get_local_time)
 
-    closed_by = relationship("User")
+    closed_by = relationship("User", foreign_keys=[closed_by_user_id])
 
-    __table_args__ = (
-        UniqueConstraint('month', 'year', name='uq_payroll_month_year'),
-    )
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(Integer, ForeignKey('users.id'), nullable=True)
+
+    deleter = relationship('User', foreign_keys=[deleted_by])
+

@@ -424,7 +424,9 @@ class ReportService:
                 status = ""
             elif is_waiver:
                 formatted_waiver = self._format_duration(waiver_credit)
-                status = f"Abonado/Atestado ({formatted_waiver})"
+                status = "Abonado/Atestado"
+                if formatted_waiver and formatted_waiver != "00:00":
+                    punches.append(f"Abono: {formatted_waiver}")
             elif is_holiday:
                 status = "Feriado"
             elif is_weekend:

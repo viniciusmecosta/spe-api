@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 
 from sqlalchemy.orm import Session
@@ -16,21 +17,28 @@ class PayrollRepository:
     def get_by_month(self, db: Session, month: int, year: int) -> PayrollClosure | None:
         return db.query(PayrollClosure).filter(
             PayrollClosure.month == month,
-            PayrollClosure.year == year
+            PayrollClosure.year == year,
+            PayrollClosure.deleted_at.is_(None)
         ).first()
 
     def get_all(self, db: Session) -> List[PayrollClosure]:
-        return db.query(PayrollClosure).order_by(
+        return db.query(PayrollClosure).filter(
+            PayrollClosure.deleted_at.is_(None)
+        ).order_by(
             PayrollClosure.year.desc(),
             PayrollClosure.month.desc()
         ).all()
 
-    def delete(self, db: Session, month: int, year: int):
-        db.query(PayrollClosure).filter(
+    def delete(self, db: Session, month: int, year: int, user_id: int):
+        record = db.query(PayrollClosure).filter(
             PayrollClosure.month == month,
-            PayrollClosure.year == year
-        ).delete()
-        db.commit()
+            PayrollClosure.year == year,
+            PayrollClosure.deleted_at.is_(None)
+        ).first()
+        if record:
+            record.deleted_at = datetime.now()
+            record.deleted_by = user_id
+            db.commit()
 
 
 payroll_repository = PayrollRepository()

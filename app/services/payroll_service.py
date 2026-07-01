@@ -102,10 +102,11 @@ class PayrollService:
                 detail=f"Payroll period {month}/{year} is not closed."
             )
 
-        payroll_repository.delete(db, month, year)
+        closure_id = existing.id
+        payroll_repository.delete(db, month, year, current_user.id)
 
         audit_service.log(
-            db, user_id=current_user.id, action="REOPEN", entity="PAYROLL",
+            db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
             old_data={"month": month, "year": year}
         )
         return {"status": "success", "message": f"Payroll period {month}/{year} reopened successfully."}

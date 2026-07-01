@@ -127,7 +127,8 @@ class BackupService:
                 email_address = addr if addr else (raw_sender if raw_sender else "")
                 display_name = f"DEVELOPMENT {name}".strip() if name else "DEVELOPMENT"
                 msg['From'] = formataddr((display_name, email_address))
-                msg['Subject'] = f"[DEV] {base_subject}"
+                current_time = datetime.now(tz).strftime("%H:%M:%S")
+                msg['Subject'] = f"Backup SPE DEV - {current_date} {current_time}"
             else:
                 if raw_sender:
                     msg['From'] = raw_sender
