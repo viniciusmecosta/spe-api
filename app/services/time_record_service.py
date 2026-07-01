@@ -65,11 +65,6 @@ class TimeRecordService:
         record = time_record_repository.create(
             db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform
         )
-        audit_service.log(
-            db, user_id=user_id, action="REGISTER_ENTRY",
-            entity="TIME_RECORD", entity_id=record.id,
-            new_data={"record_time": str(current_time), "platform": platform}
-        )
         return record
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
@@ -83,11 +78,6 @@ class TimeRecordService:
 
         record = time_record_repository.create(
             db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform
-        )
-        audit_service.log(
-            db, user_id=user_id, action="REGISTER_EXIT",
-            entity="TIME_RECORD", entity_id=record.id,
-            new_data={"record_time": str(current_time), "platform": platform}
         )
         return record
 
@@ -285,16 +275,6 @@ class TimeRecordService:
             device_name=device_name,
             platform=platform,
             biometric_id=biometric_id
-        )
-        audit_service.log(
-            db, user_id=user_id, action="CREATE_PUNCH",
-            entity="TIME_RECORD", entity_id=record.id,
-            new_data={
-                "record_time": str(timestamp), 
-                "record_type": record_type.value,
-                "platform": platform,
-                "biometric_id": biometric_id
-            }
         )
         return record
 
