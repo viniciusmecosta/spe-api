@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.api.deps import get_current_maintainer
 from app.domain.models.user import User
-from app.services.telegram_service import telegram_service
+from app.services.routine_orchestrator import routine_orchestrator
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ def trigger_manual_backup(
         background_tasks: BackgroundTasks,
         current_user: User = Depends(get_current_maintainer)
 ):
-    background_tasks.add_task(telegram_service.execute_manual_backup)
+    background_tasks.add_task(routine_orchestrator.execute_manual_backup_telegram)
     return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
 
 
@@ -38,7 +38,7 @@ def trigger_manual_report(
             detail="Período excedido. O relatório gerencial no Telegram é limitado a no máximo 7 dias. Utilize a plataforma web para consultar períodos mais extensos."
         )
 
-    background_tasks.add_task(telegram_service.send_manual_report, start_date, end_date)
+    background_tasks.add_task(routine_orchestrator.send_manual_report_telegram, start_date, end_date)
     return {
         "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
     }

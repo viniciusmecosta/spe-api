@@ -62,14 +62,6 @@ def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
                 device_name = socket.gethostname()
             except Exception:
                 pass
-        else:
-            try:
-                socket.setdefaulttimeout(1.5)
-                host_info = socket.gethostbyaddr(ip)
-                if host_info and host_info[0]:
-                    device_name = host_info[0].split('.')[0]
-            except Exception:
-                pass
 
     if not device_name or device_name.lower() == "localhost":
         device_name = "Desconhecido"

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.services.backup_service import backup_service
+from app.services.routine_orchestrator import routine_orchestrator
 
 router = APIRouter()
 
@@ -13,7 +13,7 @@ def trigger_manual_backup(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ):
-    sent = backup_service.send_database_backup(db)
+    sent = routine_orchestrator.send_manual_backup_email(db)
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

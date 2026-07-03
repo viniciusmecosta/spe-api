@@ -31,7 +31,7 @@ class TelegramService:
 
 
 
-    def _send_text(self, text: str) -> bool:
+    def send_text(self, text: str) -> bool:
         if not self.bot_token or not self.chat_id:
             return False
 
@@ -51,7 +51,7 @@ class TelegramService:
             logger.error(f"Telegram send text error: {e}")
             return False
 
-    def _send_document(self, file_path: str, caption: str) -> bool:
+    def send_document(self, file_path: str, caption: str) -> bool:
         if not self.bot_token or not self.chat_id:
             return False
 
@@ -77,7 +77,7 @@ class TelegramService:
         second_name = next((p for p in parts[1:] if len(p) > 3), parts[1])
         return f"{first_name} {second_name}"
 
-    def _generate_report_text(self, db: Session, start_date: date, end_date: date,
+    def generate_report_text(self, db: Session, start_date: date, end_date: date,
                               title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
             fmt_start = start_date.strftime("%d/%m/%Y")
@@ -138,220 +138,7 @@ class TelegramService:
             logger.error(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
 
-    def execute_hourly_backup(self):
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
 
-        if now_local.hour < settings.HOURLY_BACKUP_START_HOUR or now_local.hour > settings.HOURLY_BACKUP_END_HOUR:
-            return
-
-        db_read = SessionLocal()
-        try:
-            current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)
-
-            exists = db_read.query(RoutineLog).filter(
-                RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
-                RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= current_hour_start_local
-            ).first()
-            if exists:
-                return
-        except SQLAlchemyError as e:
-            logger.error(f"Erro ao verificar backup horário Telegram: {e}")
-            return
-        finally:
-            db_read.close()
-
-        backup_path = backup_service.create_safe_backup()
-        if not backup_path:
-            logger.error('Backup - "Telegram horário" Error')
-            return
-
-        now_str = now_local.strftime('%H:%M')
-        caption = f"[Backup Automático] - {now_str}"
-
-        success = self._send_document(backup_path, caption)
-
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-
-        db_write = SessionLocal()
-        try:
-            if success:
-                log_entry = RoutineLog(
-                    routine_type="TELEGRAM_HOURLY_BACKUP",
-                    status="SUCCESS",
-                    execution_time=now_local
-                )
-                db_write.add(log_entry)
-                db_write.commit()
-            else:
-                logger.error('Backup - "Telegram horário" Error')
-        except SQLAlchemyError as e:
-            db_write.rollback()
-            logger.error(f'Backup - "Telegram horário" DB Error: {e}')
-        finally:
-            db_write.close()
-
-    def send_managerial_report(self):
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-        today = now_local.date()
-        yesterday = today - timedelta(days=1)
-
-        if now_local.hour < settings.DAILY_REPORT_HOUR:
-            return
-
-        db_read = SessionLocal()
-        try:
-            ran_today = db_read.query(RoutineLog).filter(
-                RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
-                RoutineLog.status == "SUCCESS",
-                RoutineLog.target_date == yesterday
-            ).first()
-
-            if ran_today:
-                return
-
-            last_success = db_read.query(RoutineLog).filter(
-                RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
-                RoutineLog.status == "SUCCESS",
-                RoutineLog.target_date.isnot(None)
-            ).order_by(desc(RoutineLog.target_date)).first()
-
-            if last_success and last_success.target_date:
-                start_date = last_success.target_date + timedelta(days=1)
-            else:
-                start_date = yesterday
-
-            if start_date > yesterday:
-                start_date = yesterday
-
-            report_text = self._generate_report_text(db_read, start_date, yesterday)
-        except SQLAlchemyError as e:
-            logger.error(f"Erro ao gerar report gerencial Telegram: {e}")
-            return
-        finally:
-            db_read.close()
-
-        text_success = self._send_text(report_text)
-
-        current_log_date = start_date
-        while current_log_date <= yesterday:
-            log_path = get_log_path(current_log_date)
-            if os.path.exists(log_path):
-                self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
-            current_log_date += timedelta(days=1)
-
-        db_write = SessionLocal()
-        try:
-            if text_success:
-                log_entry = RoutineLog(
-                    routine_type="TELEGRAM_DAILY_REPORT",
-                    target_date=yesterday,
-                    status="SUCCESS",
-                    execution_time=now_local
-                )
-                db_write.add(log_entry)
-                db_write.commit()
-            else:
-                log_entry = RoutineLog(
-                    routine_type="TELEGRAM_DAILY_REPORT",
-                    target_date=yesterday,
-                    status="FAILED",
-                    execution_time=now_local
-                )
-                db_write.add(log_entry)
-                db_write.commit()
-                logger.error('Relatório - "Telegram diário" Error')
-        except SQLAlchemyError as e:
-            db_write.rollback()
-            logger.error(f'Relatório - "Telegram diário" DB Error: {e}')
-        finally:
-            db_write.close()
-
-    def execute_manual_backup(self):
-        backup_path = backup_service.create_safe_backup()
-        if not backup_path:
-            logger.error('Backup - "Telegram manual" Error')
-            return
-
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-        now_str = now_local.strftime('%d/%m/%Y %H:%M')
-        caption = f"[Backup Manual Solicitado] - {now_str}"
-
-        success = self._send_document(backup_path, caption)
-
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-
-        db_write = SessionLocal()
-        try:
-            log_entry = RoutineLog(
-                routine_type="TELEGRAM_MANUAL_BACKUP",
-                status="SUCCESS" if success else "FAILED",
-                execution_time=now_local
-            )
-            db_write.add(log_entry)
-            db_write.commit()
-
-            if not success:
-                logger.error('Backup - "Telegram manual" Error')
-        except SQLAlchemyError as e:
-            db_write.rollback()
-            logger.error(f"Erro ao salvar rotina manual: {e}")
-        finally:
-            db_write.close()
-
-    def send_manual_report(self, start_date: date, end_date: date):
-        tz = ZoneInfo(settings.TIMEZONE)
-        now_local = datetime.now(tz).replace(tzinfo=None)
-
-        db_read = SessionLocal()
-        try:
-            report_text = self._generate_report_text(
-                db_read,
-                start_date,
-                end_date,
-                title_prefix="Relatório Gerencial Manual -"
-            )
-        except SQLAlchemyError as e:
-            logger.error(f"Erro ao buscar report manual: {e}")
-            return
-        finally:
-            db_read.close()
-
-        text_success = self._send_text(report_text)
-
-        current_log_date = start_date
-        while current_log_date <= end_date:
-            log_path = get_log_path(current_log_date)
-            if os.path.exists(log_path):
-                self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
-            current_log_date += timedelta(days=1)
-
-        db_write = SessionLocal()
-        try:
-            log_entry = RoutineLog(
-                routine_type="TELEGRAM_MANUAL_REPORT",
-                target_date=end_date,
-                status="SUCCESS" if text_success else "FAILED",
-                execution_time=now_local
-            )
-            db_write.add(log_entry)
-            db_write.commit()
-
-            if not text_success:
-                logger.error('Relatório - "Telegram manual" Error')
-        except SQLAlchemyError as e:
-            db_write.rollback()
-            logger.error(f"Erro ao salvar rotina de relatorio manual: {e}")
-        finally:
-            db_write.close()
 
 
 telegram_service = TelegramService()
