@@ -53,7 +53,6 @@ class SyncService:
             if os.path.exists(shm_path):
                 os.remove(shm_path)
 
-            logger.info('Sincronização - "Receber banco de dados" OK')
         except Exception as e:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -86,7 +85,7 @@ class SyncService:
         finally:
             db_read.close()
 
-        backup_path = backup_service._create_safe_backup("spe.db")
+        backup_path = backup_service.create_safe_backup()
         if not backup_path:
             logger.error('Sincronização - "Enviar banco de dados" Error')
             return
@@ -106,7 +105,6 @@ class SyncService:
             )
             db_write.add(log_entry)
             db_write.commit()
-            logger.info('Sincronização - "Enviar banco de dados" OK')
 
         except Exception:
             db_write.rollback()
@@ -172,7 +170,6 @@ class SyncService:
             )
             db_write.add(log_entry)
             db_write.commit()
-            logger.info('Sincronização - "Registros de ponto" OK')
 
         except Exception:
             db_write.rollback()
