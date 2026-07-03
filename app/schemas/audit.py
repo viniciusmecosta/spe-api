@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class UserSnapshot(BaseModel):
@@ -10,8 +10,7 @@ class UserSnapshot(BaseModel):
     username: str
     role: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditLogBase(BaseModel):
@@ -32,5 +31,4 @@ class AuditLogResponse(AuditLogBase):
     timestamp: datetime
     user: Optional[UserSnapshot] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

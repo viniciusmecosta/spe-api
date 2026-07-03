@@ -1,7 +1,7 @@
 import re
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict
 
 
 def validate_cnpj_logic(cnpj: str) -> bool:
@@ -67,5 +67,4 @@ class CompanyUpdate(BaseModel):
 class CompanyResponse(CompanyBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
