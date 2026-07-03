@@ -22,3 +22,20 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.execute("PRAGMA temp_store=MEMORY")
         cursor.execute("PRAGMA mmap_size=3000000000")
         cursor.close()
+
+from contextlib import contextmanager
+from typing import Generator
+from sqlalchemy.orm import Session
+
+@contextmanager
+def get_db_session() -> Generator[Session, None, None]:
+    """Provide a transactional scope around a series of operations."""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
