@@ -124,7 +124,7 @@ class TelegramService:
                 daily_activity[date_str][fmt_name].append(f"{marker} {time_str}")
 
             for d_str, users_data in daily_activity.items():
-                if len(text) > 3900:
+                if len(text) > settings.TELEGRAM_MAX_MESSAGE_LENGTH:
                     break
 
                 text += f"<b>{d_str}</b>\n"

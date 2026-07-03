@@ -2,6 +2,7 @@ import os
 from typing import List, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
 
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
+    TELEGRAM_MAX_MESSAGE_LENGTH: int = 3900
 
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_SERVER_URL: Optional[str] = None
@@ -42,6 +44,17 @@ class Settings(BaseSettings):
         if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
             return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
         return "spe.db"
+        
+    @field_validator("BACKEND_CORS_ORIGINS")
+    @classmethod
+    def assemble_cors_origins(cls, v: List[str], info) -> List[str]:
+        if isinstance(v, str):
+            v = [i.strip() for i in v.split(",")]
+        
+        env = info.data.get("ENVIRONMENT", "dev")
+        if env == "prod" and "*" in v:
+            raise ValueError("Wildcard '*' in BACKEND_CORS_ORIGINS is not allowed in production")
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env",
