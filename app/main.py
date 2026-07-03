@@ -1,8 +1,7 @@
 import logging
 import os
-import time
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -11,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan
 from app.core.logger import setup_logging
+from app.middleware.request_logging import RequestLoggingMiddleware
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -40,17 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(RequestLoggingMiddleware)
+
 setup_exception_handlers(app)
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    host = request.client.host if request.client else "127.0.0.1"
-    logger.info(f"{host} - \"{request.method} {request.url.path}\" {response.status_code} {process_time:.4f}s")
-    return response
 
 
 @app.get("/", include_in_schema=False)

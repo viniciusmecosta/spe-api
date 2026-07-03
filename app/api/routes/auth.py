@@ -34,7 +34,7 @@ def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2Pass
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
 
-    access_token = security.create_access_token(subject=user.id)
+    access_token = security.create_access_token(subject=user.id, name=user.name)
     
     from app.services.audit_service import audit_service
     audit_service.log(
