@@ -30,27 +30,28 @@ logger = logging.getLogger(__name__)
 
 class BackupService:
     def __init__(self):
-        pass
+        self._backup_lock = threading.Lock()
 
     def create_safe_backup(self) -> Optional[str]:
-        try:
-            tz = ZoneInfo(settings.TIMEZONE)
-            timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
-            unique_id = uuid.uuid4().hex[:8]
-            backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
+        with self._backup_lock:
+            try:
+                tz = ZoneInfo(settings.TIMEZONE)
+                timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
+                unique_id = uuid.uuid4().hex[:8]
+                backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
 
-            src_conn = sqlite3.connect(settings.DATABASE_PATH)
-            dst_conn = sqlite3.connect(backup_filename)
+                src_conn = sqlite3.connect(settings.DATABASE_PATH)
+                dst_conn = sqlite3.connect(backup_filename)
 
-            src_conn.backup(dst_conn, pages=100, sleep=0.05)
+                src_conn.backup(dst_conn, pages=100, sleep=0.05)
 
-            dst_conn.close()
-            src_conn.close()
+                dst_conn.close()
+                src_conn.close()
 
-            return backup_filename
-        except sqlite3.Error as e:
-            logger.error(f"Erro backup SQLite: {e}")
-            return None
+                return backup_filename
+            except sqlite3.Error as e:
+                logger.error(f"Erro backup SQLite: {e}")
+                return None
 
     def _generate_daily_report_html(self, db: Session, target_date: date) -> str:
         try:
@@ -219,7 +220,6 @@ class BackupService:
             os.remove(backup_path)
 
         if success:
-            logger.info('Backup - "Email manual" OK')
             return True
         else:
             logger.error('Backup - "Email manual" Error')
@@ -251,7 +251,6 @@ class BackupService:
             to_emails = [m.email for m in maintainers if m.email]
 
             if not to_emails:
-                logger.warning("Nenhum mantenedor com e-mail cadastrado. Abortando rotina.")
                 return
 
             last_success = db_read.query(RoutineLog).filter(
@@ -374,10 +373,6 @@ class BackupService:
             )
             db_write.add(log_entry)
             db_write.commit()
-
-            if deleted_count > 0:
-                logger.info(
-                    f"Limpeza Automática: {deleted_count} registros antigos da tabela routine_logs foram apagados.")
         except SQLAlchemyError as e:
             db_write.rollback()
             logger.error(f"Erro ao limpar routine_logs: {e}")

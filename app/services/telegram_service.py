@@ -256,7 +256,6 @@ class TelegramService:
                 )
                 db_write.add(log_entry)
                 db_write.commit()
-                logger.info('Relatório - "Telegram diário" OK')
             else:
                 log_entry = RoutineLog(
                     routine_type="TELEGRAM_DAILY_REPORT",
@@ -300,9 +299,7 @@ class TelegramService:
             db_write.add(log_entry)
             db_write.commit()
 
-            if success:
-                logger.info('Backup - "Telegram manual" OK')
-            else:
+            if not success:
                 logger.error('Backup - "Telegram manual" Error')
         except SQLAlchemyError as e:
             db_write.rollback()
@@ -348,9 +345,7 @@ class TelegramService:
             db_write.add(log_entry)
             db_write.commit()
 
-            if text_success:
-                logger.info('Relatório - "Telegram manual" OK')
-            else:
+            if not text_success:
                 logger.error('Relatório - "Telegram manual" Error')
         except SQLAlchemyError as e:
             db_write.rollback()
