@@ -12,6 +12,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logger import get_log_path
 from app.database.session import SessionLocal
 from app.domain.models.enums import RecordType
 from app.domain.models.routine_log import RoutineLog
@@ -264,8 +265,7 @@ class TelegramService:
 
             current_log_date = start_date
             while current_log_date <= yesterday:
-                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
-                log_path = os.path.join("logs", log_filename)
+                log_path = get_log_path(current_log_date)
                 if os.path.exists(log_path):
                     self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
                 current_log_date += timedelta(days=1)
@@ -359,8 +359,7 @@ class TelegramService:
 
             current_log_date = start_date
             while current_log_date <= end_date:
-                log_filename = current_log_date.strftime("%d%m%Y") + ".log"
-                log_path = os.path.join("logs", log_filename)
+                log_path = get_log_path(current_log_date)
                 if os.path.exists(log_path):
                     self._send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
                 current_log_date += timedelta(days=1)

@@ -17,6 +17,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logger import get_log_path
 from app.database.session import SessionLocal
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.routine_log import RoutineLog
@@ -210,10 +211,9 @@ class BackupService:
 
             attachments = [(backup_path, "spe.db")]
 
-            log_filename = yesterday.strftime("%d%m%Y") + ".log"
-            log_path = os.path.join("logs", log_filename)
+            log_path = get_log_path(yesterday)
             if os.path.exists(log_path):
-                attachments.append((log_path, f"log_{log_filename}"))
+                attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
 
             success = self._send_email(to_emails, attachments, full_report_html, period_text)
 
@@ -279,10 +279,9 @@ class BackupService:
                     daily_html = self._generate_daily_report_html(db_read, current_check_date)
                     full_report_html += daily_html
 
-                    log_filename = current_check_date.strftime("%d%m%Y") + ".log"
-                    log_path = os.path.join("logs", log_filename)
+                    log_path = get_log_path(current_check_date)
                     if os.path.exists(log_path):
-                        attachments.append((log_path, f"log_{log_filename}"))
+                        attachments.append((log_path, f"log_{current_check_date.strftime('%d%m%Y')}.log"))
 
                     current_check_date += timedelta(days=1)
 
