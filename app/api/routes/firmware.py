@@ -16,7 +16,7 @@ def list_firmwares(
 ):
     return firmware_service.get_all_firmwares(db)
 
-@router.post("/upload", response_model=FirmwareResponse)
+@router.post("/upload", response_model=FirmwareResponse, status_code=status.HTTP_201_CREATED)
 def upload_firmware(
         version: str = Form(...),
         file: UploadFile = File(...),

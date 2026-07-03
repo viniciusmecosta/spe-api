@@ -1,7 +1,7 @@
 import os
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -12,11 +12,12 @@ from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestResponse, \
     AdjustmentAttachmentResponse, AdjustmentWaiverCreate
+from app.schemas.time_record import SuccessResponse
 from app.services.adjustment_service import adjustment_service
 
 router = APIRouter()
 
-@router.post("/", response_model=AdjustmentRequestResponse)
+@router.post("/", response_model=AdjustmentRequestResponse, status_code=status.HTTP_201_CREATED)
 def create_adjustment_request(
         request_in: AdjustmentRequestCreate,
         db: Session = Depends(deps.get_db),
@@ -24,7 +25,7 @@ def create_adjustment_request(
 ) -> Any:
     return adjustment_service.create_adjustment_request(db, current_user.id, request_in)
 
-@router.post("/admin/waive", response_model=AdjustmentRequestResponse)
+@router.post("/admin/waive", response_model=AdjustmentRequestResponse, status_code=status.HTTP_201_CREATED)
 def waive_absence_admin(
         waiver_in: AdjustmentWaiverCreate,
         db: Session = Depends(deps.get_db),
@@ -32,7 +33,7 @@ def waive_absence_admin(
 ) -> Any:
     return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
 
-@router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
+@router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse, status_code=status.HTTP_201_CREATED)
 def upload_adjustment_attachment(
         id: int,
         file: UploadFile = File(...),
@@ -110,7 +111,7 @@ def reject_adjustment(
 ) -> Any:
     return adjustment_service.reject_adjustment(db, id, current_user.id, comment)
 
-@router.delete("/{id}")
+@router.delete("/{id}", response_model=dict)
 def delete_adjustment(
         id: int,
         db: Session = Depends(deps.get_db),

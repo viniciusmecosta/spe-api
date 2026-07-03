@@ -12,7 +12,7 @@ from app.services.audit_service import audit_service
 router = APIRouter()
 
 
-@router.post("/", response_model=HolidayResponse)
+@router.post("/", response_model=HolidayResponse, status_code=status.HTTP_201_CREATED)
 def create_holiday(
         holiday_in: HolidayCreate,
         db: Session = Depends(deps.get_db),
@@ -34,7 +34,7 @@ def read_holidays(
     return holiday_repository.get_all(db)
 
 
-@router.delete("/{id}")
+@router.delete("/{id}"), response_model=dict
 def delete_holiday(
         id: int,
         db: Session = Depends(deps.get_db),

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.domain.models.user import User
 from app.schemas.payroll import PayrollClosureCreate, PayrollClosureResponse
+from app.schemas.time_record import SuccessResponse
 from app.services.payroll_service import payroll_service
 
 router = APIRouter()
@@ -29,7 +30,7 @@ def close_payroll_period(
     return payroll_service.close_period(db, period.month, period.year, current_user, background_tasks)
 
 
-@router.post("/reopen", response_model=dict)
+@router.post("/reopen", response_model=SuccessResponse)
 def reopen_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
