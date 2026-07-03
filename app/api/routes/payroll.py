@@ -7,7 +7,6 @@ from app.api import deps
 from app.domain.models.user import User
 from app.schemas.payroll import PayrollClosureCreate, PayrollClosureResponse
 from app.services.payroll_service import payroll_service
-from app.services.email_service import dispatch_payroll_email
 
 router = APIRouter()
 
@@ -27,14 +26,7 @@ def close_payroll_period(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    closure = payroll_service.close_period(db, period.month, period.year, current_user)
-    
-    background_tasks.add_task(
-        dispatch_payroll_email, 
-        "Fechamento", current_user.name, current_user.email, period.month, period.year, current_user.id
-    )
-    
-    return closure
+    return payroll_service.close_period(db, period.month, period.year, current_user, background_tasks)
 
 
 @router.post("/reopen", response_model=dict)
@@ -44,11 +36,4 @@ def reopen_payroll_period(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    result = payroll_service.reopen_period(db, period.month, period.year, current_user)
-    
-    background_tasks.add_task(
-        dispatch_payroll_email, 
-        "Reabertura", current_user.name, current_user.email, period.month, period.year, current_user.id
-    )
-    
-    return result
+    return payroll_service.reopen_period(db, period.month, period.year, current_user, background_tasks)

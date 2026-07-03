@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.repositories.routine_log_repository import routine_log_repository
+from app.services.routine_log_service import routine_log_service
 from app.schemas.routine_log import RoutineLogResponse
 
 router = APIRouter()
@@ -24,7 +24,7 @@ def read_routine_logs(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ):
-    return routine_log_repository.get_logs(
+    return routine_log_service.get_logs(
         db,
         routine_type=routine_type,
         status=status,

@@ -1,5 +1,3 @@
-from calendar import monthrange
-from datetime import date, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,22 +12,6 @@ from app.services.anomaly_service import anomaly_service
 router = APIRouter()
 
 
-def _get_query_dates(month: int, year: int) -> tuple[date, date]:
-    today = date.today()
-
-    try:
-        _, last_day = monthrange(year, month)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
-
-    start_date = date(year, month, 1)
-    end_date = date(year, month, last_day)
-    if end_date >= today:
-        end_date = today - timedelta(days=1)
-
-    return start_date, end_date
-
-
 @router.get("/all", response_model=List[AnomalyResponse])
 def get_all_anomalies(
         month: int,
@@ -40,12 +22,7 @@ def get_all_anomalies(
     if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    start_date, end_date = _get_query_dates(month, year)
-
-    if start_date > end_date:
-        return []
-
-    return anomaly_service.get_anomalies(db, start_date, end_date)
+    return anomaly_service.get_anomalies_by_month(db, month, year)
 
 
 @router.get("/user/{user_id}", response_model=List[AnomalyResponse])
@@ -59,9 +36,4 @@ def get_user_anomalies(
     if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    start_date, end_date = _get_query_dates(month, year)
-
-    if start_date > end_date:
-        return []
-
-    return anomaly_service.get_anomalies(db, start_date, end_date, user_id=user_id)
+    return anomaly_service.get_anomalies_by_month(db, month, year, user_id=user_id)

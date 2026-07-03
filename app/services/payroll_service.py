@@ -11,6 +11,8 @@ from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
 from app.services.audit_service import audit_service
+from app.services.email_service import dispatch_payroll_email
+from fastapi import BackgroundTasks
 
 
 class PayrollService:
@@ -54,7 +56,7 @@ class PayrollService:
                 })
         return result
 
-    def close_period(self, db: Session, month: int, year: int, current_user: User):
+    def close_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -86,9 +88,14 @@ class PayrollService:
             db, user_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
             new_data={"month": month, "year": year}
         )
+        
+        background_tasks.add_task(
+            dispatch_payroll_email, 
+            "Fechamento", current_user.name, current_user.email, month, year, current_user.id
+        )
         return closure
 
-    def reopen_period(self, db: Session, month: int, year: int, current_user: User):
+    def reopen_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -108,6 +115,11 @@ class PayrollService:
         audit_service.log(
             db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
             old_data={"month": month, "year": year}
+        )
+        
+        background_tasks.add_task(
+            dispatch_payroll_email, 
+            "Reabertura", current_user.name, current_user.email, month, year, current_user.id
         )
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 

@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import calendar
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -133,6 +134,26 @@ class AnomalyService:
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
+
+    def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: Optional[int] = None,
+                               ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+        today = date.today()
+        try:
+            _, last_day = calendar.monthrange(year, month)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
+            
+        start_date = date(year, month, 1)
+        end_date = date(year, month, last_day)
+        
+        if end_date >= today:
+            end_date = today - timedelta(days=1)
+            
+        if start_date > end_date:
+            return []
+            
+        return self.get_anomalies(db, start_date, end_date, user_id, ignore_excessive_hours)
 
 
 anomaly_service = AnomalyService()
