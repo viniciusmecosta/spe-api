@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_SERVER_URL: Optional[str] = None
 
+    ROUTINE_LOG_RETENTION_DAYS: int
+    DAILY_REPORT_HOUR: int
+    HOURLY_BACKUP_START_HOUR: int
+    HOURLY_BACKUP_END_HOUR: int
+
     @property
     def DATABASE_PATH(self) -> str:
         if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):

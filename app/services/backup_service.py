@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -29,9 +30,7 @@ logger = logging.getLogger(__name__)
 
 class BackupService:
     def __init__(self):
-        self._email_backup_lock = threading.Lock()
-        self._manual_backup_lock = threading.Lock()
-        self._cleanup_lock = threading.Lock()
+        pass
 
     def create_safe_backup(self) -> Optional[str]:
         try:
@@ -49,7 +48,7 @@ class BackupService:
             src_conn.close()
 
             return backup_filename
-        except Exception as e:
+        except sqlite3.Error as e:
             logger.error(f"Erro backup SQLite: {e}")
             return None
 
@@ -106,7 +105,7 @@ class BackupService:
             html += "</div><hr style='border: 0; border-top: 1px solid #eee; margin: 20px 0;'>"
             return html
 
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
@@ -172,7 +171,7 @@ class BackupService:
             server.quit()
             return True
 
-        except Exception as e:
+        except smtplib.SMTPException as e:
             logger.error(f"Erro SMTP: {e}")
             return False
 
@@ -181,211 +180,209 @@ class BackupService:
             raise HTTPException(status_code=400,
                                 detail="Serviço de email não configurado. Verifique as variáveis de ambiente (SMTP).")
 
-        with self._manual_backup_lock:
-            session = db or SessionLocal()
-            try:
-                maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                                         User.email.isnot(None)).all()
-                to_emails = [m.email for m in maintainers if m.email]
+        session = db or SessionLocal()
+        try:
+            maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                     User.email.isnot(None)).all()
+            to_emails = [m.email for m in maintainers if m.email]
 
-                if not to_emails:
-                    raise HTTPException(status_code=400, detail="Nenhum mantenedor com e-mail cadastrado.")
+            if not to_emails:
+                raise HTTPException(status_code=400, detail="Nenhum mantenedor com e-mail cadastrado.")
 
-                tz = ZoneInfo(settings.TIMEZONE)
-                now = datetime.now(tz)
-                now_local = now.replace(tzinfo=None)
-                yesterday = now_local.date() - timedelta(days=1)
+            tz = ZoneInfo(settings.TIMEZONE)
+            now = datetime.now(tz)
+            now_local = now.replace(tzinfo=None)
+            yesterday = now_local.date() - timedelta(days=1)
 
-                full_report_html = self._generate_daily_report_html(session, yesterday)
-                fmt_start = yesterday.strftime("%d/%m/%Y")
-                period_text = f"Abaixo está o relatório do dia {fmt_start}:"
-            finally:
-                if db is None:
-                    session.close()
+            full_report_html = self._generate_daily_report_html(session, yesterday)
+            fmt_start = yesterday.strftime("%d/%m/%Y")
+            period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+        finally:
+            if db is None:
+                session.close()
 
-            backup_path = self.create_safe_backup()
-            if not backup_path:
-                logger.error('Backup - "Email manual" Error')
-                raise HTTPException(status_code=500,
-                                    detail="Falha ao gerar a cópia de segurança do banco de dados local.")
+        backup_path = self.create_safe_backup()
+        if not backup_path:
+            logger.error('Backup - "Email manual" Error')
+            raise HTTPException(status_code=500,
+                                detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
-            attachments = [(backup_path, "spe.db")]
+        attachments = [(backup_path, "spe.db")]
 
-            log_path = get_log_path(yesterday)
-            if os.path.exists(log_path):
-                attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
+        log_path = get_log_path(yesterday)
+        if os.path.exists(log_path):
+            attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
 
-            success = self._send_email(to_emails, attachments, full_report_html, period_text)
+        success = self._send_email(to_emails, attachments, full_report_html, period_text)
 
-            if os.path.exists(backup_path):
-                os.remove(backup_path)
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
 
-            if success:
-                logger.info('Backup - "Email manual" OK')
-                return True
-            else:
-                logger.error('Backup - "Email manual" Error')
-                raise HTTPException(status_code=500, detail="Falha na conexão SMTP ao tentar enviar o email.")
+        if success:
+            logger.info('Backup - "Email manual" OK')
+            return True
+        else:
+            logger.error('Backup - "Email manual" Error')
+            raise HTTPException(status_code=500, detail="Falha na conexão SMTP ao tentar enviar o email.")
 
     def run_daily_backup_routine(self):
-        with self._email_backup_lock:
-            tz = ZoneInfo(settings.TIMEZONE)
-            now = datetime.now(tz)
-            now_local = now.replace(tzinfo=None)
-            today = now_local.date()
-            yesterday = today - timedelta(days=1)
+        tz = ZoneInfo(settings.TIMEZONE)
+        now = datetime.now(tz)
+        now_local = now.replace(tzinfo=None)
+        today = now_local.date()
+        yesterday = today - timedelta(days=1)
 
-            if now_local.hour < 9:
+        if now_local.hour < settings.DAILY_REPORT_HOUR:
+            return
+
+        db_read = SessionLocal()
+        try:
+            ran_today = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.target_date == yesterday
+            ).first()
+
+            if ran_today:
                 return
 
-            db_read = SessionLocal()
-            try:
-                ran_today = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date == yesterday
-                ).first()
+            maintainers = db_read.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                     User.email.isnot(None)).all()
+            to_emails = [m.email for m in maintainers if m.email]
 
-                if ran_today:
-                    return
-
-                maintainers = db_read.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                                         User.email.isnot(None)).all()
-                to_emails = [m.email for m in maintainers if m.email]
-
-                if not to_emails:
-                    logger.warning("Nenhum mantenedor com e-mail cadastrado. Abortando rotina.")
-                    return
-
-                last_success = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date.isnot(None)
-                ).order_by(desc(RoutineLog.target_date)).first()
-
-                if last_success and last_success.target_date:
-                    start_date = last_success.target_date + timedelta(days=1)
-                else:
-                    start_date = yesterday
-
-                if start_date > yesterday:
-                    start_date = yesterday
-
-                full_report_html = ""
-                attachments = []
-                current_check_date = start_date
-
-                while current_check_date <= yesterday:
-                    daily_html = self._generate_daily_report_html(db_read, current_check_date)
-                    full_report_html += daily_html
-
-                    log_path = get_log_path(current_check_date)
-                    if os.path.exists(log_path):
-                        attachments.append((log_path, f"log_{current_check_date.strftime('%d%m%Y')}.log"))
-
-                    current_check_date += timedelta(days=1)
-
-                if not full_report_html:
-                    full_report_html = "<p><em>Nenhum período pendente para relatório.</em></p>"
-
-                fmt_start = start_date.strftime("%d/%m/%Y")
-                fmt_end = yesterday.strftime("%d/%m/%Y")
-                if start_date < yesterday:
-                    period_text = f"Abaixo estão os relatórios e logs dos dias {fmt_start} a {fmt_end}:"
-                else:
-                    period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
-            except Exception as e:
-                logger.error(f"Erro check backup diário: {e}")
-                return
-            finally:
-                db_read.close()
-
-            backup_path = self.create_safe_backup()
-            if not backup_path:
-                logger.error('Backup - "Email diário" Error')
+            if not to_emails:
+                logger.warning("Nenhum mantenedor com e-mail cadastrado. Abortando rotina.")
                 return
 
-            attachments.insert(0, (backup_path, "spe.db"))
+            last_success = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.target_date.isnot(None)
+            ).order_by(desc(RoutineLog.target_date)).first()
 
-            success = self._send_email(to_emails, attachments, full_report_html, period_text)
+            if last_success and last_success.target_date:
+                start_date = last_success.target_date + timedelta(days=1)
+            else:
+                start_date = yesterday
 
-            if os.path.exists(backup_path):
-                os.remove(backup_path)
+            if start_date > yesterday:
+                start_date = yesterday
 
-            db_write = SessionLocal()
-            try:
-                if success:
-                    log_entry = RoutineLog(
-                        routine_type="EMAIL_DAILY_BACKUP",
-                        target_date=yesterday,
-                        status="SUCCESS",
-                        execution_time=now_local
-                    )
-                    db_write.add(log_entry)
-                    db_write.commit()
-                else:
-                    log_entry = RoutineLog(
-                        routine_type="EMAIL_DAILY_BACKUP",
-                        target_date=yesterday,
-                        status="FAILED",
-                        execution_time=now_local
-                    )
-                    db_write.add(log_entry)
-                    db_write.commit()
-                    logger.error('Backup - "Email diário" Error')
-            except Exception as e:
-                db_write.rollback()
-                logger.error(f'Backup - "Email diário" DB Error: {e}')
-            finally:
-                db_write.close()
+            full_report_html = ""
+            attachments = []
+            current_check_date = start_date
 
-    def clean_old_logs(self, days_to_keep: int = 15):
-        with self._cleanup_lock:
-            tz = ZoneInfo(settings.TIMEZONE)
-            now = datetime.now(tz)
-            now_local = now.replace(tzinfo=None)
-            today = now_local.date()
+            while current_check_date <= yesterday:
+                daily_html = self._generate_daily_report_html(db_read, current_check_date)
+                full_report_html += daily_html
 
-            db_read = SessionLocal()
-            try:
-                ran_today = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "CLEANUP_ROUTINE_LOGS",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date == today
-                ).first()
+                log_path = get_log_path(current_check_date)
+                if os.path.exists(log_path):
+                    attachments.append((log_path, f"log_{current_check_date.strftime('%d%m%Y')}.log"))
 
-                if ran_today:
-                    return
-            except Exception as e:
-                logger.error(f"Erro ao verificar rotina de limpeza: {e}")
-                return
-            finally:
-                db_read.close()
+                current_check_date += timedelta(days=1)
 
-            db_write = SessionLocal()
-            try:
-                cutoff_date = now_local - timedelta(days=days_to_keep)
+            if not full_report_html:
+                full_report_html = "<p><em>Nenhum período pendente para relatório.</em></p>"
 
-                deleted_count = db_write.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date).delete()
+            fmt_start = start_date.strftime("%d/%m/%Y")
+            fmt_end = yesterday.strftime("%d/%m/%Y")
+            if start_date < yesterday:
+                period_text = f"Abaixo estão os relatórios e logs dos dias {fmt_start} a {fmt_end}:"
+            else:
+                period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
+        except SQLAlchemyError as e:
+            logger.error(f"Erro check backup diário: {e}")
+            return
+        finally:
+            db_read.close()
 
+        backup_path = self.create_safe_backup()
+        if not backup_path:
+            logger.error('Backup - "Email diário" Error')
+            return
+
+        attachments.insert(0, (backup_path, "spe.db"))
+
+        success = self._send_email(to_emails, attachments, full_report_html, period_text)
+
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+
+        db_write = SessionLocal()
+        try:
+            if success:
                 log_entry = RoutineLog(
-                    routine_type="CLEANUP_ROUTINE_LOGS",
-                    target_date=today,
+                    routine_type="EMAIL_DAILY_BACKUP",
+                    target_date=yesterday,
                     status="SUCCESS",
-                    execution_time=now_local,
-                    details=f"{deleted_count} logs apagados"
+                    execution_time=now_local
                 )
                 db_write.add(log_entry)
                 db_write.commit()
+            else:
+                log_entry = RoutineLog(
+                    routine_type="EMAIL_DAILY_BACKUP",
+                    target_date=yesterday,
+                    status="FAILED",
+                    execution_time=now_local
+                )
+                db_write.add(log_entry)
+                db_write.commit()
+                logger.error('Backup - "Email diário" Error')
+        except SQLAlchemyError as e:
+            db_write.rollback()
+            logger.error(f'Backup - "Email diário" DB Error: {e}')
+        finally:
+            db_write.close()
 
-                if deleted_count > 0:
-                    logger.info(
-                        f"Limpeza Automática: {deleted_count} registros antigos da tabela routine_logs foram apagados.")
-            except Exception as e:
-                db_write.rollback()
-                logger.error(f"Erro ao limpar routine_logs: {e}")
-            finally:
-                db_write.close()
+    def clean_old_logs(self, days_to_keep: Optional[int] = None):
+        days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
+        tz = ZoneInfo(settings.TIMEZONE)
+        now = datetime.now(tz)
+        now_local = now.replace(tzinfo=None)
+        today = now_local.date()
+
+        db_read = SessionLocal()
+        try:
+            ran_today = db_read.query(RoutineLog).filter(
+                RoutineLog.routine_type == "CLEANUP_ROUTINE_LOGS",
+                RoutineLog.status == "SUCCESS",
+                RoutineLog.target_date == today
+            ).first()
+
+            if ran_today:
+                return
+        except SQLAlchemyError as e:
+            logger.error(f"Erro ao verificar rotina de limpeza: {e}")
+            return
+        finally:
+            db_read.close()
+
+        db_write = SessionLocal()
+        try:
+            cutoff_date = now_local - timedelta(days=days_to_keep)
+
+            deleted_count = db_write.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date).delete()
+
+            log_entry = RoutineLog(
+                routine_type="CLEANUP_ROUTINE_LOGS",
+                target_date=today,
+                status="SUCCESS",
+                execution_time=now_local,
+                details=f"{deleted_count} logs apagados"
+            )
+            db_write.add(log_entry)
+            db_write.commit()
+
+            if deleted_count > 0:
+                logger.info(
+                    f"Limpeza Automática: {deleted_count} registros antigos da tabela routine_logs foram apagados.")
+        except SQLAlchemyError as e:
+            db_write.rollback()
+            logger.error(f"Erro ao limpar routine_logs: {e}")
+        finally:
+            db_write.close()
 
 
 backup_service = BackupService()
