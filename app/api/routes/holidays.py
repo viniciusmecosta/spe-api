@@ -34,7 +34,7 @@ def read_holidays(
     return holiday_repository.get_all(db)
 
 
-@router.delete("/{id}"), response_model=dict
+@router.delete("/{id}", response_model=dict)
 def delete_holiday(
         id: int,
         db: Session = Depends(deps.get_db),

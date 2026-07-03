@@ -59,7 +59,7 @@ def update_credential(
     return updated_device
 
 
-@router.delete("/{id}"), response_model=dict
+@router.delete("/{id}", response_model=dict)
 def delete_credential(
         id: int,
         db: Session = Depends(deps.get_db),

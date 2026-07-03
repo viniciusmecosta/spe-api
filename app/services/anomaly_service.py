@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.anomaly import AnomalyResponse
 
 
@@ -100,10 +101,11 @@ class AnomalyService:
 
     def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
                       ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
-        query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:
-            query = query.filter(User.id == user_id)
-        users = query.all()
+            user = user_repository.get(db, user_id)
+            users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+        else:
+            users = user_repository.get_active_employees(db)
 
         all_anomalies = []
 

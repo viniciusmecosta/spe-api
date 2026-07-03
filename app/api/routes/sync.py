@@ -7,7 +7,7 @@ from app.services.sync_service import sync_service
 router = APIRouter()
 
 
-@router.post("/database"), response_model=dict
+@router.post("/database", response_model=dict)
 def sync_database(
         file: UploadFile = File(...),
         consumer: DeviceCredential = Depends(deps.verify_consumer_api_key)
