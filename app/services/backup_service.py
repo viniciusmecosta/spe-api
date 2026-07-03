@@ -33,14 +33,14 @@ class BackupService:
         self._manual_backup_lock = threading.Lock()
         self._cleanup_lock = threading.Lock()
 
-    def _create_safe_backup(self, source_db: str) -> Optional[str]:
+    def create_safe_backup(self) -> Optional[str]:
         try:
             tz = ZoneInfo(settings.TIMEZONE)
             timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
             unique_id = uuid.uuid4().hex[:8]
             backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
 
-            src_conn = sqlite3.connect(source_db)
+            src_conn = sqlite3.connect(settings.DATABASE_PATH)
             dst_conn = sqlite3.connect(backup_filename)
 
             src_conn.backup(dst_conn, pages=100, sleep=0.05)
@@ -203,7 +203,7 @@ class BackupService:
                 if db is None:
                     session.close()
 
-            backup_path = self._create_safe_backup("spe.db")
+            backup_path = self.create_safe_backup()
             if not backup_path:
                 logger.error('Backup - "Email manual" Error')
                 raise HTTPException(status_code=500,
@@ -300,7 +300,7 @@ class BackupService:
             finally:
                 db_read.close()
 
-            backup_path = self._create_safe_backup("spe.db")
+            backup_path = self.create_safe_backup()
             if not backup_path:
                 logger.error('Backup - "Email diário" Error')
                 return

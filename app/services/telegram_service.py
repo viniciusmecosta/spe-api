@@ -18,6 +18,7 @@ from app.domain.models.enums import RecordType
 from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
+from app.services.backup_service import backup_service
 
 logger = logging.getLogger(__name__)
 
@@ -26,33 +27,12 @@ class TelegramService:
     def __init__(self):
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
-        self.db_path = "spe.db"
         self._hourly_lock = threading.Lock()
         self._daily_lock = threading.Lock()
         self._manual_backup_lock = threading.Lock()
         self._manual_report_lock = threading.Lock()
 
-    def _create_safe_backup(self) -> str | None:
-        if not os.path.exists(self.db_path):
-            return None
 
-        try:
-            tz = ZoneInfo(settings.TIMEZONE)
-            timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
-            unique_id = uuid.uuid4().hex[:8]
-            backup_filename = f"temp_backup_{timestamp}_{unique_id}.db"
-
-            src_conn = sqlite3.connect(self.db_path)
-            dst_conn = sqlite3.connect(backup_filename)
-
-            src_conn.backup(dst_conn, pages=100, sleep=0.05)
-
-            dst_conn.close()
-            src_conn.close()
-
-            return backup_filename
-        except Exception:
-            return None
 
     def _send_text(self, text: str) -> bool:
         if not self.bot_token or not self.chat_id:
@@ -187,7 +167,7 @@ class TelegramService:
             finally:
                 db_read.close()
 
-            backup_path = self._create_safe_backup()
+            backup_path = backup_service.create_safe_backup()
             if not backup_path:
                 logger.error('Backup - "Telegram horário" Error')
                 return
@@ -300,7 +280,7 @@ class TelegramService:
 
     def execute_manual_backup(self):
         with self._manual_backup_lock:
-            backup_path = self._create_safe_backup()
+            backup_path = backup_service.create_safe_backup()
             if not backup_path:
                 logger.error('Backup - "Telegram manual" Error')
                 return

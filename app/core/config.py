@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_SERVER_URL: Optional[str] = None
 
+    @property
+    def DATABASE_PATH(self) -> str:
+        if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
+            return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
+        return "spe.db"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
