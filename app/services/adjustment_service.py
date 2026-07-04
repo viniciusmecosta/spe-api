@@ -205,10 +205,14 @@ class AdjustmentService:
     def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
         target_dt = datetime.combine(request.target_date, request.time)
         if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
+            start_dt = target_dt.replace(second=0, microsecond=0)
+            end_dt = target_dt.replace(second=59, microsecond=999999)
+            
             record = db.query(TimeRecord).filter(
                 TimeRecord.user_id == request.user_id,
                 TimeRecord.record_type == request.record_type,
-                TimeRecord.record_datetime == target_dt,
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
                 TimeRecord.is_ignored == False
             ).first()
             if record:
