@@ -3,17 +3,12 @@ from typing import Any, List
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
-
-class SuccessResponse(BaseModel):
-    status: str
-    message: str
 
 from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin
+from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, SuccessResponse
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()
