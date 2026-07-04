@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -20,6 +20,9 @@ def create_holiday(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     payroll_service.validate_period_open(db, holiday_in.date)
+    if holiday_repository.get_by_date(db, holiday_in.date):
+        raise HTTPException(status_code=400, detail="Já existe um feriado cadastrado para esta data.")
+        
     holiday = holiday_repository.create(db, holiday_in)
     audit_service.log(
         db, user_id=current_user.id, action="CREATE", entity="HOLIDAY", entity_id=holiday.id,

@@ -22,6 +22,7 @@ from app.schemas.report import (
     TeamHoursResponse, EmployeeHours
 )
 from app.services.anomaly_service import anomaly_service
+from app.services.template_service import template_service
 
 logger = logging.getLogger(__name__)
 
