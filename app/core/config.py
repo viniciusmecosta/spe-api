@@ -50,10 +50,6 @@ class Settings(BaseSettings):
     def assemble_cors_origins(cls, v: List[str], info) -> List[str]:
         if isinstance(v, str):
             v = [i.strip() for i in v.split(",")]
-        
-        env = info.data.get("ENVIRONMENT", "dev")
-        if env == "prod" and "*" in v:
-            raise ValueError("Wildcard '*' in BACKEND_CORS_ORIGINS is not allowed in production")
         return v
 
     model_config = SettingsConfigDict(
