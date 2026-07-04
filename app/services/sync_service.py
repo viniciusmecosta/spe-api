@@ -6,9 +6,10 @@ from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import UploadFile, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
-from app.database.session import engine, SessionLocal
+from app.database.session import engine, get_db_session
 from app.domain.models.routine_log import RoutineLog
 from app.repositories.time_record_repository import time_record_repository
 from app.services.backup_service import backup_service
@@ -25,7 +26,7 @@ class SyncService:
             result = cursor.fetchone()
             conn.close()
             return result and result[0] == "ok"
-        except Exception:
+        except sqlite3.Error:
             return False
 
     def receive_database(self, file: UploadFile):
@@ -53,10 +54,10 @@ class SyncService:
             if os.path.exists(shm_path):
                 os.remove(shm_path)
 
-        except Exception as e:
+        except (OSError, sqlite3.Error) as e:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            logger.error('Sincronização - "Receber banco de dados" Error')
+            logger.error(f'Sincronização - "Receber banco de dados" Error: {e}')
             raise HTTPException(status_code=500, detail=str(e))
 
         return True
@@ -70,27 +71,24 @@ class SyncService:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
-        db_read = SessionLocal()
         try:
-            current_hour_start = now.replace(minute=0, second=0, microsecond=0)
-            exists = db_read.query(RoutineLog).filter(
-                RoutineLog.routine_type == "REMOTE_SYNC_DATABASE",
-                RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= current_hour_start
-            ).first()
-            if exists:
-                return
-        except Exception:
+            with get_db_session() as db_read:
+                current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+                exists = db_read.query(RoutineLog).filter(
+                    RoutineLog.routine_type == "REMOTE_SYNC_DATABASE",
+                    RoutineLog.status == "SUCCESS",
+                    RoutineLog.execution_time >= current_hour_start
+                ).first()
+                if exists:
+                    return
+        except SQLAlchemyError:
             return
-        finally:
-            db_read.close()
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Sincronização - "Enviar banco de dados" Error')
+            logger.error('Sincronização - "Enviar banco de dados" Error ao gerar backup')
             return
 
-        db_write = SessionLocal()
         try:
             url = f"{settings.CONSUMER_SERVER_URL.rstrip('/')}{settings.API_V1_STR}/sync/database"
             headers = {"X-CONSUMER-API-KEY": settings.CONSUMER_API_KEY}
@@ -99,26 +97,25 @@ class SyncService:
                 response = requests.post(url, headers=headers, files=files, timeout=60)
                 response.raise_for_status()
 
-            log_entry = RoutineLog(
-                routine_type="REMOTE_SYNC_DATABASE",
-                status="SUCCESS"
-            )
-            db_write.add(log_entry)
-            db_write.commit()
-
-        except Exception:
-            db_write.rollback()
-            logger.error('Sincronização - "Enviar banco de dados" Error')
-            log_error = RoutineLog(
-                routine_type="REMOTE_SYNC_DATABASE",
-                status="FAILED"
-            )
-            db_write.add(log_error)
-            db_write.commit()
+            with get_db_session() as db_write:
+                log_entry = RoutineLog(
+                    routine_type="REMOTE_SYNC_DATABASE",
+                    status="SUCCESS"
+                )
+                db_write.add(log_entry)
+        except requests.RequestException as e:
+            logger.error(f'Sincronização - "Enviar banco de dados" HTTP Error: {e}')
+            try:
+                with get_db_session() as db_err:
+                    log_error = RoutineLog(routine_type="REMOTE_SYNC_DATABASE", status="FAILED")
+                    db_err.add(log_error)
+            except SQLAlchemyError:
+                pass
+        except SQLAlchemyError as e:
+            logger.error(f'Sincronização - "Enviar banco de dados" DB Error: {e}')
         finally:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
-            db_write.close()
 
     def check_and_sync_all(self):
         if settings.OPERATION_MODE != "EXPORTADOR":
@@ -127,55 +124,47 @@ class SyncService:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
 
-        db_read = SessionLocal()
         try:
-            current_hour_start = now.replace(minute=0, second=0, microsecond=0)
-            exists = db_read.query(RoutineLog).filter(
-                RoutineLog.routine_type == "SYNC_TIME_RECORDS",
-                RoutineLog.status == "SUCCESS",
-                RoutineLog.execution_time >= current_hour_start
-            ).first()
+            with get_db_session() as db_read:
+                current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+                exists = db_read.query(RoutineLog).filter(
+                    RoutineLog.routine_type == "SYNC_TIME_RECORDS",
+                    RoutineLog.status == "SUCCESS",
+                    RoutineLog.execution_time >= current_hour_start
+                ).first()
 
-            if exists:
-                return
+                if exists:
+                    return
 
-            records = time_record_repository.get_unsynced(db_read)
-            if not records:
-                log_entry = RoutineLog(
-                    routine_type="SYNC_TIME_RECORDS",
-                    status="SUCCESS"
-                )
-                db_read.add(log_entry)
-                db_read.commit()
-                return
+                records = time_record_repository.get_unsynced(db_read)
+                if not records:
+                    log_entry = RoutineLog(
+                        routine_type="SYNC_TIME_RECORDS",
+                        status="SUCCESS"
+                    )
+                    db_read.add(log_entry)
+                    return
 
-            records_data = [{"id": r.id, "user_id": r.user_id, "timestamp": r.record_datetime.isoformat()} for r in
-                            records]
-        except Exception:
+                records_data = [{"id": r.id, "user_id": r.user_id, "timestamp": r.record_datetime.isoformat()} for r in
+                                records]
+        except SQLAlchemyError:
             return
-        finally:
-            db_read.close()
 
-        db_write = SessionLocal()
         try:
             for rec in records_data:
                 payload = {"user_id": rec["user_id"], "timestamp": rec["timestamp"]}
                 res = requests.post(f"{settings.CONSUMER_SERVER_URL}/sync", json=payload, timeout=10)
                 if res.status_code == 200:
-                    time_record_repository.mark_as_synced(db_write, rec["id"])
+                    with get_db_session() as db_mark:
+                        time_record_repository.mark_as_synced(db_mark, rec["id"])
 
-            log_entry = RoutineLog(
-                routine_type="SYNC_TIME_RECORDS",
-                status="SUCCESS"
-            )
-            db_write.add(log_entry)
-            db_write.commit()
-
-        except Exception:
-            db_write.rollback()
-            logger.error('Sincronização - "Registros de ponto" Error')
-        finally:
-            db_write.close()
-
+            with get_db_session() as db_write:
+                log_entry = RoutineLog(
+                    routine_type="SYNC_TIME_RECORDS",
+                    status="SUCCESS"
+                )
+                db_write.add(log_entry)
+        except (requests.RequestException, SQLAlchemyError) as e:
+            logger.error(f'Sincronização - "Registros de ponto" Error: {e}')
 
 sync_service = SyncService()

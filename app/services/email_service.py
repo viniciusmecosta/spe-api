@@ -74,6 +74,8 @@ class EmailService:
             server.sendmail(msg['From'], to_emails, msg.as_string())
             server.quit()
             logger.info(f"Payroll email sent successfully for {action} {month:02d}/{year}")
+        except smtplib.SMTPException as e:
+            logger.error(f"Failed to send payroll email (SMTP error): {e}")
         except Exception as e:
             logger.error(f"Failed to send payroll email: {e}")
 
@@ -136,19 +138,17 @@ class EmailService:
 email_service = EmailService()
 
 def dispatch_payroll_email(action: str, user_name: str, user_email: str, month: int, year: int, current_user_id: int):
-    from app.database.session import SessionLocal
+    from app.database.session import get_db_session
     from app.services.excel_service import excel_service
     
-    db = SessionLocal()
     try:
-        attachment = None
-        if action == "Fechamento":
-            current_user = db.query(User).get(current_user_id)
-            if current_user:
-                attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
-            
-        email_service.send_payroll_email(db, action, user_name, user_email, month, year, attachment)
+        with get_db_session() as db:
+            attachment = None
+            if action == "Fechamento":
+                current_user = db.query(User).get(current_user_id)
+                if current_user:
+                    attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
+                
+            email_service.send_payroll_email(db, action, user_name, user_email, month, year, attachment)
     except Exception as e:
         logger.error(f"Error in dispatch_payroll_email: {e}")
-    finally:
-        db.close()
