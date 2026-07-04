@@ -26,7 +26,7 @@ def _extract_user_name(request: Request) -> str:
     try:
         auth = request.headers.get("authorization", "")
         if not auth.lower().startswith("bearer "):
-            return ""
+            return getattr(request.state, "attempted_user", "")
         token = auth[7:]
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         name = payload.get("name", "")
@@ -34,7 +34,7 @@ def _extract_user_name(request: Request) -> str:
             return _format_short_name(name)
     except Exception:
         pass
-    return ""
+    return getattr(request.state, "attempted_user", "")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

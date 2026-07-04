@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,13 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=Token)
-def login_access_token(db: Session = Depends(deps.get_db), form_data: OAuth2PasswordRequestForm = Depends()) -> Any:
+def login_access_token(
+    request: Request,
+    db: Session = Depends(deps.get_db), 
+    form_data: OAuth2PasswordRequestForm = Depends()
+) -> Any:
     username = form_data.username.lower()
+    request.state.attempted_user = username
     user = user_repository.get_by_username(db, username=username)
 
     if not user:
