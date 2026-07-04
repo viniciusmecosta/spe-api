@@ -90,7 +90,7 @@ class SyncService:
             return
 
         try:
-            url = f"{settings.CONSUMER_SERVER_URL.rstrip('/')}{settings.API_V1_STR}/sync/database"
+            url = f"{settings.CONSUMER_SERVER_URL.rstrip('/')}/api/v1/sync/database"
             headers = {"X-CONSUMER-API-KEY": settings.CONSUMER_API_KEY}
             with open(backup_path, "rb") as f:
                 files = {"file": ("spe.db", f, "application/octet-stream")}

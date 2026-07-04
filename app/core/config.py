@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str
     APP_VERSION: str
     ENVIRONMENT: str = "prod"
-    API_V1_STR: str
+
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
     SECRET_KEY: str
@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
+    EMAIL_TO: Optional[str] = None
 
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
 
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_SERVER_URL: Optional[str] = None
+    CONSUMER_API_KEY: Optional[str] = None
 
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int

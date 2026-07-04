@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import api_router
+from app.api.v1 import api_router as api_v1_router
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan
@@ -20,7 +20,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    openapi_url="/api/v1/openapi.json",
     lifespan=lifespan,
     swagger_ui_parameters={
         "docExpansion": "list",
@@ -55,5 +55,5 @@ def root():
     }
 
 
-app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_v1_router, prefix="/api/v1")
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

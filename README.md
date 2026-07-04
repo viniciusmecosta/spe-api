@@ -26,9 +26,6 @@ A aplicação utiliza variáveis de ambiente para controle de comportamento e pr
 * **`PROJECT_NAME`**
   Nome descritivo da aplicação.
 
-* **`API_V1_STR`**
-  Prefixo base das rotas da API.
-
 * **`TIMEZONE`**
   Fuso horário utilizado para persistência e validação temporal dos registros.
 
