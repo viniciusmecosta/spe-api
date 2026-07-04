@@ -84,7 +84,7 @@ class CompanyService:
         try:
             with open(full_file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
-        except Exception as e:
+        except OSError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Falha ao salvar arquivo no servidor: {str(e)}"
@@ -95,7 +95,7 @@ class CompanyService:
             if os.path.exists(old_full_path):
                 try:
                     os.remove(old_full_path)
-                except Exception:
+                except OSError:
                     pass
 
         old_logo = existing.logo_path

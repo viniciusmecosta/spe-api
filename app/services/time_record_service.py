@@ -26,7 +26,7 @@ class TimeRecordService:
             response = client.request('pool.ntp.org', version=3, timeout=2)
             utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
             return utc_time.astimezone(tz)
-        except Exception:
+        except (OSError, RuntimeError):
             return datetime.now(tz)
 
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):

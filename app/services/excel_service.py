@@ -125,7 +125,7 @@ class ExcelService:
                 img.height = 60
                 ws.add_image(img, 'A1')
                 ws.row_dimensions[1].height = 50
-            except Exception:
+            except (OSError, ValueError):
                 pass
         ws.append([])
 

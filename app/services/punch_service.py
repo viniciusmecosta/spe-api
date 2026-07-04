@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
+from sqlalchemy.exc import SQLAlchemyError
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -41,7 +42,7 @@ class PunchService:
 
             return True, "Ponto Registrado", new_record
 
-        except Exception as e:
+        except (SQLAlchemyError, ValueError) as e:
             logger.error(f"Erro ao processar punch: {e}")
             return False, "Erro Interno", None
 

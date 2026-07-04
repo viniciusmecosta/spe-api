@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
-except Exception:
+except locale.Error:
     pass
 
 
@@ -117,7 +117,7 @@ class ReportService:
 
             return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity)
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError) as e:
             logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 

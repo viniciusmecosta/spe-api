@@ -134,7 +134,7 @@ class TelegramService:
                 text += "\n"
 
             return text.strip()
-        except Exception as e:
+        except (SQLAlchemyError, ValueError) as e:
             logger.error(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
 
