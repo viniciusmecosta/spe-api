@@ -1,6 +1,7 @@
 import os
 from typing import List, Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,7 +11,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str
     APP_VERSION: str
     ENVIRONMENT: str = "prod"
-    API_V1_STR: str
+
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
     SECRET_KEY: str
@@ -25,12 +26,33 @@ class Settings(BaseSettings):
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     EMAIL_FROM: Optional[str] = None
+    EMAIL_TO: Optional[str] = None
 
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
+    TELEGRAM_MAX_MESSAGE_LENGTH: int = 3900
 
     OPERATION_MODE: str = "STANDALONE"
     CONSUMER_SERVER_URL: Optional[str] = None
+    CONSUMER_API_KEY: Optional[str] = None
+
+    ROUTINE_LOG_RETENTION_DAYS: int
+    DAILY_REPORT_HOUR: int
+    HOURLY_BACKUP_START_HOUR: int
+    HOURLY_BACKUP_END_HOUR: int
+
+    @property
+    def DATABASE_PATH(self) -> str:
+        if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
+            return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
+        return "spe.db"
+
+    @field_validator("BACKEND_CORS_ORIGINS")
+    @classmethod
+    def assemble_cors_origins(cls, v: List[str], info) -> List[str]:
+        if isinstance(v, str):
+            v = [i.strip() for i in v.split(",")]
+        return v
 
     model_config = SettingsConfigDict(
         env_file=".env",

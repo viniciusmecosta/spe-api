@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, field_validator, EmailStr
+from pydantic import BaseModel, field_validator, EmailStr, ConfigDict, Field
 
 from app.domain.models.enums import UserRole
 from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse
@@ -54,8 +54,8 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    username: str
-    password: str
+    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
+    password: str = Field(..., min_length=6)
     role: UserRole = UserRole.EMPLOYEE
     schedules: List[WorkScheduleCreate] = []
     biometrics: List[UserBiometricCreate] = []
@@ -108,8 +108,7 @@ class UserInDBBase(UserBase):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class User(UserInDBBase):

@@ -1,10 +1,11 @@
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_password_hash
-from app.database.session import SessionLocal
+from app.database.session import get_db_session
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
@@ -37,14 +38,12 @@ def init_db(db: Session) -> None:
 
 def main() -> None:
     logger.info("Creating initial data")
-    db = SessionLocal()
     try:
-        init_db(db)
-    except Exception as e:
+        with get_db_session() as db:
+            init_db(db)
+    except SQLAlchemyError as e:
         logger.error(f"Error creating initial data: {e}")
         raise e
-    finally:
-        db.close()
     logger.info("Initial data created")
 
 

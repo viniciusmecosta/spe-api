@@ -1,5 +1,5 @@
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.engine.reflection import Inspector
 
 revision = '029'
@@ -12,7 +12,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
     tables = inspector.get_table_names()
-    
+
     if 'manual_adjustments' in tables:
         op.drop_table('manual_adjustments')
 
@@ -21,7 +21,7 @@ def downgrade() -> None:
     conn = op.get_bind()
     inspector = Inspector.from_engine(conn)
     tables = inspector.get_table_names()
-    
+
     if 'manual_adjustments' not in tables:
         op.create_table(
             'manual_adjustments',

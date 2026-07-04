@@ -1,9 +1,14 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.domain.models.enums import RecordType, EditJustification
+
+
+class SuccessResponse(BaseModel):
+    status: str = "success"
+    message: str
 
 
 class TimeRecordBase(BaseModel):
@@ -42,8 +47,7 @@ class TimeRecordSimple(BaseModel):
     record_type: RecordType
     record_datetime: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TimeRecordResponse(TimeRecordBase):
@@ -54,5 +58,4 @@ class TimeRecordResponse(TimeRecordBase):
     edit_justification: Optional[EditJustification] = None
     edit_reason: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

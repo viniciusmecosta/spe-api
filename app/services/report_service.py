@@ -1,4 +1,5 @@
 import locale
+import logging
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from typing import List, Optional
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
+from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.holiday_repository import holiday_repository
@@ -21,9 +23,11 @@ from app.schemas.report import (
 )
 from app.services.anomaly_service import anomaly_service
 
+logger = logging.getLogger(__name__)
+
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
-except Exception:
+except locale.Error:
     pass
 
 
@@ -75,6 +79,47 @@ class ReportService:
             employees_present_today=present,
             date=today
         )
+
+    def generate_daily_report_html(self, db: Session, target_date: date) -> str:
+        try:
+            formatted_date = target_date.strftime("%d/%m/%Y")
+            day_name_map = {
+                0: "Segunda-feira", 1: "Terça-feira", 2: "Quarta-feira", 3: "Quinta-feira",
+                4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
+            }
+            day_name = day_name_map[target_date.weekday()]
+
+            start_local = datetime.combine(target_date, datetime.min.time())
+            end_local = datetime.combine(target_date, datetime.max.time())
+
+            records = (
+                db.query(TimeRecord, User)
+                .join(User, TimeRecord.user_id == User.id)
+                .filter(TimeRecord.record_datetime >= start_local)
+                .filter(TimeRecord.record_datetime <= end_local)
+                .filter(TimeRecord.is_ignored == False)
+                .order_by(User.name, TimeRecord.record_datetime)
+                .all()
+            )
+
+            if not records:
+                return template_service.get_daily_report_html(day_name, formatted_date, False, {})
+
+            user_activity = {}
+            for record, user in records:
+                if user.name not in user_activity:
+                    user_activity[user.name] = []
+
+                time_str = record.record_datetime.strftime("%H:%M")
+                type_label = "E" if record.record_type == RecordType.ENTRY else "S"
+
+                user_activity[user.name].append(f"{time_str} ({type_label})")
+
+            return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity)
+
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.error(f"Erro HTML Report: {e}")
+            return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
     def get_my_dashboard(self, db: Session, current_user: User) -> MyDashboardResponse:
         tz = ZoneInfo(settings.TIMEZONE)

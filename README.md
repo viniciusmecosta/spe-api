@@ -2,9 +2,12 @@
 
 ## Sobre o Projeto
 
-O **SPE** é uma API backend responsável pela centralização e automação do controle de assiduidade de colaboradores. A solução gerencia registros de ponto, definição de jornadas de trabalho, tratamento de justificativas, consolidação de horas trabalhadas e execução do fechamento mensal.
+O **SPE** é uma API backend responsável pela centralização e automação do controle de assiduidade de colaboradores. A
+solução gerencia registros de ponto, definição de jornadas de trabalho, tratamento de justificativas, consolidação de
+horas trabalhadas e execução do fechamento mensal.
 
-A aplicação foi projetada com foco em confiabilidade, organização em camadas e facilidade de evolução, permitindo sua integração com sistemas de recursos humanos, dispositivos de coleta de ponto e ferramentas de análise gerencial.
+A aplicação foi projetada com foco em confiabilidade, organização em camadas e facilidade de evolução, permitindo sua
+integração com sistemas de recursos humanos, dispositivos de coleta de ponto e ferramentas de análise gerencial.
 
 ## Stack Tecnológica
 
@@ -19,15 +22,13 @@ A aplicação foi projetada com foco em confiabilidade, organização em camadas
 
 ## Configuração do Ambiente
 
-A aplicação utiliza variáveis de ambiente para controle de comportamento e proteção de dados sensíveis. Antes da execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.example` como referência.
+A aplicação utiliza variáveis de ambiente para controle de comportamento e proteção de dados sensíveis. Antes da
+execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.example` como referência.
 
 ### Configurações Gerais
 
 * **`PROJECT_NAME`**
   Nome descritivo da aplicação.
-
-* **`API_V1_STR`**
-  Prefixo base das rotas da API.
 
 * **`TIMEZONE`**
   Fuso horário utilizado para persistência e validação temporal dos registros.

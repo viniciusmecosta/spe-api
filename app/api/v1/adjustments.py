@@ -1,7 +1,7 @@
 import os
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,8 @@ from app.services.adjustment_service import adjustment_service
 
 router = APIRouter()
 
-@router.post("/", response_model=AdjustmentRequestResponse)
+
+@router.post("/", response_model=AdjustmentRequestResponse, status_code=status.HTTP_201_CREATED)
 def create_adjustment_request(
         request_in: AdjustmentRequestCreate,
         db: Session = Depends(deps.get_db),
@@ -24,7 +25,8 @@ def create_adjustment_request(
 ) -> Any:
     return adjustment_service.create_adjustment_request(db, current_user.id, request_in)
 
-@router.post("/admin/waive", response_model=AdjustmentRequestResponse)
+
+@router.post("/admin/waive", response_model=AdjustmentRequestResponse, status_code=status.HTTP_201_CREATED)
 def waive_absence_admin(
         waiver_in: AdjustmentWaiverCreate,
         db: Session = Depends(deps.get_db),
@@ -32,7 +34,8 @@ def waive_absence_admin(
 ) -> Any:
     return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
 
-@router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse)
+
+@router.post("/{id}/attachments", response_model=AdjustmentAttachmentResponse, status_code=status.HTTP_201_CREATED)
 def upload_adjustment_attachment(
         id: int,
         file: UploadFile = File(...),
@@ -40,6 +43,7 @@ def upload_adjustment_attachment(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return adjustment_service.upload_attachment(db, id, file, current_user.id)
+
 
 @router.get("/{id}/download", response_class=FileResponse)
 def download_adjustment_attachment(
@@ -74,6 +78,7 @@ def download_adjustment_attachment(
         media_type='application/octet-stream'
     )
 
+
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(
         skip: int = 0,
@@ -82,6 +87,7 @@ def read_my_adjustments(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return adjustment_service.get_my_enriched(db, current_user.id, skip, limit)
+
 
 @router.get("/", response_model=List[AdjustmentRequestResponse])
 def read_all_adjustments(
@@ -92,6 +98,7 @@ def read_all_adjustments(
 ) -> Any:
     return adjustment_service.get_all_enriched(db, skip, limit)
 
+
 @router.put("/{id}/approve", response_model=AdjustmentRequestResponse)
 def approve_adjustment(
         id: int,
@@ -100,6 +107,7 @@ def approve_adjustment(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return adjustment_service.approve_adjustment(db, id, current_user.id, comment)
+
 
 @router.put("/{id}/reject", response_model=AdjustmentRequestResponse)
 def reject_adjustment(
@@ -110,7 +118,8 @@ def reject_adjustment(
 ) -> Any:
     return adjustment_service.reject_adjustment(db, id, current_user.id, comment)
 
-@router.delete("/{id}")
+
+@router.delete("/{id}", response_model=dict)
 def delete_adjustment(
         id: int,
         db: Session = Depends(deps.get_db),

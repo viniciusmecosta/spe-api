@@ -1,6 +1,6 @@
 import hashlib
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Union, Optional
 
 import bcrypt
@@ -12,12 +12,15 @@ from app.core.config import settings
 ALGORITHM = settings.ALGORITHM
 
 
-def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: Union[str, Any], name: Optional[str] = None,
+                        expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": str(subject)}
+    if name:
+        to_encode["name"] = name
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -58,14 +61,6 @@ def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
         if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
             try:
                 device_name = socket.gethostname()
-            except Exception:
-                pass
-        else:
-            try:
-                socket.setdefaulttimeout(1.5)
-                host_info = socket.gethostbyaddr(ip)
-                if host_info and host_info[0]:
-                    device_name = host_info[0].split('.')[0]
             except Exception:
                 pass
 

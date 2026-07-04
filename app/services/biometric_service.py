@@ -1,6 +1,8 @@
 import logging
 from typing import List
 
+import requests
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.domain.models.biometric import UserBiometric
@@ -63,7 +65,7 @@ class BiometricService:
             )
 
             return True, "Sucesso"
-        except Exception as e:
+        except (requests.RequestException, SQLAlchemyError, ValueError) as e:
             logger.error(f"Erro Enroll: {e}")
             return False, str(e)
 

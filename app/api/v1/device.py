@@ -8,18 +8,17 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.core.config import settings
 from app.core.security import get_client_ip
-from app.domain.models.biometric import UserBiometric
 from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.user import User
+from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
     BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
     ManagerVerifyRequest, ManagerVerifyResponse
 )
+from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
-from app.services.audit_service import audit_service
 
 router = APIRouter()
 
@@ -148,10 +147,7 @@ def verify_manager_access(
         db: Session = Depends(deps.get_db),
         device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
-    managers_with_bio = db.query(User).join(UserBiometric).filter(
-        User.role.in_([UserRole.MANAGER, UserRole.MAINTAINER]),
-        User.is_active == True
-    ).first()
+    managers_with_bio = biometric_repository.get_manager_with_biometric(db)
 
     if not managers_with_bio:
         audit_service.log(
@@ -163,7 +159,7 @@ def verify_manager_access(
             message="Nenhum gestor cadastrado. Acesso liberado."
         )
 
-    biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == payload.sensor_index).first()
+    biometric = biometric_repository.get_by_sensor_index(db, payload.sensor_index)
     if not biometric:
         audit_service.log(
             db, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,

@@ -1,16 +1,16 @@
 import logging
 import os
-import time
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import api_router
+from app.api.v1 import api_router as api_v1_router
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan
 from app.core.logger import setup_logging
+from app.middleware.request_logging import RequestLoggingMiddleware
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.APP_VERSION,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    openapi_url="/api/v1/openapi.json",
     lifespan=lifespan,
     swagger_ui_parameters={
         "docExpansion": "list",
@@ -40,17 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(RequestLoggingMiddleware)
+
 setup_exception_handlers(app)
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    host = request.client.host if request.client else "127.0.0.1"
-    logger.info(f"{host} - \"{request.method} {request.url.path}\" {response.status_code} {process_time:.4f}s")
-    return response
 
 
 @app.get("/", include_in_schema=False)
@@ -63,5 +55,5 @@ def root():
     }
 
 
-app.include_router(api_router, prefix=settings.API_V1_STR)
+app.include_router(api_v1_router, prefix="/api/v1")
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

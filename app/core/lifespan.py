@@ -6,9 +6,8 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
 from app.core.config import settings
-from app.services.backup_service import backup_service
+from app.services.routine_orchestrator import routine_orchestrator
 from app.services.sync_service import sync_service
-from app.services.telegram_service import telegram_service
 
 scheduler = BackgroundScheduler()
 
@@ -19,14 +18,17 @@ async def lifespan(app: FastAPI):
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
 
-    scheduler.add_job(backup_service.run_daily_backup_routine, trigger=trigger_aligned, id="daily_backup_email",
+    scheduler.add_job(routine_orchestrator.run_daily_backup_routine_email, trigger=trigger_aligned,
+                      id="daily_backup_email",
                       max_instances=1, coalesce=True)
-    scheduler.add_job(telegram_service.execute_hourly_backup, trigger=trigger_aligned, id="hourly_backup_telegram",
+    scheduler.add_job(routine_orchestrator.execute_hourly_backup_telegram, trigger=trigger_aligned,
+                      id="hourly_backup_telegram",
                       max_instances=1, coalesce=True)
-    scheduler.add_job(telegram_service.send_managerial_report, trigger=trigger_aligned, id="daily_report_telegram",
+    scheduler.add_job(routine_orchestrator.send_managerial_report_telegram, trigger=trigger_aligned,
+                      id="daily_report_telegram",
                       max_instances=1, coalesce=True)
 
-    scheduler.add_job(backup_service.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
+    scheduler.add_job(routine_orchestrator.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":

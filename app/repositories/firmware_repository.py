@@ -1,7 +1,10 @@
 from typing import Optional, List
+
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
+
 from app.domain.models.firmware import Firmware
+
 
 class FirmwareRepository:
     def get_by_version(self, db: Session, version: str) -> Optional[Firmware]:
@@ -19,5 +22,6 @@ class FirmwareRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
 
 firmware_repository = FirmwareRepository()

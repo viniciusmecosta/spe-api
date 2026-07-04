@@ -1,20 +1,21 @@
 from datetime import datetime
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin
+from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
+    SuccessResponse
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()
 
 
-@router.post("/entry", response_model=TimeRecordResponse)
+@router.post("/entry", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def register_entry(
         request: Request,
         db: Session = Depends(deps.get_db),
@@ -23,7 +24,7 @@ def register_entry(
     return time_record_service.register_entry(db, current_user.id, request)
 
 
-@router.post("/exit", response_model=TimeRecordResponse)
+@router.post("/exit", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def register_exit(
         request: Request,
         db: Session = Depends(deps.get_db),
@@ -63,7 +64,7 @@ def list_records_for_admin(
     return records
 
 
-@router.post("/admin", response_model=TimeRecordResponse)
+@router.post("/admin", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def create_time_record_admin(
         record_in: TimeRecordCreateAdmin,
         request: Request,
@@ -85,7 +86,7 @@ def update_time_record_admin(
     return time_record_service.update_admin_record(db, record_id, record_in, current_user.id)
 
 
-@router.delete("/admin/{record_id}")
+@router.delete("/admin/{record_id}", response_model=SuccessResponse)
 def delete_time_record_admin(
         record_id: int,
         request_body: TimeRecordDeleteAdmin,

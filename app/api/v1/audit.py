@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.repositories.audit_repository import audit_repository
 from app.schemas.audit import AuditLogResponse
+from app.services.audit_service import audit_service
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ def read_audit_logs(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ):
-    return audit_repository.get_logs(
+    return audit_service.get_logs(
         db, action=action, start_date=start_date, end_date=end_date,
         order_by=order_by, skip=skip, limit=limit
     )

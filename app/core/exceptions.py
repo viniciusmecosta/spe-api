@@ -70,8 +70,6 @@ def setup_exception_handlers(app: FastAPI):
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         if exc.status_code >= 500:
             logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}", exc_info=True)
-        else:
-            logger.warning(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}")
 
         detail_msg = exc.detail
         if isinstance(detail_msg, dict):
@@ -97,7 +95,6 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        logger.warning(f"Erro de validação em {request.method} {request.url.path}: {exc.errors()}")
         invalid_params = [
             {
                 "loc": " -> ".join(map(str, err.get("loc", []))),

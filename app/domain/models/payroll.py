@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -29,4 +29,3 @@ class PayrollClosure(Base):
     deleted_by = Column(Integer, ForeignKey('users.id'), nullable=True)
 
     deleter = relationship('User', foreign_keys=[deleted_by])
-

@@ -12,7 +12,7 @@ from app.services.audit_service import audit_service
 router = APIRouter()
 
 
-@router.post("/", response_model=DeviceCredentialResponse)
+@router.post("/", response_model=DeviceCredentialResponse, status_code=status.HTTP_201_CREATED)
 def create_credential(
         credential_in: DeviceCredentialCreate,
         db: Session = Depends(deps.get_db),
@@ -59,7 +59,7 @@ def update_credential(
     return updated_device
 
 
-@router.delete("/{id}")
+@router.delete("/{id}", response_model=dict)
 def delete_credential(
         id: int,
         db: Session = Depends(deps.get_db),

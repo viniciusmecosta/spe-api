@@ -103,5 +103,9 @@ class UserRepository:
         db.refresh(db_obj)
         return db_obj
 
+    def get_active_employees(self, db: Session) -> List[User]:
+        from app.domain.models.enums import UserRole
+        return db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE).all()
+
 
 user_repository = UserRepository()

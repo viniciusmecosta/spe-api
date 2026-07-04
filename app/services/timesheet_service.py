@@ -148,7 +148,7 @@ class TimesheetService:
                     ]))
                     story.append(header_table)
                     story.append(Spacer(1, 10))
-                except Exception:
+                except (OSError, ValueError):
                     story.append(Paragraph(document_title, title_style))
             else:
                 story.append(Paragraph(document_title, title_style))
@@ -401,7 +401,8 @@ class TimesheetService:
 
                     filename = f"espelho_ponto_{safe_name}_{month:02d}_{year}.pdf"
                     zip_file.writestr(filename, pdf_buffer.getvalue())
-                except Exception:
+                except (ValueError, OSError, RuntimeError) as e:
+                    logger.error(f"Erro ao gerar espelho de ponto em lote (User {user.id}): {e}")
                     continue
 
         zip_buffer.seek(0)

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from datetime import time as dt_time
 from typing import Optional, List
 
-from pydantic import BaseModel, computed_field, model_validator
+from pydantic import BaseModel, computed_field, model_validator, ConfigDict
 
 from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
 from app.schemas.time_record import TimeRecordSimple
@@ -51,8 +51,7 @@ class AdjustmentAttachmentResponse(BaseModel):
             filename = filename.split("\\")[-1]
         return f"/static/{filename}"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AdjustmentRequestResponse(AdjustmentRequestBase):
@@ -67,5 +66,4 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     attachments: List[AdjustmentAttachmentResponse] = []
     time_records: List[TimeRecordSimple] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

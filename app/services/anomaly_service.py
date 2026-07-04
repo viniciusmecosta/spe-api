@@ -1,11 +1,12 @@
-from datetime import date, datetime
+import calendar
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Optional
 
 from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
+from app.repositories.user_repository import user_repository
 from app.schemas.anomaly import AnomalyResponse
 
 
@@ -99,10 +100,11 @@ class AnomalyService:
 
     def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
                       ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
-        query = db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         if user_id:
-            query = query.filter(User.id == user_id)
-        users = query.all()
+            user = user_repository.get(db, user_id)
+            users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+        else:
+            users = user_repository.get_active_employees(db)
 
         all_anomalies = []
 
@@ -133,6 +135,26 @@ class AnomalyService:
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
+
+    def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: Optional[int] = None,
+                               ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+        today = date.today()
+        try:
+            _, last_day = calendar.monthrange(year, month)
+        except ValueError:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
+
+        start_date = date(year, month, 1)
+        end_date = date(year, month, last_day)
+
+        if end_date >= today:
+            end_date = today - timedelta(days=1)
+
+        if start_date > end_date:
+            return []
+
+        return self.get_anomalies(db, start_date, end_date, user_id, ignore_excessive_hours)
 
 
 anomaly_service = AnomalyService()
