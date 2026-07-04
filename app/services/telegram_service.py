@@ -1,25 +1,15 @@
 import logging
-import os
-import sqlite3
-import threading
-import uuid
-from datetime import datetime, timedelta, date, time
+from datetime import datetime, date, time
 from typing import Dict, List
-from zoneinfo import ZoneInfo
 
 import requests
-from sqlalchemy import desc
-from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.logger import get_log_path
-from app.database.session import SessionLocal
 from app.domain.models.enums import RecordType
-from app.domain.models.routine_log import RoutineLog
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.services.backup_service import backup_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +18,6 @@ class TelegramService:
     def __init__(self):
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
-
-
 
     def send_text(self, text: str) -> bool:
         if not self.bot_token or not self.chat_id:
@@ -78,7 +66,7 @@ class TelegramService:
         return f"{first_name} {second_name}"
 
     def generate_report_text(self, db: Session, start_date: date, end_date: date,
-                              title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
+                             title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
             fmt_start = start_date.strftime("%d/%m/%Y")
             fmt_end = end_date.strftime("%d/%m/%Y")
@@ -137,8 +125,6 @@ class TelegramService:
         except (SQLAlchemyError, ValueError) as e:
             logger.error(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
-
-
 
 
 telegram_service = TelegramService()

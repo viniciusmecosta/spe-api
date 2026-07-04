@@ -1,5 +1,5 @@
-from datetime import datetime, date
-from typing import Optional, Any
+from datetime import date
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -20,8 +20,8 @@ class AuditService:
             new_data=new_data
         )
         return audit_repository.create(db, obj_in)
-        
-    def get_logs(self, db: Session, action: Optional[str] = None, 
+
+    def get_logs(self, db: Session, action: Optional[str] = None,
                  start_date: Optional[date] = None, end_date: Optional[date] = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):
         return audit_repository.get_logs(

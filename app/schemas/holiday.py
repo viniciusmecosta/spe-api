@@ -2,7 +2,9 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, field_validator
+
 from app.core.config import settings
+
 
 class HolidayBase(BaseModel):
     date: date

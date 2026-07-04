@@ -2,6 +2,7 @@ from datetime import date, datetime
 from typing import List, Dict, Any
 from zoneinfo import ZoneInfo
 
+from fastapi import BackgroundTasks
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,6 @@ from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
 from app.services.audit_service import audit_service
 from app.services.email_service import dispatch_payroll_email
-from fastapi import BackgroundTasks
 
 
 class PayrollService:
@@ -88,9 +88,9 @@ class PayrollService:
             db, user_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
             new_data={"month": month, "year": year}
         )
-        
+
         background_tasks.add_task(
-            dispatch_payroll_email, 
+            dispatch_payroll_email,
             "Fechamento", current_user.name, current_user.email, month, year, current_user.id
         )
         return closure
@@ -116,9 +116,9 @@ class PayrollService:
             db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
             old_data={"month": month, "year": year}
         )
-        
+
         background_tasks.add_task(
-            dispatch_payroll_email, 
+            dispatch_payroll_email,
             "Reabertura", current_user.name, current_user.email, month, year, current_user.id
         )
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}

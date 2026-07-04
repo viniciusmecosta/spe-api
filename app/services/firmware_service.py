@@ -3,6 +3,7 @@ import re
 import shutil
 import time
 from typing import Tuple, List
+
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -16,7 +17,7 @@ class FirmwareService:
     def __init__(self):
         self.firmware_dir = os.path.join(settings.UPLOAD_DIR, "firmware")
         os.makedirs(self.firmware_dir, exist_ok=True)
-        
+
     def parse_version(self, version: str) -> Tuple[int, int, int]:
         match = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", version)
         if not match:
@@ -28,7 +29,7 @@ class FirmwareService:
             new_ver_tuple = self.parse_version(version)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A versão deve estar no formato vx.x.x (ex: v0.3.1)"
             )
 
@@ -41,7 +42,7 @@ class FirmwareService:
                 latest_ver_tuple = self.parse_version(latest.version)
                 if new_ver_tuple <= latest_ver_tuple:
                     raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"A nova versão ({version}) deve ser estritamente maior que a versão atual ({latest.version})"
                     )
             except ValueError:
@@ -78,7 +79,7 @@ class FirmwareService:
         timestamp = int(time.time())
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
         relative_file_path = os.path.relpath(absolute_file_path, ROOT_DIR)
-        
+
         with open(absolute_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -104,11 +105,13 @@ class FirmwareService:
         firmware = firmware_repository.get_by_version(db, version)
         if not firmware:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Firmware não encontrado")
-            
-        absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(firmware.file_path) else firmware.file_path
+
+        absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(
+            firmware.file_path) else firmware.file_path
         if not os.path.exists(absolute_file_path):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Arquivo do firmware não encontrado no servidor")
-            
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="Arquivo do firmware não encontrado no servidor")
+
         return absolute_file_path
 
 

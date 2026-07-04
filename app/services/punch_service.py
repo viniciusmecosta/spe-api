@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime
-from typing import Optional, Tuple
-from sqlalchemy.exc import SQLAlchemyError
+from typing import Optional
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings

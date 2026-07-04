@@ -8,19 +8,17 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.core.config import settings
 from app.core.security import get_client_ip
-from app.domain.models.biometric import UserBiometric
 from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.user import User
 from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
     BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
     ManagerVerifyRequest, ManagerVerifyResponse
 )
+from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
-from app.services.audit_service import audit_service
 
 router = APIRouter()
 

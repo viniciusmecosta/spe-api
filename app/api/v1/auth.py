@@ -18,9 +18,9 @@ router = APIRouter()
 
 @router.post("/login", response_model=Token)
 def login_access_token(
-    request: Request,
-    db: Session = Depends(deps.get_db), 
-    form_data: OAuth2PasswordRequestForm = Depends()
+        request: Request,
+        db: Session = Depends(deps.get_db),
+        form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     username = form_data.username.lower()
     request.state.attempted_user = username
@@ -40,12 +40,12 @@ def login_access_token(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
 
     access_token = security.create_access_token(subject=user.id, name=user.name)
-    
+
     from app.services.audit_service import audit_service
     audit_service.log(
         db, user_id=user.id, action="LOGIN", entity="USER", entity_id=user.id
     )
-    
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 

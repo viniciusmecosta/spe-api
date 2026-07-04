@@ -1,8 +1,10 @@
 from typing import Dict, List
 
+
 class TemplateService:
     @staticmethod
-    def get_daily_report_html(day_name: str, formatted_date: str, records_present: bool, user_activity: Dict[str, List[str]]) -> str:
+    def get_daily_report_html(day_name: str, formatted_date: str, records_present: bool,
+                              user_activity: Dict[str, List[str]]) -> str:
         html = "<div style='margin-bottom: 20px;'>"
         html += f"<h3 style=\"color: #333; margin-bottom: 5px;\">Relatório de Pontos - {day_name}, {formatted_date}</h3>"
 
@@ -37,5 +39,6 @@ class TemplateService:
             f"<p style=\"font-size: 12px; color: #777;\">Atenciosamente,<br>SPE - Sistema de Ponto Eletrônico</p>"
             f"</body></html>"
         )
+
 
 template_service = TemplateService()

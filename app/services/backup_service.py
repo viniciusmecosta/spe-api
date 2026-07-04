@@ -1,29 +1,12 @@
 import logging
-import os
-import smtplib
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timedelta, date, time
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import parseaddr, formataddr
-from typing import Dict, List, Tuple, Optional
+from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
-from sqlalchemy import desc
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.core.config import settings
-from app.core.logger import get_log_path
-from app.database.session import SessionLocal
-from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.routine_log import RoutineLog
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +35,6 @@ class BackupService:
             except sqlite3.Error as e:
                 logger.error(f"Erro backup SQLite: {e}")
                 return None
-
-
 
 
 backup_service = BackupService()

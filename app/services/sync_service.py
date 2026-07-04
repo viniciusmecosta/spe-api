@@ -167,4 +167,5 @@ class SyncService:
         except (requests.RequestException, SQLAlchemyError) as e:
             logger.error(f'Sincronização - "Registros de ponto" Error: {e}')
 
+
 sync_service = SyncService()

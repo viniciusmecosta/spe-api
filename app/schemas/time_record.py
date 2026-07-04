@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.domain.models.enums import RecordType, EditJustification
 
+
 class SuccessResponse(BaseModel):
     status: str = "success"
     message: str

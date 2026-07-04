@@ -20,5 +20,4 @@ def trigger_manual_backup(
             detail="Falha ao gerar ou enviar o backup."
         )
 
-
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}

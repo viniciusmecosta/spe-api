@@ -1,8 +1,8 @@
 import os
 from typing import List, Optional
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
             return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
         return "spe.db"
-        
+
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod
     def assemble_cors_origins(cls, v: List[str], info) -> List[str]:

@@ -1,11 +1,11 @@
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.database.session import get_db_session
-from sqlalchemy.exc import SQLAlchemyError
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository

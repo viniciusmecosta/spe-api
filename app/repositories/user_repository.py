@@ -107,4 +107,5 @@ class UserRepository:
         from app.domain.models.enums import UserRole
         return db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE).all()
 
+
 user_repository = UserRepository()

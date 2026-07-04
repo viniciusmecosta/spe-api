@@ -5,7 +5,6 @@ from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.anomaly import AnomalyResponse
@@ -145,16 +144,16 @@ class AnomalyService:
         except ValueError:
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
-            
+
         start_date = date(year, month, 1)
         end_date = date(year, month, last_day)
-        
+
         if end_date >= today:
             end_date = today - timedelta(days=1)
-            
+
         if start_date > end_date:
             return []
-            
+
         return self.get_anomalies(db, start_date, end_date, user_id, ignore_excessive_hours)
 
 

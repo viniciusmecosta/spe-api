@@ -46,12 +46,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         user_name = _extract_user_name(request)
         user_tag = f" ({user_name})" if user_name else ""
         msg = f'{host} - "{request.method} {request.url.path}" {response.status_code} {process_time:.4f}s{user_tag}'
-        
+
         if response.status_code >= 500:
             logger.error(msg)
         elif response.status_code >= 400:
             logger.warning(msg)
         else:
             logger.info(msg)
-            
+
         return response

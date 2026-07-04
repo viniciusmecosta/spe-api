@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.services.routine_log_service import routine_log_service
 from app.schemas.routine_log import RoutineLogResponse
+from app.services.routine_log_service import routine_log_service
 
 router = APIRouter()
 

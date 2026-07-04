@@ -45,4 +45,3 @@ class TimeRecord(Base):
     editor = relationship("User", foreign_keys=[edited_by])
     deleter = relationship("User", foreign_keys=[deleted_by])
     biometric = relationship("UserBiometric", back_populates="time_records")
-

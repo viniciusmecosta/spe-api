@@ -8,7 +8,8 @@ from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, SuccessResponse
+from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
+    SuccessResponse
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()

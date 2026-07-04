@@ -13,6 +13,7 @@ engine = create_engine(
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     if settings.SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
@@ -23,9 +24,11 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.execute("PRAGMA mmap_size=3000000000")
         cursor.close()
 
+
 from contextlib import contextmanager
 from typing import Generator
 from sqlalchemy.orm import Session
+
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:

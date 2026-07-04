@@ -14,10 +14,11 @@ from app.domain.models.routine_log import RoutineLog
 from app.domain.models.user import User
 from app.services.backup_service import backup_service
 from app.services.email_service import email_service
-from app.services.telegram_service import telegram_service
 from app.services.report_service import report_service
+from app.services.telegram_service import telegram_service
 
 logger = logging.getLogger(__name__)
+
 
 class RoutineOrchestrator:
     def execute_hourly_backup_telegram(self):
@@ -360,7 +361,7 @@ class RoutineOrchestrator:
         finally:
             if db is None and 'session' in locals():
                 # Cleanup the context manager manually if we opened it
-                get_db_session().__exit__(None, None, None) # Or properly handle the context
+                get_db_session().__exit__(None, None, None)  # Or properly handle the context
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
@@ -384,5 +385,6 @@ class RoutineOrchestrator:
         else:
             logger.error('Backup - "Email manual" Error')
             raise HTTPException(status_code=500, detail="Falha na conexão SMTP ao tentar enviar o email.")
+
 
 routine_orchestrator = RoutineOrchestrator()

@@ -1,4 +1,5 @@
 import locale
+import logging
 from calendar import monthrange
 from datetime import date, timedelta, datetime
 from typing import List, Optional
@@ -21,7 +22,6 @@ from app.schemas.report import (
     TeamHoursResponse, EmployeeHours
 )
 from app.services.anomaly_service import anomaly_service
-import logging
 
 logger = logging.getLogger(__name__)
 

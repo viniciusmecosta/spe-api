@@ -1,10 +1,9 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_manager
-from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.schemas.anomaly import AnomalyResponse
 from app.services.anomaly_service import anomaly_service

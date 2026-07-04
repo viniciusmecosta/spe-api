@@ -96,9 +96,9 @@ class TimeRecordService:
 
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
-        
+
         record.is_ignored = True
-        
+
         new_record = TimeRecord(
             user_id=record.user_id,
             record_type=new_type,

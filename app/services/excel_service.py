@@ -6,7 +6,6 @@ from typing import List, Optional
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -23,16 +22,16 @@ class ExcelService:
         self.header_font = Font(bold=True, color="FFFFFF")
         self.header_fill = PatternFill(start_color="475569", end_color="475569", fill_type="solid")
         self.border_bottom = Border(bottom=Side(style='thin', color="CBD5E1"))
-        
+
         self.fill_weekend = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
         self.fill_holiday = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
         self.fill_absence = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
         self.fill_excused = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
-        
+
         self.font_absence = Font(color="991B1B", bold=True)
         self.font_excused = Font(color="166534", bold=True)
         self.font_holiday = Font(color="92400E", bold=True)
-        
+
         self.align_center = Alignment(horizontal='center', vertical='center')
 
     def _format_cnpj(self, cnpj: str) -> str:
@@ -86,18 +85,19 @@ class ExcelService:
                 user_reports.append((user, report))
 
         wb = Workbook()
-        
+
         self._build_summary_sheet(wb, month, year, user_reports, company_name, company_cnpj, logo_path)
-        
+
         for user, report in user_reports:
             self._build_employee_sheet(wb, user, report, month, year, company_name, company_cnpj, logo_path)
-            
+
         output = BytesIO()
         wb.save(output)
         output.seek(0)
         return output
 
-    def _insert_header_and_logo(self, ws, title_text: str, subtitle_text: str, company_name: str, company_cnpj: str, logo_path: Optional[str], end_col: str):
+    def _insert_header_and_logo(self, ws, title_text: str, subtitle_text: str, company_name: str, company_cnpj: str,
+                                logo_path: Optional[str], end_col: str):
         ws.merge_cells(f'A1:{end_col}1')
         ws['A1'].value = company_name
         ws['A1'].font = Font(size=14, bold=True)
@@ -134,13 +134,14 @@ class ExcelService:
         ws_summary.title = "Resumo Folha"
 
         subtitle = f"{self._get_month_name(month)} DE {year}"
-        self._insert_header_and_logo(ws_summary, "Relatório de Gestão", subtitle, company_name, company_cnpj, logo_path, 'C')
+        self._insert_header_and_logo(ws_summary, "Relatório de Gestão", subtitle, company_name, company_cnpj, logo_path,
+                                     'C')
 
         ws_summary.append(["* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos)."])
         note_row1 = ws_summary.max_row
         ws_summary.merge_cells(start_row=note_row1, start_column=1, end_row=note_row1, end_column=3)
         ws_summary.cell(row=note_row1, column=1).font = Font(italic=True, color="64748B")
-        
+
         ws_summary.append(["  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados."])
         note_row2 = ws_summary.max_row
         ws_summary.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=3)
@@ -166,12 +167,12 @@ class ExcelService:
                 sum_data.days_worked,
                 self._time_str_to_fraction(sum_data.total_worked_time)
             ])
-            
+
             last_row = ws_summary.max_row
             ws_summary.cell(row=last_row, column=1).border = self.border_bottom
             ws_summary.cell(row=last_row, column=2).border = self.border_bottom
             ws_summary.cell(row=last_row, column=2).alignment = self.align_center
-            
+
             time_cell = ws_summary.cell(row=last_row, column=3)
             time_cell.border = self.border_bottom
             time_cell.alignment = self.align_center
@@ -186,13 +187,14 @@ class ExcelService:
         ws_det = wb.create_sheet(title=sheet_name)
 
         subtitle = f"{self._get_month_name(month)} DE {year}"
-        self._insert_header_and_logo(ws_det, f"Folha de Ponto: {user.name}", subtitle, company_name, company_cnpj, logo_path, 'F')
+        self._insert_header_and_logo(ws_det, f"Folha de Ponto: {user.name}", subtitle, company_name, company_cnpj,
+                                     logo_path, 'F')
 
         ws_det.append(["* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos)."])
         note_row1 = ws_det.max_row
         ws_det.merge_cells(start_row=note_row1, start_column=1, end_row=note_row1, end_column=6)
         ws_det.cell(row=note_row1, column=1).font = Font(italic=True, color="64748B")
-        
+
         ws_det.append(["  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados."])
         note_row2 = ws_det.max_row
         ws_det.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=6)
@@ -203,7 +205,7 @@ class ExcelService:
         legend_title_row = ws_det.max_row
         ws_det.merge_cells(start_row=legend_title_row, start_column=1, end_row=legend_title_row, end_column=6)
         ws_det.cell(row=legend_title_row, column=1).font = Font(bold=True, color="334155")
-        
+
         ws_det.append(["", "Fim de Semana", "Feriado", "Falta", "Atestado/Abono", ""])
         legend_row = ws_det.max_row
         ws_det.cell(row=legend_row, column=2).fill = self.fill_weekend
@@ -226,7 +228,7 @@ class ExcelService:
         headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trabalhado (Min)", "Trabalhado (Tempo)"]
         ws_det.append(headers_det)
         header_row = ws_det.max_row
-        
+
         ws_det.freeze_panes = f"A{header_row + 1}"
 
         for col_num, header in enumerate(headers_det, 1):
@@ -265,7 +267,7 @@ class ExcelService:
                 status_cell.font = self.font_holiday
             elif day.is_weekend:
                 fill_to_apply = self.fill_weekend
-            
+
             if "Falta" in day.status:
                 fill_to_apply = self.fill_absence
                 status_cell.font = self.font_absence
@@ -297,5 +299,6 @@ class ExcelService:
         ws_det.column_dimensions['D'].width = 40
         ws_det.column_dimensions['E'].width = 18
         ws_det.column_dimensions['F'].width = 20
+
 
 excel_service = ExcelService()

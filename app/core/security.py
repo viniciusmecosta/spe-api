@@ -12,7 +12,8 @@ from app.core.config import settings
 ALGORITHM = settings.ALGORITHM
 
 
-def create_access_token(subject: Union[str, Any], name: Optional[str] = None, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: Union[str, Any], name: Optional[str] = None,
+                        expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:

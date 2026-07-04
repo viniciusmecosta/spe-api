@@ -207,7 +207,7 @@ class AdjustmentService:
         if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
             start_dt = target_dt.replace(second=0, microsecond=0)
             end_dt = target_dt.replace(second=59, microsecond=999999)
-            
+
             record = db.query(TimeRecord).filter(
                 TimeRecord.user_id == request.user_id,
                 TimeRecord.record_type == request.record_type,
