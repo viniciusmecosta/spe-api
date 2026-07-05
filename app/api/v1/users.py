@@ -68,10 +68,7 @@ def update_user_me(
         current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     update_data = UserUpdate(
-        name=user_in.name,
-        password=user_in.password,
-        email=user_in.email,
-        endereco=user_in.endereco
+        **user_in.model_dump(exclude_unset=True)
     )
 
     try:
