@@ -23,18 +23,20 @@ def _format_short_name(full_name: str) -> str:
 
 
 def _extract_user_name(request: Request) -> str:
+    name = ""
     try:
         auth = request.headers.get("authorization", "")
-        if not auth.lower().startswith("bearer "):
-            return getattr(request.state, "attempted_user", "")
-        token = auth[7:]
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        name = payload.get("name", "")
-        if name:
-            return _format_short_name(name)
+        if auth.lower().startswith("bearer "):
+            token = auth[7:]
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            name = payload.get("name", "")
     except Exception:
         pass
-    return getattr(request.state, "attempted_user", "")
+    
+    if not name:
+        name = getattr(request.state, "attempted_user", "")
+        
+    return _format_short_name(name) if name else ""
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):

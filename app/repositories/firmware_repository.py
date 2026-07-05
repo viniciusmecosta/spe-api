@@ -8,7 +8,7 @@ from app.domain.models.firmware import Firmware
 
 class FirmwareRepository:
     def get_by_version(self, db: Session, version: str) -> Optional[Firmware]:
-        return db.query(Firmware).filter(Firmware.version == version).first()
+        return db.query(Firmware).filter(Firmware.version == version).order_by(desc(Firmware.created_at)).first()
 
     def get_latest(self, db: Session) -> Optional[Firmware]:
         return db.query(Firmware).order_by(desc(Firmware.created_at)).first()
@@ -22,6 +22,8 @@ class FirmwareRepository:
         db.commit()
         db.refresh(db_obj)
         return db_obj
+
+
 
 
 firmware_repository = FirmwareRepository()

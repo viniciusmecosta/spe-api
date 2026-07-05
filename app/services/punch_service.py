@@ -20,7 +20,6 @@ class PunchService:
             biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_index).first()
 
             if not biometric:
-                logger.warning(f"Batida recebida de index desconhecido: {sensor_index}")
                 return False, "Nao Cadastrado", None
 
             user = biometric.user

@@ -14,7 +14,7 @@ from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
     DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
     BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
-    ManagerVerifyRequest, ManagerVerifyResponse
+    ManagerVerifyRequest, ManagerVerifyResponse, BuzzerNote
 )
 from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
@@ -35,6 +35,8 @@ def register_device_punch(
         success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index, ip_address)
 
         if success and record:
+            if record.user.name:
+                request.state.attempted_user = record.user.name
             user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
             time_formatted = record.record_datetime.strftime('%H:%M')
             type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
@@ -45,7 +47,11 @@ def register_device_punch(
                 line3=type_label,
                 led="green",
                 actions=DeviceActions(
-                    buzzer_pattern=1, buzzer_duration_ms=500
+                    buzzer_melody=[
+                        BuzzerNote(frequency=1500, duration_ms=150),
+                        BuzzerNote(frequency=0, duration_ms=50),
+                        BuzzerNote(frequency=2000, duration_ms=300)
+                    ]
                 )
             )
         else:
@@ -55,7 +61,11 @@ def register_device_punch(
                 line3="",
                 led="red",
                 actions=DeviceActions(
-                    buzzer_pattern=2, buzzer_duration_ms=1000
+                    buzzer_melody=[
+                        BuzzerNote(frequency=250, duration_ms=300),
+                        BuzzerNote(frequency=0, duration_ms=80),
+                        BuzzerNote(frequency=250, duration_ms=600)
+                    ]
                 )
             )
     except Exception:
@@ -65,7 +75,11 @@ def register_device_punch(
             line3="",
             led="red",
             actions=DeviceActions(
-                buzzer_pattern=2, buzzer_duration_ms=1000
+                buzzer_melody=[
+                    BuzzerNote(frequency=250, duration_ms=300),
+                    BuzzerNote(frequency=0, duration_ms=80),
+                    BuzzerNote(frequency=250, duration_ms=600)
+                ]
             )
         )
 
@@ -86,7 +100,11 @@ def enroll_device_biometric(
                 line3="",
                 led="green",
                 actions=DeviceActions(
-                    buzzer_pattern=1, buzzer_duration_ms=500
+                    buzzer_melody=[
+                        BuzzerNote(frequency=2000, duration_ms=100),
+                        BuzzerNote(frequency=0, duration_ms=50),
+                        BuzzerNote(frequency=2500, duration_ms=400)
+                    ]
                 )
             )
         else:
@@ -96,7 +114,11 @@ def enroll_device_biometric(
                 line3="",
                 led="red",
                 actions=DeviceActions(
-                    buzzer_pattern=2, buzzer_duration_ms=1000
+                    buzzer_melody=[
+                        BuzzerNote(frequency=150, duration_ms=300),
+                        BuzzerNote(frequency=0, duration_ms=80),
+                        BuzzerNote(frequency=150, duration_ms=600)
+                    ]
                 )
             )
     except Exception:
@@ -106,7 +128,11 @@ def enroll_device_biometric(
             line3="",
             led="red",
             actions=DeviceActions(
-                buzzer_pattern=2, buzzer_duration_ms=1000
+                buzzer_melody=[
+                    BuzzerNote(frequency=150, duration_ms=300),
+                    BuzzerNote(frequency=0, duration_ms=80),
+                    BuzzerNote(frequency=150, duration_ms=600)
+                ]
             )
         )
 

@@ -16,9 +16,13 @@ class DevicePunchRequest(BaseModel):
     sensor_index: int
 
 
+class BuzzerNote(BaseModel):
+    frequency: int
+    duration_ms: int
+
+
 class DeviceActions(BaseModel):
-    buzzer_pattern: int
-    buzzer_duration_ms: int
+    buzzer_melody: list[BuzzerNote]
 
 
 class FeedbackPayload(BaseModel):
