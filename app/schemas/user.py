@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 
 from pydantic import BaseModel, field_validator, EmailStr, ConfigDict, Field
@@ -28,6 +28,7 @@ class UserBase(BaseModel):
     cpf: Optional[str] = None
     pis: Optional[str] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
     role: Optional[UserRole] = UserRole.EMPLOYEE
     is_active: Optional[bool] = True
     can_manual_punch_desktop: Optional[bool] = True
@@ -57,8 +58,14 @@ class UserCreate(UserBase):
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(..., min_length=6)
     role: UserRole = UserRole.EMPLOYEE
-    schedules: List[WorkScheduleCreate] = []
     biometrics: List[UserBiometricCreate] = []
+
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
 
 
 class UserUpdate(BaseModel):
@@ -69,6 +76,7 @@ class UserUpdate(BaseModel):
     cpf: Optional[str] = None
     pis: Optional[str] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     can_manual_punch_desktop: Optional[bool] = None
@@ -95,12 +103,27 @@ class UserUpdate(BaseModel):
             return v_clean
         return v
 
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
+
 
 class UserUpdateMe(BaseModel):
     name: Optional[str] = None
     password: Optional[str] = None
     email: Optional[EmailStr] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
+
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
 
 
 class UserInDBBase(UserBase):
