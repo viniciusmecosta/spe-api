@@ -172,6 +172,8 @@ class ReportService:
                     nome=a.name,
                     dia=a.data_nascimento.day
                 ))
+        
+        aniversariantes_do_mes.sort(key=lambda x: x.dia)
 
         return MyDashboardResponse(
             full_name=current_user.name,
