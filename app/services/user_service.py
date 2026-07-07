@@ -38,6 +38,7 @@ class UserService:
             cpf=user_in.cpf,
             pis=user_in.pis,
             endereco=user_in.endereco,
+            data_nascimento=user_in.data_nascimento,
             password_hash=password_hash,
             role=user_in.role,
             is_active=user_in.is_active,
