@@ -119,11 +119,17 @@ class AnomalyItem(BaseModel):
     description: str
 
 
+class Aniversariante(BaseModel):
+    nome: str
+    dia: int
+
+
 class MyDashboardResponse(BaseModel):
     full_name: str
     next_punch_type: str
     today_punches: List[TodayPunch]
     month_anomalies: List[AnomalyItem]
+    aniversariantes_do_mes: List[Aniversariante] = []
 
 
 class EmployeeHours(BaseModel):

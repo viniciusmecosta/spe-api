@@ -5,6 +5,7 @@ from datetime import date, timedelta, datetime
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -19,7 +20,7 @@ from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
     DailyReportItem, DashboardMetricsResponse, PunchDetail,
     HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch, AnomalyItem,
-    TeamHoursResponse, EmployeeHours
+    TeamHoursResponse, EmployeeHours, Aniversariante
 )
 from app.services.anomaly_service import anomaly_service
 from app.services.template_service import template_service
@@ -159,11 +160,25 @@ class ReportService:
                     description=a.description
                 ))
 
+        aniversariantes_query = db.query(User).filter(
+            User.is_active == True,
+            extract('month', User.data_nascimento) == now.month
+        ).all()
+        
+        aniversariantes_do_mes = []
+        for a in aniversariantes_query:
+            if a.data_nascimento:
+                aniversariantes_do_mes.append(Aniversariante(
+                    nome=a.name,
+                    dia=a.data_nascimento.day
+                ))
+
         return MyDashboardResponse(
             full_name=current_user.name,
             next_punch_type=next_punch_type,
             today_punches=today_punches,
-            month_anomalies=month_anomalies
+            month_anomalies=month_anomalies,
+            aniversariantes_do_mes=aniversariantes_do_mes
         )
 
     def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
