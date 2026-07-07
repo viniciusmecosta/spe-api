@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Date
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -33,6 +33,7 @@ class User(Base):
     cpf = Column(String, unique=True, index=True, nullable=True)
     pis = Column(String, nullable=True)
     endereco = Column(String, nullable=True)
+    data_nascimento = Column(Date, nullable=True)
     password_hash = Column(String)
     is_active = Column(Boolean, default=True)
     role = Column(String, default="EMPLOYEE")

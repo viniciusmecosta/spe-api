@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 
 from pydantic import BaseModel, field_validator, EmailStr, ConfigDict, Field
@@ -28,6 +28,7 @@ class UserBase(BaseModel):
     cpf: Optional[str] = None
     pis: Optional[str] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
     role: Optional[UserRole] = UserRole.EMPLOYEE
     is_active: Optional[bool] = True
     can_manual_punch_desktop: Optional[bool] = True
@@ -69,6 +70,7 @@ class UserUpdate(BaseModel):
     cpf: Optional[str] = None
     pis: Optional[str] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     can_manual_punch_desktop: Optional[bool] = None
@@ -101,6 +103,7 @@ class UserUpdateMe(BaseModel):
     password: Optional[str] = None
     email: Optional[EmailStr] = None
     endereco: Optional[str] = None
+    data_nascimento: Optional[date] = None
 
 
 class UserInDBBase(UserBase):
