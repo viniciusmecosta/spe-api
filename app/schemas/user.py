@@ -58,8 +58,14 @@ class UserCreate(UserBase):
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(..., min_length=6)
     role: UserRole = UserRole.EMPLOYEE
-    schedules: List[WorkScheduleCreate] = []
     biometrics: List[UserBiometricCreate] = []
+
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
 
 
 class UserUpdate(BaseModel):
@@ -97,6 +103,13 @@ class UserUpdate(BaseModel):
             return v_clean
         return v
 
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
+
 
 class UserUpdateMe(BaseModel):
     name: Optional[str] = None
@@ -104,6 +117,13 @@ class UserUpdateMe(BaseModel):
     email: Optional[EmailStr] = None
     endereco: Optional[str] = None
     data_nascimento: Optional[date] = None
+
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError('A data de nascimento não pode estar no futuro.')
+        return v
 
 
 class UserInDBBase(UserBase):
