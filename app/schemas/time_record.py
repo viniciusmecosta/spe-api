@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import Optional
-
 from pydantic import BaseModel, ConfigDict
+from typing import Optional
 
 from app.domain.models.enums import RecordType, EditJustification
 
@@ -10,7 +9,6 @@ class SuccessResponse(BaseModel):
     status: str = "success"
     message: str
 
-
 class TimeRecordBase(BaseModel):
     record_type: RecordType
     record_datetime: datetime
@@ -18,10 +16,8 @@ class TimeRecordBase(BaseModel):
     device_name: Optional[str] = None
     platform: Optional[str] = None
 
-
 class TimeRecordCreate(BaseModel):
     pass
-
 
 class TimeRecordCreateAdmin(BaseModel):
     user_id: int
@@ -30,25 +26,21 @@ class TimeRecordCreateAdmin(BaseModel):
     edit_justification: EditJustification
     edit_reason: Optional[str] = None
 
-
 class TimeRecordUpdate(BaseModel):
     record_type: Optional[RecordType] = None
     record_datetime: Optional[datetime] = None
     edit_justification: Optional[EditJustification] = None
     edit_reason: Optional[str] = None
 
-
 class TimeRecordDeleteAdmin(BaseModel):
     edit_justification: EditJustification
     edit_reason: Optional[str] = None
-
 
 class TimeRecordSimple(BaseModel):
     record_type: RecordType
     record_datetime: datetime
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class TimeRecordResponse(TimeRecordBase):
     id: int
@@ -57,5 +49,12 @@ class TimeRecordResponse(TimeRecordBase):
     edited_by: Optional[int] = None
     edit_justification: Optional[EditJustification] = None
     edit_reason: Optional[str] = None
+    original_record_id: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TimeRecordTimelineResponse(TimeRecordResponse):
+    is_ignored: bool
 
     model_config = ConfigDict(from_attributes=True)

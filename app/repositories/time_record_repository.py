@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
-
-from sqlalchemy import desc, and_, distinct, func
+from sqlalchemy import desc, and_, distinct, func, or_
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord, get_local_time
@@ -95,6 +94,20 @@ class TimeRecordRepository:
             record.deleted_by = manager_id
             record.is_ignored = True
             db.commit()
+
+    def get_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
+        record = db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
+        if not record:
+            return []
+
+        anchor_id = record.original_record_id if record.original_record_id else record.id
+
+        return db.query(TimeRecord).filter(
+            or_(
+                TimeRecord.id == anchor_id,
+                TimeRecord.original_record_id == anchor_id
+            )
+        ).order_by(TimeRecord.created_at.asc()).all()
 
 
 time_record_repository = TimeRecordRepository()

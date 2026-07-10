@@ -1,19 +1,17 @@
 from datetime import datetime
-from typing import Any, List
-
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
+from typing import Any, List
 
 from app.api import deps
 from app.core.security import get_client_ip, get_client_device_name
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
-    SuccessResponse
+    SuccessResponse, TimeRecordTimelineResponse
 from app.services.time_record_service import time_record_service
 
 router = APIRouter()
-
 
 @router.post("/entry", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def register_entry(
@@ -23,7 +21,6 @@ def register_entry(
 ) -> Any:
     return time_record_service.register_entry(db, current_user.id, request)
 
-
 @router.post("/exit", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def register_exit(
         request: Request,
@@ -31,7 +28,6 @@ def register_exit(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return time_record_service.register_exit(db, current_user.id, request)
-
 
 @router.put("/{id}/toggle", response_model=TimeRecordResponse)
 def toggle_record_type(
@@ -41,7 +37,6 @@ def toggle_record_type(
 ) -> Any:
     return time_record_service.toggle_record_type(db, id, current_user)
 
-
 @router.get("/my", response_model=list[TimeRecordResponse])
 def read_my_records(
         skip: int = 0,
@@ -50,7 +45,6 @@ def read_my_records(
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     return time_record_repository.get_all_by_user(db, current_user.id, skip, limit)
-
 
 @router.get("/admin/list", response_model=List[TimeRecordResponse])
 def list_records_for_admin(
@@ -63,7 +57,6 @@ def list_records_for_admin(
     records = time_record_repository.get_by_range(db, user_id, start_date, end_date)
     return records
 
-
 @router.post("/admin", response_model=TimeRecordResponse, status_code=status.HTTP_201_CREATED)
 def create_time_record_admin(
         record_in: TimeRecordCreateAdmin,
@@ -75,7 +68,6 @@ def create_time_record_admin(
     device_name = get_client_device_name(ip_address, request)
     return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name)
 
-
 @router.put("/admin/{record_id}", response_model=TimeRecordResponse)
 def update_time_record_admin(
         record_id: int,
@@ -84,7 +76,6 @@ def update_time_record_admin(
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
     return time_record_service.update_admin_record(db, record_id, record_in, current_user.id)
-
 
 @router.delete("/admin/{record_id}", response_model=SuccessResponse)
 def delete_time_record_admin(
@@ -95,3 +86,12 @@ def delete_time_record_admin(
 ) -> Any:
     time_record_service.delete_admin_record(db, record_id, request_body, current_user.id)
     return {"status": "success", "message": "Record deleted"}
+
+
+@router.get("/{id}/timeline", response_model=List[TimeRecordTimelineResponse])
+def get_time_record_timeline(
+        id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_maintainer)
+) -> Any:
+    return time_record_service.get_record_timeline(db, id)

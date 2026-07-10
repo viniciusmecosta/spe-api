@@ -17,7 +17,6 @@ from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, Tim
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
-
 class TimeRecordService:
     def _get_trusted_time(self) -> tuple[datetime, bool]:
         tz = ZoneInfo(settings.TIMEZONE)
@@ -139,7 +138,8 @@ class TimeRecordService:
             device_name=record.device_name,
             platform=record.platform,
             biometric_id=record.biometric_id,
-            edited_by=current_user.id
+            edited_by=current_user.id,
+            original_record_id=record.original_record_id if record.original_record_id else record.id
         )
         db.add(new_record)
         db.flush()
@@ -220,7 +220,8 @@ class TimeRecordService:
             biometric_id=record.biometric_id,
             edited_by=manager_id,
             edit_justification=obj_in.edit_justification if obj_in.edit_justification else record.edit_justification,
-            edit_reason=obj_in.edit_reason if obj_in.edit_reason else record.edit_reason
+            edit_reason=obj_in.edit_reason if obj_in.edit_reason else record.edit_reason,
+            original_record_id=record.original_record_id if record.original_record_id else record.id
         )
 
         db.add(new_record)
@@ -310,5 +311,7 @@ class TimeRecordService:
         )
         return record
 
+    def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
+        return time_record_repository.get_timeline(db, record_id)
 
 time_record_service = TimeRecordService()

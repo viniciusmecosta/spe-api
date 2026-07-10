@@ -1,8 +1,7 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum, Boolean, Index
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -11,7 +10,6 @@ from app.domain.models.enums import RecordType, EditJustification
 
 def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
-
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
@@ -38,6 +36,8 @@ class TimeRecord(Base):
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_ignored = Column(Boolean, default=False, nullable=False)
 
+    original_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
@@ -45,3 +45,4 @@ class TimeRecord(Base):
     editor = relationship("User", foreign_keys=[edited_by])
     deleter = relationship("User", foreign_keys=[deleted_by])
     biometric = relationship("UserBiometric", back_populates="time_records")
+    original_record = relationship("TimeRecord", remote_side=[id], backref="edits")
