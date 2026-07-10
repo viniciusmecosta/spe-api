@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices
 from typing import Optional
 
 from app.domain.models.enums import RecordType, EditJustification
@@ -46,7 +46,7 @@ class TimeRecordResponse(TimeRecordBase):
     id: int
     user_id: int
     created_at: datetime
-    edited_by: Optional[int] = None
+    edited_by: Optional[str] = Field(None, validation_alias=AliasChoices('editor_name', 'edited_by'))
     edit_justification: Optional[EditJustification] = None
     edit_reason: Optional[str] = None
     original_record_id: Optional[int] = None

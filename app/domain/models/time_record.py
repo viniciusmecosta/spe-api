@@ -46,3 +46,7 @@ class TimeRecord(Base):
     deleter = relationship("User", foreign_keys=[deleted_by])
     biometric = relationship("UserBiometric", back_populates="time_records")
     original_record = relationship("TimeRecord", remote_side=[id], backref="edits")
+
+    @property
+    def editor_name(self) -> str | None:
+        return self.editor.name if self.editor else None

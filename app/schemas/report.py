@@ -12,7 +12,7 @@ class PunchDetail(BaseModel):
     device_name: Optional[str] = None
     platform: Optional[str] = None
     biometric_id: Optional[int] = None
-    edited_by: Optional[int] = None
+    edited_by: Optional[str] = None
     edit_justification: Optional[str] = None
     edit_reason: Optional[str] = None
 
@@ -80,7 +80,7 @@ class HistoryPunch(BaseModel):
     device_name: Optional[str] = None
     platform: Optional[str] = None
     biometric_id: Optional[int] = None
-    edited_by: Optional[int] = None
+    edited_by: Optional[str] = None
     edit_justification: Optional[str] = None
     edit_reason: Optional[str] = None
 

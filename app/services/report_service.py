@@ -293,7 +293,7 @@ class ReportService:
                         "device_name": rec.device_name,
                         "platform": rec.platform,
                         "biometric_id": rec.biometric_id,
-                        "edited_by": rec.edited_by,
+                        "edited_by": rec.editor_name,
                         "edit_justification": rec.edit_justification.value if rec.edit_justification else None,
                         "edit_reason": rec.edit_reason
                     })
@@ -434,7 +434,7 @@ class ReportService:
                         device_name=rec.device_name,
                         platform=rec.platform,
                         biometric_id=rec.biometric_id,
-                        edited_by=rec.edited_by,
+                        edited_by=rec.editor_name,
                         edit_justification=rec.edit_justification.value if rec.edit_justification else None,
                         edit_reason=rec.edit_reason
                     ))
