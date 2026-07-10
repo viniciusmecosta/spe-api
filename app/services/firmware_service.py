@@ -85,9 +85,14 @@ class FirmwareService:
 
         firmware = firmware_repository.create(db, version=version, file_path=relative_file_path)
 
+        old_data = {"file_path": firmware_old.file_path}
+        new_data_raw = {"file_path": relative_file_path}
+        
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE", entity="FIRMWARE", entity_id=firmware.id,
-            new_data={"version": version, "file_path": relative_file_path, "previous_file_path": firmware_old.file_path}
+            old_data=actual_old, new_data=actual_new
         )
 
         return firmware

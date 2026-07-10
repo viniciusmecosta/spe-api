@@ -49,7 +49,7 @@ class CompanyService:
 
         company = company_repository.update(db, existing, obj_in)
 
-        new_data = {
+        new_data_raw = {
             "name": company.name,
             "cnpj": company.cnpj,
             "address": company.address,
@@ -57,9 +57,11 @@ class CompanyService:
             "logo_path": company.logo_path
         }
 
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE", entity="COMPANY", entity_id=company.id,
-            old_data=old_data, new_data=new_data
+            old_data=actual_old, new_data=actual_new
         )
         return company
 

@@ -205,7 +205,9 @@ class TimeRecordService:
 
         old_data = {
             "record_type": record.record_type.value,
-            "record_time": str(record.record_datetime)
+            "record_time": str(record.record_datetime),
+            "justification": record.edit_justification.value if record.edit_justification else "",
+            "reason": record.edit_reason
         }
 
         record.is_ignored = True
@@ -231,19 +233,23 @@ class TimeRecordService:
 
         justification_val = new_record.edit_justification.value if new_record.edit_justification else ""
 
+        new_data_raw = {
+            "record_type": new_record.record_type.value,
+            "record_time": str(new_record.record_datetime),
+            "justification": justification_val,
+            "reason": new_record.edit_reason
+        }
+        
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
         audit_service.log(
             db,
             user_id=manager_id,
             action="UPDATE_RECORD_ADMIN",
             entity="TIME_RECORD",
             entity_id=new_record.id,
-            old_data=old_data,
-            new_data={
-                "record_type": new_record.record_type.value,
-                "record_time": str(new_record.record_datetime),
-                "justification": justification_val,
-                "reason": new_record.edit_reason
-            }
+            old_data=actual_old,
+            new_data=actual_new
         )
         return new_record
 

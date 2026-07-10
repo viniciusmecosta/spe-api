@@ -21,6 +21,22 @@ class AuditService:
         )
         return audit_repository.create(db, obj_in)
 
+    def compute_diffs(self, old_data: dict, new_data: dict) -> tuple[dict, dict]:
+        actual_old = {}
+        actual_new = {}
+        
+        all_keys = set(old_data.keys()).union(new_data.keys())
+        for key in all_keys:
+            old_val = old_data.get(key)
+            new_val = new_data.get(key)
+            if old_val != new_val:
+                if key in old_data:
+                    actual_old[key] = old_val
+                if key in new_data:
+                    actual_new[key] = new_val
+                    
+        return actual_old, actual_new
+
     def get_logs(self, db: Session, action: Optional[str] = None,
                  start_date: Optional[date] = None, end_date: Optional[date] = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):

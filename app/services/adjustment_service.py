@@ -195,10 +195,14 @@ class AdjustmentService:
         old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
 
+        old_data = {"status": old_status}
+        new_data_raw = {"status": updated.status.value, "comment": comment}
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
         audit_service.log(
             db, user_id=manager_id, action="APPROVE_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=request_id,
-            old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
+            old_data=actual_old, new_data=actual_new
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
@@ -235,10 +239,14 @@ class AdjustmentService:
         old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
 
+        old_data = {"status": old_status}
+        new_data_raw = {"status": updated.status.value, "comment": comment}
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
         audit_service.log(
             db, user_id=manager_id, action="REJECT_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=request_id,
-            old_data={"status": old_status}, new_data={"status": updated.status.value, "comment": comment}
+            old_data=actual_old, new_data=actual_new
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 

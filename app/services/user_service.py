@@ -131,12 +131,17 @@ class UserService:
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
 
-        old_data = {
-            "username": user.username,
-            "role": user.role,
-            "name": user.name,
-            "is_active": user.is_active
-        }
+        tracked_fields = [
+            "username", "role", "name", "is_active", "email", "cpf", 
+            "pis", "endereco", "data_nascimento", "can_manual_punch_desktop", 
+            "can_manual_punch_mobile", "can_export_report"
+        ]
+        
+        old_data = {}
+        for field in tracked_fields:
+            if hasattr(user, field):
+                val = getattr(user, field)
+                old_data[field] = str(val) if val is not None else None
 
         for field, value in update_data.items():
             if hasattr(user, field):
@@ -207,17 +212,18 @@ class UserService:
         db.commit()
         db.refresh(user)
 
-        new_data = {
-            "username": user.username,
-            "role": user.role,
-            "name": user.name,
-            "is_active": user.is_active
-        }
+        new_data_raw = {}
+        for field in tracked_fields:
+            if hasattr(user, field):
+                val = getattr(user, field)
+                new_data_raw[field] = str(val) if val is not None else None
+                
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
 
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE",
             entity="USER", entity_id=user.id,
-            old_data=old_data, new_data=new_data
+            old_data=actual_old, new_data=actual_new
         )
         return user
 
