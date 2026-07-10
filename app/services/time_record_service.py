@@ -19,15 +19,15 @@ from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:
-    def _get_trusted_time(self) -> datetime:
+    def _get_trusted_time(self) -> tuple[datetime, bool]:
         tz = ZoneInfo(settings.TIMEZONE)
         try:
             client = ntplib.NTPClient()
             response = client.request('pool.ntp.org', version=3, timeout=2)
             utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
-            return utc_time.astimezone(tz)
-        except (OSError, RuntimeError):
-            return datetime.now(tz)
+            return utc_time.astimezone(tz), True
+        except Exception as e:
+            return datetime.now(tz), False
 
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
@@ -56,7 +56,7 @@ class TimeRecordService:
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
 
-        current_time = self._get_trusted_time()
+        current_time, used_ntp = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
@@ -65,12 +65,28 @@ class TimeRecordService:
         record = time_record_repository.create(
             db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform
         )
+        if not used_ntp:
+            request.state.ntp_error = True
+            record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+
+            audit_service.log(
+                db,
+                user_id=user_id,
+                action="NTP_FALLBACK",
+                entity="TIME_RECORD",
+                entity_id=record.id,
+                new_data={"reason": record.edit_reason}
+            )
+
         return record
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
 
-        current_time = self._get_trusted_time()
+        current_time, used_ntp = self._get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
@@ -79,6 +95,22 @@ class TimeRecordService:
         record = time_record_repository.create(
             db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform
         )
+        if not used_ntp:
+            request.state.ntp_error = True
+            record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+            db.add(record)
+            db.commit()
+            db.refresh(record)
+
+            audit_service.log(
+                db,
+                user_id=user_id,
+                action="NTP_FALLBACK",
+                entity="TIME_RECORD",
+                entity_id=record.id,
+                new_data={"reason": record.edit_reason}
+            )
+
         return record
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:

@@ -32,7 +32,8 @@ def register_device_punch(
 ):
     try:
         ip_address = get_client_ip(request)
-        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index, ip_address)
+        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index, ip_address,
+                                                                         request=request)
 
         if success and record:
             if record.user.name:

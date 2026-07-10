@@ -47,7 +47,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         host = request.client.host if request.client else "127.0.0.1"
         user_name = _extract_user_name(request)
         user_tag = f" ({user_name})" if user_name else ""
-        msg = f'{host} - "{request.method} {request.url.path}" {response.status_code} {process_time:.4f}s{user_tag}'
+        ntp_tag = " - NTP ERROR" if getattr(request.state, "ntp_error", False) else ""
+        msg = f'{host} - "{request.method} {request.url.path}" {response.status_code} {process_time:.4f}s{user_tag}{ntp_tag}'
 
         if response.status_code >= 500:
             logger.error(msg)

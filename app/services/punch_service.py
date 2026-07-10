@@ -1,19 +1,19 @@
 import logging
-from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
+from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.services.audit_service import audit_service
 from app.services.time_record_service import time_record_service
 
 logger = logging.getLogger(__name__)
 
 
 class PunchService:
-    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: Optional[str] = None):
+    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: Optional[str] = None,
+                                request: Optional[Request] = None):
         try:
             from app.domain.models.biometric import UserBiometric
 
@@ -27,8 +27,7 @@ class PunchService:
             if not user.is_active:
                 return False, "Bloqueado", None
 
-            tz = ZoneInfo(settings.TIMEZONE)
-            server_time = datetime.now(tz)
+            server_time, used_ntp = time_record_service._get_trusted_time()
 
             new_record = time_record_service.create_punch(
                 db,
@@ -38,6 +37,23 @@ class PunchService:
                 biometric_id=biometric.id,
                 platform="IOT"
             )
+
+            if not used_ntp:
+                if request:
+                    request.state.ntp_error = True
+                new_record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+                db.add(new_record)
+                db.commit()
+                db.refresh(new_record)
+
+                audit_service.log(
+                    db,
+                    user_id=user.id,
+                    action="NTP_FALLBACK",
+                    entity="TIME_RECORD",
+                    entity_id=new_record.id,
+                    new_data={"reason": new_record.edit_reason}
+                )
 
             return True, "Ponto Registrado", new_record
 
