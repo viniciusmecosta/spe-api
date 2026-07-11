@@ -104,8 +104,12 @@ class ReportService:
                 .all()
             )
 
+            anomalies_list = anomaly_service.get_anomalies(db, target_date, target_date)
+            anomalies_descriptions = [f"<strong>{a.user_name}</strong>: {a.description}" for a in anomalies_list]
+
             if not records:
-                return template_service.get_daily_report_html(day_name, formatted_date, False, {})
+                return template_service.get_daily_report_html(day_name, formatted_date, False, {},
+                                                              anomalies_descriptions)
 
             user_activity = {}
             for record, user in records:
@@ -115,9 +119,10 @@ class ReportService:
                 time_str = record.record_datetime.strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
 
-                user_activity[user.name].append(f"{time_str} ({type_label})")
+                user_activity[user.name].append({"time": time_str, "type": type_label})
 
-            return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity)
+            return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity,
+                                                          anomalies_descriptions)
 
         except (ValueError, TypeError, AttributeError) as e:
             logger.error(f"Erro HTML Report: {e}")
