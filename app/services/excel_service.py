@@ -103,8 +103,40 @@ class ExcelService:
                 return 0.0
         return 0.0
 
+    def _validate_employee_report_period(self, current_user: User, month: int, year: int):
+        if not current_user:
+            return
+        from app.domain.models.enums import UserRole
+        if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+            return
+            
+        from datetime import datetime
+        now = datetime.now()
+        current_month = now.month
+        current_year = now.year
+        
+        if current_month == 1:
+            prev_month = 12
+            prev_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_year = current_year
+
+        if (year == current_year and month == current_month) or \
+           (year == prev_year and month == prev_month):
+            return
+            
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=403,
+            detail="Funcionários só podem gerar relatório Excel do mês atual ou do mês anterior."
+        )
+
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
                               current_user: Optional[User] = None) -> BytesIO:
+        if current_user:
+            self._validate_employee_report_period(current_user, month, year)
+            
         query = db.query(User).options(joinedload(User.schedules))
         query = report_service._apply_employee_filters(query, employee_ids)
         users = query.all()

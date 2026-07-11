@@ -69,6 +69,7 @@ def get_user_history(
     is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
     if not is_manager and not current_user.can_export_report and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Sem permissão para acessar o histórico deste usuário.")
+    
     return report_service.get_history_report(db, user_id, month, year, current_user)
 
 
