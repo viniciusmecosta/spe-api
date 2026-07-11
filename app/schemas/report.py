@@ -21,6 +21,7 @@ class DailyReportItem(BaseModel):
     date: date
     day_name: str
     is_holiday: bool
+    holiday_name: Optional[str] = None
     is_weekend: bool
     status: str
     entries: List[str]

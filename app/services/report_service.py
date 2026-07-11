@@ -393,7 +393,9 @@ class ReportService:
             day_records = [r for r in all_records if r.record_datetime.date() == current]
             day_records.sort(key=lambda x: x.record_datetime)
 
-            is_holiday = any(h.date == current for h in holidays)
+            holiday = next((h for h in holidays if h.date == current), None)
+            is_holiday = holiday is not None
+            holiday_name = holiday.name if holiday else None
 
             adjustment_day = next((adj for adj in approved_adjustments
                                    if adj.target_date == current
@@ -484,7 +486,12 @@ class ReportService:
 
             status = "Normal"
             if is_future:
-                status = ""
+                if is_holiday:
+                    status = "Feriado"
+                elif is_weekend:
+                    status = "Fim de Semana"
+                else:
+                    status = ""
             elif is_waiver:
                 formatted_waiver = self._format_duration(waiver_credit)
                 status = "Abonado/Atestado"
@@ -511,6 +518,7 @@ class ReportService:
                 date=current,
                 day_name=self._get_day_name(current),
                 is_holiday=is_holiday,
+                holiday_name=holiday_name,
                 is_weekend=is_weekend,
                 status=status,
                 entries=entries,

@@ -4,8 +4,11 @@ from io import BytesIO
 from typing import List, Optional
 
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.cell.rich_text import TextBlock, CellRichText
+from openpyxl.cell.text import InlineFont
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -19,27 +22,65 @@ class ExcelService:
         self._setup_styles()
 
     def _setup_styles(self):
-        self.header_font = Font(bold=True, color="FFFFFF")
+        # Base font Times New Roman - all black
+        self.font_regular = Font(name="Times New Roman", size=11, color="000000")
+        self.font_bold = Font(name="Times New Roman", size=11, bold=True, color="000000")
+        self.font_italic = Font(name="Times New Roman", size=11, italic=True, color="64748B")
+        
+        self.font_title_large = Font(name="Times New Roman", size=16, bold=True, color="000000")
+        self.font_subtitle = Font(name="Times New Roman", size=12, bold=True, color="000000")
+        
+        self.font_key = Font(name="Times New Roman", size=11, bold=True, color="000000")
+        self.font_val = Font(name="Times New Roman", size=11, color="000000")
+        
+        self.header_font = Font(name="Times New Roman", size=11, bold=True, color="FFFFFF")
         self.header_fill = PatternFill(start_color="475569", end_color="475569", fill_type="solid")
-        self.border_bottom = Border(bottom=Side(style='thin', color="CBD5E1"))
+        
+        # Standard Borders
+        thin = Side(style='thin', color="CBD5E1")
+        self.border_standard = Border(left=thin, right=thin, top=thin, bottom=thin)
+        self.border_top_bottom = Border(top=thin, bottom=thin)
+        self.border_left_top_bottom = Border(left=thin, top=thin, bottom=thin)
+        self.border_right_top_bottom = Border(right=thin, top=thin, bottom=thin)
 
         self.fill_weekend = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
         self.fill_holiday = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
         self.fill_absence = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
         self.fill_excused = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+        self.fill_section_title = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 
-        self.font_absence = Font(color="991B1B", bold=True)
-        self.font_excused = Font(color="166534", bold=True)
-        self.font_holiday = Font(color="92400E", bold=True)
+        # Fonts for statuses - no bold, all regular, all black
+        self.font_absence = Font(name="Times New Roman", size=11, bold=False, color="000000")
+        self.font_excused = Font(name="Times New Roman", size=11, bold=False, color="000000")
+        self.font_holiday = Font(name="Times New Roman", size=11, bold=False, color="000000")
+        self.font_weekend = Font(name="Times New Roman", size=11, bold=False, color="000000")
 
-        self.align_center = Alignment(horizontal='center', vertical='center')
+        self.align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        self.align_left = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        self.align_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
+        
+        self.MAX_COLS = 24
+        self.COL_WIDTH = 5
+
+    def _set_columns_width(self, ws):
+        for col in range(1, self.MAX_COLS + 1):
+            ws.column_dimensions[get_column_letter(col)].width = self.COL_WIDTH
 
     def _format_cnpj(self, cnpj: str) -> str:
-        if not cnpj: return "-"
+        if not cnpj: return "Não registrado"
         c = re.sub(r'[^0-9]', '', cnpj)
         if len(c) == 14:
             return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
         return cnpj
+
+    def _format_phone(self, phone: str) -> str:
+        if not phone: return "Não registrado"
+        p = re.sub(r'[^0-9]', '', phone)
+        if len(p) == 11:
+            return f"({p[:2]}) {p[2:7]}-{p[7:]}"
+        elif len(p) == 10:
+            return f"({p[:2]}) {p[2:6]}-{p[6:]}"
+        return phone
 
     def _get_month_name(self, month: int) -> str:
         months = {
@@ -69,9 +110,7 @@ class ExcelService:
         users = query.all()
 
         company = company_repository.get_current(db)
-        company_name = company.name if company else "Empresa Não Cadastrada"
-        company_cnpj = self._format_cnpj(company.cnpj if company else "")
-
+        
         logo_path = None
         if company and company.logo_path:
             full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
@@ -85,220 +124,292 @@ class ExcelService:
                 user_reports.append((user, report))
 
         wb = Workbook()
-
-        self._build_summary_sheet(wb, month, year, user_reports, company_name, company_cnpj, logo_path)
+        
+        self._build_summary_sheet(wb, month, year, user_reports, company, logo_path)
 
         for user, report in user_reports:
-            self._build_employee_sheet(wb, user, report, month, year, company_name, company_cnpj, logo_path)
+            self._build_employee_sheet(wb, user, report, month, year, company, logo_path)
 
         output = BytesIO()
         wb.save(output)
         output.seek(0)
         return output
+        
+    def _apply_key_value(self, ws, row, start_col, key_text, key_width, val_text, val_width, borders=False):
+        # Key
+        key_end = start_col + key_width - 1
+        ws.merge_cells(start_row=row, start_column=start_col, end_row=row, end_column=key_end)
+        c_key = ws.cell(row=row, column=start_col)
+        c_key.value = key_text
+        c_key.font = self.font_key
+        c_key.alignment = self.align_right
+        
+        # Value
+        val_start = key_end + 1
+        val_end = val_start + val_width - 1
+        ws.merge_cells(start_row=row, start_column=val_start, end_row=row, end_column=val_end)
+        c_val = ws.cell(row=row, column=val_start)
+        c_val.value = val_text
+        c_val.font = self.font_val
+        c_val.alignment = self.align_left
 
-    def _insert_header_and_logo(self, ws, title_text: str, subtitle_text: str, company_name: str, company_cnpj: str,
-                                logo_path: Optional[str], end_col: str):
-        ws.merge_cells(f'A1:{end_col}1')
-        ws['A1'].value = company_name
-        ws['A1'].font = Font(size=14, bold=True)
-        ws['A1'].alignment = self.align_center
+        if borders:
+            total_start = start_col
+            total_end = val_end
+            for c_idx in range(total_start, total_end + 1):
+                if c_idx == total_start:
+                    ws.cell(row=row, column=c_idx).border = self.border_left_top_bottom
+                elif c_idx == total_end:
+                    ws.cell(row=row, column=c_idx).border = self.border_right_top_bottom
+                else:
+                    ws.cell(row=row, column=c_idx).border = self.border_top_bottom
 
-        ws.merge_cells(f'A2:{end_col}2')
-        ws['A2'].value = f"CNPJ: {company_cnpj}"
-        ws['A2'].alignment = self.align_center
+    def _insert_header(self, ws, company, logo_path: Optional[str]):
+        company_name = company.name if company else "Empresa Não Cadastrada"
+        company_cnpj = self._format_cnpj(company.cnpj if company else "")
+        company_phone = self._format_phone(company.phone if company else "")
+        company_address = company.address if company else "Não registrado"
 
-        ws.merge_cells(f'A3:{end_col}3')
-        ws['A3'].value = title_text
-        ws['A3'].font = Font(size=12, bold=True)
-        ws['A3'].alignment = self.align_center
+        # Título da Seção da Empresa (Form Block) com CNPJ na mesma célula
+        font_large = InlineFont(sz=16, b=True, rFont="Times New Roman", color="000000")
+        font_cnpj_key = InlineFont(sz=11, b=True, rFont="Times New Roman", color="000000")
+        font_cnpj_val = InlineFont(sz=11, b=False, rFont="Times New Roman", color="000000")
+        
+        rt = CellRichText(
+            TextBlock(font_large, f"{company_name}\n"),
+            TextBlock(font_cnpj_key, "CNPJ: "),
+            TextBlock(font_cnpj_val, company_cnpj)
+        )
 
-        if subtitle_text:
-            ws.merge_cells(f'A4:{end_col}4')
-            ws['A4'].value = subtitle_text
-            ws['A4'].font = Font(size=11, bold=True, color="334155")
-            ws['A4'].alignment = self.align_center
+        ws.append([""])
+        ws.append([""])
+        ws.append([""])
+        row_start = ws.max_row - 2
+        row_mid = row_start + 1
+        row_end = ws.max_row
+        
+        ws.merge_cells(start_row=row_start, start_column=1, end_row=row_end, end_column=self.MAX_COLS)
+        c1 = ws.cell(row=row_start, column=1)
+        c1.value = rt
+        c1.alignment = self.align_center
+        
+        for r_idx in range(row_start, row_end + 1):
+            for c_idx in range(1, self.MAX_COLS + 1):
+                ws.cell(row=r_idx, column=c_idx).border = self.border_standard
+                ws.cell(row=r_idx, column=c_idx).fill = self.fill_section_title
+                
+        ws.row_dimensions[row_start].height = 12
+        ws.row_dimensions[row_mid].height = 51
+        ws.row_dimensions[row_end].height = 12
+
+        # Row: Telefone e Endereço (perfectly balanced: 12 + 12 columns)
+        ws.append([""])
+        row_tel = ws.max_row
+        self._apply_key_value(ws, row_tel, start_col=1, key_text="Telefone:", key_width=4, val_text=company_phone, val_width=8, borders=True)
+        self._apply_key_value(ws, row_tel, start_col=13, key_text="Endereço:", key_width=3, val_text=company_address, val_width=9, borders=True)
+        ws.row_dimensions[row_tel].height = 20
 
         if logo_path:
             try:
                 img = OpenpyxlImage(logo_path)
-                img.width = 60
-                img.height = 60
-                ws.add_image(img, 'A1')
-                ws.row_dimensions[1].height = 50
+                img.width = 70
+                img.height = 70
+                ws.add_image(img, f'A{row_mid}')
             except (OSError, ValueError):
                 pass
-        ws.append([])
+        ws.append([""])
 
-    def _build_summary_sheet(self, wb, month, year, user_reports, company_name, company_cnpj, logo_path):
+    def _append_notes(self, ws):
+        ws.append([""])
+        ws.append(["* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos)."])
+        note_row1 = ws.max_row
+        ws.merge_cells(start_row=note_row1, start_column=1, end_row=note_row1, end_column=self.MAX_COLS)
+        ws.cell(row=note_row1, column=1).font = self.font_italic
+
+        ws.append(["  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados."])
+        note_row2 = ws.max_row
+        ws.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=self.MAX_COLS)
+        ws.cell(row=note_row2, column=1).font = self.font_italic
+        ws.append([""])
+
+    def _merge_for_table(self, ws, row, merges: List[int], texts: List[any], font, alignment, fill=None, borders=True):
+        col = 1
+        for i, width in enumerate(merges):
+            end_col = col + width - 1
+            if width > 1:
+                ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
+            
+            # Apply border to ALL cells in the merge group
+            for c_idx in range(col, end_col + 1):
+                cell = ws.cell(row=row, column=c_idx)
+                if borders:
+                    cell.border = self.border_standard
+                if fill:
+                    cell.fill = fill
+            
+            c = ws.cell(row=row, column=col)
+            c.value = texts[i]
+            if font:
+                c.font = font
+            if alignment:
+                c.alignment = alignment
+            
+            col += width
+            
+    def _build_summary_sheet(self, wb, month, year, user_reports, company, logo_path):
         ws_summary = wb.active
-        ws_summary.title = "Resumo Folha"
+        ws_summary.title = "Resumo"
+        self._set_columns_width(ws_summary)
+        self._insert_header(ws_summary, company, logo_path)
 
-        subtitle = f"{self._get_month_name(month)} DE {year}"
-        self._insert_header_and_logo(ws_summary, "Relatório de Gestão", subtitle, company_name, company_cnpj, logo_path,
-                                     'C')
+        # Title Form Block
+        subtitle = f"Resumo de Gestão - {self._get_month_name(month).capitalize()} de {year}"
+        ws_summary.append([subtitle])
+        title_row = ws_summary.max_row
+        ws_summary.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=self.MAX_COLS)
+        c = ws_summary.cell(row=title_row, column=1)
+        c.font = self.font_subtitle
+        c.alignment = self.align_center
+        for c_idx in range(1, self.MAX_COLS + 1):
+            ws_summary.cell(row=title_row, column=c_idx).border = self.border_standard
+            ws_summary.cell(row=title_row, column=c_idx).fill = self.fill_section_title
+        ws_summary.append([""])
 
-        ws_summary.append(["* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos)."])
-        note_row1 = ws_summary.max_row
-        ws_summary.merge_cells(start_row=note_row1, start_column=1, end_row=note_row1, end_column=3)
-        ws_summary.cell(row=note_row1, column=1).font = Font(italic=True, color="64748B")
-
-        ws_summary.append(["  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados."])
-        note_row2 = ws_summary.max_row
-        ws_summary.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=3)
-        ws_summary.cell(row=note_row2, column=1).font = Font(italic=True, color="64748B")
-        ws_summary.append([])
-
-        headers_sum = ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"]
-        ws_summary.append(headers_sum)
+        # Table configuration
+        merges = [14, 5, 5]
+        ws_summary.append([""])
         header_row = ws_summary.max_row
-        ws_summary.freeze_panes = f"A{header_row + 1}"
-
-        for col_num, header in enumerate(headers_sum, 1):
-            cell = ws_summary.cell(row=header_row, column=col_num)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = self.align_center
-            cell.border = self.border_bottom
+        self._merge_for_table(ws_summary, header_row, merges, ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"], self.header_font, self.align_center, fill=self.header_fill)
 
         for user, report in user_reports:
             sum_data = report.summary
-            ws_summary.append([
+            ws_summary.append([""])
+            row = ws_summary.max_row
+            texts = [
                 sum_data.user_name,
                 sum_data.days_worked,
                 self._time_str_to_fraction(sum_data.total_worked_time)
-            ])
+            ]
+            self._merge_for_table(ws_summary, row, merges, texts, self.font_regular, self.align_center)
+            ws_summary.cell(row=row, column=1).alignment = self.align_left
+            ws_summary.cell(row=row, column=20).number_format = '[h]:mm'
 
-            last_row = ws_summary.max_row
-            ws_summary.cell(row=last_row, column=1).border = self.border_bottom
-            ws_summary.cell(row=last_row, column=2).border = self.border_bottom
-            ws_summary.cell(row=last_row, column=2).alignment = self.align_center
+        self._append_notes(ws_summary)
 
-            time_cell = ws_summary.cell(row=last_row, column=3)
-            time_cell.border = self.border_bottom
-            time_cell.alignment = self.align_center
-            time_cell.number_format = '[h]:mm'
+    def _build_employee_sheet(self, wb, user, report, month, year, company, logo_path):
+        name_parts = user.name.split()
+        sheet_name = name_parts[0]
+        for part in name_parts[1:]:
+            if len(part) >= 3:
+                sheet_name = f"{name_parts[0]} {part[:3]}"
+                break
+        
+        ws_det = wb.create_sheet(title=sheet_name[:31])
+        self._set_columns_width(ws_det)
 
-        ws_summary.column_dimensions['A'].width = 45
-        ws_summary.column_dimensions['B'].width = 20
-        ws_summary.column_dimensions['C'].width = 25
+        # 1. Company Header (Now fully boxed)
+        self._insert_header(ws_det, company, logo_path)
 
-    def _build_employee_sheet(self, wb, user, report, month, year, company_name, company_cnpj, logo_path):
-        sheet_name = f"{user.id}-{user.name.split()[0]}"[:30]
-        ws_det = wb.create_sheet(title=sheet_name)
+        # 2. Folha de Ponto Title Form Block
+        title_text = f"Folha de Ponto - {self._get_month_name(month).capitalize()} de {year}"
+        ws_det.append([title_text])
+        title_row = ws_det.max_row
+        ws_det.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=self.MAX_COLS)
+        c = ws_det.cell(row=title_row, column=1)
+        c.font = self.font_subtitle # Smaller than company name
+        c.alignment = self.align_center
+        for c_idx in range(1, self.MAX_COLS + 1):
+            ws_det.cell(row=title_row, column=c_idx).border = self.border_standard
+            ws_det.cell(row=title_row, column=c_idx).fill = self.fill_section_title
+        ws_det.append([""])
 
-        subtitle = f"{self._get_month_name(month)} DE {year}"
-        self._insert_header_and_logo(ws_det, f"Folha de Ponto: {user.name}", subtitle, company_name, company_cnpj,
-                                     logo_path, 'F')
+        # 3. Dados do Funcionário
+        ws_det.append(["Dados do Funcionário"])
+        func_title_row = ws_det.max_row
+        ws_det.merge_cells(start_row=func_title_row, start_column=1, end_row=func_title_row, end_column=self.MAX_COLS)
+        c2 = ws_det.cell(row=func_title_row, column=1)
+        c2.font = self.font_bold
+        c2.alignment = self.align_left
+        for c_idx in range(1, self.MAX_COLS + 1):
+            ws_det.cell(row=func_title_row, column=c_idx).border = self.border_standard
+            ws_det.cell(row=func_title_row, column=c_idx).fill = self.fill_section_title
 
-        ws_det.append(["* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos)."])
-        note_row1 = ws_det.max_row
-        ws_det.merge_cells(start_row=note_row1, start_column=1, end_row=note_row1, end_column=6)
-        ws_det.cell(row=note_row1, column=1).font = Font(italic=True, color="64748B")
+        user_cpf = user.cpf or "Não registrado"
+        user_pis = user.pis or "Não registrado"
+        user_telefone = self._format_phone(user.phone) if hasattr(user, 'phone') and user.phone else "Não registrado"
+        user_endereco = user.endereco or "Não registrado"
+        
+        ws_det.append([""])
+        info_row1 = ws_det.max_row
+        self._apply_key_value(ws_det, info_row1, start_col=1, key_text="Nome:", key_width=2, val_text=user.name, val_width=8, borders=True)
+        self._apply_key_value(ws_det, info_row1, start_col=11, key_text="CPF:", key_width=2, val_text=user_cpf, val_width=5, borders=True)
+        self._apply_key_value(ws_det, info_row1, start_col=18, key_text="PIS:", key_width=2, val_text=user_pis, val_width=5, borders=True)
+        
+        ws_det.append([""])
+        info_row2 = ws_det.max_row
+        self._apply_key_value(ws_det, info_row2, start_col=1, key_text="Telefone:", key_width=3, val_text=user_telefone, val_width=7, borders=True)
+        self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3, val_text=user_endereco, val_width=11, borders=True)
+        ws_det.append([""])
 
-        ws_det.append(["  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados."])
-        note_row2 = ws_det.max_row
-        ws_det.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=6)
-        ws_det.cell(row=note_row2, column=1).font = Font(italic=True, color="64748B")
-        ws_det.append([])
-
-        ws_det.append(["Legenda de Cores de Status:"])
-        legend_title_row = ws_det.max_row
-        ws_det.merge_cells(start_row=legend_title_row, start_column=1, end_row=legend_title_row, end_column=6)
-        ws_det.cell(row=legend_title_row, column=1).font = Font(bold=True, color="334155")
-
-        ws_det.append(["", "Fim de Semana", "Feriado", "Falta", "Atestado/Abono", ""])
-        legend_row = ws_det.max_row
-        ws_det.cell(row=legend_row, column=2).fill = self.fill_weekend
-        ws_det.cell(row=legend_row, column=2).alignment = self.align_center
-        ws_det.cell(row=legend_row, column=2).border = self.border_bottom
-        ws_det.cell(row=legend_row, column=3).fill = self.fill_holiday
-        ws_det.cell(row=legend_row, column=3).font = self.font_holiday
-        ws_det.cell(row=legend_row, column=3).alignment = self.align_center
-        ws_det.cell(row=legend_row, column=3).border = self.border_bottom
-        ws_det.cell(row=legend_row, column=4).fill = self.fill_absence
-        ws_det.cell(row=legend_row, column=4).font = self.font_absence
-        ws_det.cell(row=legend_row, column=4).alignment = self.align_center
-        ws_det.cell(row=legend_row, column=4).border = self.border_bottom
-        ws_det.cell(row=legend_row, column=5).fill = self.fill_excused
-        ws_det.cell(row=legend_row, column=5).font = self.font_excused
-        ws_det.cell(row=legend_row, column=5).alignment = self.align_center
-        ws_det.cell(row=legend_row, column=5).border = self.border_bottom
-        ws_det.append([])
-
-        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trabalhado (Min)", "Trabalhado (Tempo)"]
-        ws_det.append(headers_det)
+        # 4. Ponto Mes (Tabela)
+        merges = [3, 3, 4, 10, 2, 2]
+        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. (Min)", "Trab. (Tempo)"]
+        
+        ws_det.append([""])
         header_row = ws_det.max_row
-
-        ws_det.freeze_panes = f"A{header_row + 1}"
-
-        for col_num, header in enumerate(headers_det, 1):
-            cell = ws_det.cell(row=header_row, column=col_num)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.border = self.border_bottom
-            cell.alignment = self.align_center
+        self._merge_for_table(ws_det, header_row, merges, headers_det, self.header_font, self.align_center, fill=self.header_fill)
 
         for day in report.daily_details:
             punches_str = " | ".join(day.punches)
+            if day.is_holiday:
+                holiday_label = day.holiday_name or "Feriado"
+                if not punches_str:
+                    punches_str = holiday_label
+                else:
+                    punches_str = f"{holiday_label} ({punches_str})"
 
-            ws_det.append([
+            ws_det.append([""])
+            last_row = ws_det.max_row
+            
+            texts = [
                 day.date.strftime("%d/%m/%Y"),
                 day.day_name,
                 day.status,
                 punches_str,
                 day.worked_minutes,
                 self._time_str_to_fraction(day.worked_time)
-            ])
-            last_row = ws_det.max_row
-
-            for col in range(1, 7):
-                c = ws_det.cell(row=last_row, column=col)
-                c.border = self.border_bottom
-                if col in [1, 2, 3, 5, 6]:
-                    c.alignment = self.align_center
-
-            ws_det.cell(row=last_row, column=6).number_format = '[h]:mm'
-
-            status_cell = ws_det.cell(row=last_row, column=3)
+            ]
+            
             fill_to_apply = None
-
+            font_to_apply = self.font_regular
             if day.is_holiday:
                 fill_to_apply = self.fill_holiday
-                status_cell.font = self.font_holiday
+                font_to_apply = self.font_holiday
             elif day.is_weekend:
                 fill_to_apply = self.fill_weekend
-
+                font_to_apply = self.font_weekend
             if "Falta" in day.status:
                 fill_to_apply = self.fill_absence
-                status_cell.font = self.font_absence
+                font_to_apply = self.font_absence
             elif "Atestado" in day.status or "Abonado" in day.status:
                 fill_to_apply = self.fill_excused
-                status_cell.font = self.font_excused
+                font_to_apply = self.font_excused
 
-            if fill_to_apply:
-                for col in range(1, 7):
-                    ws_det.cell(row=last_row, column=col).fill = fill_to_apply
+            self._merge_for_table(ws_det, last_row, merges, texts, self.font_regular, self.align_center, fill=fill_to_apply)
+            
+            # overwrite specific font for status column (which starts at col 7)
+            ws_det.cell(row=last_row, column=7).font = font_to_apply
+            
+            # number format for last col
+            ws_det.cell(row=last_row, column=23).number_format = '[h]:mm'
 
-        ws_det.append([])
-        ws_det.append(["TOTAIS", "", "", "",
-                       report.summary.total_worked_minutes,
-                       self._time_str_to_fraction(report.summary.total_worked_time)])
+        ws_det.append([""])
         last_row = ws_det.max_row
-
-        for col in range(1, 7):
-            cell = ws_det.cell(row=last_row, column=col)
-            cell.font = Font(bold=True)
-            cell.border = self.border_bottom
-        ws_det.cell(row=last_row, column=5).alignment = self.align_center
-        ws_det.cell(row=last_row, column=6).alignment = self.align_center
-        ws_det.cell(row=last_row, column=6).number_format = '[h]:mm'
-
-        ws_det.column_dimensions['A'].width = 12
-        ws_det.column_dimensions['B'].width = 15
-        ws_det.column_dimensions['C'].width = 25
-        ws_det.column_dimensions['D'].width = 40
-        ws_det.column_dimensions['E'].width = 18
-        ws_det.column_dimensions['F'].width = 20
-
+        texts = ["TOTAIS", "", "", "", report.summary.total_worked_minutes, self._time_str_to_fraction(report.summary.total_worked_time)]
+        self._merge_for_table(ws_det, last_row, merges, texts, self.font_bold, self.align_center)
+        ws_det.cell(row=last_row, column=23).number_format = '[h]:mm'
+        
+        # 5. Notas no fim da página
+        self._append_notes(ws_det)
 
 excel_service = ExcelService()
