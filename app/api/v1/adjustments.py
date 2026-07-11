@@ -1,13 +1,13 @@
 import os
-from typing import Any, List
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
-from app.domain.models.enums import UserRole
+from app.domain.models.enums import UserRole, AdjustmentStatus
 from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestResponse, \
@@ -81,22 +81,36 @@ def download_adjustment_attachment(
 
 @router.get("/my", response_model=List[AdjustmentRequestResponse])
 def read_my_adjustments(
-        skip: int = 0,
-        limit: int = 100,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+        month: Optional[int] = Query(None, ge=1, le=12),
+        year: Optional[int] = Query(None, ge=2000),
+        status: Optional[str] = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+        order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
+        order_direction: str = Query("desc", pattern="^(asc|desc)$"),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    return adjustment_service.get_my_enriched(db, current_user.id, skip, limit)
+    return adjustment_service.get_my_enriched(
+        db, current_user.id, skip, limit, month, year, status, order_by, order_direction
+    )
 
 
 @router.get("/", response_model=List[AdjustmentRequestResponse])
 def read_all_adjustments(
-        skip: int = 0,
-        limit: int = 100,
+        skip: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+        month: Optional[int] = Query(None, ge=1, le=12),
+        year: Optional[int] = Query(None, ge=2000),
+        status: Optional[str] = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+        order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
+        order_direction: str = Query("desc", pattern="^(asc|desc)$"),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return adjustment_service.get_all_enriched(db, skip, limit)
+    return adjustment_service.get_all_enriched(
+        db, skip, limit, month, year, status, order_by, order_direction
+    )
 
 
 @router.put("/{id}/approve", response_model=AdjustmentRequestResponse)

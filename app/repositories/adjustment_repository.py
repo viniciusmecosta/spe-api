@@ -27,20 +27,70 @@ class AdjustmentRepository:
     def get(self, db: Session, id: int) -> AdjustmentRequest | None:
         return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).first()
 
-    def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
-        return db.query(AdjustmentRequest) \
-            .filter(AdjustmentRequest.user_id == user_id) \
-            .order_by(desc(func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at))) \
-            .offset(skip) \
-            .limit(limit) \
-            .all()
+    def get_all_by_user(
+        self, 
+        db: Session, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100,
+        month: int | None = None,
+        year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at",
+        order_direction: str = "desc"
+    ) -> list[AdjustmentRequest]:
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id)
+        
+        if month and year:
+            query = query.filter(
+                func.extract('month', AdjustmentRequest.target_date) == month,
+                func.extract('year', AdjustmentRequest.target_date) == year
+            )
+        elif year:
+            query = query.filter(func.extract('year', AdjustmentRequest.target_date) == year)
+            
+        if status:
+            if status.upper() == "NOT_PENDING":
+                query = query.filter(AdjustmentRequest.status != AdjustmentStatus.PENDING)
+            else:
+                query = query.filter(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
+            
+        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
+        query = query.order_by(desc(order_column) if order_direction == "desc" else order_column)
+            
+        return query.offset(skip).limit(limit).all()
 
-    def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
-        return db.query(AdjustmentRequest) \
-            .order_by(desc(func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at))) \
-            .offset(skip) \
-            .limit(limit) \
-            .all()
+    def get_all(
+        self, 
+        db: Session, 
+        skip: int = 0, 
+        limit: int = 100,
+        month: int | None = None,
+        year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at",
+        order_direction: str = "desc"
+    ) -> list[AdjustmentRequest]:
+        query = db.query(AdjustmentRequest)
+        
+        if month and year:
+            query = query.filter(
+                func.extract('month', AdjustmentRequest.target_date) == month,
+                func.extract('year', AdjustmentRequest.target_date) == year
+            )
+        elif year:
+            query = query.filter(func.extract('year', AdjustmentRequest.target_date) == year)
+            
+        if status:
+            if status.upper() == "NOT_PENDING":
+                query = query.filter(AdjustmentRequest.status != AdjustmentStatus.PENDING)
+            else:
+                query = query.filter(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
+            
+        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
+        query = query.order_by(desc(order_column) if order_direction == "desc" else order_column)
+            
+        return query.offset(skip).limit(limit).all()
 
     def count_pending(self, db: Session) -> int:
         return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING).count()

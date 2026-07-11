@@ -60,12 +60,22 @@ class AdjustmentService:
                 detail=f"Limite máximo de 10 horas de abono por dia excedido. Horas disponíveis para esta data: {remaining}h."
             )
 
-    def get_all_enriched(self, db: Session, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
-        adjustments = adjustment_repository.get_all(db, skip, limit)
+    def get_all_enriched(
+        self, db: Session, skip: int = 0, limit: int = 100,
+        month: int | None = None, year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at", order_direction: str = "desc"
+    ) -> list[AdjustmentRequest]:
+        adjustments = adjustment_repository.get_all(db, skip, limit, month, year, status, order_by, order_direction)
         return self._enrich_adjustments_with_records(db, adjustments)
 
-    def get_my_enriched(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[AdjustmentRequest]:
-        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit)
+    def get_my_enriched(
+        self, db: Session, user_id: int, skip: int = 0, limit: int = 100,
+        month: int | None = None, year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at", order_direction: str = "desc"
+    ) -> list[AdjustmentRequest]:
+        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit, month, year, status, order_by, order_direction)
         return self._enrich_adjustments_with_records(db, adjustments)
 
     def create_adjustment_request(self, db: Session, user_id: int,
