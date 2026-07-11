@@ -16,7 +16,7 @@ router = APIRouter()
 def list_payroll_periods(
         year: int,
         db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_active_user)
+        current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return payroll_service.list_periods(db, year)
 
@@ -26,7 +26,7 @@ def close_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
         db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
+        current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return payroll_service.close_period(db, period.month, period.year, current_user, background_tasks)
 
@@ -36,6 +36,6 @@ def reopen_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
         db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_active_user)
+        current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return payroll_service.reopen_period(db, period.month, period.year, current_user, background_tasks)
