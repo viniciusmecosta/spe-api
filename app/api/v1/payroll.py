@@ -14,10 +14,11 @@ router = APIRouter()
 
 @router.get("/", response_model=List[PayrollClosureResponse])
 def list_payroll_periods(
+        year: int,
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    return payroll_service.list_periods(db)
+    return payroll_service.list_periods(db, year)
 
 
 @router.post("/close", response_model=PayrollClosureResponse)

@@ -41,11 +41,13 @@ class EmailService:
             tz = ZoneInfo(settings.TIMEZONE)
             now_str = datetime.now(tz).strftime("%d/%m/%Y %H:%M:%S")
 
-            body_text = (
-                f"Ação: {action}\n"
-                f"Usuário: {user_name} ({user_email})\n"
-                f"Data e Hora: {now_str}\n"
-                f"Mês/Ano: {month:02d}/{year}\n"
+            body_html = template_service.get_payroll_email_html(
+                action=action,
+                user_name=user_name,
+                user_email=user_email,
+                month=month,
+                year=year,
+                date_str=now_str
             )
 
             msg = MIMEMultipart()
@@ -61,7 +63,7 @@ class EmailService:
 
             msg['To'] = ", ".join(to_emails)
             msg['Subject'] = subject
-            msg.attach(MIMEText(body_text, 'plain'))
+            msg.attach(MIMEText(body_html, 'html'))
 
             if attachment:
                 filename = f"Folha_{month:02d}_{year}.xlsx"

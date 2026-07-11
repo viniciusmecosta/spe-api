@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
-from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
 from app.services.audit_service import audit_service
@@ -16,43 +15,79 @@ from app.services.email_service import dispatch_payroll_email
 
 
 class PayrollService:
-    def list_periods(self, db: Session) -> List[Dict[str, Any]]:
+    def list_periods(self, db: Session, year: int) -> List[Dict[str, Any]]:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
-        current_month = now.month
         current_year = now.year
+        current_month = now.month
 
-        all_records = db.query(TimeRecord.record_datetime).filter(TimeRecord.is_ignored == False).all()
-        periods_with_data = {(dt[0].year, dt[0].month) for dt in all_records if dt[0]}
+        # Define the maximum month to show for the requested year.
+        if year < current_year:
+            max_month = 12
+        elif year == current_year:
+            max_month = current_month
+        else:
+            max_month = 0
 
-        periods_with_data.add((current_year, current_month))
+        # Query all records (including soft-deleted) for this year to build history
+        from app.domain.models.payroll import PayrollClosure
+        all_closures = db.query(PayrollClosure).filter(PayrollClosure.year == year).order_by(
+            PayrollClosure.id.asc()).all()
 
-        closed_periods = payroll_repository.get_all(db)
-        closed_dict = {(p.year, p.month): p for p in closed_periods}
-
-        for p in closed_periods:
-            periods_with_data.add((p.year, p.month))
+        closures_by_month = {}
+        for c in all_closures:
+            if c.month not in closures_by_month:
+                closures_by_month[c.month] = []
+            closures_by_month[c.month].append(c)
 
         result = []
-        for year, month in sorted(periods_with_data, key=lambda x: (x[0], x[1]), reverse=True):
-            if (year, month) in closed_dict:
-                p = closed_dict[(year, month)]
+        for mo in range(max_month, 0, -1):  # Reverse order: 4, 3, 2, 1
+            history = []
+            is_closed = False
+            active_closure = None
+
+            if mo in closures_by_month:
+                month_closures = closures_by_month[mo]
+                active_closure = next((c for c in month_closures if c.deleted_at is None), None)
+                is_closed = active_closure is not None
+
+                for h in month_closures:
+                    history.append({
+                        "action": "Fechamento",
+                        "timestamp": h.closed_at,
+                        "user_id": h.closed_by_user_id,
+                        "user_name": h.closed_by.name if h.closed_by else None,
+                    })
+                    if h.deleted_at:
+                        history.append({
+                            "action": "Reabertura",
+                            "timestamp": h.deleted_at,
+                            "user_id": h.deleted_by,
+                            "user_name": h.deleter.name if h.deleter else None,
+                        })
+
+                history.sort(key=lambda x: x["timestamp"], reverse=True)
+            if is_closed and active_closure:
                 result.append({
-                    "month": p.month,
-                    "year": p.year,
+                    "month": mo,
+                    "year": year,
                     "is_closed": True,
-                    "id": p.id,
-                    "closed_at": p.closed_at,
-                    "closed_by_user_id": p.closed_by_user_id
+                    "id": active_closure.id,
+                    "closed_at": active_closure.closed_at,
+                    "closed_by_user_id": active_closure.closed_by_user_id,
+                    "closed_by_name": active_closure.closed_by.name if active_closure.closed_by else None,
+                    "history": history
                 })
             else:
                 result.append({
-                    "month": month,
+                    "month": mo,
                     "year": year,
                     "is_closed": False,
                     "id": None,
                     "closed_at": None,
-                    "closed_by_user_id": None
+                    "closed_by_user_id": None,
+                    "closed_by_name": None,
+                    "history": history
                 })
         return result
 

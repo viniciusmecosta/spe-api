@@ -21,13 +21,20 @@ class PayrollRepository:
             PayrollClosure.deleted_at.is_(None)
         ).first()
 
-    def get_all(self, db: Session) -> List[PayrollClosure]:
-        return db.query(PayrollClosure).filter(
-            PayrollClosure.deleted_at.is_(None)
-        ).order_by(
+    def get_all(self, db: Session, year: int = None) -> List[PayrollClosure]:
+        query = db.query(PayrollClosure).filter(PayrollClosure.deleted_at.is_(None))
+        if year:
+            query = query.filter(PayrollClosure.year == year)
+        return query.order_by(
             PayrollClosure.year.desc(),
             PayrollClosure.month.desc()
         ).all()
+
+    def get_history(self, db: Session, month: int, year: int) -> List[PayrollClosure]:
+        return db.query(PayrollClosure).filter(
+            PayrollClosure.month == month,
+            PayrollClosure.year == year
+        ).order_by(PayrollClosure.id.asc()).all()
 
     def delete(self, db: Session, month: int, year: int, user_id: int):
         record = db.query(PayrollClosure).filter(
