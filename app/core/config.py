@@ -10,7 +10,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 class Settings(BaseSettings):
     PROJECT_NAME: str
     APP_VERSION: str
-    ENVIRONMENT: str = "prod"
+    ENVIRONMENT: str
 
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
@@ -19,22 +19,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    BACKEND_CORS_ORIGINS: List[str]
     UPLOAD_DIR: str
-    SMTP_HOST: Optional[str] = None
-    SMTP_PORT: Optional[int] = None
-    SMTP_USER: Optional[str] = None
-    SMTP_PASSWORD: Optional[str] = None
-    EMAIL_FROM: Optional[str] = None
-    EMAIL_TO: Optional[str] = None
+    SMTP_HOST: Optional[str]
+    SMTP_PORT: Optional[int]
+    SMTP_USER: Optional[str]
+    SMTP_PASSWORD: Optional[str]
+    EMAIL_FROM: Optional[str]
 
-    TELEGRAM_BOT_TOKEN: Optional[str] = None
-    TELEGRAM_CHAT_ID: Optional[str] = None
-    TELEGRAM_MAX_MESSAGE_LENGTH: int = 3900
+    TELEGRAM_BOT_TOKEN: Optional[str]
+    TELEGRAM_CHAT_ID: Optional[str]
+    TELEGRAM_MAX_MESSAGE_LENGTH: int
 
-    OPERATION_MODE: str = "STANDALONE"
-    CONSUMER_SERVER_URL: Optional[str] = None
-    CONSUMER_API_KEY: Optional[str] = None
+    OPERATION_MODE: str
+    CONSUMER_SERVER_URL: Optional[str]
+    CONSUMER_API_KEY: Optional[str]
 
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
