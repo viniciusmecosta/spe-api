@@ -228,5 +228,11 @@ mosquitto/log/
 # App Logs
 logs/
 *.log
+
+
 agents/
+
 route_test_report.md
+
+deploy/
+.env-prod
