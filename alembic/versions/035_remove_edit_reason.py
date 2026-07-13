@@ -11,13 +11,19 @@ def upgrade() -> None:
         batch_op.drop_column('edit_reason')
         batch_op.alter_column('edit_justification',
                               existing_type=sa.VARCHAR(length=20),
-                              type_=sa.String(length=70),
+                              type_=sa.String(length=300),
                               existing_nullable=True)
+        batch_op.alter_column('updated_at',
+                              existing_type=sa.DateTime(timezone=True),
+                              nullable=True)
 
 def downgrade() -> None:
     with op.batch_alter_table('time_records', schema=None) as batch_op:
         batch_op.add_column(sa.Column('edit_reason', sa.String(), nullable=True))
         batch_op.alter_column('edit_justification',
-                              existing_type=sa.String(length=70),
+                              existing_type=sa.String(length=300),
                               type_=sa.Enum('FORGOT_ENTRY', 'FORGOT_EXIT', 'SYSTEM_ERROR', 'INITIAL_INCLUSION', 'INITIAL_EDIT', 'REGISTRATION_MISTAKE', 'IRRELEVANT_RECORD', 'OTHER', name='editjustification'),
                               existing_nullable=True)
+        batch_op.alter_column('updated_at',
+                              existing_type=sa.DateTime(timezone=True),
+                              nullable=False)

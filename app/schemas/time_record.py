@@ -23,15 +23,15 @@ class TimeRecordCreateAdmin(BaseModel):
     user_id: int
     record_type: RecordType
     record_datetime: datetime
-    edit_justification: str = Field(..., max_length=70)
+    edit_justification: str = Field(..., max_length=300)
 
 class TimeRecordUpdate(BaseModel):
     record_type: Optional[RecordType] = None
     record_datetime: Optional[datetime] = None
-    edit_justification: str = Field(..., max_length=70)
+    edit_justification: str = Field(..., max_length=300)
 
 class TimeRecordDeleteAdmin(BaseModel):
-    edit_justification: str = Field(..., max_length=70)
+    edit_justification: str = Field(..., max_length=300)
 
 class TimeRecordSimple(BaseModel):
     record_type: RecordType

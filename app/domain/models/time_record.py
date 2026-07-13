@@ -37,7 +37,7 @@ class TimeRecord(Base):
     original_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=get_local_time)
-    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
+    updated_at = Column(DateTime(timezone=True), onupdate=get_local_time, nullable=True)
 
     user = relationship("User", back_populates="time_records", foreign_keys=[user_id])
     editor = relationship("User", foreign_keys=[edited_by])
