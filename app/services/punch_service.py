@@ -1,29 +1,25 @@
 import logging
-from typing import Optional
-
 from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from app.services.audit_service import audit_service
 from app.services.time_record_service import time_record_service
 
 logger = logging.getLogger(__name__)
 
-
 class PunchService:
     def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: Optional[str] = None,
                                 request: Optional[Request] = None):
         try:
             from app.domain.models.biometric import UserBiometric
-
             biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_index).first()
 
             if not biometric:
                 return False, "Nao Cadastrado", None
 
             user = biometric.user
-
             if not user.is_active:
                 return False, "Bloqueado", None
 
@@ -41,7 +37,8 @@ class PunchService:
             if not used_ntp:
                 if request:
                     request.state.ntp_error = True
-                new_record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+
+                new_record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
                 db.add(new_record)
                 db.commit()
                 db.refresh(new_record)
@@ -52,7 +49,7 @@ class PunchService:
                     action="NTP_FALLBACK",
                     entity="TIME_RECORD",
                     entity_id=new_record.id,
-                    new_data={"reason": new_record.edit_reason}
+                    new_data={"justification": new_record.edit_justification}
                 )
 
             return True, "Ponto Registrado", new_record
@@ -60,6 +57,5 @@ class PunchService:
         except (SQLAlchemyError, ValueError) as e:
             logger.error(f"Erro ao processar punch: {e}")
             return False, "Erro Interno", None
-
 
 punch_service = PunchService()

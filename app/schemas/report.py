@@ -1,7 +1,6 @@
 from datetime import date
-from typing import List, Optional
-
 from pydantic import BaseModel
+from typing import List, Optional
 
 
 class PunchDetail(BaseModel):
@@ -14,8 +13,6 @@ class PunchDetail(BaseModel):
     biometric_id: Optional[int] = None
     edited_by: Optional[str] = None
     edit_justification: Optional[str] = None
-    edit_reason: Optional[str] = None
-
 
 class DailyReportItem(BaseModel):
     date: date
@@ -38,7 +35,6 @@ class DailyReportItem(BaseModel):
     worked_time: str
     expected_time: str
 
-
 class UserPayrollSummary(BaseModel):
     user_id: int
     user_name: str
@@ -54,24 +50,20 @@ class UserPayrollSummary(BaseModel):
     days_worked: int
     absences: int
 
-
 class AdvancedUserReportResponse(BaseModel):
     summary: UserPayrollSummary
     daily_details: List[DailyReportItem]
-
 
 class MonthlyReportResponse(BaseModel):
     month: int
     year: int
     payroll_data: List[UserPayrollSummary]
 
-
 class DashboardMetricsResponse(BaseModel):
     total_active_employees: int
     pending_adjustments: int
     employees_present_today: int
     date: date
-
 
 class HistoryPunch(BaseModel):
     id: int
@@ -83,8 +75,6 @@ class HistoryPunch(BaseModel):
     biometric_id: Optional[int] = None
     edited_by: Optional[str] = None
     edit_justification: Optional[str] = None
-    edit_reason: Optional[str] = None
-
 
 class HistoryDay(BaseModel):
     date: date
@@ -101,29 +91,24 @@ class HistoryDay(BaseModel):
     abono_hours: Optional[float] = None
     abono_id: Optional[int] = None
 
-
 class HistoryResponse(BaseModel):
     month: int
     year: int
     total_worked_time: str
     days: List[HistoryDay]
 
-
 class TodayPunch(BaseModel):
     id: int
     time: str
     record_type: str
 
-
 class AnomalyItem(BaseModel):
     date: str
     description: str
 
-
 class Aniversariante(BaseModel):
     nome: str
     dia: int
-
 
 class MyDashboardResponse(BaseModel):
     full_name: str
@@ -132,13 +117,11 @@ class MyDashboardResponse(BaseModel):
     month_anomalies: List[AnomalyItem]
     aniversariantes_do_mes: List[Aniversariante] = []
 
-
 class EmployeeHours(BaseModel):
     user_id: int
     short_name: str
     total_hours: float
     formatted_time: str
-
 
 class TeamHoursResponse(BaseModel):
     month: int

@@ -5,11 +5,12 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.models.enums import RecordType, EditJustification
+from app.domain.models.enums import RecordType
 
 
 def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
+
 
 class TimeRecord(Base):
     __tablename__ = "time_records"
@@ -25,17 +26,14 @@ class TimeRecord(Base):
     ip_address = Column(String, nullable=True)
     device_name = Column(String, nullable=True)
     platform = Column(String, nullable=True)
-
     biometric_id = Column(Integer, ForeignKey("user_biometrics.id"), nullable=True)
 
     edited_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    edit_justification = Column(Enum(EditJustification), nullable=True)
-    edit_reason = Column(String, nullable=True)
+    edit_justification = Column(String, nullable=True)
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_ignored = Column(Boolean, default=False, nullable=False)
-
     original_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=get_local_time)

@@ -2,11 +2,10 @@ import locale
 import logging
 from calendar import monthrange
 from datetime import date, timedelta, datetime
-from typing import List, Optional
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole, AdjustmentType
@@ -53,10 +52,8 @@ class ReportService:
     def _apply_employee_filters(self, query, employee_ids: Optional[List[int]] = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
         query = query.filter(User.is_exempt_from_rules.is_(False))
-
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
-
         return query
 
     def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
@@ -73,6 +70,7 @@ class ReportService:
 
         today_start = datetime.combine(today, datetime.min.time(), tzinfo=tz)
         today_end = datetime.combine(today, datetime.max.time(), tzinfo=tz)
+
         present = time_record_repository.count_unique_users_in_range(db, today_start, today_end)
 
         return DashboardMetricsResponse(
@@ -115,15 +113,12 @@ class ReportService:
             for record, user in records:
                 if user.name not in user_activity:
                     user_activity[user.name] = []
-
                 time_str = record.record_datetime.strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
-
                 user_activity[user.name].append({"time": time_str, "type": type_label})
 
             return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity,
                                                           anomalies_descriptions)
-
         except (ValueError, TypeError, AttributeError) as e:
             logger.error(f"Erro HTML Report: {e}")
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
@@ -169,7 +164,7 @@ class ReportService:
             User.is_active == True,
             extract('month', User.data_nascimento) == now.month
         ).all()
-        
+
         aniversariantes_do_mes = []
         for a in aniversariantes_query:
             if a.data_nascimento:
@@ -177,7 +172,7 @@ class ReportService:
                     nome=a.name,
                     dia=a.data_nascimento.day
                 ))
-        
+
         aniversariantes_do_mes.sort(key=lambda x: x.dia)
 
         return MyDashboardResponse(
@@ -227,6 +222,7 @@ class ReportService:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         today_date = now.date()
+
         if not month:
             month = now.month
         if not year:
@@ -299,8 +295,7 @@ class ReportService:
                         "platform": rec.platform,
                         "biometric_id": rec.biometric_id,
                         "edited_by": rec.editor_name,
-                        "edit_justification": rec.edit_justification.value if rec.edit_justification else None,
-                        "edit_reason": rec.edit_reason
+                        "edit_justification": rec.edit_justification if rec.edit_justification else None
                     })
                 punches.append(HistoryPunch(**punch_data))
 
@@ -345,6 +340,7 @@ class ReportService:
                 abono_hours=abono.amount_hours if abono else None,
                 abono_id=abono.id if abono and is_manager else None
             ))
+
             current += timedelta(days=1)
 
         total_month_minutes = int(round(total_worked_seconds / 60))
@@ -366,7 +362,6 @@ class ReportService:
             return None
 
         has_schedule = bool(user.schedules)
-
         tz = ZoneInfo(settings.TIMEZONE)
         today_date = datetime.now(tz).date()
 
@@ -378,13 +373,10 @@ class ReportService:
         approved_adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
 
         daily_details = []
-
         total_worked_seconds = 0.0
         total_expected_seconds = 0.0
-
         total_extra_hours = 0.0
         total_missing_hours = 0.0
-
         days_worked_count = 0
         absences_count = 0
 
@@ -406,7 +398,6 @@ class ReportService:
                                    if adj.target_date == current
                                    and adj.adjustment_type == AdjustmentType.WAIVER),
                                   None)
-
             is_waiver = adjustment_day is not None
             adj_id = adjustment_day.id if adjustment_day else None
             is_excused = is_waiver
@@ -442,8 +433,7 @@ class ReportService:
                         platform=rec.platform,
                         biometric_id=rec.biometric_id,
                         edited_by=rec.editor_name,
-                        edit_justification=rec.edit_justification.value if rec.edit_justification else None,
-                        edit_reason=rec.edit_reason
+                        edit_justification=rec.edit_justification if rec.edit_justification else None
                     ))
 
                 if rec.record_type == RecordType.ENTRY:
@@ -485,7 +475,6 @@ class ReportService:
 
             total_worked_seconds += worked_seconds
             total_expected_seconds += expected_seconds
-
             total_extra_hours += day_extra
             total_missing_hours += day_missing
 
@@ -530,15 +519,12 @@ class ReportService:
                 exits=exits,
                 punches=punches,
                 detailed_punches=detailed_punches if is_maintainer else None,
-
                 adjustment_id=adj_id,
-
                 worked_hours=round(day_worked_hours, 2),
                 expected_hours=round(day_expected_hours, 2),
                 balance_hours=round(day_balance, 2),
                 extra_hours=round(day_extra, 2),
                 missing_hours=round(day_missing, 2),
-
                 worked_minutes=worked_minutes_int,
                 worked_time=self._format_duration(worked_seconds),
                 expected_time=self._format_duration(expected_seconds)
@@ -551,13 +537,10 @@ class ReportService:
             user_name=user.name,
             total_worked_time=self._format_duration(total_worked_seconds),
             total_expected_time=self._format_duration(total_expected_seconds),
-
             total_worked_minutes=int(round(total_worked_seconds / 60)),
             total_expected_minutes=int(round(total_expected_seconds / 60)),
-
             days_worked=days_worked_count,
             absences=absences_count,
-
             total_worked_hours=round(total_worked_seconds / 3600.0, 2),
             total_expected_hours=round(total_expected_seconds / 3600.0, 2),
             total_extra_hours=round(total_extra_hours, 2),
@@ -579,6 +562,7 @@ class ReportService:
             report = self.get_advanced_user_report(db, user.id, month, year, current_user)
             if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
+
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
 
