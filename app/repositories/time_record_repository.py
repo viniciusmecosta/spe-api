@@ -107,7 +107,7 @@ class TimeRecordRepository:
                 TimeRecord.id == anchor_id,
                 TimeRecord.original_record_id == anchor_id
             )
-        ).order_by(TimeRecord.created_at.asc()).all()
+        ).order_by(TimeRecord.id.desc()).all()
 
 
 time_record_repository = TimeRecordRepository()
