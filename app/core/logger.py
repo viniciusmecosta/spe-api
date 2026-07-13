@@ -36,6 +36,8 @@ class DailyRotatingFileHandler(logging.FileHandler):
         self.log_dir = log_dir
         self.backup_count = backup_count
         self.tz = ZoneInfo(settings.TIMEZONE)
+        self.check_interval = 5
+        self.last_check = time.time()
         os.makedirs(self.log_dir, exist_ok=True)
         self.baseFilename = self._get_current_filename()
         self._calculate_next_rollover()
@@ -53,8 +55,22 @@ class DailyRotatingFileHandler(logging.FileHandler):
         self.next_rollover = next_midnight.timestamp()
 
     def emit(self, record):
-        if time.time() >= self.next_rollover:
+        current_time = time.time()
+        
+        if current_time >= self.next_rollover:
             self._do_rollover()
+            self.last_check = current_time
+        elif current_time - self.last_check >= self.check_interval:
+            self.last_check = current_time
+            if self.stream is not None:
+                try:
+                    if not os.path.exists(self.baseFilename):
+                        self.stream.close()
+                        os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
+                        self.stream = self._open()
+                except Exception:
+                    pass
+
         super().emit(record)
 
     def _do_rollover(self):

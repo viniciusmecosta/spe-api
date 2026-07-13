@@ -1,10 +1,9 @@
-from datetime import datetime
-from typing import Optional
-from zoneinfo import ZoneInfo
-
 import ntplib
+from datetime import datetime
 from fastapi import HTTPException, status, Request
 from sqlalchemy.orm import Session
+from typing import Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.security import get_client_ip, get_client_device_name
@@ -16,6 +15,7 @@ from app.repositories.user_repository import user_repository
 from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
+
 
 class TimeRecordService:
     def _get_trusted_time(self) -> tuple[datetime, bool]:
@@ -37,8 +37,8 @@ class TimeRecordService:
             return
 
         platform = request.headers.get("X-Platform", "desktop").lower()
-
         can_punch = False
+
         if platform == "mobile":
             can_punch = user.can_manual_punch_mobile
         else:
@@ -56,17 +56,20 @@ class TimeRecordService:
         self._validate_manual_punch_permission(db, user_id, request)
 
         current_time, used_ntp = self._get_trusted_time()
+
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
+
         payroll_service.validate_period_open(db, current_time.date())
 
         record = time_record_repository.create(
             db, user_id, RecordType.ENTRY, current_time, ip_address, device_name, platform=platform
         )
+
         if not used_ntp:
             request.state.ntp_error = True
-            record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+            record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
             db.add(record)
             db.commit()
             db.refresh(record)
@@ -77,26 +80,28 @@ class TimeRecordService:
                 action="NTP_FALLBACK",
                 entity="TIME_RECORD",
                 entity_id=record.id,
-                new_data={"reason": record.edit_reason}
+                new_data={"justification": record.edit_justification}
             )
 
         return record
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
-
         current_time, used_ntp = self._get_trusted_time()
+
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
+
         payroll_service.validate_period_open(db, current_time.date())
 
         record = time_record_repository.create(
             db, user_id, RecordType.EXIT, current_time, ip_address, device_name, platform=platform
         )
+
         if not used_ntp:
             request.state.ntp_error = True
-            record.edit_reason = "Registro feito com a hora local do servidor (Falha no NTP)."
+            record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
             db.add(record)
             db.commit()
             db.refresh(record)
@@ -107,7 +112,7 @@ class TimeRecordService:
                 action="NTP_FALLBACK",
                 entity="TIME_RECORD",
                 entity_id=record.id,
-                new_data={"reason": record.edit_reason}
+                new_data={"justification": record.edit_justification}
             )
 
         return record
@@ -139,11 +144,13 @@ class TimeRecordService:
             platform=record.platform,
             biometric_id=record.biometric_id,
             edited_by=current_user.id,
-            original_record_id=record.original_record_id if record.original_record_id else record.id
+            edit_justification="Inversão de marcação efetuada",
+            original_record_id=record.original_record_id if record.original_record_id else record.id,
+            created_at=record.created_at
         )
+
         db.add(new_record)
         db.flush()
-
         db.add(record)
         db.commit()
         db.refresh(new_record)
@@ -157,6 +164,7 @@ class TimeRecordService:
             old_data={"record_type": previous_type.value},
             new_data={"record_type": new_type.value}
         )
+
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
@@ -169,14 +177,15 @@ class TimeRecordService:
             device_name=device_name if device_name else "",
             platform="desktop"
         )
+
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
-        record.edit_reason = obj_in.edit_reason
+
         db.add(record)
         db.commit()
         db.refresh(record)
 
-        justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
+        justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
 
         audit_service.log(
             db,
@@ -187,43 +196,49 @@ class TimeRecordService:
             new_data={
                 "record_time": str(obj_in.record_datetime),
                 "record_type": obj_in.record_type.value,
-                "justification": justification_val,
-                "reason": obj_in.edit_reason
+                "justification": justification_val
             }
         )
+
         return record
 
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
+
         payroll_service.validate_period_open(db, record.record_datetime.date())
+
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
-        employee_id = record.user_id
+        new_record_type = obj_in.record_type if obj_in.record_type else record.record_type
+        new_record_datetime = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
 
+        if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
+            return record
+
+        employee_id = record.user_id
         old_data = {
             "record_type": record.record_type.value,
             "record_time": str(record.record_datetime),
-            "justification": record.edit_justification.value if record.edit_justification else "",
-            "reason": record.edit_reason
+            "justification": record.edit_justification if record.edit_justification else ""
         }
 
         record.is_ignored = True
 
         new_record = TimeRecord(
             user_id=record.user_id,
-            record_type=obj_in.record_type if obj_in.record_type else record.record_type,
-            record_datetime=obj_in.record_datetime if obj_in.record_datetime else record.record_datetime,
+            record_type=new_record_type,
+            record_datetime=new_record_datetime,
             ip_address=record.ip_address,
             device_name=record.device_name,
             platform=record.platform,
             biometric_id=record.biometric_id,
             edited_by=manager_id,
-            edit_justification=obj_in.edit_justification if obj_in.edit_justification else record.edit_justification,
-            edit_reason=obj_in.edit_reason if obj_in.edit_reason else record.edit_reason,
-            original_record_id=record.original_record_id if record.original_record_id else record.id
+            edit_justification=obj_in.edit_justification,
+            original_record_id=record.original_record_id if record.original_record_id else record.id,
+            created_at=record.created_at
         )
 
         db.add(new_record)
@@ -231,15 +246,13 @@ class TimeRecordService:
         db.commit()
         db.refresh(new_record)
 
-        justification_val = new_record.edit_justification.value if new_record.edit_justification else ""
-
+        justification_val = new_record.edit_justification if new_record.edit_justification else ""
         new_data_raw = {
             "record_type": new_record.record_type.value,
             "record_time": str(new_record.record_datetime),
-            "justification": justification_val,
-            "reason": new_record.edit_reason
+            "justification": justification_val
         }
-        
+
         actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
 
         audit_service.log(
@@ -251,16 +264,17 @@ class TimeRecordService:
             old_data=actual_old,
             new_data=actual_new
         )
+
         return new_record
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
+
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
-        target_id = record.user_id
-        justification_val = obj_in.edit_justification.value if obj_in.edit_justification else ""
+        justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
 
         old_data = {
             "record_type": record.record_type.value,
@@ -277,16 +291,15 @@ class TimeRecordService:
             entity_id=record_id,
             old_data=old_data,
             new_data={
-                "justification": justification_val,
-                "reason": obj_in.edit_reason
+                "justification": justification_val
             }
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
                      biometric_id: Optional[int] = None, platform: str = "desktop") -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
-
         record_type = RecordType.ENTRY
+
         if last_record and last_record.record_type == RecordType.ENTRY:
             tz = ZoneInfo(settings.TIMEZONE)
 
@@ -315,9 +328,11 @@ class TimeRecordService:
             platform=platform,
             biometric_id=biometric_id
         )
+
         return record
 
     def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
         return time_record_repository.get_timeline(db, record_id)
+
 
 time_record_service = TimeRecordService()
