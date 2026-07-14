@@ -128,7 +128,7 @@ class PayrollService:
 
         background_tasks.add_task(
             dispatch_payroll_email,
-            "Fechamento", current_user.name, current_user.email, month, year, current_user.id
+            "Fechamento", current_user.name, month, year, current_user.id
         )
         return closure
 
@@ -156,7 +156,7 @@ class PayrollService:
 
         background_tasks.add_task(
             dispatch_payroll_email,
-            "Reabertura", current_user.name, current_user.email, month, year, current_user.id
+            "Reabertura", current_user.name, month, year, current_user.id
         )
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 

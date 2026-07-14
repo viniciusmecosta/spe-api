@@ -82,7 +82,7 @@ class TemplateService:
         """
 
     @staticmethod
-    def get_payroll_email_html(action: str, user_name: str, user_email: str, month: int, year: int,
+    def get_payroll_email_html(action: str, user_name: str, month: int, year: int,
                                date_str: str) -> str:
         color = "#e65100" if action.lower() == "reabertura" else "#1565c0"
         action_title = "Folha Reaberta" if action.lower() == "reabertura" else "Folha Fechada"
@@ -106,7 +106,7 @@ class TemplateService:
                             </tr>
                             <tr>
                                 <td style="padding: 5px 0; color: #555;"><strong>Responsável:</strong></td>
-                                <td style="padding: 5px 0;">{user_name} &lt;{user_email}&gt;</td>
+                                <td style="padding: 5px 0;">{user_name}</td>
                             </tr>
                             <tr>
                                 <td style="padding: 5px 0; color: #555;"><strong>Data e Hora:</strong></td>

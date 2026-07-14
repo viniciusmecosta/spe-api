@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    def send_payroll_email(self, db, action: str, user_name: str, user_email: str, month: int, year: int,
+    def send_payroll_email(self, db, action: str, user_name: str, month: int, year: int,
                            attachment: Optional[BytesIO] = None):
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             logger.warning("SMTP not configured. Skipping payroll email.")
@@ -44,7 +44,6 @@ class EmailService:
             body_html = template_service.get_payroll_email_html(
                 action=action,
                 user_name=user_name,
-                user_email=user_email,
                 month=month,
                 year=year,
                 date_str=now_str
@@ -145,7 +144,7 @@ class EmailService:
 email_service = EmailService()
 
 
-def dispatch_payroll_email(action: str, user_name: str, user_email: str, month: int, year: int, current_user_id: int):
+def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, current_user_id: int):
     from app.database.session import get_db_session
     from app.services.excel_service import excel_service
 
@@ -157,6 +156,6 @@ def dispatch_payroll_email(action: str, user_name: str, user_email: str, month: 
                 if current_user:
                     attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
 
-            email_service.send_payroll_email(db, action, user_name, user_email, month, year, attachment)
+            email_service.send_payroll_email(db, action, user_name, month, year, attachment)
     except Exception as e:
         logger.error(f"Error in dispatch_payroll_email: {e}")
