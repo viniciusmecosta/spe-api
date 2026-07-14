@@ -36,7 +36,7 @@ class PayrollRepository:
             PayrollClosure.year == year
         ).order_by(PayrollClosure.id.asc()).all()
 
-    def delete(self, db: Session, month: int, year: int, user_id: int):
+    def delete(self, db: Session, month: int, year: int, user_id: int, observation: str):
         record = db.query(PayrollClosure).filter(
             PayrollClosure.month == month,
             PayrollClosure.year == year,
@@ -45,6 +45,7 @@ class PayrollRepository:
         if record:
             record.deleted_at = datetime.now()
             record.deleted_by = user_id
+            record.reopen_observation = observation
             db.commit()
 
 

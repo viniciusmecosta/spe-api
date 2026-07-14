@@ -9,11 +9,16 @@ class PayrollClosureCreate(BaseModel):
     year: int
 
 
+class PayrollReopenCreate(PayrollClosureCreate):
+    observation: str
+
+
 class PayrollHistoryItem(BaseModel):
     action: str
     timestamp: datetime
     user_id: int
     user_name: Optional[str] = None
+    observation: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

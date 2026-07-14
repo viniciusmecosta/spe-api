@@ -57,6 +57,7 @@ class PayrollService:
                         "timestamp": h.closed_at,
                         "user_id": h.closed_by_user_id,
                         "user_name": h.closed_by.name if h.closed_by else None,
+                        "observation": None,
                     })
                     if h.deleted_at:
                         history.append({
@@ -64,6 +65,7 @@ class PayrollService:
                             "timestamp": h.deleted_at,
                             "user_id": h.deleted_by,
                             "user_name": h.deleter.name if h.deleter else None,
+                            "observation": h.reopen_observation,
                         })
 
                 history.sort(key=lambda x: x["timestamp"], reverse=True)
@@ -130,7 +132,7 @@ class PayrollService:
         )
         return closure
 
-    def reopen_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):
+    def reopen_period(self, db: Session, month: int, year: int, observation: str, current_user: User, background_tasks: BackgroundTasks):
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -145,7 +147,7 @@ class PayrollService:
             )
 
         closure_id = existing.id
-        payroll_repository.delete(db, month, year, current_user.id)
+        payroll_repository.delete(db, month, year, current_user.id, observation)
 
         audit_service.log(
             db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
