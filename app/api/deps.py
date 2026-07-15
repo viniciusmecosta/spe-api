@@ -1,7 +1,7 @@
 from typing import Generator
 
 import jwt
-from fastapi import Depends, HTTPException, status, Security
+from fastapi import Depends, HTTPException, status, Security, Request
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -85,6 +85,7 @@ def get_current_maintainer(
 
 
 async def verify_device_api_key(
+        request: Request,
         api_key: str = Security(api_key_header),
         db: Session = Depends(get_db)
 ):
@@ -100,10 +101,12 @@ async def verify_device_api_key(
     if not device or not device.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Device API Key")
 
+    request.state.device_name = device.name
     return device
 
 
 async def verify_consumer_api_key(
+        request: Request,
         api_key: str = Security(consumer_api_key_header),
         db: Session = Depends(get_db)
 ):
@@ -119,4 +122,5 @@ async def verify_consumer_api_key(
     if not consumer or not consumer.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Consumer API Key")
 
+    request.state.device_name = consumer.name
     return consumer

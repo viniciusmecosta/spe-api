@@ -35,8 +35,11 @@ def _extract_user_name(request: Request) -> str:
     
     if not name:
         name = getattr(request.state, "attempted_user", "")
-        
-    return _format_short_name(name) if name else ""
+
+    if name:
+        return _format_short_name(name)
+
+    return getattr(request.state, "device_name", "")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
