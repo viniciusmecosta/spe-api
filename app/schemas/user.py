@@ -139,5 +139,5 @@ class User(UserInDBBase):
 
 
 class UserResponse(UserInDBBase):
-    schedules: List[WorkSchedule] = []
+    schedules: List[WorkSchedule] = Field(default_factory=list, validation_alias="current_schedules")
     biometrics: List[UserBiometricResponse] = []

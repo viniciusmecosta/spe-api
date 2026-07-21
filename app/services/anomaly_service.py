@@ -18,7 +18,9 @@ class AnomalyService:
         return f"{hours}h{minutes:02d}"
 
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List,
-                             ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+                             ignore_excessive_hours: bool = False, day_adjustments: List = None) -> List[AnomalyResponse]:
+        if day_adjustments is None:
+            day_adjustments = []
         anomalies = []
         records.sort(key=lambda x: x.record_datetime)
 
@@ -96,6 +98,18 @@ class AnomalyService:
                 description=f"Trabalhou {fmt_total}"
             ))
 
+        for adj in day_adjustments:
+            from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+                fmt_time = self._format_duration(adj.amount_hours * 3600 if adj.amount_hours else 0)
+                anomalies.append(AnomalyResponse(
+                    user_id=user_id,
+                    user_name=user_name,
+                    date=current_date,
+                    type="UNAPPROVED_EXTRA_TIME",
+                    description=f"Tempo extra não aprovado: considerado {fmt_time} de antecipação descartada"
+                ))
+
         return anomalies
 
     def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
@@ -116,8 +130,19 @@ class AnomalyService:
         dt_end = datetime.combine(end_date, datetime.max.time())
 
         records_flat = time_record_repository.get_by_users_and_range(db, target_user_ids, dt_start, dt_end)
+        
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+        extra_time_adjustments = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(target_user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+        ).all()
 
         records_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
+        adj_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
 
         for record in records_flat:
             uid = record.user_id
@@ -125,12 +150,23 @@ class AnomalyService:
             if rdate not in records_map[uid]:
                 records_map[uid][rdate] = []
             records_map[uid][rdate].append(record)
+            
+        for adj in extra_time_adjustments:
+            uid = adj.user_id
+            rdate = adj.target_date
+            if rdate not in adj_map[uid]:
+                adj_map[uid][rdate] = []
+            adj_map[uid][rdate].append(adj)
+            
         user_map = {u.id: u.name for u in users}
 
         for uid in target_user_ids:
             user_name = user_map.get(uid, "Unknown")
-            for rdate, day_records in records_map[uid].items():
-                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours)
+            all_dates = sorted(list(set(records_map[uid].keys()).union(set(adj_map[uid].keys()))))
+            for rdate in all_dates:
+                day_records = records_map[uid].get(rdate, [])
+                day_adjs = adj_map[uid].get(rdate, [])
+                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours, day_adjs)
                 all_anomalies.extend(day_anomalies)
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)

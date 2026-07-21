@@ -184,7 +184,7 @@ class ReportService:
         )
 
     def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
-        query = db.query(User).options(joinedload(User.schedules)).filter(
+        query = db.query(User).options(joinedload(User.historical_schedules)).filter(
             User.role == UserRole.EMPLOYEE,
             User.is_exempt_from_rules.is_(False)
         )
@@ -361,7 +361,7 @@ class ReportService:
         if not user:
             return None
 
-        has_schedule = bool(user.schedules)
+        has_schedule = bool(user.historical_schedules)
         tz = ZoneInfo(settings.TIMEZONE)
         today_date = datetime.now(tz).date()
 
@@ -381,6 +381,16 @@ class ReportService:
         absences_count = 0
 
         is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
+
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentStatus
+        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+        ).all()
 
         current = start_date
         while current <= end_date:
@@ -407,7 +417,11 @@ class ReportService:
 
             expected_seconds = 0.0
             if has_schedule and not is_holiday and not is_future:
-                schedule = next((s for s in user.schedules if s.day_of_week == weekday), None)
+                valid_schedules = [
+                    s for s in user.historical_schedules
+                    if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
+                ]
+                schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
                 if schedule:
                     expected_seconds = schedule.daily_hours * 3600
 
@@ -456,6 +470,14 @@ class ReportService:
                     if expected_seconds > 0 and worked_seconds < expected_seconds:
                         waiver_credit = expected_seconds - worked_seconds
                 worked_seconds += waiver_credit
+
+            unapproved_extra = next((adj for adj in unapproved_extra_adjs if adj.target_date == current), None)
+            unapproved_extra_seconds = 0.0
+            if unapproved_extra and unapproved_extra.amount_hours:
+                unapproved_extra_seconds = unapproved_extra.amount_hours * 3600
+                worked_seconds -= unapproved_extra_seconds
+                if worked_seconds < 0:
+                    worked_seconds = 0.0
 
             if worked_seconds > 0:
                 days_worked_count += 1
@@ -527,7 +549,8 @@ class ReportService:
                 missing_hours=round(day_missing, 2),
                 worked_minutes=worked_minutes_int,
                 worked_time=self._format_duration(worked_seconds),
-                expected_time=self._format_duration(expected_seconds)
+                expected_time=self._format_duration(expected_seconds),
+                unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
             ))
 
             current += timedelta(days=1)
@@ -553,7 +576,7 @@ class ReportService:
     def get_monthly_summary(self, db: Session, month: int, year: int,
                             employee_ids: Optional[List[int]] = None,
                             current_user: Optional[User] = None) -> MonthlyReportResponse:
-        query = db.query(User).options(joinedload(User.schedules))
+        query = db.query(User).options(joinedload(User.historical_schedules))
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 

@@ -3,13 +3,37 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
-from app.domain.models.user import User, WorkSchedule
+from app.domain.models.user import User, UserWorkScheduleConfig
 from app.repositories.user_repository import user_repository
+from app.repositories.payroll_repository import payroll_repository
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.audit_service import audit_service
-
+from datetime import date
 
 class UserService:
+    def _check_payroll_closure(self, db: Session, valid_from: date, valid_until: date = None):
+        start_year = valid_from.year
+        start_month = valid_from.month
+
+        end_date = valid_until if valid_until else date.today()
+        end_year = end_date.year
+        end_month = end_date.month
+        
+        current_year = start_year
+        current_month = start_month
+        
+        while (current_year < end_year) or (current_year == end_year and current_month <= end_month):
+            closure = payroll_repository.get_by_month(db, current_month, current_year)
+            if closure and closure.is_closed:
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
+                )
+            current_month += 1
+            if current_month > 12:
+                current_month = 1
+                current_year += 1
+
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         user = user_repository.get_by_username(db, username=user_in.username)
         if user:
@@ -48,15 +72,23 @@ class UserService:
         )
 
         if schedules_in:
+            from datetime import date
+            today = date.today()
             for sch in schedules_in:
                 if sch.daily_hours < 0 or sch.daily_hours > 24:
                     raise HTTPException(status_code=400, detail="As horas diárias devem estar entre 0 e 24.")
 
-                db_sch = WorkSchedule(
+                db_sch = UserWorkScheduleConfig(
                     day_of_week=sch.day_of_week,
-                    daily_hours=sch.daily_hours
+                    daily_hours=sch.daily_hours,
+                    entry_1=sch.entry_1,
+                    exit_1=sch.exit_1,
+                    entry_2=sch.entry_2,
+                    exit_2=sch.exit_2,
+                    valid_from=sch.valid_from if sch.valid_from else today,
+                    valid_until=sch.valid_until
                 )
-                db_user.schedules.append(db_sch)
+                db_user.historical_schedules.append(db_sch)
 
         if biometrics_in:
             seen_indices = set()
@@ -148,16 +180,61 @@ class UserService:
                 setattr(user, field, value)
 
         if schedules_in is not None:
-            user.schedules.clear()
+            from datetime import date
+            today = date.today()
+            
+            current_sch_ids = [s.id for s in user.current_schedules]
+            incoming_ids = [s.id for s in schedules_in if getattr(s, 'id', None) is not None]
+            
+            schedules_to_remove = [sch for sch in user.historical_schedules if sch.id in current_sch_ids and sch.id not in incoming_ids]
+            for sch in schedules_to_remove:
+                self._check_payroll_closure(db, sch.valid_from, sch.valid_until)
+                user.historical_schedules.remove(sch)
+
             for sch_data in schedules_in:
-                daily_hours = sch_data['daily_hours'] if isinstance(sch_data, dict) else sch_data.daily_hours
-                day_of_week = sch_data['day_of_week'] if isinstance(sch_data, dict) else sch_data.day_of_week
+                sch_id = getattr(sch_data, 'id', None)
+                daily_hours = getattr(sch_data, 'daily_hours')
+                day_of_week = getattr(sch_data, 'day_of_week')
+                entry_1 = getattr(sch_data, 'entry_1', None)
+                exit_1 = getattr(sch_data, 'exit_1', None)
+                entry_2 = getattr(sch_data, 'entry_2', None)
+                exit_2 = getattr(sch_data, 'exit_2', None)
+                valid_from = getattr(sch_data, 'valid_from', None)
+                valid_until = getattr(sch_data, 'valid_until', None)
 
                 if daily_hours < 0 or daily_hours > 24:
                     raise HTTPException(status_code=400, detail="Daily hours must be between 0 and 24")
 
-                new_sch = WorkSchedule(day_of_week=day_of_week, daily_hours=daily_hours)
-                user.schedules.append(new_sch)
+                if sch_id:
+                    existing_sch = next((sch for sch in user.historical_schedules if sch.id == sch_id), None)
+                    if existing_sch:
+                        self._check_payroll_closure(db, existing_sch.valid_from, existing_sch.valid_until)
+                        new_valid_from = valid_from if valid_from else today
+                        self._check_payroll_closure(db, new_valid_from, valid_until)
+                        
+                        existing_sch.day_of_week = day_of_week
+                        existing_sch.daily_hours = daily_hours
+                        existing_sch.entry_1 = entry_1
+                        existing_sch.exit_1 = exit_1
+                        existing_sch.entry_2 = entry_2
+                        existing_sch.exit_2 = exit_2
+                        existing_sch.valid_from = new_valid_from
+                        existing_sch.valid_until = valid_until
+                else:
+                    new_valid_from = valid_from if valid_from else today
+                    self._check_payroll_closure(db, new_valid_from, valid_until)
+                    
+                    new_sch = UserWorkScheduleConfig(
+                        day_of_week=day_of_week, 
+                        daily_hours=daily_hours,
+                        entry_1=entry_1,
+                        exit_1=exit_1,
+                        entry_2=entry_2,
+                        exit_2=exit_2,
+                        valid_from=new_valid_from,
+                        valid_until=valid_until
+                    )
+                    user.historical_schedules.append(new_sch)
 
         if biometrics_in is not None:
             current_biometrics = {b.id: b for b in user.biometrics}
@@ -245,6 +322,74 @@ class UserService:
             old_data=old_data, new_data={"is_active": False}
         )
         return user
+
+    def add_historical_schedule(self, db: Session, user_id: int, sch_data: dict, current_user_id: int) -> UserWorkScheduleConfig:
+        user = user_repository.get(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        valid_from = sch_data.get('valid_from')
+        if not valid_from:
+            valid_from = date.today()
+            
+        self._check_payroll_closure(db, valid_from, sch_data.get('valid_until'))
+        
+        new_sch = UserWorkScheduleConfig(
+            user_id=user.id,
+            day_of_week=sch_data.get('day_of_week'),
+            daily_hours=sch_data.get('daily_hours'),
+            entry_1=sch_data.get('entry_1'),
+            exit_1=sch_data.get('exit_1'),
+            entry_2=sch_data.get('entry_2'),
+            exit_2=sch_data.get('exit_2'),
+            valid_from=valid_from,
+            valid_until=sch_data.get('valid_until')
+        )
+        db.add(new_sch)
+        db.commit()
+        db.refresh(new_sch)
+        return new_sch
+
+    def update_historical_schedule(self, db: Session, user_id: int, schedule_id: int, sch_data: dict, current_user_id: int) -> UserWorkScheduleConfig:
+        sch = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.id == schedule_id,
+            UserWorkScheduleConfig.user_id == user_id
+        ).first()
+        if not sch:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+            
+        self._check_payroll_closure(db, sch.valid_from, sch.valid_until)
+        
+        valid_from = sch_data.get('valid_from', sch.valid_from)
+        valid_until = sch_data.get('valid_until', sch.valid_until)
+        self._check_payroll_closure(db, valid_from, valid_until)
+        
+        sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
+        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
+        sch.entry_1 = sch_data.get('entry_1', sch.entry_1)
+        sch.exit_1 = sch_data.get('exit_1', sch.exit_1)
+        sch.entry_2 = sch_data.get('entry_2', sch.entry_2)
+        sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
+        sch.valid_from = valid_from
+        sch.valid_until = valid_until
+        
+        db.add(sch)
+        db.commit()
+        db.refresh(sch)
+        return sch
+
+    def delete_historical_schedule(self, db: Session, user_id: int, schedule_id: int, current_user_id: int):
+        sch = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.id == schedule_id,
+            UserWorkScheduleConfig.user_id == user_id
+        ).first()
+        if not sch:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+            
+        self._check_payroll_closure(db, sch.valid_from, sch.valid_until)
+        
+        db.delete(sch)
+        db.commit()
 
 
 user_service = UserService()

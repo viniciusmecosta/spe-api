@@ -137,7 +137,7 @@ class ExcelService:
         if current_user:
             self._validate_employee_report_period(current_user, month, year)
             
-        query = db.query(User).options(joinedload(User.schedules))
+        query = db.query(User).options(joinedload(User.historical_schedules))
         query = report_service._apply_employee_filters(query, employee_ids)
         users = query.all()
 
@@ -315,12 +315,20 @@ class ExcelService:
 
         for user, report in user_reports:
             sum_data = report.summary
+            
+            total_real = 0.0
+            for day in report.daily_details:
+                bruto = self._time_str_to_fraction(day.worked_time)
+                extra = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+                real = bruto - extra if bruto > extra else 0.0
+                total_real += real
+
             ws_summary.append([""])
             row = ws_summary.max_row
             texts = [
                 sum_data.user_name,
                 sum_data.days_worked,
-                self._time_str_to_fraction(sum_data.total_worked_time)
+                total_real
             ]
             self._merge_for_table(ws_summary, row, merges, texts, self.font_regular, self.align_center)
             ws_summary.cell(row=row, column=1).alignment = self.align_left
@@ -384,12 +392,16 @@ class ExcelService:
         ws_det.append([""])
 
         # 4. Ponto Mes (Tabela)
-        merges = [3, 3, 4, 10, 2, 2]
-        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. (Min)", "Trab. (Tempo)"]
+        merges = [3, 3, 3, 8, 2, 2, 3]
+        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Não Aut.", "Trab. Real"]
         
         ws_det.append([""])
         header_row = ws_det.max_row
         self._merge_for_table(ws_det, header_row, merges, headers_det, self.header_font, self.align_center, fill=self.header_fill)
+
+        total_trab_bruto = 0.0
+        total_extra = 0.0
+        total_trab_real = 0.0
 
         for day in report.daily_details:
             punches_str = " | ".join(day.punches)
@@ -403,13 +415,22 @@ class ExcelService:
             ws_det.append([""])
             last_row = ws_det.max_row
             
+            trab_bruto = self._time_str_to_fraction(day.worked_time)
+            extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+            trab_real = trab_bruto - extra_nao_aut if trab_bruto > extra_nao_aut else 0.0
+            
+            total_trab_bruto += trab_bruto
+            total_extra += extra_nao_aut
+            total_trab_real += trab_real
+
             texts = [
                 day.date.strftime("%d/%m/%Y"),
                 day.day_name,
                 day.status,
                 punches_str,
-                day.worked_minutes,
-                self._time_str_to_fraction(day.worked_time)
+                trab_bruto,
+                extra_nao_aut,
+                trab_real
             ]
             
             fill_to_apply = None
@@ -432,14 +453,18 @@ class ExcelService:
             # overwrite specific font for status column (which starts at col 7)
             ws_det.cell(row=last_row, column=7).font = font_to_apply
             
-            # number format for last col
-            ws_det.cell(row=last_row, column=23).number_format = '[h]:mm'
+            # number format for time cols
+            ws_det.cell(row=last_row, column=18).number_format = '[h]:mm'
+            ws_det.cell(row=last_row, column=20).number_format = '[h]:mm'
+            ws_det.cell(row=last_row, column=22).number_format = '[h]:mm'
 
         ws_det.append([""])
         last_row = ws_det.max_row
-        texts = ["TOTAIS", "", "", "", report.summary.total_worked_minutes, self._time_str_to_fraction(report.summary.total_worked_time)]
+        texts = ["TOTAIS", "", "", "", total_trab_bruto, total_extra, total_trab_real]
         self._merge_for_table(ws_det, last_row, merges, texts, self.font_bold, self.align_center)
-        ws_det.cell(row=last_row, column=23).number_format = '[h]:mm'
+        ws_det.cell(row=last_row, column=18).number_format = '[h]:mm'
+        ws_det.cell(row=last_row, column=20).number_format = '[h]:mm'
+        ws_det.cell(row=last_row, column=22).number_format = '[h]:mm'
         
         # 5. Notas no fim da página
         self._append_notes(ws_det)

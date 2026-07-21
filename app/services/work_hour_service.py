@@ -22,7 +22,7 @@ class WorkHourService:
         user = user_repository.get(db, user_id)
         holidays = holiday_repository.get_all(db)
 
-        has_schedule = bool(user.schedules)
+        has_schedule = bool(user.historical_schedules)
 
         total_seconds = 0.0
         entry_time = None
@@ -49,7 +49,11 @@ class WorkHourService:
 
             if not is_holiday and has_schedule:
                 weekday = current_date.weekday()
-                schedule = next((s for s in user.schedules if s.day_of_week == weekday), None)
+                valid_schedules = [
+                    s for s in user.historical_schedules
+                    if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+                ]
+                schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
 
                 if schedule:
                     expected_hours += schedule.daily_hours

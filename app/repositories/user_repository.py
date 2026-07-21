@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
-from app.domain.models.user import User, WorkSchedule
+from app.domain.models.user import User, UserWorkScheduleConfig
 from app.schemas.user import UserUpdate
 
 
@@ -60,12 +60,7 @@ class UserRepository:
                 setattr(db_obj, field, value)
 
         if schedules_in is not None:
-            db_obj.schedules = []
-            for sch_data in schedules_in:
-                day = sch_data['day_of_week'] if isinstance(sch_data, dict) else sch_data.day_of_week
-                hours = sch_data['daily_hours'] if isinstance(sch_data, dict) else sch_data.daily_hours
-                new_sch = WorkSchedule(day_of_week=day, daily_hours=hours)
-                db_obj.schedules.append(new_sch)
+            pass
 
         if biometrics_in is not None:
             current_biometrics = {b.id: b for b in db_obj.biometrics}

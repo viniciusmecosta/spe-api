@@ -9,6 +9,7 @@ from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserUpdateMe
+from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 from app.services.user_service import user_service
 
 router = APIRouter()
@@ -137,3 +138,47 @@ def update_user(
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{user_id}/schedules", response_model=List[WorkSchedule])
+def get_historical_schedules(
+        user_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    user = user_repository.get(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return user.historical_schedules
+
+@router.post("/{user_id}/schedules", response_model=WorkSchedule)
+def add_historical_schedule(
+        user_id: int,
+        schedule_in: WorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_service.add_historical_schedule(
+        db=db, user_id=user_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+@router.put("/{user_id}/schedules/{schedule_id}", response_model=WorkSchedule)
+def update_historical_schedule(
+        user_id: int,
+        schedule_id: int,
+        schedule_in: WorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_service.update_historical_schedule(
+        db=db, user_id=user_id, schedule_id=schedule_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+@router.delete("/{user_id}/schedules/{schedule_id}")
+def delete_historical_schedule(
+        user_id: int,
+        schedule_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    user_service.delete_historical_schedule(db=db, user_id=user_id, schedule_id=schedule_id, current_user_id=current_user.id)
+    return {"detail": "Horário excluído com sucesso"}

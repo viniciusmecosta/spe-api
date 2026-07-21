@@ -284,9 +284,13 @@ class TimesheetService:
                 if adjustment.amount_hours and adjustment.amount_hours > 0:
                     worked_seconds += (adjustment.amount_hours * 3600)
                 else:
-                    has_sched = bool(user.schedules)
+                    has_sched = bool(user.historical_schedules)
                     if has_sched:
-                        sched = next((s for s in user.schedules if s.day_of_week == weekday), None)
+                        valid_schedules = [
+                            s for s in user.historical_schedules
+                            if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+                        ]
+                        sched = next((s for s in valid_schedules if s.day_of_week == weekday), None)
                         if sched and worked_seconds < (sched.daily_hours * 3600):
                             worked_seconds = sched.daily_hours * 3600
 

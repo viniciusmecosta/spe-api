@@ -34,6 +34,7 @@ class DailyReportItem(BaseModel):
     worked_minutes: int
     worked_time: str
     expected_time: str
+    unapproved_extra_time: str = "00:00"
 
 class UserPayrollSummary(BaseModel):
     user_id: int

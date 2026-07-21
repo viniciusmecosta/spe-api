@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.services.routine_orchestrator import routine_orchestrator
 from app.services.sync_service import sync_service
+from app.services.tolerance_cron_service import tolerance_cron_service
 
 scheduler = BackgroundScheduler()
 
@@ -29,6 +30,9 @@ async def lifespan(app: FastAPI):
                       max_instances=1, coalesce=True)
 
     scheduler.add_job(routine_orchestrator.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
+                      max_instances=1, coalesce=True)
+
+    scheduler.add_job(tolerance_cron_service.process_unverified_entries, trigger=trigger_aligned, id="tolerance_entries_check",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":

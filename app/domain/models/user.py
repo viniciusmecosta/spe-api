@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Date, Time
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -12,15 +12,21 @@ def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
 
 
-class WorkSchedule(Base):
-    __tablename__ = "work_schedules"
+class UserWorkScheduleConfig(Base):
+    __tablename__ = "user_work_schedule_configs"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     day_of_week = Column(Integer, nullable=False)
     daily_hours = Column(Float, nullable=False)
+    entry_1 = Column(Time, nullable=True)
+    exit_1 = Column(Time, nullable=True)
+    entry_2 = Column(Time, nullable=True)
+    exit_2 = Column(Time, nullable=True)
+    valid_from = Column(Date, nullable=False)
+    valid_until = Column(Date, nullable=True)
 
-    user = relationship("User", back_populates="schedules")
+    user = relationship("User", back_populates="historical_schedules")
 
 
 class User(Base):
@@ -45,6 +51,15 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
 
-    schedules = relationship("WorkSchedule", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    historical_schedules = relationship("UserWorkScheduleConfig", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
     time_records = relationship("TimeRecord", back_populates="user", foreign_keys="TimeRecord.user_id")
     biometrics = relationship("UserBiometric", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
+    
+    @property
+    def current_schedules(self):
+        from datetime import date
+        today = date.today()
+        return [
+            sch for sch in self.historical_schedules 
+            if sch.valid_from <= today and (sch.valid_until is None or sch.valid_until >= today)
+        ]

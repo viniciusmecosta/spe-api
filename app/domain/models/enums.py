@@ -14,6 +14,7 @@ class AdjustmentType(str, enum.Enum):
     PUNCH_NOT_COUNTED = "PUNCH_NOT_COUNTED"
     DELETE_PUNCH = "DELETE_PUNCH"
     WAIVER = "WAIVER"
+    EXTRA_TIME = "EXTRA_TIME"
     OTHER = "OTHER"
 
 class AdjustmentStatus(str, enum.Enum):

@@ -104,6 +104,54 @@ def export_monthly_report_excel(
         month = now.month
     if not year:
         year = now.year
+        
+    is_maintainer = current_user.role == UserRole.MAINTAINER
+    is_manager = current_user.role == UserRole.MANAGER
+    
+    if is_maintainer:
+        pass
+    elif is_manager:
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentStatus
+        from sqlalchemy import extract
+        
+        pending_adjustments = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.status == AdjustmentStatus.PENDING,
+            extract('month', AdjustmentRequest.target_date) == month,
+            extract('year', AdjustmentRequest.target_date) == year
+        ).first()
+
+        if pending_adjustments:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível gerar o relatório pois existem ajustes pendentes neste mês."
+            )
+    else:
+        if not current_user.can_export_report:
+            raise HTTPException(status_code=403, detail="Você não tem permissão para gerar relatórios.")
+            
+        prev_month = now.month - 1 if now.month > 1 else 12
+        prev_year = now.year if now.month > 1 else now.year - 1
+        
+        if month != prev_month or year != prev_year:
+            raise HTTPException(
+                status_code=400, 
+                detail="Funcionários só podem gerar o relatório referente ao mês anterior."
+            )
+            
+        from app.domain.models.payroll import PayrollClosure
+        payroll_closed = db.query(PayrollClosure).filter(
+            PayrollClosure.month == month,
+            PayrollClosure.year == year,
+            PayrollClosure.is_closed == True,
+            PayrollClosure.deleted_at.is_(None)
+        ).first()
+
+        if not payroll_closed:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível gerar o relatório pois a folha deste mês ainda não está fechada."
+            )
 
     file_stream = excel_service.generate_excel_report(db, month, year, employee_ids, current_user)
 
