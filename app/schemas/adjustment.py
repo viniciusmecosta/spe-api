@@ -66,4 +66,35 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     attachments: List[AdjustmentAttachmentResponse] = []
     time_records: List[TimeRecordSimple] = []
 
+    @computed_field
+    def metadata_info(self) -> dict:
+        info = {}
+        if self.adjustment_type == AdjustmentType.EXTRA_TIME:
+            extra_mins = int(self.amount_hours * 60) if self.amount_hours else 0
+            actual_time = self.time.strftime("%H:%M") if self.time else "--:--"
+            expected = "--:--"
+            if self.time and self.amount_hours:
+                from datetime import datetime, timedelta
+                dummy = datetime.combine(datetime.today(), self.time)
+                expected_dt = dummy + timedelta(minutes=extra_mins + 5)
+                expected = expected_dt.strftime("%H:%M")
+            
+            info = {
+                "tempo_extra_minutos": extra_mins,
+                "horario_batido": actual_time,
+                "horario_esperado": expected
+            }
+        elif self.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED, AdjustmentType.DELETE_PUNCH]:
+            req_time = self.time.strftime("%H:%M") if self.time else "--:--"
+            info = {
+                "horario_solicitado": req_time,
+                "tipo_batida": self.record_type.value if self.record_type else None,
+                "batidas_do_dia": [r.record_datetime.strftime("%H:%M") for r in self.time_records]
+            }
+        elif self.adjustment_type == AdjustmentType.WAIVER:
+            info = {
+                "horas_abonadas": self.amount_hours
+            }
+        return info
+
     model_config = ConfigDict(from_attributes=True)

@@ -43,7 +43,12 @@ class ToleranceCronService:
                         continue
                         
                     official_datetime = datetime.combine(record_date, config.entry_1, tzinfo=tz)
-                    diff_seconds = (official_datetime - record.record_datetime).total_seconds()
+                    
+                    record_dt = record.record_datetime
+                    if record_dt.tzinfo is None:
+                        record_dt = record_dt.replace(tzinfo=tz)
+                        
+                    diff_seconds = (official_datetime - record_dt).total_seconds()
                     diff_minutes = diff_seconds / 60.0
                     
                     if diff_minutes <= 5:
@@ -65,6 +70,7 @@ class ToleranceCronService:
                                     adjustment_type=AdjustmentType.EXTRA_TIME,
                                     record_type=RecordType.ENTRY,
                                     target_date=record_date,
+                                    time=record_dt.time(),
                                     amount_hours=amount_hours,
                                     reason_text=f"Tempo extra de entrada detectado ({int(extra_minutes)} min).",
                                     status=AdjustmentStatus.PENDING,

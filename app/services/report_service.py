@@ -254,6 +254,16 @@ class ReportService:
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentStatus
+        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+        ).all()
+
         total_worked_seconds = 0.0
         history_days = []
 
@@ -302,6 +312,13 @@ class ReportService:
             if abono and abono.amount_hours:
                 worked_seconds += (abono.amount_hours * 3600)
 
+            unapproved_extra = next((adj for adj in unapproved_extra_adjs if adj.target_date == current), None)
+            if unapproved_extra and unapproved_extra.amount_hours:
+                unapproved_extra_seconds = unapproved_extra.amount_hours * 3600
+                worked_seconds -= unapproved_extra_seconds
+                if worked_seconds < 0:
+                    worked_seconds = 0.0
+
             total_worked_seconds += worked_seconds
 
             day_name = self._get_day_name(current)
@@ -325,6 +342,14 @@ class ReportService:
             minutes = total_minutes % 60
             worked_time_str = f"{hours:02d}:{minutes:02d}"
 
+            anomalies_list = [a.description for a in day_anomalies]
+            if unapproved_extra:
+                minutes = int(unapproved_extra.amount_hours * 60) if unapproved_extra.amount_hours else 0
+                desc = f"Tempo extra não aprovado ({minutes} minutos)"
+                if unapproved_extra.time:
+                    desc += f" - horário de entrada: {unapproved_extra.time.strftime('%H:%M')}"
+                anomalies_list.append(desc)
+
             history_days.append(HistoryDay(
                 date=current,
                 day_name=day_name,
@@ -335,8 +360,8 @@ class ReportService:
                 holiday_name=holiday.name if holiday else None,
                 worked_time=worked_time_str,
                 punches=punches,
-                has_anomaly=len(day_anomalies) > 0,
-                anomalies=[a.description for a in day_anomalies],
+                has_anomaly=len(anomalies_list) > 0,
+                anomalies=anomalies_list,
                 abono_hours=abono.amount_hours if abono else None,
                 abono_id=abono.id if abono and is_manager else None
             ))

@@ -80,13 +80,14 @@ class AnomalyService:
                     last_entry_time = None
 
         if records and records[-1].record_type == RecordType.ENTRY:
-            anomalies.append(AnomalyResponse(
-                user_id=user_id,
-                user_name=user_name,
-                date=current_date,
-                type="MISSING_EXIT",
-                description="Entrada sem saída"
-            ))
+            if current_date < date.today():
+                anomalies.append(AnomalyResponse(
+                    user_id=user_id,
+                    user_name=user_name,
+                    date=current_date,
+                    type="MISSING_EXIT",
+                    description="Entrada sem saída"
+                ))
 
         if not ignore_excessive_hours and total_worked_seconds > (10 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
@@ -101,13 +102,17 @@ class AnomalyService:
         for adj in day_adjustments:
             from app.domain.models.enums import AdjustmentType, AdjustmentStatus
             if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
-                fmt_time = self._format_duration(adj.amount_hours * 3600 if adj.amount_hours else 0)
+                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+                desc = f"Tempo extra não aprovado ({minutes} minutos)"
+                if adj.time:
+                    desc += f" - horário de entrada: {adj.time.strftime('%H:%M')}"
+                
                 anomalies.append(AnomalyResponse(
                     user_id=user_id,
                     user_name=user_name,
                     date=current_date,
                     type="UNAPPROVED_EXTRA_TIME",
-                    description=f"Tempo extra não aprovado: considerado {fmt_time} de antecipação descartada"
+                    description=desc
                 ))
 
         return anomalies
@@ -184,8 +189,8 @@ class AnomalyService:
         start_date = date(year, month, 1)
         end_date = date(year, month, last_day)
 
-        if end_date >= today:
-            end_date = today - timedelta(days=1)
+        if end_date > today:
+            end_date = today
 
         if start_date > end_date:
             return []

@@ -117,6 +117,16 @@ class TimeRecordService:
 
         return record
 
+    def _clean_extra_time_adjustments(self, db: Session, user_id: int, target_date):
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+        db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+        ).delete(synchronize_session=False)
+
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
@@ -132,6 +142,8 @@ class TimeRecordService:
 
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
+
+        self._clean_extra_time_adjustments(db, record.user_id, record.record_datetime.date())
 
         record.is_ignored = True
 
@@ -225,6 +237,10 @@ class TimeRecordService:
             "justification": record.edit_justification if record.edit_justification else ""
         }
 
+        self._clean_extra_time_adjustments(db, record.user_id, record.record_datetime.date())
+        if new_record_datetime.date() != record.record_datetime.date():
+            self._clean_extra_time_adjustments(db, record.user_id, new_record_datetime.date())
+
         record.is_ignored = True
 
         new_record = TimeRecord(
@@ -280,6 +296,8 @@ class TimeRecordService:
             "record_type": record.record_type.value,
             "record_time": str(record.record_datetime)
         }
+
+        self._clean_extra_time_adjustments(db, record.user_id, record.record_datetime.date())
 
         time_record_repository.delete(db, record_id, manager_id)
 

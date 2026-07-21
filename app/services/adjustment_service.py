@@ -199,6 +199,8 @@ class AdjustmentService:
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise HTTPException(status_code=400, detail="Para aprovar um abono, é obrigatório haver anexo.")
+        elif request.adjustment_type == AdjustmentType.EXTRA_TIME:
+            pass
         else:
             self._execute_adjustment_action(db, request, manager_id)
 
@@ -233,6 +235,15 @@ class AdjustmentService:
                 record.is_ignored = True
                 record.deleted_at = get_local_time()
                 record.deleted_by = manager_id
+                
+                # Delete any pending EXTRA_TIME penalty
+                db.query(AdjustmentRequest).filter(
+                    AdjustmentRequest.user_id == request.user_id,
+                    AdjustmentRequest.target_date == request.target_date,
+                    AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+                    AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+                ).delete(synchronize_session=False)
+                
                 db.commit()
         else:
             time_record_repository.create(
