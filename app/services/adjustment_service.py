@@ -116,22 +116,49 @@ class AdjustmentService:
         )
         return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
+    def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int):
+        request = adjustment_repository.get(db, adjustment_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Abono não encontrado.")
+        payroll_service.validate_period_open(db, request.target_date)
+
+        old_data = {
+            "type": request.adjustment_type.value,
+            "target_date": str(request.target_date),
+            "status": request.status.value
+        }
+        
+        # If the adjustment was approved, we need to revert its side-effects first
+        if request.status == AdjustmentStatus.APPROVED:
+            self._revert_adjustment_action(db, request, admin_id)
+
+        adjustment_repository.soft_delete(db, adjustment_id, admin_id)
+
+        audit_service.log(
+            db, user_id=admin_id, action="SOFT_DELETE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
+        )
+
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
             raise HTTPException(status_code=404, detail="Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
 
-        target_user_id = request.user_id
         old_data = {
             "type": request.adjustment_type.value,
-            "target_date": str(request.target_date)
+            "target_date": str(request.target_date),
+            "status": request.status.value
         }
+        
+        # If the adjustment was approved, we need to revert its side-effects first
+        if request.status == AdjustmentStatus.APPROVED:
+            self._revert_adjustment_action(db, request, manager_id)
 
-        adjustment_repository.delete(db, adjustment_id)
+        adjustment_repository.soft_delete(db, adjustment_id, manager_id)
 
         audit_service.log(
-            db, user_id=manager_id, action="DELETE_ADJUSTMENT",
+            db, user_id=manager_id, action="SOFT_DELETE_ADJUSTMENT",
             entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
         )
 
@@ -271,5 +298,70 @@ class AdjustmentService:
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
+    def _revert_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
+        target_dt = datetime.combine(request.target_date, request.time)
+        if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
+            start_dt = target_dt.replace(second=0, microsecond=0)
+            end_dt = target_dt.replace(second=59, microsecond=999999)
+
+            record = db.query(TimeRecord).filter(
+                TimeRecord.user_id == request.user_id,
+                TimeRecord.record_type == request.record_type,
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.is_ignored == True
+            ).order_by(TimeRecord.deleted_at.desc()).first()
+            if record:
+                record.is_ignored = False
+                record.deleted_at = None
+                record.deleted_by = None
+                db.commit()
+        elif request.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED]:
+            start_dt = target_dt.replace(second=0, microsecond=0)
+            end_dt = target_dt.replace(second=59, microsecond=999999)
+            
+            record = db.query(TimeRecord).filter(
+                TimeRecord.user_id == request.user_id,
+                TimeRecord.record_type == request.record_type,
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.is_ignored == False,
+                TimeRecord.ip_address == "ADJUSTMENT_APPROVED"
+            ).first()
+            if record:
+                record.is_ignored = True
+                record.deleted_at = get_local_time()
+                record.deleted_by = manager_id
+                db.commit()
+
+    def revert_adjustment_status(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus, comment: str) -> AdjustmentRequest:
+        request = adjustment_repository.get(db, request_id)
+        if not request:
+            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+            
+        payroll_service.validate_period_open(db, request.target_date)
+
+        old_status = request.status
+        
+        if old_status == new_status:
+            return self._enrich_adjustments_with_records(db, [request])[0]
+
+        if old_status == AdjustmentStatus.APPROVED and new_status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+            self._revert_adjustment_action(db, request, manager_id)
+            
+        elif old_status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
+            if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME]:
+                self._execute_adjustment_action(db, request, manager_id)
+
+        updated = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
+
+        actual_old, actual_new = audit_service.compute_diffs({"status": old_status.value}, {"status": updated.status.value, "comment": comment})
+
+        audit_service.log(
+            db, user_id=manager_id, action="REVERT_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=request_id,
+            old_data=actual_old, new_data=actual_new
+        )
+        return self._enrich_adjustments_with_records(db, [updated])[0]
 
 adjustment_service = AdjustmentService()

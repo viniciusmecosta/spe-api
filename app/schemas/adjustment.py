@@ -38,6 +38,12 @@ class AdjustmentWaiverCreate(BaseModel):
     reason_text: str
 
 
+class BulkReprocessExtraTimeRequest(BaseModel):
+    start_date: date
+    end_date: date
+    user_ids: List[int]
+
+
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
     file_path: str
