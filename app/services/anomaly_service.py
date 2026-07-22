@@ -18,7 +18,8 @@ class AnomalyService:
         return f"{hours}h{minutes:02d}"
 
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List,
-                             ignore_excessive_hours: bool = False, day_adjustments: List = None) -> List[AnomalyResponse]:
+                             ignore_excessive_hours: bool = False, day_adjustments: List = None,
+                             expected_entry_time=None) -> List[AnomalyResponse]:
         if day_adjustments is None:
             day_adjustments = []
         anomalies = []
@@ -104,8 +105,10 @@ class AnomalyService:
             if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
                 desc = f"Tempo extra não aprovado ({minutes} minutos)"
-                if adj.time:
-                    desc += f" - horário de entrada: {adj.time.strftime('%H:%M')}"
+                
+                time_to_show = expected_entry_time or adj.time
+                if time_to_show:
+                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
                 
                 anomalies.append(AnomalyResponse(
                     user_id=user_id,
@@ -163,15 +166,26 @@ class AnomalyService:
                 adj_map[uid][rdate] = []
             adj_map[uid][rdate].append(adj)
             
-        user_map = {u.id: u.name for u in users}
+        user_map = {u.id: u for u in users}
 
         for uid in target_user_ids:
-            user_name = user_map.get(uid, "Unknown")
+            user = user_map.get(uid)
+            user_name = user.name if user else "Unknown"
             all_dates = sorted(list(set(records_map[uid].keys()).union(set(adj_map[uid].keys()))))
             for rdate in all_dates:
+                expected_entry_time = None
+                if user and user.historical_schedules:
+                    valid_schedules = [
+                        s for s in user.historical_schedules
+                        if s.valid_from <= rdate and (s.valid_until is None or s.valid_until >= rdate)
+                    ]
+                    schedule = next((s for s in valid_schedules if s.day_of_week == rdate.weekday()), None)
+                    if schedule and schedule.entry_1:
+                        expected_entry_time = schedule.entry_1
+
                 day_records = records_map[uid].get(rdate, [])
                 day_adjs = adj_map[uid].get(rdate, [])
-                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours, day_adjs)
+                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours, day_adjs, expected_entry_time)
                 all_anomalies.extend(day_anomalies)
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)

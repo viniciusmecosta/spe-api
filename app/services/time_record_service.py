@@ -158,7 +158,8 @@ class TimeRecordService:
             edited_by=current_user.id,
             edit_justification="Inversão de marcação efetuada",
             original_record_id=record.original_record_id if record.original_record_id else record.id,
-            created_at=record.created_at
+            created_at=record.created_at,
+            is_verified=True if is_manager else False
         )
 
         db.add(new_record)
@@ -192,6 +193,7 @@ class TimeRecordService:
 
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
+        record.is_verified = True
 
         db.add(record)
         db.commit()
@@ -254,7 +256,8 @@ class TimeRecordService:
             edited_by=manager_id,
             edit_justification=obj_in.edit_justification,
             original_record_id=record.original_record_id if record.original_record_id else record.id,
-            created_at=record.created_at
+            created_at=record.created_at,
+            is_verified=True
         )
 
         db.add(new_record)

@@ -312,10 +312,30 @@ class ReportService:
             if abono and abono.amount_hours:
                 worked_seconds += (abono.amount_hours * 3600)
 
-            unapproved_extra = next((adj for adj in unapproved_extra_adjs if adj.target_date == current), None)
-            if unapproved_extra and unapproved_extra.amount_hours:
-                unapproved_extra_seconds = unapproved_extra.amount_hours * 3600
-                worked_seconds -= unapproved_extra_seconds
+            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
+            unapproved_extra_seconds = 0.0
+            
+            for adj in day_unapproved_extras:
+                if adj.amount_hours:
+                    if adj.amount_hours > 24:
+                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
+                    else:
+                        unapproved_extra_seconds += adj.amount_hours * 3600
+            
+            expected_seconds = 0.0
+            if user and user.historical_schedules and not holiday:
+                valid_schedules = [
+                    s for s in user.historical_schedules
+                    if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
+                ]
+                schedule = next((s for s in valid_schedules if s.day_of_week == current.weekday()), None)
+                if schedule:
+                    expected_seconds = schedule.daily_hours * 3600
+
+            if unapproved_extra_seconds > 0:
+                actual_extra_seconds = worked_seconds - expected_seconds if worked_seconds > expected_seconds else 0.0
+                subtract_amount = min(unapproved_extra_seconds, actual_extra_seconds)
+                worked_seconds -= subtract_amount
                 if worked_seconds < 0:
                     worked_seconds = 0.0
 
@@ -343,11 +363,25 @@ class ReportService:
             worked_time_str = f"{hours:02d}:{minutes:02d}"
 
             anomalies_list = [a.description for a in day_anomalies]
-            if unapproved_extra:
-                minutes = int(unapproved_extra.amount_hours * 60) if unapproved_extra.amount_hours else 0
+            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
+            for unapproved_extra in day_unapproved_extras:
+                minutes = int(unapproved_extra.amount_hours * 60) if unapproved_extra.amount_hours and unapproved_extra.amount_hours <= 24 else int(unapproved_extra.amount_hours) if unapproved_extra.amount_hours else 0
                 desc = f"Tempo extra não aprovado ({minutes} minutos)"
-                if unapproved_extra.time:
-                    desc += f" - horário de entrada: {unapproved_extra.time.strftime('%H:%M')}"
+                
+                # Fetch expected time since it's history response anomalies string
+                expected_entry_time = None
+                if user and user.historical_schedules:
+                    valid_schedules = [
+                        s for s in user.historical_schedules
+                        if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
+                    ]
+                    schedule = next((s for s in valid_schedules if s.day_of_week == current.weekday()), None)
+                    if schedule and schedule.entry_1:
+                        expected_entry_time = schedule.entry_1
+                
+                time_to_show = expected_entry_time or unapproved_extra.time
+                if time_to_show:
+                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
                 anomalies_list.append(desc)
 
             history_days.append(HistoryDay(
@@ -496,11 +530,19 @@ class ReportService:
                         waiver_credit = expected_seconds - worked_seconds
                 worked_seconds += waiver_credit
 
-            unapproved_extra = next((adj for adj in unapproved_extra_adjs if adj.target_date == current), None)
+            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
             unapproved_extra_seconds = 0.0
-            if unapproved_extra and unapproved_extra.amount_hours:
-                unapproved_extra_seconds = unapproved_extra.amount_hours * 3600
-                worked_seconds -= unapproved_extra_seconds
+            for adj in day_unapproved_extras:
+                if adj.amount_hours:
+                    if adj.amount_hours > 24:
+                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
+                    else:
+                        unapproved_extra_seconds += adj.amount_hours * 3600
+                        
+            if unapproved_extra_seconds > 0:
+                actual_extra_seconds = worked_seconds - expected_seconds if worked_seconds > expected_seconds else 0.0
+                subtract_amount = min(unapproved_extra_seconds, actual_extra_seconds)
+                worked_seconds -= subtract_amount
                 if worked_seconds < 0:
                     worked_seconds = 0.0
 
