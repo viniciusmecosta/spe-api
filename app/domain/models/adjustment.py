@@ -34,6 +34,8 @@ class AdjustmentRequest(Base):
     manager_comment = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
