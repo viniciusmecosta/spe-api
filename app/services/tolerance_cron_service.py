@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
