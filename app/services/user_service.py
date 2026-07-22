@@ -34,6 +34,26 @@ class UserService:
                 current_month = 1
                 current_year += 1
 
+    def _handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date, ignore_id: int = None):
+        from datetime import timedelta
+        for sch in user.historical_schedules:
+            if ignore_id and sch.id == ignore_id:
+                continue
+            if sch.day_of_week != day_of_week:
+                continue
+            
+            sch_end = sch.valid_until if sch.valid_until else date.max
+            new_end = valid_until if valid_until else date.max
+            
+            if sch.valid_from <= new_end and sch_end >= valid_from:
+                if sch.valid_from < valid_from and (sch.valid_until is None or sch.valid_until >= valid_from):
+                    sch.valid_until = valid_from - timedelta(days=1)
+                else:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Conflito de datas no expediente. O dia {day_of_week} já possui um horário vigente que sobrepõe este período."
+                    )
+
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         user = user_repository.get_by_username(db, username=user_in.username)
         if user:
@@ -212,6 +232,8 @@ class UserService:
                         new_valid_from = valid_from if valid_from else today
                         self._check_payroll_closure(db, new_valid_from, valid_until)
                         
+                        self._handle_schedule_overlap(user, day_of_week, new_valid_from, valid_until, ignore_id=sch_id)
+                        
                         existing_sch.day_of_week = day_of_week
                         existing_sch.daily_hours = daily_hours
                         existing_sch.entry_1 = entry_1
@@ -223,6 +245,8 @@ class UserService:
                 else:
                     new_valid_from = valid_from if valid_from else today
                     self._check_payroll_closure(db, new_valid_from, valid_until)
+                    
+                    self._handle_schedule_overlap(user, day_of_week, new_valid_from, valid_until)
                     
                     new_sch = UserWorkScheduleConfig(
                         day_of_week=day_of_week, 
@@ -334,6 +358,8 @@ class UserService:
             
         self._check_payroll_closure(db, valid_from, sch_data.get('valid_until'))
         
+        self._handle_schedule_overlap(user, sch_data.get('day_of_week'), valid_from, sch_data.get('valid_until'))
+        
         new_sch = UserWorkScheduleConfig(
             user_id=user.id,
             day_of_week=sch_data.get('day_of_week'),
@@ -363,6 +389,9 @@ class UserService:
         valid_from = sch_data.get('valid_from', sch.valid_from)
         valid_until = sch_data.get('valid_until', sch.valid_until)
         self._check_payroll_closure(db, valid_from, valid_until)
+        
+        user = user_repository.get(db, user_id)
+        self._handle_schedule_overlap(user, sch_data.get('day_of_week', sch.day_of_week), valid_from, valid_until, ignore_id=sch.id)
         
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
         sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)

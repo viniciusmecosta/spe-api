@@ -25,15 +25,8 @@ def read_users(
         search: Optional[str] = Query(None),
         order_by: str = Query("id", pattern="^(id|name|username|created_at|updated_at)$"),
         order_direction: str = Query("asc", pattern="^(asc|desc)$"),
-        current_user: User = Depends(deps.get_current_active_user),
+        current_user: User = Depends(deps.get_current_manager),
 ) -> Any:
-    from fastapi import HTTPException, status
-    from app.domain.models.enums import UserRole
-    if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER] and not current_user.can_export_report:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user does not have enough privileges (Manager or Maintainer required)"
-        )
     role_value = role.value if role else None
     users = user_repository.get_multi(
         db,

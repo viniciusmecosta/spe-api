@@ -333,9 +333,9 @@ class ReportService:
                     expected_seconds = schedule.daily_hours * 3600
 
             if unapproved_extra_seconds > 0:
-                actual_extra_seconds = worked_seconds - expected_seconds if worked_seconds > expected_seconds else 0.0
-                subtract_amount = min(unapproved_extra_seconds, actual_extra_seconds)
-                worked_seconds -= subtract_amount
+                worked_seconds -= unapproved_extra_seconds
+                if worked_seconds < 0:
+                    worked_seconds = 0.0
                 if worked_seconds < 0:
                     worked_seconds = 0.0
 
@@ -540,9 +540,9 @@ class ReportService:
                         unapproved_extra_seconds += adj.amount_hours * 3600
                         
             if unapproved_extra_seconds > 0:
-                actual_extra_seconds = worked_seconds - expected_seconds if worked_seconds > expected_seconds else 0.0
-                subtract_amount = min(unapproved_extra_seconds, actual_extra_seconds)
-                worked_seconds -= subtract_amount
+                worked_seconds -= unapproved_extra_seconds
+                if worked_seconds < 0:
+                    worked_seconds = 0.0
                 if worked_seconds < 0:
                     worked_seconds = 0.0
 

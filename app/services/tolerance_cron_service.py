@@ -41,6 +41,22 @@ class ToleranceCronService:
                     if not config or not config.entry_1:
                         record.is_verified = True
                         continue
+
+                    from datetime import time
+                    start_of_day = datetime.combine(record_date, time.min, tzinfo=tz)
+                    end_of_day = datetime.combine(record_date, time.max, tzinfo=tz)
+                    
+                    first_entry = db.query(TimeRecord).filter(
+                        TimeRecord.user_id == record.user_id,
+                        TimeRecord.record_type == RecordType.ENTRY,
+                        TimeRecord.deleted_at.is_(None),
+                        TimeRecord.record_datetime >= start_of_day,
+                        TimeRecord.record_datetime <= end_of_day
+                    ).order_by(TimeRecord.record_datetime.asc()).first()
+                    
+                    if first_entry and first_entry.id != record.id:
+                        record.is_verified = True
+                        continue
                         
                     official_datetime = datetime.combine(record_date, config.entry_1, tzinfo=tz)
                     
@@ -72,18 +88,18 @@ class ToleranceCronService:
                                     target_date=record_date,
                                     time=record_dt.time(),
                                     amount_hours=amount_hours,
-                                    reason_text=f"Tempo extra de entrada detectado ({int(extra_minutes)} min).",
+                                    reason_text=f"Tempo extra não aprovado ({int(extra_minutes)} minutos) - horário de entrada: {config.entry_1.strftime('%H:%M')}",
                                     status=AdjustmentStatus.PENDING,
                                     created_at=now
                                 )
                                 db.add(adjustment)
                                 
                             record.is_verified = True
-                        else:
-                            pass
                             
                 db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao processar tolerancia de entradas: {e}")
+            logger.error(f"Erro ao processar tolerancia de entradas (banco): {e}")
+        except Exception as e:
+            logger.error(f"Erro inesperado ao processar tolerancia de entradas: {e}")
 
 tolerance_cron_service = ToleranceCronService()
