@@ -146,7 +146,8 @@ class AnomalyService:
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
             AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
         ).all()
 
         records_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}

@@ -261,7 +261,8 @@ class ReportService:
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
             AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
         ).all()
 
         total_worked_seconds = 0.0
@@ -448,7 +449,8 @@ class ReportService:
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
             AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
         ).all()
 
         current = start_date

@@ -87,6 +87,18 @@ class TimesheetService:
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
         adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
+        
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentStatus
+        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
+        
         company = company_repository.get_current(db)
 
         buffer = io.BytesIO()
@@ -293,6 +305,21 @@ class TimesheetService:
                         sched = next((s for s in valid_schedules if s.day_of_week == weekday), None)
                         if sched and worked_seconds < (sched.daily_hours * 3600):
                             worked_seconds = sched.daily_hours * 3600
+
+            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current_date]
+            unapproved_extra_seconds = 0.0
+            
+            for adj in day_unapproved_extras:
+                if adj.amount_hours:
+                    if adj.amount_hours > 24:
+                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
+                    else:
+                        unapproved_extra_seconds += adj.amount_hours * 3600
+                        
+            if unapproved_extra_seconds > 0:
+                worked_seconds -= unapproved_extra_seconds
+                if worked_seconds < 0:
+                    worked_seconds = 0.0
 
             total_worked_seconds += worked_seconds
 
