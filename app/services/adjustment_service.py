@@ -299,6 +299,9 @@ class AdjustmentService:
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
     def _revert_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
+        if request.adjustment_type in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+            return
+            
         target_dt = datetime.combine(request.target_date, request.time)
         if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
             start_dt = target_dt.replace(second=0, microsecond=0)
