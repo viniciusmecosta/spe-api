@@ -80,6 +80,18 @@ class ReportService:
             date=today
         )
 
+    def _format_short_name(self, full_name: str) -> str:
+        if not full_name:
+            return ""
+        parts = full_name.split()
+        if len(parts) <= 1:
+            return full_name
+        first_name = parts[0]
+        for part in parts[1:]:
+            if len(part) > 2:
+                return f"{first_name} {part}"
+        return f"{first_name} {parts[1]}"
+
     def generate_daily_report_html(self, db: Session, target_date: date) -> str:
         try:
             formatted_date = target_date.strftime("%d/%m/%Y")
@@ -103,7 +115,7 @@ class ReportService:
             )
 
             anomalies_list = anomaly_service.get_anomalies(db, target_date, target_date)
-            anomalies_descriptions = [f"<strong>{a.user_name}</strong>: {a.description}" for a in anomalies_list]
+            anomalies_descriptions = [f"<strong>{self._format_short_name(a.user_name)}</strong>: {a.description}" for a in anomalies_list]
 
             if not records:
                 return template_service.get_daily_report_html(day_name, formatted_date, False, {},
@@ -111,11 +123,12 @@ class ReportService:
 
             user_activity = {}
             for record, user in records:
-                if user.name not in user_activity:
-                    user_activity[user.name] = []
+                short_name = self._format_short_name(user.name)
+                if short_name not in user_activity:
+                    user_activity[short_name] = []
                 time_str = record.record_datetime.strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
-                user_activity[user.name].append({"time": time_str, "type": type_label})
+                user_activity[short_name].append({"time": time_str, "type": type_label})
 
             return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity,
                                                           anomalies_descriptions)
