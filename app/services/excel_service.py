@@ -391,9 +391,8 @@ class ExcelService:
         self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3, val_text=user_endereco, val_width=11, borders=True)
         ws_det.append([""])
 
-        # 4. Ponto Mes (Tabela)
         merges = [3, 3, 3, 8, 2, 2, 3]
-        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Não Aut.", "Trab. Real"]
+        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Não Aut.", "Trab. Líquido"]
         
         ws_det.append([""])
         header_row = ws_det.max_row
@@ -415,13 +414,13 @@ class ExcelService:
             ws_det.append([""])
             last_row = ws_det.max_row
             
-            trab_bruto = self._time_str_to_fraction(day.worked_time)
+            trab_liquido = self._time_str_to_fraction(day.worked_time)
             extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
-            trab_real = trab_bruto - extra_nao_aut if trab_bruto > extra_nao_aut else 0.0
+            trab_bruto = trab_liquido + extra_nao_aut
             
             total_trab_bruto += trab_bruto
             total_extra += extra_nao_aut
-            total_trab_real += trab_real
+            total_trab_real += trab_liquido
 
             texts = [
                 day.date.strftime("%d/%m/%Y"),
@@ -430,7 +429,7 @@ class ExcelService:
                 punches_str,
                 trab_bruto,
                 extra_nao_aut,
-                trab_real
+                trab_liquido
             ]
             
             fill_to_apply = None

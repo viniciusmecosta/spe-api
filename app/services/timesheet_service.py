@@ -37,7 +37,7 @@ class TimesheetService:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
         minutes = total_minutes % 60
-        return f"{hours:02d}h:{minutes:02d}min"
+        return f"{hours:02d}:{minutes:02d}"
 
     def _format_cnpj(self, cnpj: str) -> str:
         if not cnpj: return "-"
@@ -240,8 +240,9 @@ class TimesheetService:
         data_table = [[
             Paragraph("Data", table_header_style),
             Paragraph("Dia", table_header_style),
-            Paragraph("Registros de Ponto (Entrada - Saída)", table_header_style),
-            Paragraph("Trabalhado", table_header_style)
+            Paragraph("Registros de Ponto", table_header_style),
+            Paragraph("Horas Não Aut.", table_header_style),
+            Paragraph("Trab. Líquido", table_header_style)
         ]]
 
         t_style = [
@@ -332,18 +333,20 @@ class TimesheetService:
                 punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
 
             worked_time_str = self._format_duration(worked_seconds)
+            unapproved_time_str = self._format_duration(unapproved_extra_seconds)
 
             data_table.append([
                 Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
                 Paragraph(self._get_day_name(current_date), table_text_style),
                 Paragraph(punches_str, table_text_style),
+                Paragraph(unapproved_time_str, table_text_style),
                 Paragraph(worked_time_str, table_text_style)
             ])
 
             current_date += timedelta(days=1)
             row_index += 1
 
-        t = Table(data_table, colWidths=[75, 75, 285, 100])
+        t = Table(data_table, colWidths=[65, 60, 220, 95, 95])
         t.setStyle(TableStyle(t_style))
         story.append(t)
         story.append(Spacer(1, 20))
@@ -361,7 +364,18 @@ class TimesheetService:
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]))
         story.append(sum_table)
-        story.append(Spacer(1, 35))
+        story.append(Spacer(1, 15))
+
+        note_style = ParagraphStyle(
+            'NoteStyle',
+            fontSize=9,
+            leading=12,
+            fontName='Helvetica-Oblique',
+            textColor=colors.HexColor("#64748B")
+        )
+        story.append(Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style))
+        story.append(Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
+        story.append(Spacer(1, 25))
 
         term_style = ParagraphStyle(
             'TermStyle',
