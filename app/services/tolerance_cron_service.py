@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 class ToleranceCronService:
     def _process_entry_record(self, db: Session, record: TimeRecord, now: datetime, tz: ZoneInfo):
+        if record.user.is_tolerance_exempt:
+            record.is_verified = True
+            return
+            
         record_date = record.record_datetime.date()
         
         config = db.query(UserWorkScheduleConfig).filter(
@@ -59,7 +63,7 @@ class ToleranceCronService:
             record.is_verified = True
         else:
             if now >= official_datetime:
-                extra_minutes = diff_minutes - 5
+                extra_minutes = diff_minutes
                 amount_hours = extra_minutes / 60.0
                 
                 existing_adjustment = db.query(AdjustmentRequest).filter(

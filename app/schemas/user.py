@@ -35,6 +35,7 @@ class UserBase(BaseModel):
     can_manual_punch_mobile: Optional[bool] = False
     can_export_report: Optional[bool] = False
     is_exempt_from_rules: Optional[bool] = False
+    is_tolerance_exempt: Optional[bool] = False
 
     @field_validator('username')
     @classmethod
@@ -83,6 +84,7 @@ class UserUpdate(BaseModel):
     can_manual_punch_mobile: Optional[bool] = None
     can_export_report: Optional[bool] = None
     is_exempt_from_rules: Optional[bool] = None
+    is_tolerance_exempt: Optional[bool] = None
     schedules: Optional[List[WorkScheduleCreate]] = None
     biometrics: Optional[List[UserBiometricUpdate]] = None
 
