@@ -61,10 +61,10 @@ class AnomalyService:
                 ))
 
             if current_record.record_type == RecordType.ENTRY:
-                last_entry_time = current_record.record_datetime
+                last_entry_time = current_record.record_datetime.replace(second=0, microsecond=0)
             elif current_record.record_type == RecordType.EXIT:
                 if last_entry_time:
-                    delta = current_record.record_datetime - last_entry_time
+                    delta = current_record.record_datetime.replace(second=0, microsecond=0) - last_entry_time
                     seconds = delta.total_seconds()
 
                     if seconds > 8 * 3600:

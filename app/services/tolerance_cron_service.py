@@ -52,7 +52,7 @@ class ToleranceCronService:
             
         official_datetime = datetime.combine(record_date, config.entry_1, tzinfo=tz)
         
-        record_dt = record.record_datetime
+        record_dt = record.record_datetime.replace(second=0, microsecond=0)
         if record_dt.tzinfo is None:
             record_dt = record_dt.replace(tzinfo=tz)
             

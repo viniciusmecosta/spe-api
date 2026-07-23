@@ -302,9 +302,9 @@ class ReportService:
 
             for rec in day_records:
                 if rec.record_type == RecordType.ENTRY:
-                    entry_time = rec.record_datetime
+                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
                 elif rec.record_type == RecordType.EXIT and entry_time:
-                    worked_seconds += (rec.record_datetime - entry_time).total_seconds()
+                    worked_seconds += (rec.record_datetime.replace(second=0, microsecond=0) - entry_time).total_seconds()
                     entry_time = None
 
                 punch_data = {
@@ -504,11 +504,11 @@ class ReportService:
 
                 if rec.record_type == RecordType.ENTRY:
                     entries.append(time_str)
-                    entry_time = rec.record_datetime
+                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
                 elif rec.record_type == RecordType.EXIT:
                     exits.append(time_str)
                     if entry_time:
-                        delta = rec.record_datetime - entry_time
+                        delta = rec.record_datetime.replace(second=0, microsecond=0) - entry_time
                         seconds = delta.total_seconds()
                         if seconds <= 86400:
                             worked_seconds += seconds

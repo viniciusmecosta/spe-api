@@ -281,10 +281,10 @@ class TimesheetService:
                 if rec.record_type == RecordType.ENTRY:
                     if entry_time is not None:
                         punch_blocks.append(f"{entry_time.strftime('%H:%M')} - --:--")
-                    entry_time = rec.record_datetime
+                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
                 elif rec.record_type == RecordType.EXIT:
                     if entry_time is not None:
-                        worked_seconds += (rec.record_datetime - entry_time).total_seconds()
+                        worked_seconds += (rec.record_datetime.replace(second=0, microsecond=0) - entry_time).total_seconds()
                         punch_blocks.append(f"{entry_time.strftime('%H:%M')} - {time_str}")
                         entry_time = None
                     else:
