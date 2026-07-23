@@ -366,7 +366,7 @@ class RoutineOrchestrator:
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
             logger.error('Backup - "Email manual" Error')
-            raise HTTPException(status_code=500,
+            raise HTTPException(status_code=400,
                                 detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
         attachments = [(backup_path, "spe.db")]
@@ -384,7 +384,7 @@ class RoutineOrchestrator:
             return True
         else:
             logger.error('Backup - "Email manual" Error')
-            raise HTTPException(status_code=500, detail="Falha na conexão SMTP ao tentar enviar o email.")
+            raise HTTPException(status_code=400, detail="Falha na conexão SMTP ao tentar enviar o email.")
 
 
 routine_orchestrator = RoutineOrchestrator()

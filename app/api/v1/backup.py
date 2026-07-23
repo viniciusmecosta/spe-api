@@ -16,7 +16,7 @@ def trigger_manual_backup(
     sent = routine_orchestrator.send_manual_backup_email(db)
     if not sent:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Falha ao gerar ou enviar o backup."
         )
 

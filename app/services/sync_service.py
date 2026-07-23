@@ -58,7 +58,7 @@ class SyncService:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             logger.error(f'Sincronização - "Receber banco de dados" Error: {e}')
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e))
 
         return True
 
