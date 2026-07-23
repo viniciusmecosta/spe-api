@@ -374,6 +374,19 @@ class UserService:
         db.add(new_sch)
         db.commit()
         db.refresh(new_sch)
+        
+        audit_service.log(
+            db, user_id=current_user_id, action="CREATE",
+            entity="USER_WORK_SCHEDULE", entity_id=new_sch.id,
+            new_data={
+                "user_id": new_sch.user_id,
+                "day_of_week": new_sch.day_of_week,
+                "daily_hours": new_sch.daily_hours,
+                "valid_from": str(new_sch.valid_from) if new_sch.valid_from else None,
+                "valid_until": str(new_sch.valid_until) if new_sch.valid_until else None
+            }
+        )
+        
         return new_sch
 
     def update_historical_schedule(self, db: Session, user_id: int, schedule_id: int, sch_data: dict, current_user_id: int) -> UserWorkScheduleConfig:
@@ -383,6 +396,17 @@ class UserService:
         ).first()
         if not sch:
             raise HTTPException(status_code=404, detail="Schedule not found")
+            
+        old_data = {
+            "day_of_week": sch.day_of_week,
+            "daily_hours": sch.daily_hours,
+            "valid_from": str(sch.valid_from) if sch.valid_from else None,
+            "valid_until": str(sch.valid_until) if sch.valid_until else None,
+            "entry_1": str(sch.entry_1) if sch.entry_1 else None,
+            "exit_1": str(sch.exit_1) if sch.exit_1 else None,
+            "entry_2": str(sch.entry_2) if sch.entry_2 else None,
+            "exit_2": str(sch.exit_2) if sch.exit_2 else None
+        }
             
         self._check_payroll_closure(db, sch.valid_from, sch.valid_until)
         
@@ -405,6 +429,25 @@ class UserService:
         db.add(sch)
         db.commit()
         db.refresh(sch)
+        
+        new_data_raw = {
+            "day_of_week": sch.day_of_week,
+            "daily_hours": sch.daily_hours,
+            "valid_from": str(sch.valid_from) if sch.valid_from else None,
+            "valid_until": str(sch.valid_until) if sch.valid_until else None,
+            "entry_1": str(sch.entry_1) if sch.entry_1 else None,
+            "exit_1": str(sch.exit_1) if sch.exit_1 else None,
+            "entry_2": str(sch.entry_2) if sch.entry_2 else None,
+            "exit_2": str(sch.exit_2) if sch.exit_2 else None
+        }
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
+        audit_service.log(
+            db, user_id=current_user_id, action="UPDATE",
+            entity="USER_WORK_SCHEDULE", entity_id=sch.id,
+            old_data=actual_old, new_data=actual_new
+        )
+        
         return sch
 
     def delete_historical_schedule(self, db: Session, user_id: int, schedule_id: int, current_user_id: int):
@@ -417,8 +460,21 @@ class UserService:
             
         self._check_payroll_closure(db, sch.valid_from, sch.valid_until)
         
+        old_data = {
+            "user_id": sch.user_id,
+            "day_of_week": sch.day_of_week,
+            "valid_from": str(sch.valid_from) if sch.valid_from else None,
+            "valid_until": str(sch.valid_until) if sch.valid_until else None
+        }
+        
         db.delete(sch)
         db.commit()
+        
+        audit_service.log(
+            db, user_id=current_user_id, action="DELETE",
+            entity="USER_WORK_SCHEDULE", entity_id=schedule_id,
+            old_data=old_data, new_data=None
+        )
 
 
 user_service = UserService()

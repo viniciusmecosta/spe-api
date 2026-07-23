@@ -65,6 +65,17 @@ def reprocess_historical_extra_time(
         user_ids=request_in.user_ids
     )
     
+    from app.services.audit_service import audit_service
+    audit_service.log(
+        db, user_id=current_user.id, action="REPROCESS",
+        entity="EXTRA_TIME", entity_id=0,
+        new_data={
+            "start_date": str(request_in.start_date),
+            "end_date": str(request_in.end_date),
+            "user_ids": request_in.user_ids
+        }
+    )
+    
     return {"status": "success", "message": "Reprocessamento concluído"}
 
 

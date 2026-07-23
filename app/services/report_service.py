@@ -364,26 +364,6 @@ class ReportService:
             worked_time_str = f"{hours:02d}:{minutes:02d}"
 
             anomalies_list = [a.description for a in day_anomalies]
-            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
-            for unapproved_extra in day_unapproved_extras:
-                minutes = int(unapproved_extra.amount_hours * 60) if unapproved_extra.amount_hours and unapproved_extra.amount_hours <= 24 else int(unapproved_extra.amount_hours) if unapproved_extra.amount_hours else 0
-                desc = f"Tempo extra não aprovado ({minutes} minutos)"
-                
-                # Fetch expected time since it's history response anomalies string
-                expected_entry_time = None
-                if user and user.historical_schedules:
-                    valid_schedules = [
-                        s for s in user.historical_schedules
-                        if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
-                    ]
-                    schedule = next((s for s in valid_schedules if s.day_of_week == current.weekday()), None)
-                    if schedule and schedule.entry_1:
-                        expected_entry_time = schedule.entry_1
-                
-                time_to_show = expected_entry_time or unapproved_extra.time
-                if time_to_show:
-                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
-                anomalies_list.append(desc)
 
             history_days.append(HistoryDay(
                 date=current,
