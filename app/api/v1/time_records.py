@@ -66,16 +66,23 @@ def create_time_record_admin(
 ) -> Any:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
-    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name)
+    platform = request.headers.get("X-Platform", "desktop").lower()
+    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name, platform)
 
 @router.put("/admin/{record_id}", response_model=TimeRecordResponse)
 def update_time_record_admin(
         record_id: int,
         record_in: TimeRecordUpdate,
+        request: Request,
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return time_record_service.update_admin_record(db, record_id, record_in, current_user.id)
+    ip_address = get_client_ip(request)
+    device_name = get_client_device_name(ip_address, request)
+    platform = request.headers.get("X-Platform", "desktop").lower()
+    return time_record_service.update_admin_record(
+        db, record_id, record_in, current_user.id, ip_address, device_name, platform
+    )
 
 @router.delete("/admin/{record_id}", response_model=SuccessResponse)
 def delete_time_record_admin(

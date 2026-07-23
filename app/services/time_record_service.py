@@ -173,14 +173,14 @@ class TimeRecordService:
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
-                            ip_address: str, device_name: Optional[str]) -> TimeRecord:
+                            ip_address: str, device_name: Optional[str], platform: str = "WEB_ADMIN") -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
             record_datetime=obj_in.record_datetime, ip_address=ip_address,
             device_name=device_name if device_name else "",
-            platform="desktop"
+            platform=platform
         )
 
         record.edited_by = manager_id
@@ -208,7 +208,8 @@ class TimeRecordService:
 
         return record
 
-    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
+    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int, 
+                            ip_address: Optional[str] = None, device_name: Optional[str] = None, platform: Optional[str] = None) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
@@ -233,20 +234,22 @@ class TimeRecordService:
 
 
 
+        from app.domain.models.time_record import get_local_time
+        
         record.is_ignored = True
 
         new_record = TimeRecord(
             user_id=record.user_id,
             record_type=new_record_type,
             record_datetime=new_record_datetime,
-            ip_address=record.ip_address,
-            device_name=record.device_name,
-            platform=record.platform,
-            biometric_id=record.biometric_id,
+            ip_address=ip_address,
+            device_name=device_name if device_name else "",
+            platform=platform,
+            biometric_id=None,
             edited_by=manager_id,
             edit_justification=obj_in.edit_justification,
             original_record_id=record.original_record_id if record.original_record_id else record.id,
-            created_at=record.created_at,
+            created_at=get_local_time(),
             is_verified=True
         )
 
