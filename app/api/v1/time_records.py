@@ -10,6 +10,7 @@ from app.repositories.time_record_repository import time_record_repository
 from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
     SuccessResponse, TimeRecordTimelineResponse
 from app.services.time_record_service import time_record_service
+from app.services.tolerance_cron_service import tolerance_cron_service
 
 router = APIRouter()
 
@@ -102,3 +103,12 @@ def get_time_record_timeline(
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return time_record_service.get_record_timeline(db, id)
+
+@router.post(
+    "/admin/tolerance/process",
+)
+def trigger_tolerance_cron(
+        current_user: User = Depends(deps.get_current_maintainer)
+) -> Any:
+    tolerance_cron_service.process_unverified_entries()
+    return {"status": "success", "message": "Rotina de tolerância acionada e concluída com sucesso."}
