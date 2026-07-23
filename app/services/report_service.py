@@ -347,11 +347,9 @@ class ReportService:
                     expected_seconds = schedule.daily_hours * 3600
 
             if unapproved_extra_seconds > 0:
+                if unapproved_extra_seconds > worked_seconds:
+                    unapproved_extra_seconds = worked_seconds
                 worked_seconds -= unapproved_extra_seconds
-                if worked_seconds < 0:
-                    worked_seconds = 0.0
-                if worked_seconds < 0:
-                    worked_seconds = 0.0
 
             total_worked_seconds += worked_seconds
 
@@ -535,11 +533,9 @@ class ReportService:
                         unapproved_extra_seconds += adj.amount_hours * 3600
                         
             if unapproved_extra_seconds > 0:
+                if unapproved_extra_seconds > worked_seconds:
+                    unapproved_extra_seconds = worked_seconds
                 worked_seconds -= unapproved_extra_seconds
-                if worked_seconds < 0:
-                    worked_seconds = 0.0
-                if worked_seconds < 0:
-                    worked_seconds = 0.0
 
             if worked_seconds > 0:
                 days_worked_count += 1
