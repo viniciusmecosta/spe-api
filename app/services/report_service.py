@@ -104,9 +104,9 @@ class ReportService:
         elif holiday:
             status = "Feriado"
         elif is_weekend:
-            status = "Final de semana"
+            status = "Fim de semana"
         elif abono:
-            status = "Abonado"
+            status = "Abono"
         elif current == today_date:
             status = ""
         else:
@@ -160,16 +160,16 @@ class ReportService:
             if is_holiday:
                 return "Feriado"
             elif is_weekend:
-                return "Fim de Semana"
+                return "Fim de semana"
             return ""
         if is_waiver:
-            return "Abonado/Atestado"
+            return "Abono"
         if is_holiday:
             return "Feriado"
         if is_weekend:
             if worked_seconds > 0:
                 return "Normal"
-            return "Fim de Semana"
+            return "Fim de semana"
         if worked_seconds == 0 and expected_seconds > 0:
             if is_today:
                 return ""

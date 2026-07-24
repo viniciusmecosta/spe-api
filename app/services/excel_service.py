@@ -372,8 +372,8 @@ class ExcelService:
         self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3, val_text=user_endereco, val_width=11, borders=True)
         ws_det.append([""])
 
-        merges = [3, 3, 3, 8, 2, 2, 3]
-        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Não Aut.", "Trab. Líquido"]
+        merges = [2, 3, 4, 9, 2, 2, 2]
+        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
         
         ws_det.append([""])
         header_row = ws_det.max_row
@@ -393,9 +393,9 @@ class ExcelService:
         last_row = ws_det.max_row
         texts = ["TOTAIS", "", "", "", total_trab_bruto, total_extra, total_trab_real]
         self._merge_for_table(ws_det, last_row, merges, texts, self.font_bold, self.align_center)
-        ws_det.cell(row=last_row, column=18).number_format = TIME_FORMAT
-        ws_det.cell(row=last_row, column=20).number_format = TIME_FORMAT
-        ws_det.cell(row=last_row, column=22).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=19).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
 
         self._append_notes(ws_det)
 
@@ -416,7 +416,7 @@ class ExcelService:
         trab_bruto = trab_liquido + extra_nao_aut
 
         texts = [
-            day.date.strftime("%d/%m/%Y"),
+            day.date.strftime("%d/%m/%y"),
             day.day_name,
             day.status,
             punches_str,
@@ -436,17 +436,17 @@ class ExcelService:
         if "Falta" in day.status:
             fill_to_apply = self.fill_absence
             font_to_apply = self.font_absence
-        elif "Atestado" in day.status or "Abonado" in day.status:
+        elif "Abono" in day.status:
             fill_to_apply = self.fill_excused
             font_to_apply = self.font_excused
 
         self._merge_for_table(ws_det, last_row, merges, texts, self.font_regular, self.align_center, fill=fill_to_apply)
 
-        ws_det.cell(row=last_row, column=7).font = font_to_apply
-
-        ws_det.cell(row=last_row, column=18).number_format = TIME_FORMAT
-        ws_det.cell(row=last_row, column=20).number_format = TIME_FORMAT
-        ws_det.cell(row=last_row, column=22).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=6).font = font_to_apply
+        ws_det.cell(row=last_row, column=6).alignment = self.align_center
+        ws_det.cell(row=last_row, column=19).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
 
         return trab_bruto, extra_nao_aut, trab_liquido
 
