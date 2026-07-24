@@ -377,6 +377,7 @@ class ExcelService:
         
         ws_det.append([""])
         header_row = ws_det.max_row
+        ws_det.row_dimensions[header_row].height = 30
         self._merge_for_table(ws_det, header_row, merges, headers_det, self.header_font, self.align_center, fill=self.header_fill)
 
         total_trab_bruto = 0.0
