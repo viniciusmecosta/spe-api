@@ -1,7 +1,7 @@
 from datetime import date, timedelta
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.domain.models.user import User, UserWorkScheduleConfig
 from app.repositories.payroll_repository import payroll_repository
@@ -14,7 +14,7 @@ class UserWorkScheduleService:
         self.check_payroll_closure(db, existing_sch.valid_from, existing_sch.valid_until)
         new_valid_from = valid_from if valid_from else today
         self.check_payroll_closure(db, new_valid_from, valid_until)
-        self.handle_schedule_overlap(user, getattr(sch_data, 'day_of_week'), new_valid_from, valid_until,
+        self.handle_schedule_overlap(user, sch_data.day_of_week, new_valid_from, valid_until,
                                      ignore_id=sch_id)
         self._apply_schedule_updates_from_obj(existing_sch, sch_data, new_valid_from, valid_until)
 
@@ -22,10 +22,10 @@ class UserWorkScheduleService:
         new_valid_from = valid_from if valid_from else today
         if not is_create:
             self.check_payroll_closure(db, new_valid_from, valid_until)
-        self.handle_schedule_overlap(user, getattr(sch_data, 'day_of_week'), new_valid_from, valid_until)
+        self.handle_schedule_overlap(user, sch_data.day_of_week, new_valid_from, valid_until)
 
         new_sch = UserWorkScheduleConfig(
-            day_of_week=getattr(sch_data, 'day_of_week'), daily_hours=getattr(sch_data, 'daily_hours'),
+            day_of_week=sch_data.day_of_week, daily_hours=sch_data.daily_hours,
             entry_1=getattr(sch_data, 'entry_1', None), exit_1=getattr(sch_data, 'exit_1', None),
             entry_2=getattr(sch_data, 'entry_2', None), exit_2=getattr(sch_data, 'exit_2', None),
             valid_from=new_valid_from, valid_until=valid_until
@@ -34,7 +34,7 @@ class UserWorkScheduleService:
 
     def _process_single_schedule(self, db: Session, user: User, sch_data: any, is_create: bool):
         sch_id = getattr(sch_data, 'id', None)
-        daily_hours = getattr(sch_data, 'daily_hours')
+        daily_hours = sch_data.daily_hours
         valid_from = getattr(sch_data, 'valid_from', None)
         valid_until = getattr(sch_data, 'valid_until', None)
 
@@ -50,8 +50,8 @@ class UserWorkScheduleService:
             self._create_new_schedule(db, user, sch_data, valid_from, valid_until, today, is_create)
 
     def _apply_schedule_updates_from_obj(self, sch, sch_data, valid_from, valid_until):
-        sch.day_of_week = getattr(sch_data, 'day_of_week')
-        sch.daily_hours = getattr(sch_data, 'daily_hours')
+        sch.day_of_week = sch_data.day_of_week
+        sch.daily_hours = sch_data.daily_hours
         sch.entry_1 = getattr(sch_data, 'entry_1', None)
         sch.exit_1 = getattr(sch_data, 'exit_1', None)
         sch.entry_2 = getattr(sch_data, 'entry_2', None)

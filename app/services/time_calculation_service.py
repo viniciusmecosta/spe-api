@@ -1,9 +1,8 @@
-from app.domain.models.adjustment import AdjustmentRequest
 from dataclasses import dataclass
-from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict
+from datetime import date, datetime, timedelta
 
-from app.domain.models.enums import RecordType, AdjustmentType, AdjustmentStatus
+from app.domain.models.adjustment import AdjustmentRequest
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.domain.models.time_record import TimeRecord
 
 
@@ -14,10 +13,10 @@ class DailyTimeResult:
     unapproved_extra_seconds: float
     net_worked_seconds: float
     gross_worked_seconds: float
-    entries: List[str]
-    exits: List[str]
-    punches: List[str]
-    punch_blocks: List[str]
+    entries: list[str]
+    exits: list[str]
+    punches: list[str]
+    punch_blocks: list[str]
 
 
 @dataclass
@@ -27,20 +26,20 @@ class PeriodTimeResult:
     total_expected_seconds: float
     total_waiver_seconds: float
     total_unapproved_extra_seconds: float
-    daily_results: Dict[date, DailyTimeResult]
-    daily_expected_seconds: Dict[date, float]
-    daily_is_holiday: Dict[date, bool]
-    daily_waivers: Dict[date, Optional[AdjustmentRequest]]
+    daily_results: dict[date, DailyTimeResult]
+    daily_expected_seconds: dict[date, float]
+    daily_is_holiday: dict[date, bool]
+    daily_waivers: dict[date, AdjustmentRequest | None]
 
 
 class _DailyProcessState:
     def __init__(self):
-        self.entries: List[str] = []
-        self.exits: List[str] = []
-        self.punches: List[str] = []
-        self.punch_blocks: List[str] = []
+        self.entries: list[str] = []
+        self.exits: list[str] = []
+        self.punches: list[str] = []
+        self.punch_blocks: list[str] = []
         self.worked_seconds: float = 0.0
-        self.entry_time: Optional[datetime] = None
+        self.entry_time: datetime | None = None
 
     def handle_record(self, rec: TimeRecord):
         time_str = rec.record_datetime.strftime("%H:%M")
@@ -78,10 +77,10 @@ class _DailyProcessState:
 class TimeCalculationService:
     def calculate_daily_time(
             self,
-            day_records: List[TimeRecord],
+            day_records: list[TimeRecord],
             expected_seconds: float,
-            waiver_adj: Optional[AdjustmentRequest],
-            unapproved_extra_adjs: List[AdjustmentRequest],
+            waiver_adj: AdjustmentRequest | None,
+            unapproved_extra_adjs: list[AdjustmentRequest],
             is_excused: bool = False
     ) -> DailyTimeResult:
 
@@ -105,7 +104,7 @@ class TimeCalculationService:
             punch_blocks=blocks
         )
 
-    def _process_records(self, day_records: List[TimeRecord]):
+    def _process_records(self, day_records: list[TimeRecord]):
         state = _DailyProcessState()
 
         for rec in day_records:
@@ -118,7 +117,7 @@ class TimeCalculationService:
 
     def _calculate_waiver(
             self,
-            waiver_adj: Optional[AdjustmentRequest],
+            waiver_adj: AdjustmentRequest | None,
             is_excused: bool,
             expected_seconds: float,
             worked_seconds: float
@@ -136,7 +135,7 @@ class TimeCalculationService:
 
     def _calculate_unapproved_extra(
             self,
-            unapproved_extra_adjs: List[AdjustmentRequest],
+            unapproved_extra_adjs: list[AdjustmentRequest],
             worked_seconds: float
     ) -> float:
         unapproved_extra_seconds = 0.0
@@ -158,10 +157,10 @@ class TimeCalculationService:
             self,
             start_date: date,
             end_date: date,
-            records: List[TimeRecord],
-            adjustments: List[AdjustmentRequest],
-            holidays: List,
-            historical_schedules: List
+            records: list[TimeRecord],
+            adjustments: list[AdjustmentRequest],
+            holidays: list,
+            historical_schedules: list
     ) -> PeriodTimeResult:
 
         has_schedule = bool(historical_schedules)

@@ -1,7 +1,6 @@
 from datetime import date, datetime, time
-from typing import Optional
 
-from sqlalchemy import desc, asc
+from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
 
 from app.domain.models.audit import AuditLog
@@ -23,8 +22,8 @@ class AuditRepository:
         db.refresh(db_obj)
         return db_obj
 
-    def get_logs(self, db: Session, action: Optional[str] = None,
-                 start_date: Optional[date] = None, end_date: Optional[date] = None,
+    def get_logs(self, db: Session, action: str | None = None,
+                 start_date: date | None = None, end_date: date | None = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):
         query = db.query(AuditLog)
         if action:
@@ -42,7 +41,7 @@ class AuditRepository:
             query = query.order_by(desc(AuditLog.timestamp))
         return query.offset(skip).limit(limit).all()
 
-    def get_manual_changes(self, db: Session, start_date: Optional[date] = None, end_date: Optional[date] = None,
+    def get_manual_changes(self, db: Session, start_date: date | None = None, end_date: date | None = None,
                            order_by: str = "desc", skip: int = 0, limit: int = 100):
         query = db.query(AuditLog)
 

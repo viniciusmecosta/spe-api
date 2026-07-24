@@ -1,7 +1,7 @@
 from datetime import datetime
-from sqlalchemy import desc, and_, distinct, func, or_
+
+from sqlalchemy import and_, desc, distinct, func, or_
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord, get_local_time
@@ -10,8 +10,8 @@ from app.schemas.time_record import TimeRecordUpdate
 
 class TimeRecordRepository:
     def create(self, db: Session, user_id: int, record_type: RecordType, record_datetime: datetime,
-               ip_address: Optional[str] = None, device_name: Optional[str] = None, platform: Optional[str] = None,
-               biometric_id: Optional[int] = None) -> TimeRecord:
+               ip_address: str | None = None, device_name: str | None = None, platform: str | None = None,
+               biometric_id: int | None = None) -> TimeRecord:
         db_record = TimeRecord(
             user_id=user_id,
             record_type=record_type,
@@ -54,8 +54,8 @@ class TimeRecordRepository:
             )
         ).order_by(TimeRecord.record_datetime).all()
 
-    def get_by_users_and_range(self, db: Session, user_ids: List[int], start_date: datetime, end_date: datetime) -> \
-            List[TimeRecord]:
+    def get_by_users_and_range(self, db: Session, user_ids: list[int], start_date: datetime, end_date: datetime) -> \
+            list[TimeRecord]:
         return db.query(TimeRecord).filter(
             and_(
                 TimeRecord.user_id.in_(user_ids),

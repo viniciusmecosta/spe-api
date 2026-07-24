@@ -1,18 +1,22 @@
-import ntplib
 from datetime import datetime
-from fastapi import HTTPException, status, Request
-from sqlalchemy.orm import Session
-from typing import Optional
 from zoneinfo import ZoneInfo
 
+import ntplib
+from fastapi import HTTPException, Request, status
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.core.security import get_client_ip, get_client_device_name
+from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
+from app.schemas.time_record import (
+    TimeRecordCreateAdmin,
+    TimeRecordDeleteAdmin,
+    TimeRecordUpdate,
+)
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
@@ -173,7 +177,7 @@ class TimeRecordService:
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
-                            ip_address: str, device_name: Optional[str], platform: str = "WEB_ADMIN") -> TimeRecord:
+                            ip_address: str, device_name: str | None, platform: str = "WEB_ADMIN") -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
 
         record = time_record_repository.create(
@@ -208,8 +212,9 @@ class TimeRecordService:
 
         return record
 
-    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int, 
-                            ip_address: Optional[str] = None, device_name: Optional[str] = None, platform: Optional[str] = None) -> TimeRecord:
+    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int,
+                            ip_address: str | None = None, device_name: str | None = None,
+                            platform: str | None = None) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
@@ -309,7 +314,7 @@ class TimeRecordService:
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
-                     biometric_id: Optional[int] = None, platform: str = "desktop") -> TimeRecord:
+                     biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
         record_type = RecordType.ENTRY
 

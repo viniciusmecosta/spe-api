@@ -1,18 +1,19 @@
-import bcrypt
 import hashlib
-import jwt
 import socket
 from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import bcrypt
+import jwt
 from fastapi import Request
-from typing import Any, Union, Optional
 
 from app.core.config import settings
 
 ALGORITHM = settings.ALGORITHM
 
 
-def create_access_token(subject: Union[str, Any], name: Optional[str] = None,
-                        expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: str | Any, name: str | None = None,
+                        expires_delta: timedelta | None = None) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
@@ -65,7 +66,7 @@ def _resolve_device_name_from_ip(ip: str) -> str:
     return ""
 
 
-def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
+def get_client_device_name(ip: str, request: Request | None = None) -> str:
     device_name = ""
 
     if request:

@@ -1,21 +1,21 @@
+from datetime import date, time
+
 from pydantic import BaseModel, ConfigDict
-from typing import Optional
-from datetime import time, date
 
 
 class WorkScheduleBase(BaseModel):
     day_of_week: int
     daily_hours: float
-    entry_1: Optional[time] = None
-    exit_1: Optional[time] = None
-    entry_2: Optional[time] = None
-    exit_2: Optional[time] = None
-    valid_from: Optional[date] = None
-    valid_until: Optional[date] = None
+    entry_1: time | None = None
+    exit_1: time | None = None
+    entry_2: time | None = None
+    exit_2: time | None = None
+    valid_from: date | None = None
+    valid_until: date | None = None
 
 
 class WorkScheduleCreate(WorkScheduleBase):
-    id: Optional[int] = None
+    id: int | None = None
 
 
 class WorkSchedule(WorkScheduleBase):

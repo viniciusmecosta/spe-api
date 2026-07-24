@@ -1,5 +1,4 @@
 from datetime import date
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -9,8 +8,8 @@ from app.schemas.audit import AuditLogCreate
 
 class AuditService:
     def log(self, db: Session, *, action: str, entity: str, entity_id: int,
-            user_id: Optional[int] = None,
-            old_data: Optional[dict] = None, new_data: Optional[dict] = None):
+            user_id: int | None = None,
+            old_data: dict | None = None, new_data: dict | None = None):
         obj_in = AuditLogCreate(
             user_id=user_id,
             action=action,
@@ -37,8 +36,8 @@ class AuditService:
                     
         return actual_old, actual_new
 
-    def get_logs(self, db: Session, action: Optional[str] = None,
-                 start_date: Optional[date] = None, end_date: Optional[date] = None,
+    def get_logs(self, db: Session, action: str | None = None,
+                 start_date: date | None = None, end_date: date | None = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):
         return audit_repository.get_logs(
             db, action=action, start_date=start_date, end_date=end_date,

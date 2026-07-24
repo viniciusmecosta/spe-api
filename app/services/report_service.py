@@ -1,11 +1,10 @@
 import locale
 import logging
 from calendar import monthrange
-from datetime import date, timedelta, datetime
-from sqlalchemy import extract
-from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -15,9 +14,14 @@ from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.report import (
-    MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
-    DailyReportItem, PunchDetail,
-    HistoryResponse, HistoryDay, HistoryPunch
+    AdvancedUserReportResponse,
+    DailyReportItem,
+    HistoryDay,
+    HistoryPunch,
+    HistoryResponse,
+    MonthlyReportResponse,
+    PunchDetail,
+    UserPayrollSummary,
 )
 from app.services.anomaly_service import anomaly_service
 from app.utils.formatters import get_weekday_name
@@ -43,7 +47,7 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours:02d}:{minutes:02d}"
 
-    def _apply_employee_filters(self, query, employee_ids: Optional[List[int]] = None):
+    def _apply_employee_filters(self, query, employee_ids: list[int] | None = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
         query = query.filter(User.is_exempt_from_rules.is_(False))
         if employee_ids:
@@ -54,9 +58,9 @@ class ReportService:
             self,
             current: date,
             today_date: date,
-            records: List[TimeRecord],
-            holidays: List,
-            anomalies: List,
+            records: list[TimeRecord],
+            holidays: list,
+            anomalies: list,
             period_result,
             is_manager: bool
     ) -> HistoryDay:
@@ -131,7 +135,7 @@ class ReportService:
             abono_id=abono.id if abono and is_manager else None
         )
 
-    def _build_detailed_punches(self, day_records: List[TimeRecord], is_maintainer: bool) -> List[PunchDetail]:
+    def _build_detailed_punches(self, day_records: list[TimeRecord], is_maintainer: bool) -> list[PunchDetail]:
         if not is_maintainer:
             return []
         detailed_punches = []
@@ -178,8 +182,8 @@ class ReportService:
             self,
             current: date,
             today_date: date,
-            all_records: List[TimeRecord],
-            holidays: List,
+            all_records: list[TimeRecord],
+            holidays: list,
             period_result,
             has_schedule: bool,
             is_maintainer: bool
@@ -257,7 +261,7 @@ class ReportService:
             unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
         )
 
-    def get_history_report(self, db: Session, user_id: int, month: Optional[int], year: Optional[int],
+    def get_history_report(self, db: Session, user_id: int, month: int | None, year: int | None,
                            current_user: User) -> HistoryResponse:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -271,8 +275,7 @@ class ReportService:
         start_date, end_date = self._get_month_range(month, year)
 
         if year == now.year and month == now.month:
-            if end_date > now.date():
-                end_date = now.date()
+            end_date = min(end_date, now.date())
         elif datetime(year, month, 1).date() > now.date():
             return HistoryResponse(month=month, year=year, total_worked_time="00:00", days=[])
 
@@ -339,7 +342,7 @@ class ReportService:
         )
 
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
-                                 current_user: Optional[User] = None) -> Optional[AdvancedUserReportResponse]:
+                                 current_user: User | None = None) -> AdvancedUserReportResponse | None:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -426,8 +429,8 @@ class ReportService:
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
 
     def get_monthly_summary(self, db: Session, month: int, year: int,
-                            employee_ids: Optional[List[int]] = None,
-                            current_user: Optional[User] = None) -> MonthlyReportResponse:
+                            employee_ids: list[int] | None = None,
+                            current_user: User | None = None) -> MonthlyReportResponse:
         query = db.query(User).options(joinedload(User.historical_schedules))
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()

@@ -1,9 +1,9 @@
 import logging
+from datetime import date, datetime, time
+
 import requests
-from datetime import datetime, date, time
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import Dict, List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType
@@ -106,8 +106,8 @@ class TelegramService:
             logger.exception(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
 
-    def _group_daily_activity(self, records) -> Dict[str, Dict[str, List[str]]]:
-        daily_activity: Dict[str, Dict[str, List[str]]] = {}
+    def _group_daily_activity(self, records) -> dict[str, dict[str, list[str]]]:
+        daily_activity: dict[str, dict[str, list[str]]] = {}
         for record, user in records:
             date_str = record.record_datetime.strftime(DATE_FORMAT)
             time_str = record.record_datetime.strftime("%H:%M")

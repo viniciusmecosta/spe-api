@@ -1,13 +1,12 @@
 from datetime import datetime
-from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserBiometricBase(BaseModel):
-    sensor_index: Optional[int] = None
-    template_data: Optional[str] = None
-    finger_id: Optional[int] = Field(None, ge=0, le=9)
+    sensor_index: int | None = None
+    template_data: str | None = None
+    finger_id: int | None = Field(None, ge=0, le=9)
 
 
 class UserBiometricCreate(UserBiometricBase):
@@ -15,10 +14,10 @@ class UserBiometricCreate(UserBiometricBase):
 
 
 class UserBiometricUpdate(BaseModel):
-    id: Optional[int] = None
-    sensor_index: Optional[int] = None
-    template_data: Optional[str] = None
-    finger_id: Optional[int] = Field(None, ge=0, le=9)
+    id: int | None = None
+    sensor_index: int | None = None
+    template_data: str | None = None
+    finger_id: int | None = Field(None, ge=0, le=9)
 
 
 class UserBiometricResponse(UserBiometricBase):

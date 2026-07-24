@@ -1,6 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, AliasChoices
-from typing import Optional
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.domain.models.enums import RecordType
 
@@ -12,9 +12,9 @@ class SuccessResponse(BaseModel):
 class TimeRecordBase(BaseModel):
     record_type: RecordType
     record_datetime: datetime
-    ip_address: Optional[str] = None
-    device_name: Optional[str] = None
-    platform: Optional[str] = None
+    ip_address: str | None = None
+    device_name: str | None = None
+    platform: str | None = None
 
 class TimeRecordCreate(BaseModel):
     pass
@@ -26,8 +26,8 @@ class TimeRecordCreateAdmin(BaseModel):
     edit_justification: str = Field(..., max_length=300)
 
 class TimeRecordUpdate(BaseModel):
-    record_type: Optional[RecordType] = None
-    record_datetime: Optional[datetime] = None
+    record_type: RecordType | None = None
+    record_datetime: datetime | None = None
     edit_justification: str = Field(..., max_length=300)
 
 class TimeRecordDeleteAdmin(BaseModel):
@@ -42,9 +42,9 @@ class TimeRecordResponse(TimeRecordBase):
     id: int
     user_id: int
     created_at: datetime
-    edited_by: Optional[str] = Field(None, validation_alias=AliasChoices('editor_name', 'edited_by'))
-    edit_justification: Optional[str] = None
-    original_record_id: Optional[int] = None
+    edited_by: str | None = Field(None, validation_alias=AliasChoices('editor_name', 'edited_by'))
+    edit_justification: str | None = None
+    original_record_id: int | None = None
     model_config = ConfigDict(from_attributes=True)
 
 class TimeRecordTimelineResponse(TimeRecordResponse):

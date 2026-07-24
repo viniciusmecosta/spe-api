@@ -1,4 +1,3 @@
-from datetime import date
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -112,7 +111,9 @@ class UserService:
         )
 
         if schedules_in:
-            from app.services.user_work_schedule_service import user_work_schedule_service
+            from app.services.user_work_schedule_service import (
+                user_work_schedule_service,
+            )
             user_work_schedule_service.sync_user_schedules(db, db_user, schedules_in, is_create=True)
 
         if biometrics_in:
@@ -170,7 +171,9 @@ class UserService:
                 setattr(user, field, value)
 
         if schedules_in is not None:
-            from app.services.user_work_schedule_service import user_work_schedule_service
+            from app.services.user_work_schedule_service import (
+                user_work_schedule_service,
+            )
             user_work_schedule_service.sync_user_schedules(db, user, schedules_in, is_create=False)
 
         if biometrics_in is not None:

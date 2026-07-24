@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime
+
 from sqlalchemy.orm import Session
 
 from app.domain.models.enums import RecordType

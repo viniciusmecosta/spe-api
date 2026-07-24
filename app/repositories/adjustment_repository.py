@@ -1,9 +1,13 @@
 from datetime import date
 
-from sqlalchemy import desc, and_, func
+from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
-from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment, get_local_time
+from app.domain.models.adjustment import (
+    AdjustmentAttachment,
+    AdjustmentRequest,
+    get_local_time,
+)
 from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.schemas.adjustment import AdjustmentRequestCreate
 

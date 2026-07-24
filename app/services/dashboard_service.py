@@ -1,10 +1,9 @@
-import locale
 import logging
-from datetime import date, timedelta, datetime
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole
@@ -12,8 +11,13 @@ from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.schemas.report import (
-    DashboardMetricsResponse, MyDashboardResponse, TodayPunch, AnomalyItem,
-    TeamHoursResponse, EmployeeHours, Aniversariante
+    Aniversariante,
+    AnomalyItem,
+    DashboardMetricsResponse,
+    EmployeeHours,
+    MyDashboardResponse,
+    TeamHoursResponse,
+    TodayPunch,
 )
 from app.services.anomaly_service import anomaly_service
 from app.services.report_service import report_service

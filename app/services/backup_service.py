@@ -3,7 +3,6 @@ import sqlite3
 import threading
 import uuid
 from datetime import datetime
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -15,7 +14,7 @@ class BackupService:
     def __init__(self):
         self._backup_lock = threading.Lock()
 
-    def create_safe_backup(self) -> Optional[str]:
+    def create_safe_backup(self) -> str | None:
         with self._backup_lock:
             try:
                 tz = ZoneInfo(settings.TIMEZONE)

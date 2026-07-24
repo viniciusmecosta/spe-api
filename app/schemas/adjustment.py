@@ -1,20 +1,19 @@
 from datetime import date, datetime
 from datetime import time as dt_time
-from typing import Optional, List
 
-from pydantic import BaseModel, computed_field, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
-from app.domain.models.enums import AdjustmentType, AdjustmentStatus, RecordType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.schemas.time_record import TimeRecordSimple
 
 
 class AdjustmentRequestBase(BaseModel):
     adjustment_type: AdjustmentType
     target_date: date
-    record_type: Optional[RecordType] = None
-    time: Optional[dt_time] = None
-    amount_hours: Optional[float] = None
-    reason_text: Optional[str] = None
+    record_type: RecordType | None = None
+    time: dt_time | None = None
+    amount_hours: float | None = None
+    reason_text: str | None = None
 
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
@@ -41,7 +40,7 @@ class AdjustmentWaiverCreate(BaseModel):
 class BulkReprocessExtraTimeRequest(BaseModel):
     start_date: date
     end_date: date
-    user_ids: List[int]
+    user_ids: list[int]
 
 
 class AdjustmentAttachmentResponse(BaseModel):
@@ -65,12 +64,12 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     user_id: int
     user_name: str
     status: AdjustmentStatus
-    manager_id: Optional[int] = None
-    manager_comment: Optional[str] = None
+    manager_id: int | None = None
+    manager_comment: str | None = None
     created_at: datetime
-    reviewed_at: Optional[datetime] = None
-    attachments: List[AdjustmentAttachmentResponse] = []
-    time_records: List[TimeRecordSimple] = []
+    reviewed_at: datetime | None = None
+    attachments: list[AdjustmentAttachmentResponse] = []
+    time_records: list[TimeRecordSimple] = []
 
     @computed_field
     def metadata_info(self) -> dict:

@@ -1,6 +1,6 @@
+
 from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
@@ -9,10 +9,10 @@ from app.schemas.user import UserUpdate
 
 
 class UserRepository:
-    def get_by_username(self, db: Session, username: str) -> Optional[User]:
+    def get_by_username(self, db: Session, username: str) -> User | None:
         return db.query(User).filter(User.username == username).first()
 
-    def get(self, db: Session, user_id: int) -> Optional[User]:
+    def get(self, db: Session, user_id: int) -> User | None:
         return db.query(User).filter(User.id == user_id).first()
 
     def get_multi(
@@ -20,12 +20,12 @@ class UserRepository:
             db: Session,
             skip: int = 0,
             limit: int = 100,
-            is_active: Optional[bool] = None,
-            role: Optional[str] = None,
-            search: Optional[str] = None,
+            is_active: bool | None = None,
+            role: str | None = None,
+            search: str | None = None,
             order_by: str = "id",
             order_direction: str = "asc"
-    ) -> List[User]:
+    ) -> list[User]:
         query = db.query(User)
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
@@ -90,7 +90,7 @@ class UserRepository:
         update_data.pop("schedules", None)
         biometrics_in = update_data.pop("biometrics", None)
 
-        if "password" in update_data and update_data["password"]:
+        if update_data.get("password"):
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
 
@@ -105,7 +105,7 @@ class UserRepository:
         db.refresh(db_obj)
         return db_obj
 
-    def get_active_employees(self, db: Session) -> List[User]:
+    def get_active_employees(self, db: Session) -> list[User]:
         from app.domain.models.enums import UserRole
         return db.query(User).filter(User.is_active.is_(True), User.role == UserRole.EMPLOYEE).all()
 

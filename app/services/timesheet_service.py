@@ -5,14 +5,21 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import (
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -364,7 +371,7 @@ class TimesheetService:
         return buffer
 
     def generate_all_timesheets_pdf_zip(self, db: Session, month: int, year: int,
-                                        employee_ids: Optional[List[int]]) -> io.BytesIO:
+                                        employee_ids: list[int] | None) -> io.BytesIO:
         tz = ZoneInfo(settings.TIMEZONE)
         start_date = date(year, month, 1)
         _, last_day = monthrange(year, month)

@@ -1,9 +1,8 @@
 import os
 import shutil
 import uuid
-from typing import Optional
 
-from fastapi import HTTPException, status, UploadFile
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -14,7 +13,7 @@ from app.services.audit_service import audit_service
 
 
 class CompanyService:
-    def get_company(self, db: Session) -> Optional[Company]:
+    def get_company(self, db: Session) -> Company | None:
         return company_repository.get_current(db)
 
     def create_company(self, db: Session, obj_in: CompanyCreate, current_user_id: int) -> Company:

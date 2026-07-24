@@ -1,18 +1,22 @@
-from typing import Any, List
+from typing import Any
 
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.schemas.payroll import PayrollClosureCreate, PayrollClosureResponse, PayrollReopenCreate
+from app.schemas.payroll import (
+    PayrollClosureCreate,
+    PayrollClosureResponse,
+    PayrollReopenCreate,
+)
 from app.schemas.time_record import SuccessResponse
 from app.services.payroll_service import payroll_service
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[PayrollClosureResponse])
+@router.get("/", response_model=list[PayrollClosureResponse])
 def list_payroll_periods(
         year: int,
         db: Session = Depends(deps.get_db),

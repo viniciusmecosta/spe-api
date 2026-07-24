@@ -1,14 +1,21 @@
 from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
-from app.core.security import get_client_ip, get_client_device_name
+from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
-    SuccessResponse, TimeRecordTimelineResponse
+from app.schemas.time_record import (
+    SuccessResponse,
+    TimeRecordCreateAdmin,
+    TimeRecordDeleteAdmin,
+    TimeRecordResponse,
+    TimeRecordTimelineResponse,
+    TimeRecordUpdate,
+)
 from app.services.time_record_service import time_record_service
 from app.services.tolerance_cron_service import tolerance_cron_service
 
@@ -47,7 +54,8 @@ def read_my_records(
 ) -> Any:
     return time_record_repository.get_all_by_user(db, current_user.id, skip, limit)
 
-@router.get("/admin/list", response_model=List[TimeRecordResponse])
+
+@router.get("/admin/list", response_model=list[TimeRecordResponse])
 def list_records_for_admin(
         user_id: int,
         start_date: datetime,
@@ -96,7 +104,7 @@ def delete_time_record_admin(
     return {"status": "success", "message": "Record deleted"}
 
 
-@router.get("/{id}/timeline", response_model=List[TimeRecordTimelineResponse])
+@router.get("/{id}/timeline", response_model=list[TimeRecordTimelineResponse])
 def get_time_record_timeline(
         id: int,
         db: Session = Depends(deps.get_db),

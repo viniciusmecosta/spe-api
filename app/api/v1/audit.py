@@ -1,5 +1,4 @@
 from datetime import date
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -12,11 +11,11 @@ from app.services.audit_service import audit_service
 router = APIRouter()
 
 
-@router.get("/", response_model=List[AuditLogResponse])
+@router.get("/", response_model=list[AuditLogResponse])
 def read_audit_logs(
-        action: Optional[str] = None,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
+        action: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         order_by: str = Query("desc", pattern="^(asc|desc)$"),
         skip: int = 0,
         limit: int = 100,

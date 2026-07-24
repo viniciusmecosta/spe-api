@@ -1,17 +1,30 @@
 import os
-from typing import Any, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, Body, UploadFile, File, HTTPException, status, Query
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
-from app.domain.models.enums import UserRole, AdjustmentStatus
+from app.domain.models.enums import AdjustmentStatus, UserRole
 from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentRequestResponse, \
-    AdjustmentAttachmentResponse, AdjustmentWaiverCreate
+from app.schemas.adjustment import (
+    AdjustmentAttachmentResponse,
+    AdjustmentRequestCreate,
+    AdjustmentRequestResponse,
+    AdjustmentWaiverCreate,
+)
 from app.services.adjustment_service import adjustment_service
 
 router = APIRouter()
@@ -38,6 +51,7 @@ def waive_absence_admin(
 from app.schemas.adjustment import BulkReprocessExtraTimeRequest
 from app.services.tolerance_cron_service import tolerance_cron_service
 
+
 @router.post("/admin/reprocess-extra-time", status_code=status.HTTP_200_OK)
 def reprocess_historical_extra_time(
         request_in: BulkReprocessExtraTimeRequest,
@@ -47,8 +61,8 @@ def reprocess_historical_extra_time(
     if current_user.role != UserRole.MAINTAINER:
         raise HTTPException(status_code=403, detail="Apenas MAINTAINER pode executar o reprocessamento em lote")
 
+
     from app.services.payroll_service import payroll_service
-    from datetime import date
     
     curr = request_in.start_date.replace(day=1)
     while curr <= request_in.end_date:
@@ -124,13 +138,13 @@ def download_adjustment_attachment(
     )
 
 
-@router.get("/my", response_model=List[AdjustmentRequestResponse])
+@router.get("/my", response_model=list[AdjustmentRequestResponse])
 def read_my_adjustments(
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=100),
-        month: Optional[int] = Query(None, ge=1, le=12),
-        year: Optional[int] = Query(None, ge=2000),
-        status: Optional[str] = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+        month: int | None = Query(None, ge=1, le=12),
+        year: int | None = Query(None, ge=2000),
+        status: str | None = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
         order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
         order_direction: str = Query("desc", pattern="^(asc|desc)$"),
         db: Session = Depends(deps.get_db),
@@ -141,13 +155,13 @@ def read_my_adjustments(
     )
 
 
-@router.get("/", response_model=List[AdjustmentRequestResponse])
+@router.get("/", response_model=list[AdjustmentRequestResponse])
 def read_all_adjustments(
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=100),
-        month: Optional[int] = Query(None, ge=1, le=12),
-        year: Optional[int] = Query(None, ge=2000),
-        status: Optional[str] = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+        month: int | None = Query(None, ge=1, le=12),
+        year: int | None = Query(None, ge=2000),
+        status: str | None = Query(None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
         order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
         order_direction: str = Query("desc", pattern="^(asc|desc)$"),
         db: Session = Depends(deps.get_db),

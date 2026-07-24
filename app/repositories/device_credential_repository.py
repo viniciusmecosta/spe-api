@@ -1,4 +1,3 @@
-from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -21,10 +20,10 @@ class DeviceCredentialRepository:
         db.refresh(db_obj)
         return db_obj
 
-    def get(self, db: Session, id: int) -> Optional[DeviceCredential]:
+    def get(self, db: Session, id: int) -> DeviceCredential | None:
         return db.query(DeviceCredential).filter(DeviceCredential.id == id).first()
 
-    def get_all(self, db: Session) -> List[DeviceCredential]:
+    def get_all(self, db: Session) -> list[DeviceCredential]:
         return db.query(DeviceCredential).all()
 
     def update(self, db: Session, db_obj: DeviceCredential, obj_in: DeviceCredentialUpdate) -> DeviceCredential:

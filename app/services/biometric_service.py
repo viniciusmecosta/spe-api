@@ -1,18 +1,18 @@
 import logging
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User
-from app.schemas.device import BiometricSyncData, EnrollResultPayload, BiometricSyncAck
+from app.schemas.device import BiometricSyncAck, BiometricSyncData, EnrollResultPayload
 from app.services.audit_service import audit_service
 
 logger = logging.getLogger(__name__)
 
 
 class BiometricService:
-    def get_all_for_sync(self, db: Session) -> List[BiometricSyncData]:
+    def get_all_for_sync(self, db: Session) -> list[BiometricSyncData]:
         biometrics = db.query(UserBiometric).join(User).filter(
             User.is_active.is_(True),
             UserBiometric.template_data.isnot(None)
@@ -67,7 +67,7 @@ class BiometricService:
             logger.exception(f"Erro Enroll: {e}")
             return False, str(e)
 
-    def get_available_sensor_indices(self, db: Session) -> List[int]:
+    def get_available_sensor_indices(self, db: Session) -> list[int]:
 
         used_indices_query = db.query(UserBiometric.sensor_index).filter(
             UserBiometric.sensor_index.isnot(None)

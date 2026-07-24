@@ -1,6 +1,7 @@
-from datetime import datetime, date, timedelta
-from sqlalchemy.orm import Session
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.repositories.holiday_repository import holiday_repository
@@ -21,7 +22,7 @@ class WorkHourService:
         holidays = holiday_repository.get_all(db)
 
         from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+        from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 
         adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,

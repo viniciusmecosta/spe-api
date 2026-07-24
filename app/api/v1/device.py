@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
@@ -12,9 +11,16 @@ from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
 from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
-    DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
-    BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
-    ManagerVerifyRequest, ManagerVerifyResponse, BuzzerNote
+    BiometricSyncAck,
+    BiometricSyncData,
+    BuzzerNote,
+    DeviceActions,
+    DevicePunchRequest,
+    EnrollResultPayload,
+    FeedbackPayload,
+    ManagerVerifyRequest,
+    ManagerVerifyResponse,
+    TimeResponsePayload,
 )
 from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
@@ -139,7 +145,7 @@ def enroll_device_biometric(
         )
 
 
-@router.get("/sync", response_model=List[BiometricSyncData])
+@router.get("/sync", response_model=list[BiometricSyncData])
 def sync_device_data(
         db: Session = Depends(deps.get_db),
         device: DeviceCredential = Depends(deps.verify_device_api_key)

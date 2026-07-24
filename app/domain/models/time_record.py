@@ -1,7 +1,17 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, DateTime, ForeignKey, String, Enum, Boolean, Index
-from sqlalchemy.orm import relationship
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base

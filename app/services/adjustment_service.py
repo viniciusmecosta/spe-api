@@ -1,8 +1,9 @@
 import os
 import shutil
 import uuid
-from datetime import datetime, date
-from fastapi import UploadFile, HTTPException
+from datetime import date, datetime
+
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -10,7 +11,10 @@ from app.domain.models.adjustment import AdjustmentRequest
 from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.domain.models.time_record import TimeRecord
 from app.repositories.adjustment_repository import adjustment_repository
-from app.repositories.time_record_repository import time_record_repository, get_local_time
+from app.repositories.time_record_repository import (
+    get_local_time,
+    time_record_repository,
+)
 from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentWaiverCreate
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service

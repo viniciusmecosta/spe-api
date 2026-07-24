@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Any
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,12 +14,12 @@ class UserSnapshot(BaseModel):
 
 
 class AuditLogBase(BaseModel):
-    user_id: Optional[int] = None
+    user_id: int | None = None
     action: str
     entity: str
-    entity_id: Optional[int] = None
-    old_data: Optional[Any] = None
-    new_data: Optional[Any] = None
+    entity_id: int | None = None
+    old_data: Any | None = None
+    new_data: Any | None = None
 
 
 class AuditLogCreate(AuditLogBase):
@@ -29,6 +29,6 @@ class AuditLogCreate(AuditLogBase):
 class AuditLogResponse(AuditLogBase):
     id: int
     timestamp: datetime
-    user: Optional[UserSnapshot] = None
+    user: UserSnapshot | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,14 +1,15 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserUpdateMe
-from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserUpdateMe
+from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate
 from app.services.user_service import user_service
 from app.services.user_work_schedule_service import user_work_schedule_service
 
@@ -22,14 +23,14 @@ def check_manager_permission(current_user: User):
         raise HTTPException(status_code=400, detail="Privilégios insuficientes")
 
 
-@router.get("/", response_model=List[UserResponse])
+@router.get("/", response_model=list[UserResponse])
 def read_users(
         db: Session = Depends(deps.get_db),
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=1000),
-        is_active: Optional[bool] = Query(None),
-        role: Optional[UserRole] = Query(None),
-        search: Optional[str] = Query(None),
+        is_active: bool | None = Query(None),
+        role: UserRole | None = Query(None),
+        search: str | None = Query(None),
         order_by: str = Query("id", pattern="^(id|name|username|created_at|updated_at)$"),
         order_direction: str = Query("asc", pattern="^(asc|desc)$"),
         current_user: User = Depends(deps.get_current_manager),
@@ -146,7 +147,8 @@ def update_user(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{user_id}/schedules", response_model=List[WorkSchedule])
+
+@router.get("/{user_id}/schedules", response_model=list[WorkSchedule])
 def get_historical_schedules(
         user_id: int,
         db: Session = Depends(deps.get_db),

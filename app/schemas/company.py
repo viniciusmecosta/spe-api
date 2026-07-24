@@ -1,6 +1,6 @@
 import re
-from pydantic import BaseModel, field_validator, ConfigDict
-from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, field_validator
 
 NON_DIGIT_REGEX = r'\D'
 
@@ -31,8 +31,8 @@ class CompanyBase(BaseModel):
     name: str
     cnpj: str
     address: str
-    phone: Optional[str] = None
-    logo_path: Optional[str] = None
+    phone: str | None = None
+    logo_path: str | None = None
 
     @field_validator('cnpj')
     @classmethod
@@ -48,15 +48,15 @@ class CompanyCreate(CompanyBase):
 
 
 class CompanyUpdate(BaseModel):
-    name: Optional[str] = None
-    cnpj: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    logo_path: Optional[str] = None
+    name: str | None = None
+    cnpj: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    logo_path: str | None = None
 
     @field_validator('cnpj')
     @classmethod
-    def validate_cnpj(cls, v: Optional[str]) -> Optional[str]:
+    def validate_cnpj(cls, v: str | None) -> str | None:
         if v is not None:
             v_clean = re.sub(NON_DIGIT_REGEX, '', v)
             if not validate_cnpj_logic(v_clean):

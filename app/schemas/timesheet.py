@@ -1,5 +1,4 @@
 from datetime import date
-from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -8,20 +7,20 @@ class TimesheetCompany(BaseModel):
     name: str
     cnpj: str
     address: str
-    phone: Optional[str] = None
+    phone: str | None = None
 
 
 class TimesheetEmployee(BaseModel):
     name: str
-    cpf: Optional[str] = None
-    pis: Optional[str] = None
+    cpf: str | None = None
+    pis: str | None = None
     role: str
 
 
 class TimesheetDay(BaseModel):
     date: date
     day_name: str
-    punches: List[str]
+    punches: list[str]
     worked_time: str
     status: str
     is_holiday: bool
@@ -35,11 +34,11 @@ class TimesheetSummary(BaseModel):
 
 
 class OfficialTimesheetResponse(BaseModel):
-    company: Optional[TimesheetCompany] = None
+    company: TimesheetCompany | None = None
     employee: TimesheetEmployee
     month: int
     year: int
     generation_date: date
-    days: List[TimesheetDay]
+    days: list[TimesheetDay]
     summary: TimesheetSummary
     signature_term: str

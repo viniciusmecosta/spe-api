@@ -1,8 +1,9 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
@@ -12,7 +13,7 @@ from app.schemas.report import (
     DashboardMetricsResponse,
     HistoryResponse,
     MyDashboardResponse,
-    TeamHoursResponse
+    TeamHoursResponse,
 )
 from app.services.dashboard_service import dashboard_service
 from app.services.excel_service import excel_service
@@ -29,9 +30,10 @@ def _validate_excel_export_permission(db: Session, current_user: User, month: in
         return
 
     if is_manager:
+        from sqlalchemy import extract
+
         from app.domain.models.adjustment import AdjustmentRequest
         from app.domain.models.enums import AdjustmentStatus
-        from sqlalchemy import extract
 
         pending_adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.status == AdjustmentStatus.PENDING,
@@ -102,8 +104,8 @@ def get_my_dashboard(
 
 @router.get("/history/me", response_model=HistoryResponse)
 def get_my_history(
-        month: Optional[int] = Query(None, ge=1, le=12),
-        year: Optional[int] = Query(None, ge=2000),
+        month: int | None = Query(None, ge=1, le=12),
+        year: int | None = Query(None, ge=2000),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -113,8 +115,8 @@ def get_my_history(
 @router.get("/history/user/{user_id}", response_model=HistoryResponse)
 def get_user_history(
         user_id: int,
-        month: Optional[int] = Query(None, ge=1, le=12),
-        year: Optional[int] = Query(None, ge=2000),
+        month: int | None = Query(None, ge=1, le=12),
+        year: int | None = Query(None, ge=2000),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -127,8 +129,8 @@ def get_user_history(
 
 @router.get("/team-hours", response_model=TeamHoursResponse)
 def get_team_hours(
-        month: Optional[int] = Query(None, ge=1, le=12),
-        year: Optional[int] = Query(None, ge=2000),
+        month: int | None = Query(None, ge=1, le=12),
+        year: int | None = Query(None, ge=2000),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -146,7 +148,7 @@ def get_team_hours(
 def export_monthly_report_excel(
         month: int = Query(None, ge=1, le=12),
         year: int = Query(None, ge=2000),
-        employee_ids: Optional[List[int]] = Query(None),
+        employee_ids: list[int] | None = Query(None),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_active_user)
 ):

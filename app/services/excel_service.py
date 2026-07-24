@@ -1,14 +1,14 @@
 import os
 import re
 from io import BytesIO
+
 from openpyxl import Workbook
-from openpyxl.cell.rich_text import TextBlock, CellRichText
+from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 from openpyxl.drawing.image import Image as OpenpyxlImage
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
 
 from app.core.config import settings
 from app.domain.models.user import User
@@ -133,8 +133,8 @@ class ExcelService:
             detail="Funcionários só podem gerar relatório Excel do mês atual ou do mês anterior."
         )
 
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: Optional[List[int]] = None,
-                              current_user: Optional[User] = None) -> BytesIO:
+    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: list[int] | None = None,
+                              current_user: User | None = None) -> BytesIO:
         if current_user:
             self._validate_employee_report_period(current_user, month, year)
             
@@ -195,7 +195,7 @@ class ExcelService:
                 else:
                     ws.cell(row=row, column=c_idx).border = self.border_top_bottom
 
-    def _insert_header(self, ws, company, logo_path: Optional[str]):
+    def _insert_header(self, ws, company, logo_path: str | None):
         company_name = company.name if company else "Empresa Não Cadastrada"
         company_cnpj = self._format_cnpj(company.cnpj if company else "")
         company_phone = self._format_phone(company.phone if company else "")
@@ -261,7 +261,7 @@ class ExcelService:
         ws.cell(row=note_row2, column=1).font = self.font_italic
         ws.append([""])
 
-    def _merge_for_table(self, ws, row, merges: List[int], texts: List[any], font, alignment, fill=None, borders=True):
+    def _merge_for_table(self, ws, row, merges: list[int], texts: list[any], font, alignment, fill=None, borders=True):
         col = 1
         for i, width in enumerate(merges):
             end_col = col + width - 1

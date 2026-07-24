@@ -4,9 +4,8 @@ from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import parseaddr, formataddr
+from email.utils import formataddr, parseaddr
 from io import BytesIO
-from typing import Optional, List, Tuple
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def send_payroll_email(self, db, action: str, user_name: str, month: int, year: int,
-                           attachment: Optional[BytesIO] = None):
+                           attachment: BytesIO | None = None):
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             logger.warning("SMTP not configured. Skipping payroll email.")
             return
@@ -71,7 +70,7 @@ class EmailService:
         except Exception as e:
             logger.exception(f"Failed to send payroll email: {e}")
 
-    def send_email(self, to_emails: List[str], attachments: List[Tuple[str, str]], report_html: str,
+    def send_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
                    period_text: str) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]) or not to_emails:
             return False
@@ -124,10 +123,10 @@ class EmailService:
 
     def _build_payroll_message(
             self,
-            to_emails: List[str],
+            to_emails: list[str],
             subject: str,
             body_html: str,
-            attachment: Optional[BytesIO],
+            attachment: BytesIO | None,
             month: int,
             year: int
     ) -> MIMEMultipart:
@@ -147,8 +146,8 @@ class EmailService:
 
     def _build_backup_message(
             self,
-            to_emails: List[str],
-            attachments: List[Tuple[str, str]],
+            to_emails: list[str],
+            attachments: list[tuple[str, str]],
             report_html: str,
             period_text: str
     ) -> MIMEMultipart:

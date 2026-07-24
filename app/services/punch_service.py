@@ -1,8 +1,8 @@
 import logging
+
 from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.services.audit_service import audit_service
 from app.services.time_record_service import time_record_service
@@ -10,8 +10,8 @@ from app.services.time_record_service import time_record_service
 logger = logging.getLogger(__name__)
 
 class PunchService:
-    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: Optional[str] = None,
-                                request: Optional[Request] = None):
+    def process_biometric_punch(self, db: Session, sensor_index: int, ip_address: str | None = None,
+                                request: Request | None = None):
         try:
             from app.domain.models.biometric import UserBiometric
             biometric = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_index).first()

@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -7,8 +6,8 @@ from pydantic import BaseModel, ConfigDict
 class RoutineLogBase(BaseModel):
     routine_type: str
     status: str
-    target_date: Optional[date] = None
-    details: Optional[str] = None
+    target_date: date | None = None
+    details: str | None = None
 
 
 class RoutineLogCreate(RoutineLogBase):

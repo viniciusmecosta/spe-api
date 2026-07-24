@@ -1,9 +1,10 @@
 import logging
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -101,8 +102,7 @@ class RoutineOrchestrator:
                 if last_success and last_success.target_date:
                     start_date = last_success.target_date + timedelta(days=1)
 
-                if start_date > yesterday:
-                    start_date = yesterday
+                start_date = min(start_date, yesterday)
 
                 report_text = telegram_service.generate_report_text(db_read, start_date, yesterday)
         except SQLAlchemyError as e:
@@ -191,8 +191,7 @@ class RoutineOrchestrator:
                 if last_success and last_success.target_date:
                     start_date = last_success.target_date + timedelta(days=1)
 
-                if start_date > yesterday:
-                    start_date = yesterday
+                start_date = min(start_date, yesterday)
 
                 full_report_html, attachments, period_text = self._generate_daily_backup_report(db_read, start_date,
                                                                                                 yesterday)

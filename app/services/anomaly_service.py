@@ -1,11 +1,16 @@
 import calendar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional
 
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import RecordType, UserRole, AdjustmentType, AdjustmentStatus
+from app.domain.models.enums import (
+    AdjustmentStatus,
+    AdjustmentType,
+    RecordType,
+    UserRole,
+)
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.anomaly import AnomalyResponse
@@ -18,7 +23,7 @@ class AnomalyService:
         minutes = total_minutes % 60
         return f"{hours}h{minutes:02d}"
 
-    def _check_missing_entries_exits(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+    def _check_missing_entries_exits(self, user_id: int, user_name: str, current_date: date, records: list) -> list[
         AnomalyResponse]:
         anomalies = []
         if records and records[0].record_type == RecordType.EXIT:
@@ -33,7 +38,7 @@ class AnomalyService:
             ))
         return anomalies
 
-    def _check_consecutive_records(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+    def _check_consecutive_records(self, user_id: int, user_name: str, current_date: date, records: list) -> list[
         AnomalyResponse]:
         anomalies = []
         for i in range(1, len(records)):
@@ -51,7 +56,7 @@ class AnomalyService:
                 ))
         return anomalies
 
-    def _check_long_intervals(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+    def _check_long_intervals(self, user_id: int, user_name: str, current_date: date, records: list) -> list[
         AnomalyResponse]:
         anomalies = []
         last_entry_time = None
@@ -70,15 +75,15 @@ class AnomalyService:
                 last_entry_time = None
         return anomalies
 
-    def _check_consecutive_and_long_intervals(self, user_id: int, user_name: str, current_date: date, records: List) -> \
-            List[AnomalyResponse]:
+    def _check_consecutive_and_long_intervals(self, user_id: int, user_name: str, current_date: date, records: list) -> \
+            list[AnomalyResponse]:
         anomalies = []
         anomalies.extend(self._check_consecutive_records(user_id, user_name, current_date, records))
         anomalies.extend(self._check_long_intervals(user_id, user_name, current_date, records))
         return anomalies
 
-    def _check_unapproved_adjustments(self, user_id: int, user_name: str, current_date: date, day_adjustments: List,
-                                      expected_entry_time) -> List[AnomalyResponse]:
+    def _check_unapproved_adjustments(self, user_id: int, user_name: str, current_date: date, day_adjustments: list,
+                                      expected_entry_time) -> list[AnomalyResponse]:
         anomalies = []
         for adj in day_adjustments:
             if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
@@ -95,9 +100,9 @@ class AnomalyService:
                 ))
         return anomalies
 
-    def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List,
-                             ignore_excessive_hours: bool = False, day_adjustments: List = None,
-                             expected_entry_time=None) -> List[AnomalyResponse]:
+    def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: list,
+                             ignore_excessive_hours: bool = False, day_adjustments: list = None,
+                             expected_entry_time=None) -> list[AnomalyResponse]:
         if day_adjustments is None:
             day_adjustments = []
         anomalies = []
@@ -130,8 +135,8 @@ class AnomalyService:
         return anomalies
 
     def _build_data_maps(self, records_flat, extra_time_adjustments, target_user_ids):
-        records_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
-        adj_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
+        records_map: dict[int, dict[date, list]] = {uid: {} for uid in target_user_ids}
+        adj_map: dict[int, dict[date, list]] = {uid: {} for uid in target_user_ids}
 
         for record in records_flat:
             uid = record.user_id
@@ -185,8 +190,8 @@ class AnomalyService:
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
-                      ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: int | None = None,
+                      ignore_excessive_hours: bool = False) -> list[AnomalyResponse]:
         if user_id:
             user = user_repository.get(db, user_id)
             users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
@@ -214,8 +219,8 @@ class AnomalyService:
         records_map, adj_map = self._build_data_maps(records_flat, extra_time_adjustments, target_user_ids)
         return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours)
 
-    def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: Optional[int] = None,
-                               ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+    def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: int | None = None,
+                               ignore_excessive_hours: bool = False) -> list[AnomalyResponse]:
         today = date.today()
         try:
             _, last_day = calendar.monthrange(year, month)
@@ -225,8 +230,7 @@ class AnomalyService:
         start_date = date(year, month, 1)
         end_date = date(year, month, last_day)
 
-        if end_date > today:
-            end_date = today
+        end_date = min(end_date, today)
 
         if start_date > end_date:
             return []

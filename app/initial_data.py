@@ -1,4 +1,5 @@
 import logging
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 

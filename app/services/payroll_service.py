@@ -1,9 +1,9 @@
 from datetime import date, datetime
-from fastapi import BackgroundTasks
-from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import Any
 from zoneinfo import ZoneInfo
+
+from fastapi import BackgroundTasks, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -14,7 +14,7 @@ from app.services.email_service import dispatch_payroll_email
 
 
 class PayrollService:
-    def _build_history(self, month_closures: List) -> List[Dict[str, Any]]:
+    def _build_history(self, month_closures: list) -> list[dict[str, Any]]:
         history = []
         for h in month_closures:
             history.append({
@@ -35,7 +35,7 @@ class PayrollService:
         history.sort(key=lambda x: x["timestamp"], reverse=True)
         return history
 
-    def _build_period_response(self, mo: int, year: int, closures_by_month: Dict) -> Dict[str, Any]:
+    def _build_period_response(self, mo: int, year: int, closures_by_month: dict) -> dict[str, Any]:
         history = []
         active_closure = None
 
@@ -67,7 +67,7 @@ class PayrollService:
                 "history": history
             }
 
-    def list_periods(self, db: Session, year: int) -> List[Dict[str, Any]]:
+    def list_periods(self, db: Session, year: int) -> list[dict[str, Any]]:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         current_year = now.year

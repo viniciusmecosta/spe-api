@@ -1,17 +1,15 @@
-from typing import List
-
-from fastapi import APIRouter, Depends, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_current_maintainer, verify_device_api_key
-from app.schemas.firmware import FirmwareResponse, FirmwareListResponse
+from app.api.deps import get_current_maintainer, get_db, verify_device_api_key
+from app.schemas.firmware import FirmwareListResponse, FirmwareResponse
 from app.services.firmware_service import firmware_service
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[FirmwareListResponse])
+@router.get("/", response_model=list[FirmwareListResponse])
 def list_firmwares(
         db: Session = Depends(get_db),
         current_user=Depends(get_current_maintainer)

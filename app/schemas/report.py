@@ -1,31 +1,31 @@
 from datetime import date
+
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 class PunchDetail(BaseModel):
     id: int
     time: str
     record_type: str
-    ip_address: Optional[str] = None
-    device_name: Optional[str] = None
-    platform: Optional[str] = None
-    biometric_id: Optional[int] = None
-    edited_by: Optional[str] = None
-    edit_justification: Optional[str] = None
+    ip_address: str | None = None
+    device_name: str | None = None
+    platform: str | None = None
+    biometric_id: int | None = None
+    edited_by: str | None = None
+    edit_justification: str | None = None
 
 class DailyReportItem(BaseModel):
     date: date
     day_name: str
     is_holiday: bool
-    holiday_name: Optional[str] = None
+    holiday_name: str | None = None
     is_weekend: bool
     status: str
-    entries: List[str]
-    exits: List[str]
-    punches: List[str]
-    detailed_punches: Optional[List[PunchDetail]] = None
-    adjustment_id: Optional[int] = None
+    entries: list[str]
+    exits: list[str]
+    punches: list[str]
+    detailed_punches: list[PunchDetail] | None = None
+    adjustment_id: int | None = None
     worked_hours: float
     expected_hours: float
     balance_hours: float
@@ -53,12 +53,12 @@ class UserPayrollSummary(BaseModel):
 
 class AdvancedUserReportResponse(BaseModel):
     summary: UserPayrollSummary
-    daily_details: List[DailyReportItem]
+    daily_details: list[DailyReportItem]
 
 class MonthlyReportResponse(BaseModel):
     month: int
     year: int
-    payroll_data: List[UserPayrollSummary]
+    payroll_data: list[UserPayrollSummary]
 
 class DashboardMetricsResponse(BaseModel):
     total_active_employees: int
@@ -70,12 +70,12 @@ class HistoryPunch(BaseModel):
     id: int
     time: str
     record_type: str
-    ip_address: Optional[str] = None
-    device_name: Optional[str] = None
-    platform: Optional[str] = None
-    biometric_id: Optional[int] = None
-    edited_by: Optional[str] = None
-    edit_justification: Optional[str] = None
+    ip_address: str | None = None
+    device_name: str | None = None
+    platform: str | None = None
+    biometric_id: int | None = None
+    edited_by: str | None = None
+    edit_justification: str | None = None
 
 class HistoryDay(BaseModel):
     date: date
@@ -84,19 +84,19 @@ class HistoryDay(BaseModel):
     is_weekend: bool
     is_absent: bool
     status: str
-    holiday_name: Optional[str] = None
+    holiday_name: str | None = None
     worked_time: str
-    punches: List[HistoryPunch]
+    punches: list[HistoryPunch]
     has_anomaly: bool
-    anomalies: List[str]
-    abono_hours: Optional[float] = None
-    abono_id: Optional[int] = None
+    anomalies: list[str]
+    abono_hours: float | None = None
+    abono_id: int | None = None
 
 class HistoryResponse(BaseModel):
     month: int
     year: int
     total_worked_time: str
-    days: List[HistoryDay]
+    days: list[HistoryDay]
 
 class TodayPunch(BaseModel):
     id: int
@@ -114,9 +114,9 @@ class Aniversariante(BaseModel):
 class MyDashboardResponse(BaseModel):
     full_name: str
     next_punch_type: str
-    today_punches: List[TodayPunch]
-    month_anomalies: List[AnomalyItem]
-    aniversariantes_do_mes: List[Aniversariante] = []
+    today_punches: list[TodayPunch]
+    month_anomalies: list[AnomalyItem]
+    aniversariantes_do_mes: list[Aniversariante] = []
 
 class EmployeeHours(BaseModel):
     user_id: int
@@ -129,4 +129,4 @@ class TeamHoursResponse(BaseModel):
     year: int
     team_total_hours: float
     team_formatted_time: str
-    employees: List[EmployeeHours]
+    employees: list[EmployeeHours]
