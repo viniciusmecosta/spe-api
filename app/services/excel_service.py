@@ -1,20 +1,24 @@
 import os
 import re
 from io import BytesIO
-from typing import List, Optional
-
 from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.drawing.image import Image as OpenpyxlImage
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.cell.rich_text import TextBlock, CellRichText
 from openpyxl.cell.text import InlineFont
+from openpyxl.drawing.image import Image as OpenpyxlImage
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
+from typing import List, Optional
 
 from app.core.config import settings
 from app.domain.models.user import User
 from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
+from app.utils.formatters import format_short_name
+
+FONT_NAME = "Times New Roman"
+TIME_FORMAT = "[h]:mm"
+NOT_REGISTERED = "Não registrado"
 
 
 class ExcelService:
@@ -22,21 +26,19 @@ class ExcelService:
         self._setup_styles()
 
     def _setup_styles(self):
-        # Base font Times New Roman - all black
-        self.font_regular = Font(name="Times New Roman", size=11, color="000000")
-        self.font_bold = Font(name="Times New Roman", size=11, bold=True, color="000000")
-        self.font_italic = Font(name="Times New Roman", size=11, italic=True, color="64748B")
-        
-        self.font_title_large = Font(name="Times New Roman", size=16, bold=True, color="000000")
-        self.font_subtitle = Font(name="Times New Roman", size=12, bold=True, color="000000")
-        
-        self.font_key = Font(name="Times New Roman", size=11, bold=True, color="000000")
-        self.font_val = Font(name="Times New Roman", size=11, color="000000")
-        
-        self.header_font = Font(name="Times New Roman", size=11, bold=True, color="FFFFFF")
+        self.font_regular = Font(name=FONT_NAME, size=11, color="000000")
+        self.font_bold = Font(name=FONT_NAME, size=11, bold=True, color="000000")
+        self.font_italic = Font(name=FONT_NAME, size=11, italic=True, color="64748B")
+
+        self.font_title_large = Font(name=FONT_NAME, size=16, bold=True, color="000000")
+        self.font_subtitle = Font(name=FONT_NAME, size=12, bold=True, color="000000")
+
+        self.font_key = Font(name=FONT_NAME, size=11, bold=True, color="000000")
+        self.font_val = Font(name=FONT_NAME, size=11, color="000000")
+
+        self.header_font = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
         self.header_fill = PatternFill(start_color="475569", end_color="475569", fill_type="solid")
         
-        # Standard Borders
         thin = Side(style='thin', color="CBD5E1")
         self.border_standard = Border(left=thin, right=thin, top=thin, bottom=thin)
         self.border_top_bottom = Border(top=thin, bottom=thin)
@@ -49,11 +51,10 @@ class ExcelService:
         self.fill_excused = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
         self.fill_section_title = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
 
-        # Fonts for statuses - no bold, all regular, all black
-        self.font_absence = Font(name="Times New Roman", size=11, bold=False, color="000000")
-        self.font_excused = Font(name="Times New Roman", size=11, bold=False, color="000000")
-        self.font_holiday = Font(name="Times New Roman", size=11, bold=False, color="000000")
-        self.font_weekend = Font(name="Times New Roman", size=11, bold=False, color="000000")
+        self.font_absence = Font(name=FONT_NAME, size=11, bold=False, color="000000")
+        self.font_excused = Font(name=FONT_NAME, size=11, bold=False, color="000000")
+        self.font_holiday = Font(name=FONT_NAME, size=11, bold=False, color="000000")
+        self.font_weekend = Font(name=FONT_NAME, size=11, bold=False, color="000000")
 
         self.align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
         self.align_left = Alignment(horizontal='left', vertical='center', wrap_text=True)
@@ -67,15 +68,15 @@ class ExcelService:
             ws.column_dimensions[get_column_letter(col)].width = self.COL_WIDTH
 
     def _format_cnpj(self, cnpj: str) -> str:
-        if not cnpj: return "Não registrado"
-        c = re.sub(r'[^0-9]', '', cnpj)
+        if not cnpj: return NOT_REGISTERED
+        c = re.sub(r'\D', '', cnpj)
         if len(c) == 14:
             return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
         return cnpj
 
     def _format_phone(self, phone: str) -> str:
-        if not phone: return "Não registrado"
-        p = re.sub(r'[^0-9]', '', phone)
+        if not phone: return NOT_REGISTERED
+        p = re.sub(r'\D', '', phone)
         if len(p) == 11:
             return f"({p[:2]}) {p[2:7]}-{p[7:]}"
         elif len(p) == 10:
@@ -168,7 +169,6 @@ class ExcelService:
         return output
         
     def _apply_key_value(self, ws, row, start_col, key_text, key_width, val_text, val_width, borders=False):
-        # Key
         key_end = start_col + key_width - 1
         ws.merge_cells(start_row=row, start_column=start_col, end_row=row, end_column=key_end)
         c_key = ws.cell(row=row, column=start_col)
@@ -176,7 +176,6 @@ class ExcelService:
         c_key.font = self.font_key
         c_key.alignment = self.align_right
         
-        # Value
         val_start = key_end + 1
         val_end = val_start + val_width - 1
         ws.merge_cells(start_row=row, start_column=val_start, end_row=row, end_column=val_end)
@@ -200,12 +199,11 @@ class ExcelService:
         company_name = company.name if company else "Empresa Não Cadastrada"
         company_cnpj = self._format_cnpj(company.cnpj if company else "")
         company_phone = self._format_phone(company.phone if company else "")
-        company_address = company.address if company else "Não registrado"
+        company_address = company.address if company else NOT_REGISTERED
 
-        # Título da Seção da Empresa (Form Block) com CNPJ na mesma célula
-        font_large = InlineFont(sz=16, b=True, rFont="Times New Roman", color="000000")
-        font_cnpj_key = InlineFont(sz=11, b=True, rFont="Times New Roman", color="000000")
-        font_cnpj_val = InlineFont(sz=11, b=False, rFont="Times New Roman", color="000000")
+        font_large = InlineFont(sz=16, b=True, rFont=FONT_NAME, color="000000")
+        font_cnpj_key = InlineFont(sz=11, b=True, rFont=FONT_NAME, color="000000")
+        font_cnpj_val = InlineFont(sz=11, b=False, rFont=FONT_NAME, color="000000")
         
         rt = CellRichText(
             TextBlock(font_large, f"{company_name}\n"),
@@ -234,7 +232,6 @@ class ExcelService:
         ws.row_dimensions[row_mid].height = 51
         ws.row_dimensions[row_end].height = 12
 
-        # Row: Telefone e Endereço (perfectly balanced: 12 + 12 columns)
         ws.append([""])
         row_tel = ws.max_row
         self._apply_key_value(ws, row_tel, start_col=1, key_text="Telefone:", key_width=4, val_text=company_phone, val_width=8, borders=True)
@@ -271,7 +268,6 @@ class ExcelService:
             if width > 1:
                 ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
             
-            # Apply border to ALL cells in the merge group
             for c_idx in range(col, end_col + 1):
                 cell = ws.cell(row=row, column=c_idx)
                 if borders:
@@ -294,7 +290,6 @@ class ExcelService:
         self._set_columns_width(ws_summary)
         self._insert_header(ws_summary, company, logo_path)
 
-        # Title Form Block
         subtitle = f"Resumo de Gestão - {self._get_month_name(month).capitalize()} de {year}"
         ws_summary.append([subtitle])
         title_row = ws_summary.max_row
@@ -307,7 +302,6 @@ class ExcelService:
             ws_summary.cell(row=title_row, column=c_idx).fill = self.fill_section_title
         ws_summary.append([""])
 
-        # Table configuration
         merges = [14, 5, 5]
         ws_summary.append([""])
         header_row = ws_summary.max_row
@@ -332,38 +326,30 @@ class ExcelService:
             ]
             self._merge_for_table(ws_summary, row, merges, texts, self.font_regular, self.align_center)
             ws_summary.cell(row=row, column=1).alignment = self.align_left
-            ws_summary.cell(row=row, column=20).number_format = '[h]:mm'
+            ws_summary.cell(row=row, column=20).number_format = TIME_FORMAT
 
         self._append_notes(ws_summary)
 
     def _build_employee_sheet(self, wb, user, report, month, year, company, logo_path):
-        name_parts = user.name.split()
-        sheet_name = name_parts[0]
-        for part in name_parts[1:]:
-            if len(part) >= 3:
-                sheet_name = f"{name_parts[0]} {part[:3]}"
-                break
+        short_name = format_short_name(user.name)
         
-        ws_det = wb.create_sheet(title=sheet_name[:31])
+        ws_det = wb.create_sheet(title=short_name[:31])
         self._set_columns_width(ws_det)
 
-        # 1. Company Header (Now fully boxed)
         self._insert_header(ws_det, company, logo_path)
 
-        # 2. Folha de Ponto Title Form Block
         title_text = f"Folha de Ponto - {self._get_month_name(month).capitalize()} de {year}"
         ws_det.append([title_text])
         title_row = ws_det.max_row
         ws_det.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=self.MAX_COLS)
         c = ws_det.cell(row=title_row, column=1)
-        c.font = self.font_subtitle # Smaller than company name
+        c.font = self.font_subtitle
         c.alignment = self.align_center
         for c_idx in range(1, self.MAX_COLS + 1):
             ws_det.cell(row=title_row, column=c_idx).border = self.border_standard
             ws_det.cell(row=title_row, column=c_idx).fill = self.fill_section_title
         ws_det.append([""])
 
-        # 3. Dados do Funcionário
         ws_det.append(["Dados do Funcionário"])
         func_title_row = ws_det.max_row
         ws_det.merge_cells(start_row=func_title_row, start_column=1, end_row=func_title_row, end_column=self.MAX_COLS)
@@ -374,10 +360,10 @@ class ExcelService:
             ws_det.cell(row=func_title_row, column=c_idx).border = self.border_standard
             ws_det.cell(row=func_title_row, column=c_idx).fill = self.fill_section_title
 
-        user_cpf = user.cpf or "Não registrado"
-        user_pis = user.pis or "Não registrado"
-        user_telefone = self._format_phone(user.phone) if hasattr(user, 'phone') and user.phone else "Não registrado"
-        user_endereco = user.endereco or "Não registrado"
+        user_cpf = user.cpf or NOT_REGISTERED
+        user_pis = user.pis or NOT_REGISTERED
+        user_telefone = self._format_phone(user.phone) if hasattr(user, 'phone') and user.phone else NOT_REGISTERED
+        user_endereco = user.endereco or NOT_REGISTERED
         
         ws_det.append([""])
         info_row1 = ws_det.max_row
@@ -403,69 +389,70 @@ class ExcelService:
         total_trab_real = 0.0
 
         for day in report.daily_details:
-            punches_str = " | ".join(day.punches)
-            if day.is_holiday:
-                holiday_label = day.holiday_name or "Feriado"
-                if not punches_str:
-                    punches_str = holiday_label
-                else:
-                    punches_str = f"{holiday_label} ({punches_str})"
-
-            ws_det.append([""])
-            last_row = ws_det.max_row
-            
-            trab_liquido = self._time_str_to_fraction(day.worked_time)
-            extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
-            trab_bruto = trab_liquido + extra_nao_aut
-            
+            trab_bruto, extra, trab_liquido = self._build_day_row(ws_det, day, merges)
             total_trab_bruto += trab_bruto
-            total_extra += extra_nao_aut
+            total_extra += extra
             total_trab_real += trab_liquido
-
-            texts = [
-                day.date.strftime("%d/%m/%Y"),
-                day.day_name,
-                day.status,
-                punches_str,
-                trab_bruto,
-                extra_nao_aut,
-                trab_liquido
-            ]
-            
-            fill_to_apply = None
-            font_to_apply = self.font_regular
-            if day.is_holiday:
-                fill_to_apply = self.fill_holiday
-                font_to_apply = self.font_holiday
-            elif day.is_weekend:
-                fill_to_apply = self.fill_weekend
-                font_to_apply = self.font_weekend
-            if "Falta" in day.status:
-                fill_to_apply = self.fill_absence
-                font_to_apply = self.font_absence
-            elif "Atestado" in day.status or "Abonado" in day.status:
-                fill_to_apply = self.fill_excused
-                font_to_apply = self.font_excused
-
-            self._merge_for_table(ws_det, last_row, merges, texts, self.font_regular, self.align_center, fill=fill_to_apply)
-            
-            # overwrite specific font for status column (which starts at col 7)
-            ws_det.cell(row=last_row, column=7).font = font_to_apply
-            
-            # number format for time cols
-            ws_det.cell(row=last_row, column=18).number_format = '[h]:mm'
-            ws_det.cell(row=last_row, column=20).number_format = '[h]:mm'
-            ws_det.cell(row=last_row, column=22).number_format = '[h]:mm'
 
         ws_det.append([""])
         last_row = ws_det.max_row
         texts = ["TOTAIS", "", "", "", total_trab_bruto, total_extra, total_trab_real]
         self._merge_for_table(ws_det, last_row, merges, texts, self.font_bold, self.align_center)
-        ws_det.cell(row=last_row, column=18).number_format = '[h]:mm'
-        ws_det.cell(row=last_row, column=20).number_format = '[h]:mm'
-        ws_det.cell(row=last_row, column=22).number_format = '[h]:mm'
-        
-        # 5. Notas no fim da página
+        ws_det.cell(row=last_row, column=18).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=20).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=22).number_format = TIME_FORMAT
+
         self._append_notes(ws_det)
+
+    def _build_day_row(self, ws_det, day, merges) -> tuple:
+        punches_str = " | ".join(day.punches)
+        if day.is_holiday:
+            holiday_label = day.holiday_name or "Feriado"
+            if not punches_str:
+                punches_str = holiday_label
+            else:
+                punches_str = f"{holiday_label} ({punches_str})"
+
+        ws_det.append([""])
+        last_row = ws_det.max_row
+
+        trab_liquido = self._time_str_to_fraction(day.worked_time)
+        extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+        trab_bruto = trab_liquido + extra_nao_aut
+
+        texts = [
+            day.date.strftime("%d/%m/%Y"),
+            day.day_name,
+            day.status,
+            punches_str,
+            trab_bruto,
+            extra_nao_aut,
+            trab_liquido
+        ]
+
+        fill_to_apply = None
+        font_to_apply = self.font_regular
+        if day.is_holiday:
+            fill_to_apply = self.fill_holiday
+            font_to_apply = self.font_holiday
+        elif day.is_weekend:
+            fill_to_apply = self.fill_weekend
+            font_to_apply = self.font_weekend
+        if "Falta" in day.status:
+            fill_to_apply = self.fill_absence
+            font_to_apply = self.font_absence
+        elif "Atestado" in day.status or "Abonado" in day.status:
+            fill_to_apply = self.fill_excused
+            font_to_apply = self.font_excused
+
+        self._merge_for_table(ws_det, last_row, merges, texts, self.font_regular, self.align_center, fill=fill_to_apply)
+
+        ws_det.cell(row=last_row, column=7).font = font_to_apply
+
+        ws_det.cell(row=last_row, column=18).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=20).number_format = TIME_FORMAT
+        ws_det.cell(row=last_row, column=22).number_format = TIME_FORMAT
+
+        return trab_bruto, extra_nao_aut, trab_liquido
 
 excel_service = ExcelService()

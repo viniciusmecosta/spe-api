@@ -8,21 +8,19 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.models.enums import RecordType, UserRole, AdjustmentType
+from app.domain.models.enums import UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.report import (
     MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse,
-    DailyReportItem, DashboardMetricsResponse, PunchDetail,
-    HistoryResponse, HistoryDay, HistoryPunch, MyDashboardResponse, TodayPunch, AnomalyItem,
-    TeamHoursResponse, EmployeeHours, Aniversariante
+    DailyReportItem, PunchDetail,
+    HistoryResponse, HistoryDay, HistoryPunch
 )
 from app.services.anomaly_service import anomaly_service
-from app.services.template_service import template_service
+from app.utils.formatters import get_weekday_name
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +37,6 @@ class ReportService:
         end_date = date(year, month, last_day)
         return start_date, end_date
 
-    def _get_day_name(self, dt: date) -> str:
-        days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-        return days[dt.isoweekday() % 7]
-
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
@@ -56,178 +50,212 @@ class ReportService:
             query = query.filter(User.id.in_(employee_ids))
         return query
 
-    def get_dashboard_metrics(self, db: Session) -> DashboardMetricsResponse:
-        tz = ZoneInfo(settings.TIMEZONE)
-        today = datetime.now(tz).date()
+    def _build_history_day(
+            self,
+            current: date,
+            today_date: date,
+            records: List[TimeRecord],
+            holidays: List,
+            anomalies: List,
+            period_result,
+            is_manager: bool
+    ) -> HistoryDay:
+        day_records = [r for r in records if r.record_datetime.date() == current]
+        day_records.sort(key=lambda x: x.record_datetime)
 
-        active_users = db.query(User).filter(
-            User.is_active.is_(True),
-            User.role == UserRole.EMPLOYEE,
-            User.is_exempt_from_rules.is_(False)
-        ).count()
+        holiday = next((h for h in holidays if h.date == current), None)
 
-        pending = adjustment_repository.count_pending(db)
+        if current < today_date:
+            day_anomalies = [a for a in anomalies if a.date == current]
+        else:
+            day_anomalies = []
 
-        today_start = datetime.combine(today, datetime.min.time(), tzinfo=tz)
-        today_end = datetime.combine(today, datetime.max.time(), tzinfo=tz)
+        daily_res = period_result.daily_results[current]
+        worked_seconds = daily_res.net_worked_seconds
+        abono = period_result.daily_waivers[current]
 
-        present = time_record_repository.count_unique_users_in_range(db, today_start, today_end)
-
-        return DashboardMetricsResponse(
-            total_active_employees=active_users,
-            pending_adjustments=pending,
-            employees_present_today=present,
-            date=today
-        )
-
-    def _format_short_name(self, full_name: str) -> str:
-        if not full_name:
-            return ""
-        parts = full_name.split()
-        if len(parts) <= 1:
-            return full_name
-        first_name = parts[0]
-        for part in parts[1:]:
-            if len(part) > 2:
-                return f"{first_name} {part}"
-        return f"{first_name} {parts[1]}"
-
-    def generate_daily_report_html(self, db: Session, target_date: date) -> str:
-        try:
-            formatted_date = target_date.strftime("%d/%m/%Y")
-            day_name_map = {
-                0: "Segunda-feira", 1: "Terça-feira", 2: "Quarta-feira", 3: "Quinta-feira",
-                4: "Sexta-feira", 5: "Sábado", 6: "Domingo"
+        punches = []
+        for rec in day_records:
+            punch_data = {
+                "id": rec.id,
+                "time": rec.record_datetime.strftime("%H:%M"),
+                "record_type": rec.record_type.value,
             }
-            day_name = day_name_map[target_date.weekday()]
+            if is_manager:
+                punch_data.update({
+                    "ip_address": rec.ip_address,
+                    "device_name": rec.device_name,
+                    "platform": rec.platform,
+                    "biometric_id": rec.biometric_id,
+                    "edited_by": rec.editor_name,
+                    "edit_justification": rec.edit_justification if rec.edit_justification else None
+                })
+            punches.append(HistoryPunch(**punch_data))
 
-            start_local = datetime.combine(target_date, datetime.min.time())
-            end_local = datetime.combine(target_date, datetime.max.time())
+        day_name = get_weekday_name(current.weekday())
+        is_weekend = current.weekday() >= 5
 
-            records = (
-                db.query(TimeRecord, User)
-                .join(User, TimeRecord.user_id == User.id)
-                .filter(TimeRecord.record_datetime >= start_local)
-                .filter(TimeRecord.record_datetime <= end_local)
-                .filter(TimeRecord.is_ignored == False)
-                .order_by(User.name, TimeRecord.record_datetime)
-                .all()
-            )
+        if day_records:
+            status = "Normal"
+        elif holiday:
+            status = "Feriado"
+        elif is_weekend:
+            status = "Final de semana"
+        elif abono:
+            status = "Abonado"
+        elif current == today_date:
+            status = ""
+        else:
+            status = "Falta"
 
-            anomalies_list = anomaly_service.get_anomalies(db, target_date, target_date)
-            anomalies_descriptions = [f"<strong>{self._format_short_name(a.user_name)}</strong>: {a.description}" for a in anomalies_list]
+        total_minutes = int(round(worked_seconds / 60))
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        worked_time_str = f"{hours:02d}:{minutes:02d}"
 
-            if not records:
-                return template_service.get_daily_report_html(day_name, formatted_date, False, {},
-                                                              anomalies_descriptions)
+        anomalies_list = [a.description for a in day_anomalies]
 
-            user_activity = {}
-            for record, user in records:
-                short_name = self._format_short_name(user.name)
-                if short_name not in user_activity:
-                    user_activity[short_name] = []
-                time_str = record.record_datetime.strftime("%H:%M")
-                type_label = "E" if record.record_type == RecordType.ENTRY else "S"
-                user_activity[short_name].append({"time": time_str, "type": type_label})
+        return HistoryDay(
+            date=current,
+            day_name=day_name,
+            is_holiday=bool(holiday),
+            is_weekend=is_weekend,
+            is_absent=(status == "Falta"),
+            status=status,
+            holiday_name=holiday.name if holiday else None,
+            worked_time=worked_time_str,
+            punches=punches,
+            has_anomaly=len(anomalies_list) > 0,
+            anomalies=anomalies_list,
+            abono_hours=abono.amount_hours if abono else None,
+            abono_id=abono.id if abono and is_manager else None
+        )
 
-            return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity,
-                                                          anomalies_descriptions)
-        except (ValueError, TypeError, AttributeError) as e:
-            logger.error(f"Erro HTML Report: {e}")
-            return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
-
-    def get_my_dashboard(self, db: Session, current_user: User) -> MyDashboardResponse:
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        today_date = now.date()
-        start_of_month = date(now.year, now.month, 1)
-
-        start_dt_today = datetime.combine(today_date, datetime.min.time(), tzinfo=tz)
-        end_dt_today = datetime.combine(today_date, datetime.max.time(), tzinfo=tz)
-
-        today_records = time_record_repository.get_by_range(db, current_user.id, start_dt_today, end_dt_today)
-        today_records.sort(key=lambda x: x.record_datetime)
-
-        today_punches = []
-        for rec in today_records:
-            today_punches.append(TodayPunch(
+    def _build_daily_report_item(
+            def _build_detailed_punches(self, day_records: List[TimeRecord], is_maintainer: bool) -> List[PunchDetail]:
+        if not is_maintainer:
+            return []
+        detailed_punches = []
+        for rec in day_records:
+            detailed_punches.append(PunchDetail(
                 id=rec.id,
-                time=rec.record_datetime.strftime("%H:%M"),
-                record_type=rec.record_type.value
+                time=rec.record_datetime.strftime("%H:%M:%S"),
+                record_type=rec.record_type.value,
+                ip_address=rec.ip_address,
+                device_name=rec.device_name,
+                platform=rec.platform,
+                biometric_id=rec.biometric_id,
+                edited_by=rec.editor_name,
+                edit_justification=rec.edit_justification if rec.edit_justification else None
             ))
+        return detailed_punches
 
-        next_punch_type = "ENTRY"
-        if today_records:
-            last_record = today_records[-1]
-            if last_record.record_type == RecordType.ENTRY:
-                next_punch_type = "EXIT"
+    def _determine_daily_status(self, is_future: bool, is_holiday: bool, is_weekend: bool, is_waiver: bool,
+                                worked_seconds: float, expected_seconds: float, is_today: bool,
+                                has_schedule: bool) -> str:
+        if is_future:
+            if is_holiday:
+                return "Feriado"
+            elif is_weekend:
+                return "Fim de Semana"
+            return ""
+        if is_waiver:
+            return "Abonado/Atestado"
+        if is_holiday:
+            return "Feriado"
+        if is_weekend:
+            if worked_seconds > 0:
+                return "Normal"
+            return "Fim de Semana"
+        if worked_seconds == 0 and expected_seconds > 0:
+            if is_today:
+                return ""
+            return "Falta"
+        if not has_schedule and worked_seconds == 0:
+            return "-"
+        return "Normal"
 
-        month_anomalies = []
-        if today_date > start_of_month:
-            anomalies = anomaly_service.get_anomalies(
-                db, start_of_month, today_date - timedelta(days=1), current_user.id, ignore_excessive_hours=True
-            )
-            for a in anomalies:
-                month_anomalies.append(AnomalyItem(
-                    date=a.date.strftime("%d/%m/%Y"),
-                    description=a.description
-                ))
+    def _build_daily_report_item(
+            self,
+            current: date,
+            today_date: date,
+            all_records: List[TimeRecord],
+            holidays: List,
+            period_result,
+            has_schedule: bool,
+            is_maintainer: bool
+    ) -> DailyReportItem:
+        is_future = current > today_date
+        is_today = current == today_date
 
-        aniversariantes_query = db.query(User).filter(
-            User.is_active == True,
-            extract('month', User.data_nascimento) == now.month
-        ).all()
+        day_records = [r for r in all_records if r.record_datetime.date() == current]
+        day_records.sort(key=lambda x: x.record_datetime)
 
-        aniversariantes_do_mes = []
-        for a in aniversariantes_query:
-            if a.data_nascimento:
-                aniversariantes_do_mes.append(Aniversariante(
-                    nome=a.name,
-                    dia=a.data_nascimento.day
-                ))
+        holiday = next((h for h in holidays if h.date == current), None)
+        is_holiday = holiday is not None
+        holiday_name = holiday.name if holiday else None
 
-        aniversariantes_do_mes.sort(key=lambda x: x.dia)
+        daily_res = period_result.daily_results[current]
+        adjustment_day = period_result.daily_waivers[current]
 
-        return MyDashboardResponse(
-            full_name=current_user.name,
-            next_punch_type=next_punch_type,
-            today_punches=today_punches,
-            month_anomalies=month_anomalies,
-            aniversariantes_do_mes=aniversariantes_do_mes
+        is_waiver = adjustment_day is not None
+        adj_id = adjustment_day.id if adjustment_day else None
+        waiver_credit = daily_res.waiver_seconds
+
+        weekday = current.weekday()
+        is_weekend = weekday >= 5
+
+        expected_seconds = period_result.daily_expected_seconds[current]
+
+        worked_seconds = daily_res.net_worked_seconds
+        unapproved_extra_seconds = daily_res.unapproved_extra_seconds
+        entries = daily_res.entries
+        exits = daily_res.exits
+        punches = daily_res.punches
+
+        detailed_punches = self._build_detailed_punches(day_records, is_maintainer)
+
+        day_worked_hours = worked_seconds / 3600.0
+        day_expected_hours = expected_seconds / 3600.0
+
+        day_balance = 0.0
+        if has_schedule:
+            day_balance = day_worked_hours - day_expected_hours
+
+        day_extra = day_balance if day_balance > 0 else 0.0
+        day_missing = abs(day_balance) if day_balance < 0 else 0.0
+
+        status = self._determine_daily_status(
+            is_future, is_holiday, is_weekend, is_waiver, worked_seconds, expected_seconds, is_today, has_schedule
         )
+        if is_waiver:
+            formatted_waiver = self._format_duration(waiver_credit)
+            if formatted_waiver and formatted_waiver != "00:00":
+                punches.append(f"Abono: {formatted_waiver}")
 
-    def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:
-        query = db.query(User).options(joinedload(User.historical_schedules)).filter(
-            User.role == UserRole.EMPLOYEE,
-            User.is_exempt_from_rules.is_(False)
-        )
-        users = query.all()
+        worked_minutes_int = int(round(worked_seconds / 60))
 
-        employees_data = []
-        team_total_minutes = 0
-
-        for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
-            if report:
-                user_minutes = report.summary.total_worked_minutes
-                if user_minutes >= 60:
-                    user_hours_rounded = user_minutes // 60
-                    employees_data.append(EmployeeHours(
-                        user_id=user.id,
-                        short_name=user.name,
-                        total_hours=float(user_hours_rounded),
-                        formatted_time=f"{user_hours_rounded}h"
-                    ))
-                    team_total_minutes += user_minutes
-
-        t_hours = team_total_minutes // 60
-
-        return TeamHoursResponse(
-            month=month,
-            year=year,
-            team_total_hours=float(t_hours),
-            team_formatted_time=f"{t_hours}h",
-            employees=employees_data
+        return DailyReportItem(
+            date=current,
+            day_name=get_weekday_name(current.weekday()),
+            is_holiday=is_holiday,
+            holiday_name=holiday_name,
+            is_weekend=is_weekend,
+            status=status,
+            entries=entries,
+            exits=exits,
+            punches=punches,
+            detailed_punches=detailed_punches if is_maintainer else None,
+            adjustment_id=adj_id,
+            worked_hours=round(day_worked_hours, 2),
+            expected_hours=round(day_expected_hours, 2),
+            balance_hours=round(day_balance, 2),
+            extra_hours=round(day_extra, 2),
+            missing_hours=round(day_missing, 2),
+            worked_minutes=worked_minutes_int,
+            worked_time=self._format_duration(worked_seconds),
+            expected_time=self._format_duration(expected_seconds),
+            unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
         )
 
     def get_history_report(self, db: Session, user_id: int, month: Optional[int], year: Optional[int],
@@ -259,7 +287,6 @@ class ReportService:
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
-        adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
 
         ignore_excessive = (current_user.id == user_id)
         anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id,
@@ -267,134 +294,41 @@ class ReportService:
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
-        from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentStatus
-        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+        from app.domain.models.adjustment_request import AdjustmentRequest
+        all_adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
             AdjustmentRequest.deleted_at.is_(None)
         ).all()
 
-        total_worked_seconds = 0.0
         history_days = []
+
+        from app.services.time_calculation_service import time_calculation_service
+        period_result = time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=records,
+            adjustments=all_adjustments,
+            holidays=holidays,
+            historical_schedules=user.historical_schedules if user else []
+        )
 
         current = start_date
         while current <= end_date:
-            day_records = [r for r in records if r.record_datetime.date() == current]
-            day_records.sort(key=lambda x: x.record_datetime)
-
-            holiday = next((h for h in holidays if h.date == current), None)
-
-            if current < today_date:
-                day_anomalies = [a for a in anomalies if a.date == current]
-            else:
-                day_anomalies = []
-
-            abono = next((adj for adj in adjustments if
-                          adj.target_date == current and adj.adjustment_type == AdjustmentType.WAIVER), None)
-
-            worked_seconds = 0.0
-            entry_time = None
-            punches = []
-
-            for rec in day_records:
-                if rec.record_type == RecordType.ENTRY:
-                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
-                elif rec.record_type == RecordType.EXIT and entry_time:
-                    worked_seconds += (rec.record_datetime.replace(second=0, microsecond=0) - entry_time).total_seconds()
-                    entry_time = None
-
-                punch_data = {
-                    "id": rec.id,
-                    "time": rec.record_datetime.strftime("%H:%M"),
-                    "record_type": rec.record_type.value,
-                }
-                if is_manager:
-                    punch_data.update({
-                        "ip_address": rec.ip_address,
-                        "device_name": rec.device_name,
-                        "platform": rec.platform,
-                        "biometric_id": rec.biometric_id,
-                        "edited_by": rec.editor_name,
-                        "edit_justification": rec.edit_justification if rec.edit_justification else None
-                    })
-                punches.append(HistoryPunch(**punch_data))
-
-            if abono and abono.amount_hours:
-                worked_seconds += (abono.amount_hours * 3600)
-
-            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
-            unapproved_extra_seconds = 0.0
-            
-            for adj in day_unapproved_extras:
-                if adj.amount_hours:
-                    if adj.amount_hours > 24:
-                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
-                    else:
-                        unapproved_extra_seconds += adj.amount_hours * 3600
-            
-            expected_seconds = 0.0
-            if user and user.historical_schedules and not holiday:
-                valid_schedules = [
-                    s for s in user.historical_schedules
-                    if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
-                ]
-                schedule = next((s for s in valid_schedules if s.day_of_week == current.weekday()), None)
-                if schedule:
-                    expected_seconds = schedule.daily_hours * 3600
-
-            if unapproved_extra_seconds > 0:
-                if unapproved_extra_seconds > worked_seconds:
-                    unapproved_extra_seconds = worked_seconds
-                worked_seconds -= unapproved_extra_seconds
-
-            total_worked_seconds += worked_seconds
-
-            day_name = self._get_day_name(current)
-            is_weekend = current.weekday() >= 5
-
-            if day_records:
-                status = "Normal"
-            elif holiday:
-                status = "Feriado"
-            elif is_weekend:
-                status = "Final de semana"
-            elif abono:
-                status = "Abonado"
-            elif current == today_date:
-                status = ""
-            else:
-                status = "Falta"
-
-            total_minutes = int(round(worked_seconds / 60))
-            hours = total_minutes // 60
-            minutes = total_minutes % 60
-            worked_time_str = f"{hours:02d}:{minutes:02d}"
-
-            anomalies_list = [a.description for a in day_anomalies]
-
-            history_days.append(HistoryDay(
-                date=current,
-                day_name=day_name,
-                is_holiday=bool(holiday),
-                is_weekend=is_weekend,
-                is_absent=(status == "Falta"),
-                status=status,
-                holiday_name=holiday.name if holiday else None,
-                worked_time=worked_time_str,
-                punches=punches,
-                has_anomaly=len(anomalies_list) > 0,
-                anomalies=anomalies_list,
-                abono_hours=abono.amount_hours if abono else None,
-                abono_id=abono.id if abono and is_manager else None
-            ))
-
+            history_day = self._build_history_day(
+                current=current,
+                today_date=today_date,
+                records=records,
+                holidays=holidays,
+                anomalies=anomalies,
+                period_result=period_result,
+                is_manager=is_manager
+            )
+            history_days.append(history_day)
             current += timedelta(days=1)
 
-        total_month_minutes = int(round(total_worked_seconds / 60))
+        total_month_minutes = int(round(period_result.total_net_worked_seconds / 60))
         total_month_hours = total_month_minutes // 60
         month_minutes = total_month_minutes % 60
 
@@ -421,195 +355,56 @@ class ReportService:
 
         all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
-        approved_adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
+
+        from app.domain.models.adjustment_request import AdjustmentRequest
+        all_adjustments = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
 
         daily_details = []
-        total_worked_seconds = 0.0
-        total_expected_seconds = 0.0
-        total_extra_hours = 0.0
-        total_missing_hours = 0.0
         days_worked_count = 0
         absences_count = 0
 
         is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
 
-        from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentStatus
-        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id == user_id,
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
+        from app.services.time_calculation_service import time_calculation_service
+        period_result = time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=all_records,
+            adjustments=all_adjustments,
+            holidays=holidays,
+            historical_schedules=user.historical_schedules if user else []
+        )
+
+        total_worked_seconds = period_result.total_net_worked_seconds
+        total_expected_seconds = period_result.total_expected_seconds
+        total_extra_hours = 0.0
+        total_missing_hours = 0.0
 
         current = start_date
         while current <= end_date:
-            is_future = current > today_date
-            is_today = current == today_date
+            item = self._build_daily_report_item(
+                current=current,
+                today_date=today_date,
+                all_records=all_records,
+                holidays=holidays,
+                period_result=period_result,
+                has_schedule=has_schedule,
+                is_maintainer=is_maintainer
+            )
+            daily_details.append(item)
 
-            day_records = [r for r in all_records if r.record_datetime.date() == current]
-            day_records.sort(key=lambda x: x.record_datetime)
-
-            holiday = next((h for h in holidays if h.date == current), None)
-            is_holiday = holiday is not None
-            holiday_name = holiday.name if holiday else None
-
-            adjustment_day = next((adj for adj in approved_adjustments
-                                   if adj.target_date == current
-                                   and adj.adjustment_type == AdjustmentType.WAIVER),
-                                  None)
-            is_waiver = adjustment_day is not None
-            adj_id = adjustment_day.id if adjustment_day else None
-            is_excused = is_waiver
-
-            weekday = current.weekday()
-            is_weekend = weekday >= 5
-
-            expected_seconds = 0.0
-            if has_schedule and not is_holiday and not is_future:
-                valid_schedules = [
-                    s for s in user.historical_schedules
-                    if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
-                ]
-                schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
-                if schedule:
-                    expected_seconds = schedule.daily_hours * 3600
-
-            entries = []
-            exits = []
-            punches = []
-            detailed_punches = []
-            worked_seconds = 0.0
-            entry_time = None
-
-            for rec in day_records:
-                time_str = rec.record_datetime.strftime("%H:%M")
-                suffix = "(E)" if rec.record_type == RecordType.ENTRY else "(S)"
-                punches.append(f"{time_str} {suffix}")
-
-                if is_maintainer:
-                    detailed_punches.append(PunchDetail(
-                        id=rec.id,
-                        time=rec.record_datetime.strftime("%H:%M:%S"),
-                        record_type=rec.record_type.value,
-                        ip_address=rec.ip_address,
-                        device_name=rec.device_name,
-                        platform=rec.platform,
-                        biometric_id=rec.biometric_id,
-                        edited_by=rec.editor_name,
-                        edit_justification=rec.edit_justification if rec.edit_justification else None
-                    ))
-
-                if rec.record_type == RecordType.ENTRY:
-                    entries.append(time_str)
-                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
-                elif rec.record_type == RecordType.EXIT:
-                    exits.append(time_str)
-                    if entry_time:
-                        delta = rec.record_datetime.replace(second=0, microsecond=0) - entry_time
-                        seconds = delta.total_seconds()
-                        if seconds <= 86400:
-                            worked_seconds += seconds
-                        entry_time = None
-
-            waiver_credit = 0.0
-            if is_excused:
-                if adjustment_day.amount_hours and adjustment_day.amount_hours > 0:
-                    waiver_credit = adjustment_day.amount_hours * 3600
-                else:
-                    if expected_seconds > 0 and worked_seconds < expected_seconds:
-                        waiver_credit = expected_seconds - worked_seconds
-                worked_seconds += waiver_credit
-
-            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current]
-            unapproved_extra_seconds = 0.0
-            for adj in day_unapproved_extras:
-                if adj.amount_hours:
-                    if adj.amount_hours > 24:
-                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
-                    else:
-                        unapproved_extra_seconds += adj.amount_hours * 3600
-                        
-            if unapproved_extra_seconds > 0:
-                if unapproved_extra_seconds > worked_seconds:
-                    unapproved_extra_seconds = worked_seconds
-                worked_seconds -= unapproved_extra_seconds
-
-            if worked_seconds > 0:
+            if item.worked_hours > 0:
                 days_worked_count += 1
-
-            if worked_seconds == 0 and expected_seconds > 0 and not is_weekend and not is_holiday and not is_excused and not is_future and not is_today:
+            if item.worked_hours == 0 and item.expected_hours > 0 and not item.is_weekend and not item.is_holiday and not item.adjustment_id and current < today_date:
                 absences_count += 1
 
-            day_worked_hours = worked_seconds / 3600.0
-            day_expected_hours = expected_seconds / 3600.0
-
-            day_balance = 0.0
-            if has_schedule:
-                day_balance = day_worked_hours - day_expected_hours
-
-            day_extra = day_balance if day_balance > 0 else 0.0
-            day_missing = abs(day_balance) if day_balance < 0 else 0.0
-
-            total_worked_seconds += worked_seconds
-            total_expected_seconds += expected_seconds
-            total_extra_hours += day_extra
-            total_missing_hours += day_missing
-
-            status = "Normal"
-            if is_future:
-                if is_holiday:
-                    status = "Feriado"
-                elif is_weekend:
-                    status = "Fim de Semana"
-                else:
-                    status = ""
-            elif is_waiver:
-                formatted_waiver = self._format_duration(waiver_credit)
-                status = "Abonado/Atestado"
-                if formatted_waiver and formatted_waiver != "00:00":
-                    punches.append(f"Abono: {formatted_waiver}")
-            elif is_holiday:
-                status = "Feriado"
-            elif is_weekend:
-                if worked_seconds > 0:
-                    status = "Normal"
-                else:
-                    status = "Fim de Semana"
-            elif worked_seconds == 0 and expected_seconds > 0:
-                if is_today:
-                    status = ""
-                else:
-                    status = "Falta"
-            elif not has_schedule and worked_seconds == 0:
-                status = "-"
-
-            worked_minutes_int = int(round(worked_seconds / 60))
-
-            daily_details.append(DailyReportItem(
-                date=current,
-                day_name=self._get_day_name(current),
-                is_holiday=is_holiday,
-                holiday_name=holiday_name,
-                is_weekend=is_weekend,
-                status=status,
-                entries=entries,
-                exits=exits,
-                punches=punches,
-                detailed_punches=detailed_punches if is_maintainer else None,
-                adjustment_id=adj_id,
-                worked_hours=round(day_worked_hours, 2),
-                expected_hours=round(day_expected_hours, 2),
-                balance_hours=round(day_balance, 2),
-                extra_hours=round(day_extra, 2),
-                missing_hours=round(day_missing, 2),
-                worked_minutes=worked_minutes_int,
-                worked_time=self._format_duration(worked_seconds),
-                expected_time=self._format_duration(expected_seconds),
-                unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
-            ))
+            total_extra_hours += item.extra_hours
+            total_missing_hours += item.missing_hours
 
             current += timedelta(days=1)
 

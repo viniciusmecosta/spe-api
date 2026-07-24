@@ -1,17 +1,19 @@
 import logging
-from datetime import datetime, date, time
-from typing import Dict, List
-
 import requests
+from datetime import datetime, date, time
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from typing import Dict, List
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
+from app.utils.formatters import format_short_name
 
 logger = logging.getLogger(__name__)
+
+DATE_FORMAT = "%d/%m/%Y"
 
 
 class TelegramService:
@@ -33,10 +35,10 @@ class TelegramService:
             response = requests.post(url, data=payload, timeout=15)
             is_success = 200 <= response.status_code <= 299
             if not is_success:
-                logger.error(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
+                logger.exception(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
             return is_success
         except requests.exceptions.RequestException as e:
-            logger.error(f"Telegram send text error: {e}")
+            logger.exception(f"Telegram send text error: {e}")
             return False
 
     def send_document(self, file_path: str, caption: str) -> bool:
@@ -51,25 +53,17 @@ class TelegramService:
                 response = requests.post(url, data=payload, files=files, timeout=40)
             is_success = 200 <= response.status_code <= 299
             if not is_success:
-                logger.error(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
+                logger.exception(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
             return is_success
         except requests.exceptions.RequestException as e:
-            logger.error(f"Telegram send document error: {e}")
+            logger.exception(f"Telegram send document error: {e}")
             return False
-
-    def _format_name(self, full_name: str) -> str:
-        parts = full_name.split()
-        if len(parts) <= 1:
-            return full_name
-        first_name = parts[0]
-        second_name = next((p for p in parts[1:] if len(p) > 3), parts[1])
-        return f"{first_name} {second_name}"
 
     def generate_report_text(self, db: Session, start_date: date, end_date: date,
                              title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
-            fmt_start = start_date.strftime("%d/%m/%Y")
-            fmt_end = end_date.strftime("%d/%m/%Y")
+            fmt_start = start_date.strftime(DATE_FORMAT)
+            fmt_end = end_date.strftime(DATE_FORMAT)
 
             if start_date == end_date:
                 title_date = fmt_start
@@ -95,21 +89,7 @@ class TelegramService:
                 text += "Sem registros de ponto no período."
                 return text
 
-            daily_activity: Dict[str, Dict[str, List[str]]] = {}
-            for record, user in records:
-                date_str = record.record_datetime.strftime("%d/%m/%Y")
-                time_str = record.record_datetime.strftime("%H:%M")
-                marker = "E:" if record.record_type == RecordType.ENTRY else "S:"
-
-                fmt_name = self._format_name(user.name)
-
-                if date_str not in daily_activity:
-                    daily_activity[date_str] = {}
-
-                if fmt_name not in daily_activity[date_str]:
-                    daily_activity[date_str][fmt_name] = []
-
-                daily_activity[date_str][fmt_name].append(f"{marker} {time_str}")
+            daily_activity = self._group_daily_activity(records)
 
             for d_str, users_data in daily_activity.items():
                 if len(text) > settings.TELEGRAM_MAX_MESSAGE_LENGTH:
@@ -123,8 +103,27 @@ class TelegramService:
 
             return text.strip()
         except (SQLAlchemyError, ValueError) as e:
-            logger.error(f"Telegram report generation error: {e}")
+            logger.exception(f"Telegram report generation error: {e}")
             return "Erro interno ao gerar relatório gerencial."
+
+    def _group_daily_activity(self, records) -> Dict[str, Dict[str, List[str]]]:
+        daily_activity: Dict[str, Dict[str, List[str]]] = {}
+        for record, user in records:
+            date_str = record.record_datetime.strftime(DATE_FORMAT)
+            time_str = record.record_datetime.strftime("%H:%M")
+            marker = "E:" if record.record_type == RecordType.ENTRY else "S:"
+
+            fmt_name = format_short_name(user.name)
+
+            if date_str not in daily_activity:
+                daily_activity[date_str] = {}
+
+            if fmt_name not in daily_activity[date_str]:
+                daily_activity[date_str][fmt_name] = []
+
+            daily_activity[date_str][fmt_name].append(f"{marker} {time_str}")
+
+        return daily_activity
 
 
 telegram_service = TelegramService()
