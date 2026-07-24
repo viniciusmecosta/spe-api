@@ -1,16 +1,17 @@
 import re
 from datetime import datetime, date
-from typing import Optional, List
-
 from pydantic import BaseModel, field_validator, EmailStr, ConfigDict, Field
+from typing import Optional, List
 
 from app.domain.models.enums import UserRole
 from app.schemas.biometric import UserBiometricCreate, UserBiometricUpdate, UserBiometricResponse
 from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 
+DOB_FUTURE_ERROR = 'A data de nascimento não pode estar no futuro.'
+
 
 def validate_cpf_logic(cpf: str) -> bool:
-    cpf = re.sub(r'[^0-9]', '', cpf)
+    cpf = re.sub(r'\D', '', cpf)
     if len(cpf) != 11 or cpf == cpf[0] * 11:
         return False
     for i in range(9, 11):
@@ -48,10 +49,17 @@ class UserBase(BaseModel):
     @classmethod
     def validate_cpf(cls, v: str | None) -> str | None:
         if v:
-            v_clean = re.sub(r'[^0-9]', '', v)
+            v_clean = re.sub(r'\D', '', v)
             if not validate_cpf_logic(v_clean):
                 raise ValueError('CPF inválido')
             return v_clean
+        return v
+
+    @field_validator('data_nascimento')
+    @classmethod
+    def validate_data_nascimento(cls, v: date | None) -> date | None:
+        if v and v > date.today():
+            raise ValueError(DOB_FUTURE_ERROR)
         return v
 
 
@@ -60,13 +68,6 @@ class UserCreate(UserBase):
     password: str = Field(..., min_length=6)
     role: UserRole = UserRole.EMPLOYEE
     biometrics: List[UserBiometricCreate] = []
-
-    @field_validator('data_nascimento')
-    @classmethod
-    def validate_data_nascimento(cls, v: date | None) -> date | None:
-        if v and v > date.today():
-            raise ValueError('A data de nascimento não pode estar no futuro.')
-        return v
 
 
 class UserUpdate(BaseModel):
@@ -99,7 +100,7 @@ class UserUpdate(BaseModel):
     @classmethod
     def validate_cpf(cls, v: str | None) -> str | None:
         if v:
-            v_clean = re.sub(r'[^0-9]', '', v)
+            v_clean = re.sub(r'\D', '', v)
             if not validate_cpf_logic(v_clean):
                 raise ValueError('CPF inválido')
             return v_clean
@@ -109,7 +110,7 @@ class UserUpdate(BaseModel):
     @classmethod
     def validate_data_nascimento(cls, v: date | None) -> date | None:
         if v and v > date.today():
-            raise ValueError('A data de nascimento não pode estar no futuro.')
+            raise ValueError(DOB_FUTURE_ERROR)
         return v
 
 
@@ -124,7 +125,7 @@ class UserUpdateMe(BaseModel):
     @classmethod
     def validate_data_nascimento(cls, v: date | None) -> date | None:
         if v and v > date.today():
-            raise ValueError('A data de nascimento não pode estar no futuro.')
+            raise ValueError(DOB_FUTURE_ERROR)
         return v
 
 

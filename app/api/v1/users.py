@@ -1,8 +1,7 @@
-from typing import Any, List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from typing import Any, List, Optional
 
 from app.api import deps
 from app.domain.models.enums import UserRole
@@ -11,8 +10,15 @@ from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserUpdateMe
 from app.schemas.work_schedule import WorkScheduleCreate, WorkSchedule
 from app.services.user_service import user_service
+from app.services.user_work_schedule_service import user_work_schedule_service
 
 router = APIRouter()
+USER_NOT_FOUND = "Usuário não encontrado"
+
+
+def check_manager_permission(current_user: User):
+    if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
+        raise HTTPException(status_code=400, detail="Privilégios insuficientes")
 
 
 @router.get("/", response_model=List[UserResponse])
@@ -110,10 +116,10 @@ def read_user_by_id(
 ) -> Any:
     user = user_repository.get(db, user_id=user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
 
     if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-        raise HTTPException(status_code=400, detail="Privilégios insuficientes")
+        raise HTTPException(status_code=400, detail=INSUFFICIENT_PRIVILEGES)
 
     return user
 
@@ -147,7 +153,7 @@ def get_historical_schedules(
 ) -> Any:
     user = user_repository.get(db, user_id=user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
     return user.historical_schedules
 
 @router.post("/{user_id}/schedules", response_model=WorkSchedule)
@@ -157,7 +163,7 @@ def add_historical_schedule(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return user_service.add_historical_schedule(
+    return user_work_schedule_service.add_schedule(
         db=db, user_id=user_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
     )
 
@@ -169,7 +175,7 @@ def update_historical_schedule(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return user_service.update_historical_schedule(
+    return user_work_schedule_service.update_schedule(
         db=db, user_id=user_id, schedule_id=schedule_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
     )
 
@@ -180,5 +186,6 @@ def delete_historical_schedule(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    user_service.delete_historical_schedule(db=db, user_id=user_id, schedule_id=schedule_id, current_user_id=current_user.id)
+    user_work_schedule_service.delete_schedule(db=db, user_id=user_id, schedule_id=schedule_id,
+                                               current_user_id=current_user.id)
     return {"detail": "Horário excluído com sucesso"}
