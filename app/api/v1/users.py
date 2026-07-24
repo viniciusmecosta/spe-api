@@ -14,6 +14,7 @@ from app.services.user_work_schedule_service import user_work_schedule_service
 
 router = APIRouter()
 USER_NOT_FOUND = "Usuário não encontrado"
+INSUFFICIENT_PRIVILEGES = "Privilégios insuficientes"
 
 
 def check_manager_permission(current_user: User):

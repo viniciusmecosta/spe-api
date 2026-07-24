@@ -20,7 +20,7 @@ class WorkHourService:
         user = user_repository.get(db, user_id)
         holidays = holiday_repository.get_all(db)
 
-        from app.domain.models.adjustment_request import AdjustmentRequest
+        from app.domain.models.adjustment import AdjustmentRequest
         from app.domain.models.enums import AdjustmentType, AdjustmentStatus
 
         adjustments = db.query(AdjustmentRequest).filter(

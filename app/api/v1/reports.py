@@ -29,7 +29,7 @@ def _validate_excel_export_permission(db: Session, current_user: User, month: in
         return
 
     if is_manager:
-        from app.domain.models.adjustment_request import AdjustmentRequest
+        from app.domain.models.adjustment import AdjustmentRequest
         from app.domain.models.enums import AdjustmentStatus
         from sqlalchemy import extract
 

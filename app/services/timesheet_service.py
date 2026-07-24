@@ -125,7 +125,7 @@ class TimesheetService:
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
-        from app.domain.models.adjustment_request import AdjustmentRequest
+        from app.domain.models.adjustment import AdjustmentRequest
         all_adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date >= start_date,
