@@ -1,5 +1,4 @@
 from datetime import date, datetime, time
-from typing import List, Optional
 
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import Session
@@ -11,14 +10,14 @@ class RoutineLogRepository:
     def get_logs(
             self,
             db: Session,
-            routine_type: Optional[str] = None,
-            status: Optional[str] = None,
-            start_date: Optional[date] = None,
-            end_date: Optional[date] = None,
+            routine_type: str | None = None,
+            status: str | None = None,
+            start_date: date | None = None,
+            end_date: date | None = None,
             order_by: str = "desc",
             skip: int = 0,
             limit: int = 100
-    ) -> List[RoutineLog]:
+    ) -> list[RoutineLog]:
         query = db.query(RoutineLog)
 
         if routine_type:

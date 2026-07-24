@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -57,8 +57,8 @@ class SyncService:
         except (OSError, sqlite3.Error) as e:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            logger.error(f'Sincronização - "Receber banco de dados" Error: {e}')
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.exception(f'Sincronização - "Receber banco de dados" Error: {e}')
+            raise HTTPException(status_code=400, detail=str(e))
 
         return True
 
@@ -86,7 +86,7 @@ class SyncService:
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Sincronização - "Enviar banco de dados" Error ao gerar backup')
+            logger.exception('Sincronização - "Enviar banco de dados" Error ao gerar backup')
             return
 
         try:
@@ -104,7 +104,7 @@ class SyncService:
                 )
                 db_write.add(log_entry)
         except requests.RequestException as e:
-            logger.error(f'Sincronização - "Enviar banco de dados" HTTP Error: {e}')
+            logger.exception(f'Sincronização - "Enviar banco de dados" HTTP Error: {e}')
             try:
                 with get_db_session() as db_err:
                     log_error = RoutineLog(routine_type="REMOTE_SYNC_DATABASE", status="FAILED")
@@ -112,7 +112,7 @@ class SyncService:
             except SQLAlchemyError:
                 pass
         except SQLAlchemyError as e:
-            logger.error(f'Sincronização - "Enviar banco de dados" DB Error: {e}')
+            logger.exception(f'Sincronização - "Enviar banco de dados" DB Error: {e}')
         finally:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -165,7 +165,7 @@ class SyncService:
                 )
                 db_write.add(log_entry)
         except (requests.RequestException, SQLAlchemyError) as e:
-            logger.error(f'Sincronização - "Registros de ponto" Error: {e}')
+            logger.exception(f'Sincronização - "Registros de ponto" Error: {e}')
 
 
 sync_service = SyncService()

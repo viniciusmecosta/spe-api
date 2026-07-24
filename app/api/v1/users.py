@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -8,20 +8,29 @@ from app.api import deps
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
-from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserUpdateMe
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserUpdateMe
+from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate
 from app.services.user_service import user_service
+from app.services.user_work_schedule_service import user_work_schedule_service
 
 router = APIRouter()
+USER_NOT_FOUND = "Usuário não encontrado"
+INSUFFICIENT_PRIVILEGES = "Privilégios insuficientes"
 
 
-@router.get("/", response_model=List[UserResponse])
+def check_manager_permission(current_user: User):
+    if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
+        raise HTTPException(status_code=400, detail="Privilégios insuficientes")
+
+
+@router.get("/", response_model=list[UserResponse])
 def read_users(
         db: Session = Depends(deps.get_db),
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=1000),
-        is_active: Optional[bool] = Query(None),
-        role: Optional[UserRole] = Query(None),
-        search: Optional[str] = Query(None),
+        is_active: bool | None = Query(None),
+        role: UserRole | None = Query(None),
+        search: str | None = Query(None),
         order_by: str = Query("id", pattern="^(id|name|username|created_at|updated_at)$"),
         order_direction: str = Query("asc", pattern="^(asc|desc)$"),
         current_user: User = Depends(deps.get_current_manager),
@@ -109,10 +118,10 @@ def read_user_by_id(
 ) -> Any:
     user = user_repository.get(db, user_id=user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
 
     if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-        raise HTTPException(status_code=400, detail="Privilégios insuficientes")
+        raise HTTPException(status_code=400, detail=INSUFFICIENT_PRIVILEGES)
 
     return user
 
@@ -137,3 +146,49 @@ def update_user(
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{user_id}/schedules", response_model=list[WorkSchedule])
+def get_historical_schedules(
+        user_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    user = user_repository.get(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
+    return user.historical_schedules
+
+@router.post("/{user_id}/schedules", response_model=WorkSchedule)
+def add_historical_schedule(
+        user_id: int,
+        schedule_in: WorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.add_schedule(
+        db=db, user_id=user_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+@router.put("/{user_id}/schedules/{schedule_id}", response_model=WorkSchedule)
+def update_historical_schedule(
+        user_id: int,
+        schedule_id: int,
+        schedule_in: WorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.update_schedule(
+        db=db, user_id=user_id, schedule_id=schedule_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+@router.delete("/{user_id}/schedules/{schedule_id}")
+def delete_historical_schedule(
+        user_id: int,
+        schedule_id: int,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    user_work_schedule_service.delete_schedule(db=db, user_id=user_id, schedule_id=schedule_id,
+                                               current_user_id=current_user.id)
+    return {"detail": "Horário excluído com sucesso"}

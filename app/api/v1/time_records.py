@@ -1,15 +1,23 @@
 from datetime import datetime
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
-from typing import Any, List
 
 from app.api import deps
-from app.core.security import get_client_ip, get_client_device_name
+from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
-from app.schemas.time_record import TimeRecordResponse, TimeRecordCreateAdmin, TimeRecordUpdate, TimeRecordDeleteAdmin, \
-    SuccessResponse, TimeRecordTimelineResponse
+from app.schemas.time_record import (
+    SuccessResponse,
+    TimeRecordCreateAdmin,
+    TimeRecordDeleteAdmin,
+    TimeRecordResponse,
+    TimeRecordTimelineResponse,
+    TimeRecordUpdate,
+)
 from app.services.time_record_service import time_record_service
+from app.services.tolerance_cron_service import tolerance_cron_service
 
 router = APIRouter()
 
@@ -46,7 +54,8 @@ def read_my_records(
 ) -> Any:
     return time_record_repository.get_all_by_user(db, current_user.id, skip, limit)
 
-@router.get("/admin/list", response_model=List[TimeRecordResponse])
+
+@router.get("/admin/list", response_model=list[TimeRecordResponse])
 def list_records_for_admin(
         user_id: int,
         start_date: datetime,
@@ -66,16 +75,23 @@ def create_time_record_admin(
 ) -> Any:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
-    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name)
+    platform = request.headers.get("X-Platform", "desktop").lower()
+    return time_record_service.create_admin_record(db, record_in, current_user.id, ip_address, device_name, platform)
 
 @router.put("/admin/{record_id}", response_model=TimeRecordResponse)
 def update_time_record_admin(
         record_id: int,
         record_in: TimeRecordUpdate,
+        request: Request,
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    return time_record_service.update_admin_record(db, record_id, record_in, current_user.id)
+    ip_address = get_client_ip(request)
+    device_name = get_client_device_name(ip_address, request)
+    platform = request.headers.get("X-Platform", "desktop").lower()
+    return time_record_service.update_admin_record(
+        db, record_id, record_in, current_user.id, ip_address, device_name, platform
+    )
 
 @router.delete("/admin/{record_id}", response_model=SuccessResponse)
 def delete_time_record_admin(
@@ -88,10 +104,19 @@ def delete_time_record_admin(
     return {"status": "success", "message": "Record deleted"}
 
 
-@router.get("/{id}/timeline", response_model=List[TimeRecordTimelineResponse])
+@router.get("/{id}/timeline", response_model=list[TimeRecordTimelineResponse])
 def get_time_record_timeline(
         id: int,
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return time_record_service.get_record_timeline(db, id)
+
+@router.post(
+    "/admin/tolerance/process",
+)
+def trigger_tolerance_cron(
+        current_user: User = Depends(deps.get_current_maintainer)
+) -> Any:
+    tolerance_cron_service.process_unverified_entries()
+    return {"status": "success", "message": "Rotina de tolerância acionada e concluída com sucesso."}

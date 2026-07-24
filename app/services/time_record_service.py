@@ -1,18 +1,22 @@
-import ntplib
 from datetime import datetime
-from fastapi import HTTPException, status, Request
-from sqlalchemy.orm import Session
-from typing import Optional
 from zoneinfo import ZoneInfo
 
+import ntplib
+from fastapi import HTTPException, Request, status
+from sqlalchemy.orm import Session
+
 from app.core.config import settings
-from app.core.security import get_client_ip, get_client_device_name
+from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.schemas.time_record import TimeRecordUpdate, TimeRecordCreateAdmin, TimeRecordDeleteAdmin
+from app.schemas.time_record import (
+    TimeRecordCreateAdmin,
+    TimeRecordDeleteAdmin,
+    TimeRecordUpdate,
+)
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
@@ -25,8 +29,48 @@ class TimeRecordService:
             response = client.request('pool.ntp.org', version=3, timeout=2)
             utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
             return utc_time.astimezone(tz), True
-        except Exception as e:
+        except Exception:
             return datetime.now(tz), False
+
+    def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+        requests = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status == AdjustmentStatus.PENDING
+        ).all()
+        for req in requests:
+            db.delete(req)
+        db.flush()
+
+    def _is_first_entry_affected(self, db: Session, user_id: int, target_date: datetime.date, 
+                                 record_id: int | None = None, 
+                                 new_datetime: datetime | None = None) -> bool:
+        from datetime import time
+        start_of_day = datetime.combine(target_date, time.min, tzinfo=ZoneInfo(settings.TIMEZONE))
+        end_of_day = datetime.combine(target_date, time.max, tzinfo=ZoneInfo(settings.TIMEZONE))
+        
+        first_entry = db.query(TimeRecord).filter(
+            TimeRecord.user_id == user_id,
+            TimeRecord.record_type == RecordType.ENTRY,
+            TimeRecord.deleted_at.is_(None),
+            TimeRecord.record_datetime >= start_of_day,
+            TimeRecord.record_datetime <= end_of_day
+        ).order_by(TimeRecord.record_datetime.asc()).first()
+        
+        if not first_entry:
+            return new_datetime is not None
+
+        if record_id is not None and first_entry.id == record_id:
+            return True
+            
+        if new_datetime is not None:
+            if new_datetime <= first_entry.record_datetime:
+                return True
+                
+        return False
 
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
@@ -117,6 +161,8 @@ class TimeRecordService:
 
         return record
 
+
+
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
@@ -133,6 +179,16 @@ class TimeRecordService:
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
 
+        if previous_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+                
+        if new_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), new_datetime=record.record_datetime):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+
+
+
         record.is_ignored = True
 
         new_record = TimeRecord(
@@ -146,7 +202,8 @@ class TimeRecordService:
             edited_by=current_user.id,
             edit_justification="Inversão de marcação efetuada",
             original_record_id=record.original_record_id if record.original_record_id else record.id,
-            created_at=record.created_at
+            created_at=record.created_at,
+            is_verified=True if is_manager else False
         )
 
         db.add(new_record)
@@ -168,18 +225,23 @@ class TimeRecordService:
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
-                            ip_address: str, device_name: Optional[str]) -> TimeRecord:
+                            ip_address: str, device_name: str | None, platform: str = "WEB_ADMIN") -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
+        if obj_in.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, obj_in.user_id, obj_in.record_datetime.date(), new_datetime=obj_in.record_datetime):
+                self._invalidate_extra_time_requests(db, obj_in.user_id, obj_in.record_datetime.date())
 
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
             record_datetime=obj_in.record_datetime, ip_address=ip_address,
             device_name=device_name if device_name else "",
-            platform="desktop"
+            platform=platform
         )
 
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
+        record.is_verified = True
 
         db.add(record)
         db.commit()
@@ -202,7 +264,9 @@ class TimeRecordService:
 
         return record
 
-    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int) -> TimeRecord:
+    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int,
+                            ip_address: str | None = None, device_name: str | None = None,
+                            platform: str | None = None) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
@@ -218,27 +282,43 @@ class TimeRecordService:
         if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
             return record
 
-        employee_id = record.user_id
+        old_date = record.record_datetime.date()
+        new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
+
+        if record.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, old_date)
+                
+        if new_record_type == RecordType.ENTRY:
+            new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
+            if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
+                self._invalidate_extra_time_requests(db, record.user_id, new_date)
+
         old_data = {
             "record_type": record.record_type.value,
             "record_time": str(record.record_datetime),
             "justification": record.edit_justification if record.edit_justification else ""
         }
 
+
+
+        from app.domain.models.time_record import get_local_time
+        
         record.is_ignored = True
 
         new_record = TimeRecord(
             user_id=record.user_id,
             record_type=new_record_type,
             record_datetime=new_record_datetime,
-            ip_address=record.ip_address,
-            device_name=record.device_name,
-            platform=record.platform,
-            biometric_id=record.biometric_id,
+            ip_address=ip_address,
+            device_name=device_name if device_name else "",
+            platform=platform,
+            biometric_id=None,
             edited_by=manager_id,
             edit_justification=obj_in.edit_justification,
             original_record_id=record.original_record_id if record.original_record_id else record.id,
-            created_at=record.created_at
+            created_at=get_local_time(),
+            is_verified=True
         )
 
         db.add(new_record)
@@ -274,12 +354,18 @@ class TimeRecordService:
 
         payroll_service.validate_period_open(db, record.record_datetime.date())
 
+        if record.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
 
         old_data = {
             "record_type": record.record_type.value,
             "record_time": str(record.record_datetime)
         }
+
+
 
         time_record_repository.delete(db, record_id, manager_id)
 
@@ -296,7 +382,7 @@ class TimeRecordService:
         )
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
-                     biometric_id: Optional[int] = None, platform: str = "desktop") -> TimeRecord:
+                     biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
         last_record = time_record_repository.get_last_by_user(db, user_id)
         record_type = RecordType.ENTRY
 

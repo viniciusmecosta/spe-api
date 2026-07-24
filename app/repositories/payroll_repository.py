@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -21,7 +20,7 @@ class PayrollRepository:
             PayrollClosure.deleted_at.is_(None)
         ).first()
 
-    def get_all(self, db: Session, year: int = None) -> List[PayrollClosure]:
+    def get_all(self, db: Session, year: int = None) -> list[PayrollClosure]:
         query = db.query(PayrollClosure).filter(PayrollClosure.deleted_at.is_(None))
         if year:
             query = query.filter(PayrollClosure.year == year)
@@ -30,7 +29,7 @@ class PayrollRepository:
             PayrollClosure.month.desc()
         ).all()
 
-    def get_history(self, db: Session, month: int, year: int) -> List[PayrollClosure]:
+    def get_history(self, db: Session, month: int, year: int) -> list[PayrollClosure]:
         return db.query(PayrollClosure).filter(
             PayrollClosure.month == month,
             PayrollClosure.year == year

@@ -1,17 +1,17 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, Request
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.domain.models.user import User
-from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
+from app.schemas.company import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.services.company_service import company_service
 
 router = APIRouter()
 
 
-def _enrich_logo_url(company, request: Request) -> Optional[CompanyResponse]:
+def _enrich_logo_url(company, request: Request) -> CompanyResponse | None:
     if not company:
         return None
     response_obj = CompanyResponse.model_validate(company)

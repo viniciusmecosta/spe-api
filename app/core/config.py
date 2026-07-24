@@ -1,5 +1,4 @@
 import os
-from typing import List, Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,21 +18,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     FIRST_SUPERUSER: str
     FIRST_SUPERUSER_PASSWORD: str
-    BACKEND_CORS_ORIGINS: List[str]
+    BACKEND_CORS_ORIGINS: list[str]
     UPLOAD_DIR: str
-    SMTP_HOST: Optional[str]
-    SMTP_PORT: Optional[int]
-    SMTP_USER: Optional[str]
-    SMTP_PASSWORD: Optional[str]
-    EMAIL_FROM: Optional[str]
+    SMTP_HOST: str | None
+    SMTP_PORT: int | None
+    SMTP_USER: str | None
+    SMTP_PASSWORD: str | None
+    EMAIL_FROM: str | None
 
-    TELEGRAM_BOT_TOKEN: Optional[str]
-    TELEGRAM_CHAT_ID: Optional[str]
+    TELEGRAM_BOT_TOKEN: str | None
+    TELEGRAM_CHAT_ID: str | None
     TELEGRAM_MAX_MESSAGE_LENGTH: int
 
     OPERATION_MODE: str
-    CONSUMER_SERVER_URL: Optional[str]
-    CONSUMER_API_KEY: Optional[str]
+    CONSUMER_SERVER_URL: str | None
+    CONSUMER_API_KEY: str | None
 
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
@@ -48,7 +47,7 @@ class Settings(BaseSettings):
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod
-    def assemble_cors_origins(cls, v: List[str], info) -> List[str]:
+    def assemble_cors_origins(cls, v: list[str], info) -> list[str]:
         if isinstance(v, str):
             v = [i.strip() for i in v.split(",")]
         return v

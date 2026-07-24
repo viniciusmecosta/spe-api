@@ -7,19 +7,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from app.core.config import settings
+from app.utils.formatters import format_short_name
 
 logger = logging.getLogger(__name__)
 
 
-def _format_short_name(full_name: str) -> str:
-    parts = full_name.split()
-    if not parts:
-        return ""
-    first = parts[0]
-    second = next((p for p in parts[1:] if len(p) >= 3), None)
-    if second:
-        return f"{first} {second}"
-    return first
 
 
 def _extract_user_name(request: Request) -> str:
@@ -37,7 +29,7 @@ def _extract_user_name(request: Request) -> str:
         name = getattr(request.state, "attempted_user", "")
 
     if name:
-        return _format_short_name(name)
+        return format_short_name(name)
 
     return getattr(request.state, "device_name", "")
 

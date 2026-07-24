@@ -1,5 +1,4 @@
 from datetime import date
-from typing import List
 
 from pydantic import BaseModel
 
@@ -18,4 +17,4 @@ class AnomalyResponse(AnomalyBase):
 class UserAnomalySummary(BaseModel):
     user_id: int
     user_name: str
-    anomalies: List[AnomalyBase]
+    anomalies: list[AnomalyBase]

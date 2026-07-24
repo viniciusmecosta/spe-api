@@ -1,9 +1,13 @@
 from datetime import date
 
-from sqlalchemy import desc, and_, func
+from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
-from app.domain.models.adjustment import AdjustmentRequest, AdjustmentAttachment, get_local_time
+from app.domain.models.adjustment import (
+    AdjustmentAttachment,
+    AdjustmentRequest,
+    get_local_time,
+)
 from app.domain.models.enums import AdjustmentStatus, AdjustmentType
 from app.schemas.adjustment import AdjustmentRequestCreate
 
@@ -25,7 +29,7 @@ class AdjustmentRepository:
         return db_obj
 
     def get(self, db: Session, id: int) -> AdjustmentRequest | None:
-        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).first()
+        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id, AdjustmentRequest.deleted_at.is_(None)).first()
 
     def get_all_by_user(
         self, 
@@ -39,7 +43,7 @@ class AdjustmentRepository:
         order_by: str = "created_at",
         order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id)
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id, AdjustmentRequest.deleted_at.is_(None))
         
         if month and year:
             query = query.filter(
@@ -71,7 +75,7 @@ class AdjustmentRepository:
         order_by: str = "created_at",
         order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        query = db.query(AdjustmentRequest)
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.deleted_at.is_(None))
         
         if month and year:
             query = query.filter(
@@ -93,7 +97,7 @@ class AdjustmentRepository:
         return query.offset(skip).limit(limit).all()
 
     def count_pending(self, db: Session) -> int:
-        return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING).count()
+        return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING, AdjustmentRequest.deleted_at.is_(None)).count()
 
     def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[
         AdjustmentRequest]:
@@ -102,7 +106,8 @@ class AdjustmentRepository:
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.status == AdjustmentStatus.APPROVED,
                 AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None)
             )
         ).all()
 
@@ -112,7 +117,8 @@ class AdjustmentRepository:
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date == target_date,
                 AdjustmentRequest.adjustment_type == AdjustmentType.WAIVER,
-                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.APPROVED])
+                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.APPROVED]),
+                AdjustmentRequest.deleted_at.is_(None)
             )
         ).all()
 
@@ -137,6 +143,14 @@ class AdjustmentRepository:
         db.commit()
         db.refresh(db_attachment)
         return db_attachment
+
+    def soft_delete(self, db: Session, id: int, user_id: int):
+        db_obj = self.get(db, id)
+        if db_obj:
+            db_obj.deleted_at = get_local_time()
+            db_obj.deleted_by = user_id
+            db.add(db_obj)
+            db.commit()
 
     def delete(self, db: Session, id: int):
         db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id).delete()

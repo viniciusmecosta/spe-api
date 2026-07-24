@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
@@ -12,13 +11,21 @@ from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
 from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
-    DevicePunchRequest, FeedbackPayload, DeviceActions, EnrollResultPayload,
-    BiometricSyncData, BiometricSyncAck, TimeResponsePayload,
-    ManagerVerifyRequest, ManagerVerifyResponse, BuzzerNote
+    BiometricSyncAck,
+    BiometricSyncData,
+    BuzzerNote,
+    DeviceActions,
+    DevicePunchRequest,
+    EnrollResultPayload,
+    FeedbackPayload,
+    ManagerVerifyRequest,
+    ManagerVerifyResponse,
+    TimeResponsePayload,
 )
 from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
+from app.utils.formatters import format_short_name
 
 router = APIRouter()
 
@@ -38,12 +45,12 @@ def register_device_punch(
         if success and record:
             if record.user.name:
                 request.state.attempted_user = record.user.name
-            user_first_name = record.user.name.split()[0] if record.user.name else "Usuario"
+            user_short_name = format_short_name(record.user.name) if record.user.name else "Usuario"
             time_formatted = record.record_datetime.strftime('%H:%M')
             type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
 
             return FeedbackPayload(
-                line1=user_first_name[:16],
+                line1=user_short_name[:16],
                 line2=time_formatted,
                 line3=type_label,
                 led="green",
@@ -138,7 +145,7 @@ def enroll_device_biometric(
         )
 
 
-@router.get("/sync", response_model=List[BiometricSyncData])
+@router.get("/sync", response_model=list[BiometricSyncData])
 def sync_device_data(
         db: Session = Depends(deps.get_db),
         device: DeviceCredential = Depends(deps.verify_device_api_key)

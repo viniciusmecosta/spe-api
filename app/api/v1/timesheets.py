@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -43,7 +42,7 @@ def get_official_timesheet_user_pdf(
 def get_official_timesheet_all_pdf(
         month: int = Query(..., ge=1, le=12),
         year: int = Query(..., ge=2000),
-        employee_ids: Optional[List[int]] = Query(None),
+        employee_ids: list[int] | None = Query(None),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ):

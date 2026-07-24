@@ -1,4 +1,4 @@
-from .adjustment import AdjustmentRequest, AdjustmentAttachment
+from .adjustment import AdjustmentAttachment, AdjustmentRequest
 from .audit import AuditLog
 from .biometric import UserBiometric
 from .company import Company
@@ -8,13 +8,12 @@ from .holiday import Holiday
 from .payroll import PayrollClosure
 from .routine_log import RoutineLog
 from .time_record import TimeRecord
-from .user import User, WorkSchedule
+from .user import User, UserWorkScheduleConfig
 
 __all__ = [
-    "AdjustmentRequest",
     "AdjustmentAttachment",
+    "AdjustmentRequest",
     "AuditLog",
-    "UserBiometric",
     "Company",
     "DeviceCredential",
     "Firmware",
@@ -22,7 +21,7 @@ __all__ = [
     "PayrollClosure",
     "RoutineLog",
     "TimeRecord",
-
     "User",
-    "WorkSchedule",
+    "UserBiometric",
+    "UserWorkScheduleConfig",
 ]

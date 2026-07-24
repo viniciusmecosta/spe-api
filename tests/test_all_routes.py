@@ -1,8 +1,8 @@
-import sys
 import os
-import re
 import random
+import re
 import string
+import sys
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -150,6 +150,11 @@ def generate_report():
         f.write("\n".join(report))
         
     print(f"Total validation complete! Report generated at {report_path}")
+
+
+def test_placeholder():
+    pass
+
 
 if __name__ == "__main__":
     generate_report()

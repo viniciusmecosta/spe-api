@@ -7,6 +7,8 @@ down_revision = '020'
 branch_labels = None
 depends_on = None
 
+CURRENT_TIMESTAMP = '(CURRENT_TIMESTAMP)'
+USERS_ID = 'users.id'
 
 def upgrade() -> None:
     op.drop_table('adjustment_attachments')
@@ -14,7 +16,7 @@ def upgrade() -> None:
 
     op.create_table('adjustment_requests',
                     sa.Column('id', sa.Integer(), primary_key=True, index=True),
-                    sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=False),
+                    sa.Column('user_id', sa.Integer(), sa.ForeignKey(USERS_ID), nullable=False),
                     sa.Column('adjustment_type', sa.String(), nullable=False),
                     sa.Column('record_type', sa.String(), nullable=True),
                     sa.Column('target_date', sa.Date(), nullable=False),
@@ -22,9 +24,9 @@ def upgrade() -> None:
                     sa.Column('amount_hours', sa.Float(), nullable=True),
                     sa.Column('reason_text', sa.String(), nullable=True),
                     sa.Column('status', sa.String(), nullable=False),
-                    sa.Column('manager_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+                    sa.Column('manager_id', sa.Integer(), sa.ForeignKey(USERS_ID), nullable=True),
                     sa.Column('manager_comment', sa.String(), nullable=True),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)')),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP)),
                     sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True)
                     )
 
@@ -34,9 +36,9 @@ def upgrade() -> None:
                               nullable=False),
                     sa.Column('file_path', sa.String(), nullable=False),
                     sa.Column('file_type', sa.String(), nullable=False),
-                    sa.Column('uploaded_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'))
+                    sa.Column('uploaded_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP))
                     )
 
 
 def downgrade() -> None:
-    pass
+    raise NotImplementedError("Downgrade not supported")

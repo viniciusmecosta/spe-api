@@ -42,7 +42,7 @@ def main() -> None:
         with get_db_session() as db:
             init_db(db)
     except SQLAlchemyError as e:
-        logger.error(f"Error creating initial data: {e}")
+        logger.exception(f"Error creating initial data: {e}")
         raise e
     logger.info("Initial data created")
 

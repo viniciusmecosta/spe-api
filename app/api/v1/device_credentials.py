@@ -1,4 +1,3 @@
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -6,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.domain.models.user import User
 from app.repositories.device_credential_repository import device_credential_repository
-from app.schemas.device import DeviceCredentialCreate, DeviceCredentialUpdate, DeviceCredentialResponse
+from app.schemas.device import (
+    DeviceCredentialCreate,
+    DeviceCredentialResponse,
+    DeviceCredentialUpdate,
+)
 from app.services.audit_service import audit_service
 
 router = APIRouter()
@@ -28,7 +31,7 @@ def create_credential(
     return device
 
 
-@router.get("/", response_model=List[DeviceCredentialResponse])
+@router.get("/", response_model=list[DeviceCredentialResponse])
 def list_credentials(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)

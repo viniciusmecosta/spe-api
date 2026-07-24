@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from app.services.biometric_service import biometric_service
 router = APIRouter()
 
 
-@router.get("/available-sensor-indices", response_model=List[int])
+@router.get("/available-sensor-indices", response_model=list[int])
 def get_available_sensor_indices(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager),

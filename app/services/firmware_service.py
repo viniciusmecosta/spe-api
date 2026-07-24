@@ -2,12 +2,11 @@ import os
 import re
 import shutil
 import time
-from typing import Tuple, List
 
-from fastapi import UploadFile, HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings, ROOT_DIR
+from app.core.config import ROOT_DIR, settings
 from app.domain.models.firmware import Firmware
 from app.repositories.firmware_repository import firmware_repository
 from app.services.audit_service import audit_service
@@ -18,7 +17,7 @@ class FirmwareService:
         self.firmware_dir = os.path.join(settings.UPLOAD_DIR, "firmware")
         os.makedirs(self.firmware_dir, exist_ok=True)
 
-    def parse_version(self, version: str) -> Tuple[int, int, int]:
+    def parse_version(self, version: str) -> tuple[int, int, int]:
         match = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", version)
         if not match:
             raise ValueError("Formato de versão inválido")
@@ -46,7 +45,7 @@ class FirmwareService:
                         detail=f"A nova versão ({version}) deve ser estritamente maior que a versão atual ({latest.version})"
                     )
             except ValueError:
-                pass  # Ignore se a versão anterior for inválida
+                pass
 
         existing = firmware_repository.get_by_version(db, version)
         if existing:
@@ -103,7 +102,7 @@ class FirmwareService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum firmware disponível")
         return latest
 
-    def get_all_firmwares(self, db: Session) -> List[Firmware]:
+    def get_all_firmwares(self, db: Session) -> list[Firmware]:
         return firmware_repository.get_all(db)
 
     def get_firmware_file(self, db: Session, version: str) -> str:

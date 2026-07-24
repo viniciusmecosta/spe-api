@@ -1,8 +1,8 @@
-from typing import Generator
+from collections.abc import Generator
 
 import jwt
-from fastapi import Depends, HTTPException, status, Security, Request
-from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.security import get_api_key_hash
 from app.database.session import SessionLocal
 from app.domain.models.device import DeviceCredential
-from app.domain.models.enums import UserRole, DeviceKeyType
+from app.domain.models.enums import DeviceKeyType, UserRole
 from app.domain.models.user import User
 from app.schemas.token import TokenPayload
 
@@ -84,7 +84,7 @@ def get_current_maintainer(
     return current_user
 
 
-async def verify_device_api_key(
+def verify_device_api_key(
         request: Request,
         api_key: str = Security(api_key_header),
         db: Session = Depends(get_db)
@@ -105,7 +105,7 @@ async def verify_device_api_key(
     return device
 
 
-async def verify_consumer_api_key(
+def verify_consumer_api_key(
         request: Request,
         api_key: str = Security(consumer_api_key_header),
         db: Session = Depends(get_db)

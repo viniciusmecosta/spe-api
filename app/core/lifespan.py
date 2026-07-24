@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.services.routine_orchestrator import routine_orchestrator
 from app.services.sync_service import sync_service
+from app.services.tolerance_cron_service import tolerance_cron_service
 
 scheduler = BackgroundScheduler()
 
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     tz = ZoneInfo(settings.TIMEZONE)
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
+    trigger_5min = CronTrigger(minute='0,5,10,15,20,25,30,35,40,45,50,55', timezone=tz)
 
     scheduler.add_job(routine_orchestrator.run_daily_backup_routine_email, trigger=trigger_aligned,
                       id="daily_backup_email",
@@ -29,6 +31,9 @@ async def lifespan(app: FastAPI):
                       max_instances=1, coalesce=True)
 
     scheduler.add_job(routine_orchestrator.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
+                      max_instances=1, coalesce=True)
+
+    scheduler.add_job(tolerance_cron_service.process_unverified_entries, trigger=trigger_5min, id="tolerance_entries_check",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":

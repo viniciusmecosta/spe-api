@@ -1,5 +1,4 @@
 from datetime import date
-from typing import List
 
 from sqlalchemy.orm import Session
 
@@ -15,7 +14,7 @@ class HolidayRepository:
         db.refresh(db_obj)
         return db_obj
 
-    def get_all(self, db: Session) -> List[Holiday]:
+    def get_all(self, db: Session) -> list[Holiday]:
         return db.query(Holiday).order_by(Holiday.date).all()
 
     def get_by_date(self, db: Session, check_date: date) -> Holiday | None:
@@ -24,7 +23,7 @@ class HolidayRepository:
     def get_by_id(self, db: Session, id: int) -> Holiday | None:
         return db.query(Holiday).filter(Holiday.id == id).first()
 
-    def get_by_month(self, db: Session, month: int, year: int) -> List[Holiday]:
+    def get_by_month(self, db: Session, month: int, year: int) -> list[Holiday]:
         start_date = date(year, month, 1)
         if month == 12:
             end_date = date(year + 1, 1, 1)

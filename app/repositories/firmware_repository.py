@@ -1,4 +1,3 @@
-from typing import Optional, List
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -7,13 +6,13 @@ from app.domain.models.firmware import Firmware
 
 
 class FirmwareRepository:
-    def get_by_version(self, db: Session, version: str) -> Optional[Firmware]:
+    def get_by_version(self, db: Session, version: str) -> Firmware | None:
         return db.query(Firmware).filter(Firmware.version == version).order_by(desc(Firmware.created_at)).first()
 
-    def get_latest(self, db: Session) -> Optional[Firmware]:
+    def get_latest(self, db: Session) -> Firmware | None:
         return db.query(Firmware).order_by(desc(Firmware.created_at)).first()
 
-    def get_all(self, db: Session) -> List[Firmware]:
+    def get_all(self, db: Session) -> list[Firmware]:
         return db.query(Firmware).order_by(desc(Firmware.created_at)).all()
 
     def create(self, db: Session, version: str, file_path: str) -> Firmware:

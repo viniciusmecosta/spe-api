@@ -1,7 +1,7 @@
 import hashlib
 import socket
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union, Optional
+from typing import Any
 
 import bcrypt
 import jwt
@@ -12,8 +12,8 @@ from app.core.config import settings
 ALGORITHM = settings.ALGORITHM
 
 
-def create_access_token(subject: Union[str, Any], name: Optional[str] = None,
-                        expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: str | Any, name: str | None = None,
+                        expires_delta: timedelta | None = None) -> str:
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
@@ -49,7 +49,24 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
-def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
+def _resolve_device_name_from_ip(ip: str) -> str:
+    if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+        try:
+            return socket.gethostname()
+        except Exception:
+            return ""
+    else:
+        try:
+            socket.setdefaulttimeout(1.5)
+            host_info = socket.gethostbyaddr(ip)
+            if host_info and host_info[0]:
+                return host_info[0].split('.')[0]
+        except Exception:
+            return ""
+    return ""
+
+
+def get_client_device_name(ip: str, request: Request | None = None) -> str:
     device_name = ""
 
     if request:
@@ -58,11 +75,7 @@ def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
             device_name = ""
 
     if not device_name and ip:
-        if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
-            try:
-                device_name = socket.gethostname()
-            except Exception:
-                pass
+        device_name = _resolve_device_name_from_ip(ip)
 
     if not device_name or device_name.lower() == "localhost":
         device_name = "Desconhecido"

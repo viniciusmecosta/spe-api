@@ -1,9 +1,8 @@
 import os
 import shutil
 import uuid
-from typing import Optional
 
-from fastapi import HTTPException, status, UploadFile
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -14,7 +13,7 @@ from app.services.audit_service import audit_service
 
 
 class CompanyService:
-    def get_company(self, db: Session) -> Optional[Company]:
+    def get_company(self, db: Session) -> Company | None:
         return company_repository.get_current(db)
 
     def create_company(self, db: Session, obj_in: CompanyCreate, current_user_id: int) -> Company:
@@ -86,10 +85,10 @@ class CompanyService:
         try:
             with open(full_file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
-        except OSError as e:
+        except Exception as e:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Falha ao salvar arquivo no servidor: {str(e)}"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Erro ao salvar o arquivo: {e}"
             )
 
         if existing.logo_path:

@@ -1,4 +1,3 @@
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -7,7 +6,7 @@ from app.schemas.company import CompanyCreate, CompanyUpdate
 
 
 class CompanyRepository:
-    def get_current(self, db: Session) -> Optional[Company]:
+    def get_current(self, db: Session) -> Company | None:
         return db.query(Company).first()
 
     def create(self, db: Session, obj_in: CompanyCreate) -> Company:

@@ -1,13 +1,41 @@
 import json
-
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 revision = '031'
 down_revision = '030'
 branch_labels = None
 depends_on = None
+
+
+def _process_audit_log_row(row):
+    row_id, user_id, actor_id, details, reason, justification, target_user_id, actor_name, target_user_name, record_type, record_time, new_data_raw = row
+    final_user_id = user_id if user_id is not None else actor_id
+
+    try:
+        new_data = json.loads(new_data_raw) if new_data_raw else {}
+    except Exception:
+        new_data = {}
+
+    legacy_data = {}
+    if details: legacy_data['legacy_details'] = details
+    if reason: legacy_data['legacy_reason'] = reason
+    if justification: legacy_data['legacy_justification'] = justification
+    if target_user_id: legacy_data['legacy_target_user_id'] = target_user_id
+    if actor_name: legacy_data['legacy_actor_name'] = actor_name
+    if target_user_name: legacy_data['legacy_target_user_name'] = target_user_name
+    if record_type: legacy_data['legacy_record_type'] = record_type
+    if record_time: legacy_data['legacy_record_time'] = str(record_time)
+
+    if legacy_data:
+        if not isinstance(new_data, dict):
+            new_data = {'original_new_data': new_data}
+        new_data.update(legacy_data)
+
+    new_data_str = json.dumps(new_data) if new_data else None
+    return final_user_id, new_data_str, row_id
 
 
 def upgrade() -> None:
@@ -17,42 +45,7 @@ def upgrade() -> None:
         "SELECT id, user_id, actor_id, details, reason, justification, target_user_id, actor_name, target_user_name, record_type, record_time, new_data FROM audit_logs")).fetchall()
 
     for row in audit_logs:
-        row_id = row[0]
-        user_id = row[1]
-        actor_id = row[2]
-        details = row[3]
-        reason = row[4]
-        justification = row[5]
-        target_user_id = row[6]
-        actor_name = row[7]
-        target_user_name = row[8]
-        record_type = row[9]
-        record_time = row[10]
-        new_data_raw = row[11]
-
-        final_user_id = user_id if user_id is not None else actor_id
-
-        try:
-            new_data = json.loads(new_data_raw) if new_data_raw else {}
-        except Exception:
-            new_data = {}
-
-        legacy_data = {}
-        if details: legacy_data['legacy_details'] = details
-        if reason: legacy_data['legacy_reason'] = reason
-        if justification: legacy_data['legacy_justification'] = justification
-        if target_user_id: legacy_data['legacy_target_user_id'] = target_user_id
-        if actor_name: legacy_data['legacy_actor_name'] = actor_name
-        if target_user_name: legacy_data['legacy_target_user_name'] = target_user_name
-        if record_type: legacy_data['legacy_record_type'] = record_type
-        if record_time: legacy_data['legacy_record_time'] = str(record_time)
-
-        if legacy_data:
-            if not isinstance(new_data, dict):
-                new_data = {'original_new_data': new_data}
-            new_data.update(legacy_data)
-
-        new_data_str = json.dumps(new_data) if new_data else None
+        final_user_id, new_data_str, row_id = _process_audit_log_row(row)
 
         conn.execute(
             sa.text("UPDATE audit_logs SET user_id = :user_id, new_data = :new_data WHERE id = :id"),

@@ -2,7 +2,7 @@ import logging
 import logging.config
 import os
 import time
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -54,22 +54,25 @@ class DailyRotatingFileHandler(logging.FileHandler):
         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         self.next_rollover = next_midnight.timestamp()
 
+    def _check_and_reopen_stream_if_deleted(self):
+        if self.stream is not None:
+            try:
+                if not os.path.exists(self.baseFilename):
+                    self.stream.close()
+                    os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
+                    self.stream = self._open()
+            except Exception:
+                pass
+
     def emit(self, record):
         current_time = time.time()
-        
+
         if current_time >= self.next_rollover:
             self._do_rollover()
             self.last_check = current_time
         elif current_time - self.last_check >= self.check_interval:
             self.last_check = current_time
-            if self.stream is not None:
-                try:
-                    if not os.path.exists(self.baseFilename):
-                        self.stream.close()
-                        os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
-                        self.stream = self._open()
-                except Exception:
-                    pass
+            self._check_and_reopen_stream_if_deleted()
 
         super().emit(record)
 
@@ -80,20 +83,23 @@ class DailyRotatingFileHandler(logging.FileHandler):
         self._calculate_next_rollover()
         self._cleanup_old_logs()
 
+    def _try_delete_old_log_file(self, root, filename, cutoff_date):
+        if filename.endswith(".log") and len(filename) == 12:
+            try:
+                date_str = filename[:8]
+                file_date = datetime.strptime(date_str, "%d%m%Y").replace(tzinfo=self.tz)
+                if file_date < cutoff_date:
+                    os.remove(os.path.join(root, filename))
+            except (ValueError, OSError):
+                pass
+
     def _cleanup_old_logs(self):
         if self.backup_count <= 0:
             return
         cutoff_date = datetime.now(self.tz) - timedelta(days=self.backup_count)
         for root, dirs, files in os.walk(self.log_dir):
             for filename in files:
-                if filename.endswith(".log") and len(filename) == 12:
-                    try:
-                        date_str = filename[:8]
-                        file_date = datetime.strptime(date_str, "%d%m%Y").replace(tzinfo=self.tz)
-                        if file_date < cutoff_date:
-                            os.remove(os.path.join(root, filename))
-                    except (ValueError, OSError):
-                        continue
+                self._try_delete_old_log_file(root, filename, cutoff_date)
         self._remove_empty_dirs()
 
     def _remove_empty_dirs(self):

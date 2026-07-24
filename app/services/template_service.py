@@ -1,18 +1,9 @@
-from typing import Dict, List
 
 
 class TemplateService:
     @staticmethod
-    def get_daily_report_html(day_name: str, formatted_date: str, records_present: bool,
-                              user_activity: Dict[str, List[Dict[str, str]]], anomalies: List[str]) -> str:
-        html = f"""
-        <div style="margin-bottom: 20px;">
-        """
-
-        if not records_present:
-            html += "<p style='font-size: 14px; color: #666; text-align: center; padding: 20px; background: #f9f9f9; border-radius: 4px;'><em>Sem registros de ponto neste dia.</em></p></div>"
-        else:
-            html += """
+    def _generate_punches_html(user_activity: dict[str, list[dict[str, str]]]) -> str:
+        html = """
             <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px; color: #333; margin-bottom: 25px;">
                 <thead>
                     <tr style="background-color: #f4f4f4; text-align: left; border-bottom: 2px solid #ddd;">
@@ -21,37 +12,53 @@ class TemplateService:
                     </tr>
                 </thead>
                 <tbody>
+        """
+        for name, punches in user_activity.items():
+            is_problem = len(punches) % 2 != 0
+            bg_color = "#fffbf0" if is_problem else "#ffffff"
+
+            punches_html = ""
+            for p in punches:
+                color = "#2E7D32" if p['type'] == 'E' else "#EF6C00"
+                punches_html += f"""<span style="display: inline-block; background-color: {color}; color: #fff; padding: 4px 10px; border-radius: 14px; font-size: 13px; font-weight: bold; margin-right: 6px; margin-bottom: 4px;">{p['time']}</span>"""
+
+            html += f"""
+            <tr style="background-color: {bg_color}; border-bottom: 1px solid #eee;">
+                <td style="padding: 10px 8px;"><strong>{name}</strong></td>
+                <td style="padding: 10px 8px;">{punches_html}</td>
+            </tr>
             """
 
-            for name, punches in user_activity.items():
-                is_problem = len(punches) % 2 != 0
-                bg_color = "#fffbf0" if is_problem else "#ffffff"
+        html += "</tbody></table>"
+        return html
 
-                punches_html = ""
-                for p in punches:
-                    # p['type'] will be 'E' or 'S'
-                    color = "#2E7D32" if p['type'] == 'E' else "#EF6C00"
-                    label = "Entrada" if p['type'] == 'E' else "Saída"
-                    punches_html += f"""<span style="display: inline-block; background-color: {color}; color: #fff; padding: 4px 10px; border-radius: 14px; font-size: 13px; font-weight: bold; margin-right: 6px; margin-bottom: 4px;">{p['time']}</span>"""
+    @staticmethod
+    def _generate_anomalies_html(anomalies: list[str]) -> str:
+        if not anomalies:
+            return ""
+        html = """
+        <div style="margin-top: 25px;">
+            <h4 style="color: #D32F2F; margin-bottom: 10px; font-size: 16px;">Anomalias Detectadas</h4>
+            <ul style="background-color: #fde8e8; padding: 15px 15px 15px 30px; border-radius: 4px; color: #D32F2F; font-size: 14px; margin: 0;">
+        """
+        for a in anomalies:
+            html += f"<li style='margin-bottom: 5px;'>{a}</li>"
+        html += "</ul></div>"
+        return html
 
-                html += f"""
-                <tr style="background-color: {bg_color}; border-bottom: 1px solid #eee;">
-                    <td style="padding: 10px 8px;"><strong>{name}</strong></td>
-                    <td style="padding: 10px 8px;">{punches_html}</td>
-                </tr>
-                """
+    @staticmethod
+    def get_daily_report_html(day_name: str, formatted_date: str, records_present: bool,
+                              user_activity: dict[str, list[dict[str, str]]], anomalies: list[str]) -> str:
+        html = '''
+        <div style="margin-bottom: 20px;">
+        '''
 
-            html += "</tbody></table>"
+        if not records_present:
+            html += "<p style='font-size: 14px; color: #666; text-align: center; padding: 20px; background: #f9f9f9; border-radius: 4px;'><em>Sem registros de ponto neste dia.</em></p></div>"
+        else:
+            html += TemplateService._generate_punches_html(user_activity)
 
-        if anomalies:
-            html += """
-            <div style="margin-top: 25px;">
-                <h4 style="color: #D32F2F; margin-bottom: 10px; font-size: 16px;">Anomalias Detectadas</h4>
-                <ul style="background-color: #fde8e8; padding: 15px 15px 15px 30px; border-radius: 4px; color: #D32F2F; font-size: 14px; margin: 0;">
-            """
-            for a in anomalies:
-                html += f"<li style='margin-bottom: 5px;'>{a}</li>"
-            html += "</ul></div>"
+        html += TemplateService._generate_anomalies_html(anomalies)
 
         html += "</div>"
         return html

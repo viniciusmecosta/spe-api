@@ -1,11 +1,12 @@
 import re
-from typing import Optional
 
-from pydantic import BaseModel, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+NON_DIGIT_REGEX = r'\D'
 
 
 def validate_cnpj_logic(cnpj: str) -> bool:
-    cnpj = re.sub(r'[^0-9]', '', cnpj)
+    cnpj = re.sub(NON_DIGIT_REGEX, '', cnpj)
     if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
         return False
     integers = [int(c) for c in cnpj]
@@ -30,13 +31,13 @@ class CompanyBase(BaseModel):
     name: str
     cnpj: str
     address: str
-    phone: Optional[str] = None
-    logo_path: Optional[str] = None
+    phone: str | None = None
+    logo_path: str | None = None
 
     @field_validator('cnpj')
     @classmethod
     def validate_cnpj(cls, v: str) -> str:
-        v_clean = re.sub(r'[^0-9]', '', v)
+        v_clean = re.sub(NON_DIGIT_REGEX, '', v)
         if not validate_cnpj_logic(v_clean):
             raise ValueError('CNPJ inválido')
         return v_clean
@@ -47,17 +48,17 @@ class CompanyCreate(CompanyBase):
 
 
 class CompanyUpdate(BaseModel):
-    name: Optional[str] = None
-    cnpj: Optional[str] = None
-    address: Optional[str] = None
-    phone: Optional[str] = None
-    logo_path: Optional[str] = None
+    name: str | None = None
+    cnpj: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    logo_path: str | None = None
 
     @field_validator('cnpj')
     @classmethod
-    def validate_cnpj(cls, v: Optional[str]) -> Optional[str]:
+    def validate_cnpj(cls, v: str | None) -> str | None:
         if v is not None:
-            v_clean = re.sub(r'[^0-9]', '', v)
+            v_clean = re.sub(NON_DIGIT_REGEX, '', v)
             if not validate_cnpj_logic(v_clean):
                 raise ValueError('CNPJ inválido')
             return v_clean

@@ -19,7 +19,7 @@ from app.api.v1 import (
     telegram_actions,
     time_records,
     timesheets,
-    users
+    users,
 )
 from app.core.config import settings
 
