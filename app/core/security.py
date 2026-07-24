@@ -1,11 +1,10 @@
+import bcrypt
 import hashlib
+import jwt
 import socket
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union, Optional
-
-import bcrypt
-import jwt
 from fastapi import Request
+from typing import Any, Union, Optional
 
 from app.core.config import settings
 
@@ -49,6 +48,23 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
+def _resolve_device_name_from_ip(ip: str) -> str:
+    if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
+        try:
+            return socket.gethostname()
+        except Exception:
+            return ""
+    else:
+        try:
+            socket.setdefaulttimeout(1.5)
+            host_info = socket.gethostbyaddr(ip)
+            if host_info and host_info[0]:
+                return host_info[0].split('.')[0]
+        except Exception:
+            return ""
+    return ""
+
+
 def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
     device_name = ""
 
@@ -58,19 +74,7 @@ def get_client_device_name(ip: str, request: Optional[Request] = None) -> str:
             device_name = ""
 
     if not device_name and ip:
-        if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
-            try:
-                device_name = socket.gethostname()
-            except Exception:
-                pass
-        else:
-            try:
-                socket.setdefaulttimeout(1.5)
-                host_info = socket.gethostbyaddr(ip)
-                if host_info and host_info[0]:
-                    device_name = host_info[0].split('.')[0]
-            except Exception:
-                pass
+        device_name = _resolve_device_name_from_ip(ip)
 
     if not device_name or device_name.lower() == "localhost":
         device_name = "Desconhecido"

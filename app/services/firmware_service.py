@@ -2,10 +2,9 @@ import os
 import re
 import shutil
 import time
-from typing import Tuple, List
-
 from fastapi import UploadFile, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import Tuple, List
 
 from app.core.config import settings, ROOT_DIR
 from app.domain.models.firmware import Firmware
@@ -46,7 +45,7 @@ class FirmwareService:
                         detail=f"A nova versão ({version}) deve ser estritamente maior que a versão atual ({latest.version})"
                     )
             except ValueError:
-                pass  # Ignore se a versão anterior for inválida
+                pass
 
         existing = firmware_repository.get_by_version(db, version)
         if existing:

@@ -10,14 +10,31 @@ from app.services.audit_service import audit_service
 
 
 class UserWorkScheduleService:
+    def _handle_existing_schedule(self, db, user, existing_sch, sch_data, sch_id, valid_from, valid_until, today):
+        self.check_payroll_closure(db, existing_sch.valid_from, existing_sch.valid_until)
+        new_valid_from = valid_from if valid_from else today
+        self.check_payroll_closure(db, new_valid_from, valid_until)
+        self.handle_schedule_overlap(user, getattr(sch_data, 'day_of_week'), new_valid_from, valid_until,
+                                     ignore_id=sch_id)
+        self._apply_schedule_updates_from_obj(existing_sch, sch_data, new_valid_from, valid_until)
+
+    def _create_new_schedule(self, db, user, sch_data, valid_from, valid_until, today, is_create):
+        new_valid_from = valid_from if valid_from else today
+        if not is_create:
+            self.check_payroll_closure(db, new_valid_from, valid_until)
+        self.handle_schedule_overlap(user, getattr(sch_data, 'day_of_week'), new_valid_from, valid_until)
+
+        new_sch = UserWorkScheduleConfig(
+            day_of_week=getattr(sch_data, 'day_of_week'), daily_hours=getattr(sch_data, 'daily_hours'),
+            entry_1=getattr(sch_data, 'entry_1', None), exit_1=getattr(sch_data, 'exit_1', None),
+            entry_2=getattr(sch_data, 'entry_2', None), exit_2=getattr(sch_data, 'exit_2', None),
+            valid_from=new_valid_from, valid_until=valid_until
+        )
+        user.historical_schedules.append(new_sch)
+
     def _process_single_schedule(self, db: Session, user: User, sch_data: any, is_create: bool):
         sch_id = getattr(sch_data, 'id', None)
         daily_hours = getattr(sch_data, 'daily_hours')
-        day_of_week = getattr(sch_data, 'day_of_week')
-        entry_1 = getattr(sch_data, 'entry_1', None)
-        exit_1 = getattr(sch_data, 'exit_1', None)
-        entry_2 = getattr(sch_data, 'entry_2', None)
-        exit_2 = getattr(sch_data, 'exit_2', None)
         valid_from = getattr(sch_data, 'valid_from', None)
         valid_until = getattr(sch_data, 'valid_until', None)
 
@@ -28,23 +45,9 @@ class UserWorkScheduleService:
         if sch_id and not is_create:
             existing_sch = next((sch for sch in user.historical_schedules if sch.id == sch_id), None)
             if existing_sch:
-                self.check_payroll_closure(db, existing_sch.valid_from, existing_sch.valid_until)
-                new_valid_from = valid_from if valid_from else today
-                self.check_payroll_closure(db, new_valid_from, valid_until)
-                self.handle_schedule_overlap(user, day_of_week, new_valid_from, valid_until, ignore_id=sch_id)
-                self._apply_schedule_updates_from_obj(existing_sch, sch_data, new_valid_from, valid_until)
+                self._handle_existing_schedule(db, user, existing_sch, sch_data, sch_id, valid_from, valid_until, today)
         else:
-            new_valid_from = valid_from if valid_from else today
-            if not is_create:
-                self.check_payroll_closure(db, new_valid_from, valid_until)
-            self.handle_schedule_overlap(user, day_of_week, new_valid_from, valid_until)
-
-            new_sch = UserWorkScheduleConfig(
-                day_of_week=day_of_week, daily_hours=daily_hours,
-                entry_1=entry_1, exit_1=exit_1, entry_2=entry_2, exit_2=exit_2,
-                valid_from=new_valid_from, valid_until=valid_until
-            )
-            user.historical_schedules.append(new_sch)
+            self._create_new_schedule(db, user, sch_data, valid_from, valid_until, today, is_create)
 
     def _apply_schedule_updates_from_obj(self, sch, sch_data, valid_from, valid_until):
         sch.day_of_week = getattr(sch_data, 'day_of_week')
@@ -121,21 +124,22 @@ class UserWorkScheduleService:
                         detail=f"Conflito de datas no expediente. O dia {day_of_week} já possui um horário vigente que sobrepõe este período."
                     )
 
+    def _remove_stale_schedules(self, db: Session, user: User, schedules_in: list):
+        current_sch_ids = [s.id for s in user.current_schedules]
+        incoming_ids = [getattr(s, 'id', None) for s in schedules_in if getattr(s, 'id', None) is not None]
+
+        schedules_to_remove = [sch for sch in user.historical_schedules if
+                               sch.id in current_sch_ids and sch.id not in incoming_ids]
+        for sch in schedules_to_remove:
+            self.check_payroll_closure(db, sch.valid_from, sch.valid_until)
+            user.historical_schedules.remove(sch)
+
     def sync_user_schedules(self, db: Session, user: User, schedules_in: list, is_create: bool = False):
         if schedules_in is None:
             return
 
-        today = date.today()
-
         if not is_create:
-            current_sch_ids = [s.id for s in user.current_schedules]
-            incoming_ids = [getattr(s, 'id', None) for s in schedules_in if getattr(s, 'id', None) is not None]
-
-            schedules_to_remove = [sch for sch in user.historical_schedules if
-                                   sch.id in current_sch_ids and sch.id not in incoming_ids]
-            for sch in schedules_to_remove:
-                self.check_payroll_closure(db, sch.valid_from, sch.valid_until)
-                user.historical_schedules.remove(sch)
+            self._remove_stale_schedules(db, user, schedules_in)
 
         for sch_data in schedules_in:
             self._process_single_schedule(db, user, sch_data, is_create)

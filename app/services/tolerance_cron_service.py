@@ -1,9 +1,8 @@
 import logging
 from datetime import datetime, date
-from zoneinfo import ZoneInfo
-
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.session import get_db_session
@@ -105,9 +104,9 @@ class ToleranceCronService:
                             
                 db.commit()
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao processar tolerancia de entradas (banco): {e}")
+            logger.exception(f"Erro ao processar tolerancia de entradas (banco): {e}")
         except Exception as e:
-            logger.error(f"Erro inesperado ao processar tolerancia de entradas: {e}")
+            logger.exception(f"Erro inesperado ao processar tolerancia de entradas: {e}")
 
     def reprocess_historical_entries(self, db: Session, start_date: date, end_date: date, user_ids: list[int]):
         tz = ZoneInfo(settings.TIMEZONE)

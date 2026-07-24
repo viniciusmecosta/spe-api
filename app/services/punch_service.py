@@ -55,7 +55,7 @@ class PunchService:
             return True, "Ponto Registrado", new_record
 
         except (SQLAlchemyError, ValueError) as e:
-            logger.error(f"Erro ao processar punch: {e}")
+            logger.exception(f"Erro ao processar punch: {e}")
             return False, "Erro Interno", None
 
 punch_service = PunchService()

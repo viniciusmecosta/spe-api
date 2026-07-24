@@ -25,7 +25,7 @@ class TimeRecordService:
             response = client.request('pool.ntp.org', version=3, timeout=2)
             utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
             return utc_time.astimezone(tz), True
-        except Exception as e:
+        except Exception:
             return datetime.now(tz), False
 
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
@@ -225,7 +225,6 @@ class TimeRecordService:
         if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
             return record
 
-        employee_id = record.user_id
         old_data = {
             "record_type": record.record_type.value,
             "record_time": str(record.record_datetime),

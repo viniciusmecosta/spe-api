@@ -1,10 +1,9 @@
 import logging
 import os
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -13,12 +12,12 @@ from app.domain.models.enums import UserRole
 from app.domain.models.routine_log import RoutineLog
 from app.domain.models.user import User
 from app.services.backup_service import backup_service
+from app.services.daily_report_service import daily_report_service
 from app.services.email_service import email_service
-from app.services.report_service import report_service
 from app.services.telegram_service import telegram_service
 
 logger = logging.getLogger(__name__)
-
+DATE_FORMAT = "%d/%m/%Y"
 
 class RoutineOrchestrator:
     def execute_hourly_backup_telegram(self):
@@ -41,12 +40,12 @@ class RoutineOrchestrator:
                 if exists:
                     return
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao verificar backup horário Telegram: {e}")
+            logger.exception(f"Erro ao verificar backup horário Telegram: {e}")
             return
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Backup - "Telegram horário" Error')
+            logger.exception('Backup - "Telegram horário" Error')
             return
 
         now_str = now_local.strftime('%H:%M')
@@ -67,9 +66,9 @@ class RoutineOrchestrator:
                     )
                     db_write.add(log_entry)
                 else:
-                    logger.error('Backup - "Telegram horário" Error')
+                    logger.exception('Backup - "Telegram horário" Error')
         except SQLAlchemyError as e:
-            logger.error(f'Backup - "Telegram horário" DB Error: {e}')
+            logger.exception(f'Backup - "Telegram horário" DB Error: {e}')
 
     def send_managerial_report_telegram(self):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -107,7 +106,7 @@ class RoutineOrchestrator:
 
                 report_text = telegram_service.generate_report_text(db_read, start_date, yesterday)
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao gerar report gerencial Telegram: {e}")
+            logger.exception(f"Erro ao gerar report gerencial Telegram: {e}")
             return
 
         text_success = telegram_service.send_text(report_text)
@@ -116,7 +115,7 @@ class RoutineOrchestrator:
         while current_log_date <= yesterday:
             log_path = get_log_path(current_log_date)
             if os.path.exists(log_path):
-                telegram_service.send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                telegram_service.send_document(log_path, f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}")
             current_log_date += timedelta(days=1)
 
         try:
@@ -129,9 +128,30 @@ class RoutineOrchestrator:
                 )
                 db_write.add(log_entry)
                 if not text_success:
-                    logger.error('Relatório - "Telegram diário" Error')
+                    logger.exception('Relatório - "Telegram diário" Error')
         except SQLAlchemyError as e:
-            logger.error(f'Relatório - "Telegram diário" DB Error: {e}')
+            logger.exception(f'Relatório - "Telegram diário" DB Error: {e}')
+
+    def _generate_daily_backup_report(self, db_read, start_date, yesterday):
+        full_report_html = ""
+        attachments = []
+        current_check_date = start_date
+        while current_check_date <= yesterday:
+            daily_html = daily_report_service.generate_daily_report_html(db_read, current_check_date)
+            full_report_html += daily_html
+            log_path = get_log_path(current_check_date)
+            if os.path.exists(log_path):
+                attachments.append((log_path, f"log_{current_check_date.strftime('%d%m%Y')}.log"))
+            current_check_date += timedelta(days=1)
+        if not full_report_html:
+            full_report_html = "<p><em>Nenhum período pendente para relatório.</em></p>"
+        fmt_start = start_date.strftime(DATE_FORMAT)
+        fmt_end = yesterday.strftime(DATE_FORMAT)
+        if start_date < yesterday:
+            period_text = f"Abaixo estão os relatórios e logs dos dias {fmt_start} a {fmt_end}:"
+        else:
+            period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
+        return full_report_html, attachments, period_text
 
     def run_daily_backup_routine_email(self):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -174,36 +194,15 @@ class RoutineOrchestrator:
                 if start_date > yesterday:
                     start_date = yesterday
 
-                full_report_html = ""
-                attachments = []
-                current_check_date = start_date
-
-                while current_check_date <= yesterday:
-                    daily_html = report_service.generate_daily_report_html(db_read, current_check_date)
-                    full_report_html += daily_html
-
-                    log_path = get_log_path(current_check_date)
-                    if os.path.exists(log_path):
-                        attachments.append((log_path, f"log_{current_check_date.strftime('%d%m%Y')}.log"))
-
-                    current_check_date += timedelta(days=1)
-
-                if not full_report_html:
-                    full_report_html = "<p><em>Nenhum período pendente para relatório.</em></p>"
-
-                fmt_start = start_date.strftime("%d/%m/%Y")
-                fmt_end = yesterday.strftime("%d/%m/%Y")
-                if start_date < yesterday:
-                    period_text = f"Abaixo estão os relatórios e logs dos dias {fmt_start} a {fmt_end}:"
-                else:
-                    period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
+                full_report_html, attachments, period_text = self._generate_daily_backup_report(db_read, start_date,
+                                                                                                yesterday)
         except SQLAlchemyError as e:
-            logger.error(f"Erro check backup diário: {e}")
+            logger.exception(f"Erro check backup diário: {e}")
             return
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Backup - "Email diário" Error')
+            logger.exception('Backup - "Email diário" Error')
             return
 
         attachments.insert(0, (backup_path, "spe.db"))
@@ -223,9 +222,9 @@ class RoutineOrchestrator:
                 )
                 db_write.add(log_entry)
                 if not success:
-                    logger.error('Backup - "Email diário" Error')
+                    logger.exception('Backup - "Email diário" Error')
         except SQLAlchemyError as e:
-            logger.error(f'Backup - "Email diário" DB Error: {e}')
+            logger.exception(f'Backup - "Email diário" DB Error: {e}')
 
     def clean_old_logs(self, days_to_keep: int = None):
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
@@ -245,7 +244,7 @@ class RoutineOrchestrator:
                 if ran_today:
                     return
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao verificar rotina de limpeza: {e}")
+            logger.exception(f"Erro ao verificar rotina de limpeza: {e}")
             return
 
         try:
@@ -262,12 +261,12 @@ class RoutineOrchestrator:
                 )
                 db_write.add(log_entry)
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao limpar routine_logs: {e}")
+            logger.exception(f"Erro ao limpar routine_logs: {e}")
 
     def execute_manual_backup_telegram(self):
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Backup - "Telegram manual" Error')
+            logger.exception('Backup - "Telegram manual" Error')
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -290,9 +289,9 @@ class RoutineOrchestrator:
                 )
                 db_write.add(log_entry)
                 if not success:
-                    logger.error('Backup - "Telegram manual" Error')
+                    logger.exception('Backup - "Telegram manual" Error')
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao salvar rotina manual: {e}")
+            logger.exception(f"Erro ao salvar rotina manual: {e}")
 
     def send_manual_report_telegram(self, start_date, end_date):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -307,7 +306,7 @@ class RoutineOrchestrator:
                     title_prefix="Relatório Gerencial Manual -"
                 )
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao buscar report manual: {e}")
+            logger.exception(f"Erro ao buscar report manual: {e}")
             return
 
         text_success = telegram_service.send_text(report_text)
@@ -316,7 +315,7 @@ class RoutineOrchestrator:
         while current_log_date <= end_date:
             log_path = get_log_path(current_log_date)
             if os.path.exists(log_path):
-                telegram_service.send_document(log_path, f"Logs do sistema - {current_log_date.strftime('%d/%m/%Y')}")
+                telegram_service.send_document(log_path, f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}")
             current_log_date += timedelta(days=1)
 
         try:
@@ -330,9 +329,9 @@ class RoutineOrchestrator:
                 db_write.add(log_entry)
 
                 if not text_success:
-                    logger.error('Relatório - "Telegram manual" Error')
+                    logger.exception('Relatório - "Telegram manual" Error')
         except SQLAlchemyError as e:
-            logger.error(f"Erro ao salvar rotina de relatorio manual: {e}")
+            logger.exception(f"Erro ao salvar rotina de relatorio manual: {e}")
 
     def send_manual_backup_email(self, db) -> bool:
         from fastapi import HTTPException
@@ -340,7 +339,6 @@ class RoutineOrchestrator:
             raise HTTPException(status_code=400,
                                 detail="Serviço de email não configurado. Verifique as variáveis de ambiente (SMTP).")
 
-        # Se db não for passado (ex: via background tasks sem dependência ativa), cria uma nova sessão
         try:
             session = db if db else get_db_session().__enter__()
             maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
@@ -355,17 +353,16 @@ class RoutineOrchestrator:
             now_local = now.replace(tzinfo=None)
             yesterday = now_local.date() - timedelta(days=1)
 
-            full_report_html = report_service.generate_daily_report_html(session, yesterday)
-            fmt_start = yesterday.strftime("%d/%m/%Y")
+            full_report_html = daily_report_service.generate_daily_report_html(session, yesterday)
+            fmt_start = yesterday.strftime(DATE_FORMAT)
             period_text = f"Abaixo está o relatório do dia {fmt_start}:"
         finally:
             if db is None and 'session' in locals():
-                # Cleanup the context manager manually if we opened it
-                get_db_session().__exit__(None, None, None)  # Or properly handle the context
+                get_db_session().__exit__(None, None, None)
 
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
-            logger.error('Backup - "Email manual" Error')
+            logger.exception('Backup - "Email manual" Error')
             raise HTTPException(status_code=400,
                                 detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
@@ -383,7 +380,7 @@ class RoutineOrchestrator:
         if success:
             return True
         else:
-            logger.error('Backup - "Email manual" Error')
+            logger.exception('Backup - "Email manual" Error')
             raise HTTPException(status_code=400, detail="Falha na conexão SMTP ao tentar enviar o email.")
 
 

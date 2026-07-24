@@ -33,7 +33,7 @@ class BackupService:
 
                 return backup_filename
             except sqlite3.Error as e:
-                logger.error(f"Erro backup SQLite: {e}")
+                logger.exception(f"Erro backup SQLite: {e}")
                 return None
 
 

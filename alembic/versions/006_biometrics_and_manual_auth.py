@@ -1,12 +1,15 @@
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.engine.reflection import Inspector
+
+from alembic import op
 
 revision = '006'
 down_revision = '005'
 branch_labels = None
 depends_on = None
 
+CURRENT_TIMESTAMP = '(CURRENT_TIMESTAMP)'
+USERS_ID = 'users.id'
 
 def upgrade() -> None:
     op.create_table('user_biometrics',
@@ -14,9 +17,9 @@ def upgrade() -> None:
                     sa.Column('user_id', sa.Integer(), nullable=False),
                     sa.Column('sensor_index', sa.Integer(), nullable=True),
                     sa.Column('template_data', sa.String(), nullable=False),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
-                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['user_id'], [USERS_ID], ),
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_index(op.f('ix_user_biometrics_id'), 'user_biometrics', ['id'], unique=False)
@@ -28,10 +31,10 @@ def upgrade() -> None:
                     sa.Column('start_time', sa.DateTime(timezone=True), nullable=False),
                     sa.Column('end_time', sa.DateTime(timezone=True), nullable=False),
                     sa.Column('reason', sa.String(), nullable=True),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
-                    sa.ForeignKeyConstraint(['authorized_by_id'], ['users.id'], ),
-                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['authorized_by_id'], [USERS_ID], ),
+                    sa.ForeignKeyConstraint(['user_id'], [USERS_ID], ),
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_index(op.f('ix_manual_authorizations_id'), 'manual_authorizations', ['id'], unique=False)

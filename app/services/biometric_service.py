@@ -1,9 +1,7 @@
 import logging
-from typing import List
-
-import requests
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from typing import List
 
 from app.domain.models.biometric import UserBiometric
 from app.domain.models.user import User
@@ -30,7 +28,7 @@ class BiometricService:
         return result
 
     def process_sync_ack(self, db: Session, payload: BiometricSyncAck):
-        pass
+        raise NotImplementedError("Sync ACK not supported")
 
     def save_enrolled_biometric(self, db: Session, result: EnrollResultPayload):
         try:
@@ -65,8 +63,8 @@ class BiometricService:
             )
 
             return True, "Sucesso"
-        except (requests.RequestException, SQLAlchemyError, ValueError) as e:
-            logger.error(f"Erro Enroll: {e}")
+        except (SQLAlchemyError, ValueError) as e:
+            logger.exception(f"Erro Enroll: {e}")
             return False, str(e)
 
     def get_available_sensor_indices(self, db: Session) -> List[int]:
@@ -75,7 +73,7 @@ class BiometricService:
             UserBiometric.sensor_index.isnot(None)
         ).all()
 
-        used_indices = {index[0] for index in used_indices_query if index[0] is not None}
+        used_indices = {index[0] for index in used_indices_query}
 
         all_possible_indices = set(range(1, 128))
 

@@ -1,11 +1,10 @@
-from typing import List, Optional
-
 from sqlalchemy import asc, desc, or_
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
-from app.domain.models.user import User, UserWorkScheduleConfig
+from app.domain.models.user import User
 from app.schemas.user import UserUpdate
 
 
@@ -42,13 +41,53 @@ class UserRepository:
             query = query.order_by(asc(order_column))
         return query.offset(skip).limit(limit).all()
 
+    def _get_bio_fields(self, bio_data):
+        if isinstance(bio_data, dict):
+            return bio_data.get('id'), bio_data.get('sensor_index'), bio_data.get('template_data'), bio_data.get(
+                'finger_id')
+        return bio_data.id, bio_data.sensor_index, bio_data.template_data, bio_data.finger_id
+
+    def _validate_sensor_idx(self, db: Session, sensor_idx: int, user_id: int, seen_indices: set):
+        if sensor_idx is not None:
+            if sensor_idx in seen_indices:
+                raise ValueError(f"O index {sensor_idx} duplicado na mesma requisicao.")
+            seen_indices.add(sensor_idx)
+            existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx,
+                                                          UserBiometric.user_id != user_id).first()
+            if existing_bio:
+                raise ValueError("Index ja cadastrada para outro usuario")
+
+    def _update_biometrics(self, db: Session, db_obj: User, biometrics_in: list):
+        if biometrics_in is None:
+            return
+
+        current_biometrics = {b.id: b for b in db_obj.biometrics}
+        new_biometrics_list = []
+        seen_indices = set()
+        for bio_data in biometrics_in:
+            bio_id, sensor_idx, tmpl_data, f_id = self._get_bio_fields(bio_data)
+
+            self._validate_sensor_idx(db, sensor_idx, db_obj.id, seen_indices)
+
+            if bio_id and bio_id in current_biometrics:
+                existing = current_biometrics[bio_id]
+                existing.sensor_index = sensor_idx
+                if tmpl_data is not None:
+                    existing.template_data = tmpl_data
+                existing.finger_id = f_id
+                new_biometrics_list.append(existing)
+            else:
+                new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
+                new_biometrics_list.append(new_bio)
+        db_obj.biometrics = new_biometrics_list
+
     def update(self, db: Session, db_obj: User, obj_in: UserUpdate | dict) -> User:
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
             update_data = obj_in.model_dump(exclude_unset=True)
 
-        schedules_in = update_data.pop("schedules", None)
+        update_data.pop("schedules", None)
         biometrics_in = update_data.pop("biometrics", None)
 
         if "password" in update_data and update_data["password"]:
@@ -59,39 +98,7 @@ class UserRepository:
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
 
-        if schedules_in is not None:
-            pass
-
-        if biometrics_in is not None:
-            current_biometrics = {b.id: b for b in db_obj.biometrics}
-            new_biometrics_list = []
-            seen_indices = set()
-            for bio_data in biometrics_in:
-                bio_id = bio_data.get('id') if isinstance(bio_data, dict) else bio_data.id
-                sensor_idx = bio_data.get('sensor_index') if isinstance(bio_data, dict) else bio_data.sensor_index
-                tmpl_data = bio_data.get('template_data') if isinstance(bio_data, dict) else bio_data.template_data
-                f_id = bio_data.get('finger_id') if isinstance(bio_data, dict) else bio_data.finger_id
-
-                if sensor_idx is not None:
-                    if sensor_idx in seen_indices:
-                        raise ValueError(f"O index {sensor_idx} duplicado na mesma requisicao.")
-                    seen_indices.add(sensor_idx)
-                    existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx,
-                                                                  UserBiometric.user_id != db_obj.id).first()
-                    if existing_bio:
-                        raise ValueError("Index ja cadastrada para outro usuario")
-
-                if bio_id and bio_id in current_biometrics:
-                    existing = current_biometrics[bio_id]
-                    existing.sensor_index = sensor_idx
-                    if tmpl_data is not None:
-                        existing.template_data = tmpl_data
-                    existing.finger_id = f_id
-                    new_biometrics_list.append(existing)
-                else:
-                    new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
-                    new_biometrics_list.append(new_bio)
-            db_obj.biometrics = new_biometrics_list
+        self._update_biometrics(db, db_obj, biometrics_in)
 
         db.add(db_obj)
         db.commit()

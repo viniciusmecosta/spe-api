@@ -7,6 +7,8 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
+CURRENT_TIMESTAMP = '(CURRENT_TIMESTAMP)'
+USERS_ID = 'users.id'
 
 def upgrade() -> None:
     op.create_table('users',
@@ -16,9 +18,9 @@ def upgrade() -> None:
                     sa.Column('password_hash', sa.String(), nullable=False),
                     sa.Column('role', sa.Enum('EMPLOYEE', 'MANAGER', name='userrole'), nullable=False),
                     sa.Column('is_active', sa.Boolean(), nullable=False),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
-                    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
                     sa.PrimaryKeyConstraint('id')
                     )
@@ -31,9 +33,9 @@ def upgrade() -> None:
                     sa.Column('record_type', sa.Enum('ENTRY', 'EXIT', name='recordtype'), nullable=False),
                     sa.Column('record_datetime', sa.DateTime(timezone=True), nullable=False),
                     sa.Column('ip_address', sa.String(), nullable=True),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
-                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['user_id'], [USERS_ID], ),
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_index(op.f('ix_time_records_id'), 'time_records', ['id'], unique=False)
@@ -44,9 +46,9 @@ def upgrade() -> None:
                     sa.Column('previous_type', sa.Enum('ENTRY', 'EXIT', name='recordtype'), nullable=False),
                     sa.Column('new_type', sa.Enum('ENTRY', 'EXIT', name='recordtype'), nullable=False),
                     sa.Column('adjusted_by_user_id', sa.Integer(), nullable=False),
-                    sa.Column('adjusted_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('adjusted_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
-                    sa.ForeignKeyConstraint(['adjusted_by_user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['adjusted_by_user_id'], [USERS_ID], ),
                     sa.ForeignKeyConstraint(['time_record_id'], ['time_records.id'], ),
                     sa.PrimaryKeyConstraint('id')
                     )
@@ -65,11 +67,11 @@ def upgrade() -> None:
                               nullable=False),
                     sa.Column('manager_id', sa.Integer(), nullable=True),
                     sa.Column('manager_comment', sa.String(), nullable=True),
-                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
                     sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True),
-                    sa.ForeignKeyConstraint(['manager_id'], ['users.id'], ),
-                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['manager_id'], [USERS_ID], ),
+                    sa.ForeignKeyConstraint(['user_id'], [USERS_ID], ),
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_index(op.f('ix_adjustment_requests_id'), 'adjustment_requests', ['id'], unique=False)
@@ -79,7 +81,7 @@ def upgrade() -> None:
                     sa.Column('adjustment_request_id', sa.Integer(), nullable=False),
                     sa.Column('file_path', sa.String(), nullable=False),
                     sa.Column('file_type', sa.String(), nullable=False),
-                    sa.Column('uploaded_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('uploaded_at', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
                     sa.ForeignKeyConstraint(['adjustment_request_id'], ['adjustment_requests.id'], ),
                     sa.PrimaryKeyConstraint('id')
@@ -92,14 +94,14 @@ def upgrade() -> None:
                     sa.Column('action', sa.String(), nullable=False),
                     sa.Column('entity', sa.String(), nullable=False),
                     sa.Column('entity_id', sa.Integer(), nullable=True),
-                    sa.Column('timestamp', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'),
+                    sa.Column('timestamp', sa.DateTime(timezone=True), server_default=sa.text(CURRENT_TIMESTAMP),
                               nullable=True),
                     sa.Column('details', sa.Text(), nullable=True),
-                    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+                    sa.ForeignKeyConstraint(['user_id'], [USERS_ID], ),
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_index(op.f('ix_audit_logs_id'), 'audit_logs', ['id'], unique=False)
 
 
 def downgrade() -> None:
-    pass
+    raise NotImplementedError("Downgrade not supported")

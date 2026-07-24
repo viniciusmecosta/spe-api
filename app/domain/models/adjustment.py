@@ -1,8 +1,7 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import Column, Integer, String, Date, Time, Enum, ForeignKey, DateTime, Float, Index
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -20,8 +19,10 @@ class AdjustmentRequest(Base):
         Index('idx_adj_status', 'status'),
     )
 
+    USERS_ID = "users.id"
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey(USERS_ID), nullable=False)
     adjustment_type = Column(Enum(AdjustmentType), nullable=False)
     record_type = Column(Enum(RecordType), nullable=True)
     target_date = Column(Date, nullable=False)
@@ -30,12 +31,12 @@ class AdjustmentRequest(Base):
     reason_text = Column(String, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
-    manager_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    manager_id = Column(Integer, ForeignKey(USERS_ID), nullable=True)
     manager_comment = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    deleted_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")

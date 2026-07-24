@@ -1,11 +1,12 @@
 import re
+from pydantic import BaseModel, field_validator, ConfigDict
 from typing import Optional
 
-from pydantic import BaseModel, field_validator, ConfigDict
+NON_DIGIT_REGEX = r'\D'
 
 
 def validate_cnpj_logic(cnpj: str) -> bool:
-    cnpj = re.sub(r'[^0-9]', '', cnpj)
+    cnpj = re.sub(NON_DIGIT_REGEX, '', cnpj)
     if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
         return False
     integers = [int(c) for c in cnpj]
@@ -36,7 +37,7 @@ class CompanyBase(BaseModel):
     @field_validator('cnpj')
     @classmethod
     def validate_cnpj(cls, v: str) -> str:
-        v_clean = re.sub(r'[^0-9]', '', v)
+        v_clean = re.sub(NON_DIGIT_REGEX, '', v)
         if not validate_cnpj_logic(v_clean):
             raise ValueError('CNPJ inválido')
         return v_clean
@@ -57,7 +58,7 @@ class CompanyUpdate(BaseModel):
     @classmethod
     def validate_cnpj(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
-            v_clean = re.sub(r'[^0-9]', '', v)
+            v_clean = re.sub(NON_DIGIT_REGEX, '', v)
             if not validate_cnpj_logic(v_clean):
                 raise ValueError('CNPJ inválido')
             return v_clean

@@ -2,7 +2,6 @@ import os
 import shutil
 import uuid
 from datetime import datetime, date
-
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,7 @@ from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentWaiverCrea
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
+NOT_FOUND_MSG = "Solicitação não encontrada."
 
 class AdjustmentService:
 
@@ -128,7 +128,6 @@ class AdjustmentService:
             "status": request.status.value
         }
         
-        # If the adjustment was approved, we need to revert its side-effects first
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, admin_id)
 
@@ -151,7 +150,6 @@ class AdjustmentService:
             "status": request.status.value
         }
         
-        # If the adjustment was approved, we need to revert its side-effects first
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, manager_id)
 
@@ -188,11 +186,11 @@ class AdjustmentService:
         file.file.seek(0)
         is_valid = False
 
-        if file_ext == "pdf" and header.startswith(b"%PDF"):
-            is_valid = True
-        elif file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n"):
-            is_valid = True
-        elif file_ext in ["jpg", "jpeg"] and header.startswith(b"\xff\xd8\xff"):
+        if (
+                (file_ext == "pdf" and header.startswith(b"%PDF")) or
+                (file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n")) or
+                (file_ext in ["jpg", "jpeg"] and header.startswith(b"\xff\xd8\xff"))
+        ):
             is_valid = True
 
         if not is_valid:
@@ -220,15 +218,13 @@ class AdjustmentService:
                            comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise HTTPException(status_code=400, detail="Para aprovar um abono, é obrigatório haver anexo.")
-        elif request.adjustment_type == AdjustmentType.EXTRA_TIME:
-            pass
-        else:
+        elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             self._execute_adjustment_action(db, request, manager_id)
 
         old_status = request.status.value
@@ -263,7 +259,6 @@ class AdjustmentService:
                 record.deleted_at = get_local_time()
                 record.deleted_by = manager_id
                 
-                # Delete any pending EXTRA_TIME penalty
                 db.query(AdjustmentRequest).filter(
                     AdjustmentRequest.user_id == request.user_id,
                     AdjustmentRequest.target_date == request.target_date,
@@ -281,7 +276,7 @@ class AdjustmentService:
     def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
         old_status = request.status.value
@@ -340,7 +335,7 @@ class AdjustmentService:
     def revert_adjustment_status(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus, comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Solicitação não encontrada.")
+            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
             
         payroll_service.validate_period_open(db, request.target_date)
 

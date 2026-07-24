@@ -131,8 +131,7 @@ class ReportService:
             abono_id=abono.id if abono and is_manager else None
         )
 
-    def _build_daily_report_item(
-            def _build_detailed_punches(self, day_records: List[TimeRecord], is_maintainer: bool) -> List[PunchDetail]:
+    def _build_detailed_punches(self, day_records: List[TimeRecord], is_maintainer: bool) -> List[PunchDetail]:
         if not is_maintainer:
             return []
         detailed_punches = []

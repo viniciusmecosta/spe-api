@@ -5,33 +5,31 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date, datetime, timedelta
-from typing import List, Optional
-from zoneinfo import ZoneInfo
-
 from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from sqlalchemy.orm import Session
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.models.enums import RecordType, AdjustmentType, UserRole
+from app.domain.models.enums import UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
-from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.company_repository import company_repository
 from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
+from app.utils.formatters import get_weekday_name
 
 logger = logging.getLogger(__name__)
 
+NON_DIGIT_REGEX = re.compile(r'\D')
+
 
 class TimesheetService:
-    def _get_day_name(self, dt: date) -> str:
-        days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"]
-        return days[dt.isoweekday() % 7]
 
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
@@ -41,33 +39,74 @@ class TimesheetService:
 
     def _format_cnpj(self, cnpj: str) -> str:
         if not cnpj: return "-"
-        c = re.sub(r'[^0-9]', '', cnpj)
+        c = NON_DIGIT_REGEX.sub('', cnpj)
         if len(c) == 14:
             return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
         return cnpj
 
     def _format_cpf(self, cpf: str) -> str:
         if not cpf: return "-"
-        c = re.sub(r'[^0-9]', '', cpf)
+        c = NON_DIGIT_REGEX.sub('', cpf)
         if len(c) == 11:
             return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
         return cpf
 
     def _format_pis(self, pis: str) -> str:
         if not pis: return "-"
-        c = re.sub(r'[^0-9]', '', pis)
+        c = NON_DIGIT_REGEX.sub('', pis)
         if len(c) == 11:
             return f"{c[:3]}.{c[3:8]}.{c[8:10]}-{c[10:]}"
         return pis
 
     def _format_phone(self, phone: str) -> str:
         if not phone: return "-"
-        c = re.sub(r'[^0-9]', '', phone)
+        c = NON_DIGIT_REGEX.sub('', phone)
         if len(c) == 11:
             return f"({c[:2]}) {c[2:7]}-{c[7:]}"
         elif len(c) == 10:
             return f"({c[:2]}) {c[2:6]}-{c[6:]}"
         return phone
+
+    def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
+                                   table_text_style):
+        current_date = start_date
+        row_index = 1
+
+        while current_date <= end_date:
+            daily_res = period_result.daily_results[current_date]
+            is_holiday = period_result.daily_is_holiday[current_date]
+            holiday_obj = next((h for h in holidays if h.date == current_date), None)
+            is_weekend = current_date.weekday() >= 5
+
+            worked_seconds = daily_res.net_worked_seconds
+            unapproved_extra_seconds = daily_res.unapproved_extra_seconds
+            punch_blocks = daily_res.punch_blocks
+
+            if is_weekend:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
+
+            if is_holiday and not punch_blocks:
+                punches_str = f"Feriado: {holiday_obj.name}" if holiday_obj else "Feriado"
+            else:
+                punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
+
+            worked_time_str = self._format_duration(worked_seconds)
+            unapproved_time_str = self._format_duration(unapproved_extra_seconds)
+
+            data_table.append([
+                Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
+                Paragraph(get_weekday_name(current_date.weekday()), table_text_style),
+                Paragraph(punches_str, table_text_style),
+                Paragraph(unapproved_time_str, table_text_style),
+                Paragraph(worked_time_str, table_text_style)
+            ])
+
+            current_date += timedelta(days=1)
+            row_index += 1
+
+        t = Table(data_table, colWidths=[65, 60, 220, 95, 95])
+        t.setStyle(TableStyle(t_style))
+        return t
 
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
         user = user_repository.get(db, user_id)
@@ -86,16 +125,11 @@ class TimesheetService:
 
         records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
         holidays = holiday_repository.get_by_month(db, month, year)
-        adjustments = adjustment_repository.get_approved_by_range(db, user_id, start_date, end_date)
-        
-        from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentStatus
-        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+        from app.domain.models.adjustment_request import AdjustmentRequest
+        all_adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
             AdjustmentRequest.deleted_at.is_(None)
         ).all()
         
@@ -254,104 +288,21 @@ class TimesheetService:
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]
 
-        total_worked_seconds = 0.0
-        current_date = start_date
-        row_index = 1
+        from app.services.time_calculation_service import time_calculation_service
+        period_result = time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=records,
+            adjustments=all_adjustments,
+            holidays=holidays,
+            historical_schedules=user.historical_schedules if user else []
+        )
 
-        while current_date <= end_date:
-            day_records = [r for r in records if r.record_datetime.date() == current_date]
-            day_records.sort(key=lambda x: x.record_datetime)
-
-            holiday_obj = next((h for h in holidays if h.date == current_date), None)
-            is_holiday = holiday_obj is not None
-            weekday = current_date.weekday()
-            is_weekend = weekday >= 5
-
-            adjustment = next((adj for adj in adjustments if
-                               adj.target_date == current_date and adj.adjustment_type == AdjustmentType.WAIVER), None)
-            is_waiver = adjustment is not None
-
-            worked_seconds = 0.0
-            entry_time = None
-            punch_blocks = []
-
-            for rec in day_records:
-                time_str = rec.record_datetime.strftime("%H:%M")
-
-                if rec.record_type == RecordType.ENTRY:
-                    if entry_time is not None:
-                        punch_blocks.append(f"{entry_time.strftime('%H:%M')} - --:--")
-                    entry_time = rec.record_datetime.replace(second=0, microsecond=0)
-                elif rec.record_type == RecordType.EXIT:
-                    if entry_time is not None:
-                        worked_seconds += (rec.record_datetime.replace(second=0, microsecond=0) - entry_time).total_seconds()
-                        punch_blocks.append(f"{entry_time.strftime('%H:%M')} - {time_str}")
-                        entry_time = None
-                    else:
-                        punch_blocks.append(f"--:-- - {time_str}")
-
-            if entry_time is not None:
-                punch_blocks.append(f"{entry_time.strftime('%H:%M')} - --:--")
-
-            if is_waiver:
-                if adjustment.amount_hours and adjustment.amount_hours > 0:
-                    worked_seconds += (adjustment.amount_hours * 3600)
-                else:
-                    has_sched = bool(user.historical_schedules)
-                    if has_sched:
-                        valid_schedules = [
-                            s for s in user.historical_schedules
-                            if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
-                        ]
-                        sched = next((s for s in valid_schedules if s.day_of_week == weekday), None)
-                        if sched and worked_seconds < (sched.daily_hours * 3600):
-                            worked_seconds = sched.daily_hours * 3600
-
-            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current_date]
-            unapproved_extra_seconds = 0.0
-            
-            for adj in day_unapproved_extras:
-                if adj.amount_hours:
-                    if adj.amount_hours > 24:
-                        unapproved_extra_seconds += (adj.amount_hours / 60.0) * 3600
-                    else:
-                        unapproved_extra_seconds += adj.amount_hours * 3600
-                        
-            if unapproved_extra_seconds > 0:
-                if unapproved_extra_seconds > worked_seconds:
-                    unapproved_extra_seconds = worked_seconds
-                worked_seconds -= unapproved_extra_seconds
-
-            total_worked_seconds += worked_seconds
-
-            if is_weekend:
-                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
-
-            if is_holiday and not punch_blocks:
-                punches_str = f"Feriado: {holiday_obj.name}"
-            else:
-                punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
-
-            worked_time_str = self._format_duration(worked_seconds)
-            unapproved_time_str = self._format_duration(unapproved_extra_seconds)
-
-            data_table.append([
-                Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
-                Paragraph(self._get_day_name(current_date), table_text_style),
-                Paragraph(punches_str, table_text_style),
-                Paragraph(unapproved_time_str, table_text_style),
-                Paragraph(worked_time_str, table_text_style)
-            ])
-
-            current_date += timedelta(days=1)
-            row_index += 1
-
-        t = Table(data_table, colWidths=[65, 60, 220, 95, 95])
-        t.setStyle(TableStyle(t_style))
-        story.append(t)
+        story.append(self._build_daily_records_table(start_date, end_date, period_result, holidays, data_table, t_style,
+                                                     table_text_style))
         story.append(Spacer(1, 20))
 
-        total_duration_str = self._format_duration(total_worked_seconds)
+        total_duration_str = self._format_duration(period_result.total_net_worked_seconds)
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=11, leading=15, fontName='Helvetica-Bold',
@@ -449,8 +400,8 @@ class TimesheetService:
 
                     filename = f"espelho_ponto_{safe_name}_{month:02d}_{year}.pdf"
                     zip_file.writestr(filename, pdf_buffer.getvalue())
-                except (ValueError, OSError, RuntimeError) as e:
-                    logger.error(f"Erro ao gerar espelho de ponto em lote (User {user.id}): {e}")
+                except (ValueError, OSError, RuntimeError):
+                    logger.exception(f"Erro ao gerar espelho de ponto em lote (User {user.id})")
                     continue
 
         zip_buffer.seek(0)

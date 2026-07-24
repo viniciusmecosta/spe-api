@@ -1,10 +1,8 @@
 from datetime import datetime, date, timedelta
+from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
-from app.domain.models.enums import RecordType
 from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
@@ -22,31 +20,41 @@ class WorkHourService:
         user = user_repository.get(db, user_id)
         holidays = holiday_repository.get_all(db)
 
+        from app.domain.models.adjustment_request import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+
+        adjustments = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.status == AdjustmentStatus.APPROVED,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
+
+        unapproved_extra_adjs = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
+
         has_schedule = bool(user.historical_schedules)
 
         total_seconds = 0.0
-        entry_time = None
-
-        for record in records:
-            if record.record_type == RecordType.ENTRY:
-                entry_time = record.record_datetime
-            elif record.record_type == RecordType.EXIT and entry_time:
-                delta = record.record_datetime - entry_time
-                seconds = delta.total_seconds()
-
-                if seconds <= 86400:
-                    total_seconds += seconds
-
-                entry_time = None
-
-        total_worked_hours = total_seconds / 3600.0
-
         expected_hours = 0.0
         current_date = start_date
 
+        from app.services.time_calculation_service import time_calculation_service
+
         while current_date <= end_date:
+            day_records = [r for r in records if r.record_datetime.date() == current_date]
+            day_records.sort(key=lambda x: x.record_datetime)
+
             is_holiday = any(h.date == current_date for h in holidays)
 
+            day_expected_hours = 0.0
             if not is_holiday and has_schedule:
                 weekday = current_date.weekday()
                 valid_schedules = [
@@ -56,9 +64,27 @@ class WorkHourService:
                 schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
 
                 if schedule:
+                    day_expected_hours = schedule.daily_hours
                     expected_hours += schedule.daily_hours
 
+            abono = next((adj for adj in adjustments if
+                          adj.target_date == current_date and adj.adjustment_type == AdjustmentType.WAIVER), None)
+
+            day_unapproved_extras = [adj for adj in unapproved_extra_adjs if adj.target_date == current_date]
+
+            time_result = time_calculation_service.calculate_daily_time(
+                day_records=day_records,
+                expected_seconds=day_expected_hours * 3600,
+                waiver_adj=abono,
+                unapproved_extra_adjs=day_unapproved_extras,
+                is_excused=bool(abono)
+            )
+
+            total_seconds += time_result.net_worked_seconds
+
             current_date += timedelta(days=1)
+
+        total_worked_hours = total_seconds / 3600.0
 
         if not has_schedule:
             balance = 0.0

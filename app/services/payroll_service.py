@@ -1,10 +1,9 @@
 from datetime import date, datetime
-from typing import List, Dict, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
@@ -15,13 +14,65 @@ from app.services.email_service import dispatch_payroll_email
 
 
 class PayrollService:
+    def _build_history(self, month_closures: List) -> List[Dict[str, Any]]:
+        history = []
+        for h in month_closures:
+            history.append({
+                "action": "Fechamento",
+                "timestamp": h.closed_at,
+                "user_id": h.closed_by_user_id,
+                "user_name": h.closed_by.name if h.closed_by else None,
+                "observation": None,
+            })
+            if h.deleted_at:
+                history.append({
+                    "action": "Reabertura",
+                    "timestamp": h.deleted_at,
+                    "user_id": h.deleted_by,
+                    "user_name": h.deleter.name if h.deleter else None,
+                    "observation": h.reopen_observation,
+                })
+        history.sort(key=lambda x: x["timestamp"], reverse=True)
+        return history
+
+    def _build_period_response(self, mo: int, year: int, closures_by_month: Dict) -> Dict[str, Any]:
+        history = []
+        active_closure = None
+
+        if mo in closures_by_month:
+            month_closures = closures_by_month[mo]
+            active_closure = next((c for c in month_closures if c.deleted_at is None), None)
+            history = self._build_history(month_closures)
+
+        if active_closure:
+            return {
+                "month": mo,
+                "year": year,
+                "is_closed": True,
+                "id": active_closure.id,
+                "closed_at": active_closure.closed_at,
+                "closed_by_user_id": active_closure.closed_by_user_id,
+                "closed_by_name": active_closure.closed_by.name if active_closure.closed_by else None,
+                "history": history
+            }
+        else:
+            return {
+                "month": mo,
+                "year": year,
+                "is_closed": False,
+                "id": None,
+                "closed_at": None,
+                "closed_by_user_id": None,
+                "closed_by_name": None,
+                "history": history
+            }
+
     def list_periods(self, db: Session, year: int) -> List[Dict[str, Any]]:
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         current_year = now.year
         current_month = now.month
 
-        # Define the maximum month to show for the requested year.
         if year < current_year:
             max_month = 12
         elif year == current_year:
@@ -29,7 +80,6 @@ class PayrollService:
         else:
             max_month = 0
 
-        # Query all records (including soft-deleted) for this year to build history
         from app.domain.models.payroll import PayrollClosure
         all_closures = db.query(PayrollClosure).filter(PayrollClosure.year == year).order_by(
             PayrollClosure.id.asc()).all()
@@ -41,56 +91,8 @@ class PayrollService:
             closures_by_month[c.month].append(c)
 
         result = []
-        for mo in range(max_month, 0, -1):  # Reverse order: 4, 3, 2, 1
-            history = []
-            is_closed = False
-            active_closure = None
-
-            if mo in closures_by_month:
-                month_closures = closures_by_month[mo]
-                active_closure = next((c for c in month_closures if c.deleted_at is None), None)
-                is_closed = active_closure is not None
-
-                for h in month_closures:
-                    history.append({
-                        "action": "Fechamento",
-                        "timestamp": h.closed_at,
-                        "user_id": h.closed_by_user_id,
-                        "user_name": h.closed_by.name if h.closed_by else None,
-                        "observation": None,
-                    })
-                    if h.deleted_at:
-                        history.append({
-                            "action": "Reabertura",
-                            "timestamp": h.deleted_at,
-                            "user_id": h.deleted_by,
-                            "user_name": h.deleter.name if h.deleter else None,
-                            "observation": h.reopen_observation,
-                        })
-
-                history.sort(key=lambda x: x["timestamp"], reverse=True)
-            if is_closed and active_closure:
-                result.append({
-                    "month": mo,
-                    "year": year,
-                    "is_closed": True,
-                    "id": active_closure.id,
-                    "closed_at": active_closure.closed_at,
-                    "closed_by_user_id": active_closure.closed_by_user_id,
-                    "closed_by_name": active_closure.closed_by.name if active_closure.closed_by else None,
-                    "history": history
-                })
-            else:
-                result.append({
-                    "month": mo,
-                    "year": year,
-                    "is_closed": False,
-                    "id": None,
-                    "closed_at": None,
-                    "closed_by_user_id": None,
-                    "closed_by_name": None,
-                    "history": history
-                })
+        for mo in range(max_month, 0, -1):
+            result.append(self._build_period_response(mo, year, closures_by_month))
         return result
 
     def close_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):

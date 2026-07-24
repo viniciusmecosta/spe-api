@@ -1,10 +1,11 @@
 import calendar
 from datetime import date, datetime, timedelta
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 
-from sqlalchemy.orm import Session
-
-from app.domain.models.enums import RecordType, UserRole
+from app.domain.models.adjustment import AdjustmentRequest
+from app.domain.models.enums import RecordType, UserRole, AdjustmentType, AdjustmentStatus
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.anomaly import AnomalyResponse
@@ -17,6 +18,83 @@ class AnomalyService:
         minutes = total_minutes % 60
         return f"{hours}h{minutes:02d}"
 
+    def _check_missing_entries_exits(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+        AnomalyResponse]:
+        anomalies = []
+        if records and records[0].record_type == RecordType.EXIT:
+            anomalies.append(AnomalyResponse(
+                user_id=user_id, user_name=user_name, date=current_date,
+                type="MISSING_ENTRY", description="Saída sem entrada"
+            ))
+        if records and records[-1].record_type == RecordType.ENTRY and current_date < date.today():
+            anomalies.append(AnomalyResponse(
+                user_id=user_id, user_name=user_name, date=current_date,
+                type="MISSING_EXIT", description="Entrada sem saída"
+            ))
+        return anomalies
+
+    def _check_consecutive_records(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+        AnomalyResponse]:
+        anomalies = []
+        for i in range(1, len(records)):
+            current_record = records[i]
+            prev_record = records[i - 1]
+            if current_record.record_type == RecordType.ENTRY and prev_record.record_type == RecordType.ENTRY:
+                anomalies.append(AnomalyResponse(
+                    user_id=user_id, user_name=user_name, date=current_date,
+                    type="DOUBLE_ENTRY", description="Duas entradas consecutivas sem saída entre elas"
+                ))
+            if current_record.record_type == RecordType.EXIT and prev_record.record_type == RecordType.EXIT:
+                anomalies.append(AnomalyResponse(
+                    user_id=user_id, user_name=user_name, date=current_date,
+                    type="DOUBLE_EXIT", description="Duas saídas consecutivas sem entrada entre elas"
+                ))
+        return anomalies
+
+    def _check_long_intervals(self, user_id: int, user_name: str, current_date: date, records: List) -> List[
+        AnomalyResponse]:
+        anomalies = []
+        last_entry_time = None
+        for current_record in records:
+            if current_record.record_type == RecordType.ENTRY:
+                last_entry_time = current_record.record_datetime.replace(second=0, microsecond=0)
+            elif current_record.record_type == RecordType.EXIT and last_entry_time:
+                delta = current_record.record_datetime.replace(second=0, microsecond=0) - last_entry_time
+                seconds = delta.total_seconds()
+                if seconds > 8 * 3600:
+                    fmt_time = self._format_duration(seconds)
+                    anomalies.append(AnomalyResponse(
+                        user_id=user_id, user_name=user_name, date=current_date,
+                        type="LONG_INTERVAL", description=f"Intervalo de {fmt_time}"
+                    ))
+                last_entry_time = None
+        return anomalies
+
+    def _check_consecutive_and_long_intervals(self, user_id: int, user_name: str, current_date: date, records: List) -> \
+            List[AnomalyResponse]:
+        anomalies = []
+        anomalies.extend(self._check_consecutive_records(user_id, user_name, current_date, records))
+        anomalies.extend(self._check_long_intervals(user_id, user_name, current_date, records))
+        return anomalies
+
+    def _check_unapproved_adjustments(self, user_id: int, user_name: str, current_date: date, day_adjustments: List,
+                                      expected_entry_time) -> List[AnomalyResponse]:
+        anomalies = []
+        for adj in day_adjustments:
+            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+                desc = f"Tempo extra não aprovado ({minutes} minutos)"
+                
+                time_to_show = expected_entry_time or adj.time
+                if time_to_show:
+                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
+                
+                anomalies.append(AnomalyResponse(
+                    user_id=user_id, user_name=user_name, date=current_date,
+                    type="UNAPPROVED_EXTRA_TIME", description=desc
+                ))
+        return anomalies
+
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: List,
                              ignore_excessive_hours: bool = False, day_adjustments: List = None,
                              expected_entry_time=None) -> List[AnomalyResponse]:
@@ -26,69 +104,18 @@ class AnomalyService:
         records.sort(key=lambda x: x.record_datetime)
 
         total_worked_seconds = 0.0
-        last_entry_time = None
+        last_entry = None
+        for r in records:
+            if r.record_type == RecordType.ENTRY:
+                last_entry = r.record_datetime
+            elif r.record_type == RecordType.EXIT and last_entry:
+                total_worked_seconds += (r.record_datetime - last_entry).total_seconds()
+                last_entry = None
 
-        if records and records[0].record_type == RecordType.EXIT:
-            anomalies.append(AnomalyResponse(
-                user_id=user_id,
-                user_name=user_name,
-                date=current_date,
-                type="MISSING_ENTRY",
-                description="Saída sem entrada"
-            ))
-
-        for i in range(len(records)):
-            current_record = records[i]
-
-            if i > 0 and current_record.record_type == RecordType.ENTRY and records[
-                i - 1].record_type == RecordType.ENTRY:
-                anomalies.append(AnomalyResponse(
-                    user_id=user_id,
-                    user_name=user_name,
-                    date=current_date,
-                    type="DOUBLE_ENTRY",
-                    description="Duas entradas consecutivas sem saída entre elas"
-                ))
-
-            if i > 0 and current_record.record_type == RecordType.EXIT and records[
-                i - 1].record_type == RecordType.EXIT:
-                anomalies.append(AnomalyResponse(
-                    user_id=user_id,
-                    user_name=user_name,
-                    date=current_date,
-                    type="DOUBLE_EXIT",
-                    description="Duas saídas consecutivas sem entrada entre elas"
-                ))
-
-            if current_record.record_type == RecordType.ENTRY:
-                last_entry_time = current_record.record_datetime.replace(second=0, microsecond=0)
-            elif current_record.record_type == RecordType.EXIT:
-                if last_entry_time:
-                    delta = current_record.record_datetime.replace(second=0, microsecond=0) - last_entry_time
-                    seconds = delta.total_seconds()
-
-                    if seconds > 8 * 3600:
-                        fmt_time = self._format_duration(seconds)
-                        anomalies.append(AnomalyResponse(
-                            user_id=user_id,
-                            user_name=user_name,
-                            date=current_date,
-                            type="LONG_INTERVAL",
-                            description=f"Intervalo de {fmt_time}"
-                        ))
-
-                    total_worked_seconds += seconds
-                    last_entry_time = None
-
-        if records and records[-1].record_type == RecordType.ENTRY:
-            if current_date < date.today():
-                anomalies.append(AnomalyResponse(
-                    user_id=user_id,
-                    user_name=user_name,
-                    date=current_date,
-                    type="MISSING_EXIT",
-                    description="Entrada sem saída"
-                ))
+        anomalies.extend(self._check_missing_entries_exits(user_id, user_name, current_date, records))
+        anomalies.extend(self._check_consecutive_and_long_intervals(user_id, user_name, current_date, records))
+        anomalies.extend(
+            self._check_unapproved_adjustments(user_id, user_name, current_date, day_adjustments, expected_entry_time))
 
         if not ignore_excessive_hours and total_worked_seconds > (10 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
@@ -100,56 +127,9 @@ class AnomalyService:
                 description=f"Trabalhou {fmt_total}"
             ))
 
-        for adj in day_adjustments:
-            from app.domain.models.enums import AdjustmentType, AdjustmentStatus
-            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
-                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
-                desc = f"Tempo extra não aprovado ({minutes} minutos)"
-                
-                time_to_show = expected_entry_time or adj.time
-                if time_to_show:
-                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
-                
-                anomalies.append(AnomalyResponse(
-                    user_id=user_id,
-                    user_name=user_name,
-                    date=current_date,
-                    type="UNAPPROVED_EXTRA_TIME",
-                    description=desc
-                ))
-
         return anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
-                      ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
-        if user_id:
-            user = user_repository.get(db, user_id)
-            users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
-        else:
-            users = user_repository.get_active_employees(db)
-
-        all_anomalies = []
-
-        target_user_ids = [u.id for u in users]
-        if not target_user_ids:
-            return []
-
-        dt_start = datetime.combine(start_date, datetime.min.time())
-        dt_end = datetime.combine(end_date, datetime.max.time())
-
-        records_flat = time_record_repository.get_by_users_and_range(db, target_user_ids, dt_start, dt_end)
-        
-        from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
-        extra_time_adjustments = db.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id.in_(target_user_ids),
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
-
+    def _build_data_maps(self, records_flat, extra_time_adjustments, target_user_ids):
         records_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
         adj_map: Dict[int, Dict[date, List]] = {uid: {} for uid in target_user_ids}
 
@@ -166,31 +146,73 @@ class AnomalyService:
             if rdate not in adj_map[uid]:
                 adj_map[uid][rdate] = []
             adj_map[uid][rdate].append(adj)
-            
+
+        return records_map, adj_map
+
+    def _get_expected_entry_time(self, user, rdate):
+        if user and user.historical_schedules:
+            valid_schedules = [
+                s for s in user.historical_schedules
+                if s.valid_from <= rdate and (s.valid_until is None or s.valid_until >= rdate)
+            ]
+            schedule = next((s for s in valid_schedules if s.day_of_week == rdate.weekday()), None)
+            if schedule and schedule.entry_1:
+                return schedule.entry_1
+        return None
+
+    def _process_user_anomalies(self, uid, user, all_dates, records_map, adj_map, ignore_excessive_hours):
+        user_anomalies = []
+        user_name = user.name if user else "Unknown"
+        for rdate in all_dates:
+            expected_entry = self._get_expected_entry_time(user, rdate)
+            day_records = records_map[uid].get(rdate, [])
+            day_adjs = adj_map[uid].get(rdate, [])
+            day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours,
+                                                      day_adjs, expected_entry)
+            user_anomalies.extend(day_anomalies)
+        return user_anomalies
+
+    def _process_all_anomalies(self, target_user_ids, users, records_map, adj_map, ignore_excessive_hours):
+        all_anomalies = []
         user_map = {u.id: u for u in users}
 
         for uid in target_user_ids:
             user = user_map.get(uid)
-            user_name = user.name if user else "Unknown"
             all_dates = sorted(list(set(records_map[uid].keys()).union(set(adj_map[uid].keys()))))
-            for rdate in all_dates:
-                expected_entry_time = None
-                if user and user.historical_schedules:
-                    valid_schedules = [
-                        s for s in user.historical_schedules
-                        if s.valid_from <= rdate and (s.valid_until is None or s.valid_until >= rdate)
-                    ]
-                    schedule = next((s for s in valid_schedules if s.day_of_week == rdate.weekday()), None)
-                    if schedule and schedule.entry_1:
-                        expected_entry_time = schedule.entry_1
-
-                day_records = records_map[uid].get(rdate, [])
-                day_adjs = adj_map[uid].get(rdate, [])
-                day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours, day_adjs, expected_entry_time)
-                all_anomalies.extend(day_anomalies)
+            all_anomalies.extend(
+                self._process_user_anomalies(uid, user, all_dates, records_map, adj_map, ignore_excessive_hours))
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
+
+    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: Optional[int] = None,
+                      ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
+        if user_id:
+            user = user_repository.get(db, user_id)
+            users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+        else:
+            users = user_repository.get_active_employees(db)
+
+        target_user_ids = [u.id for u in users]
+        if not target_user_ids:
+            return []
+
+        dt_start = datetime.combine(start_date, datetime.min.time())
+        dt_end = datetime.combine(end_date, datetime.max.time())
+
+        records_flat = time_record_repository.get_by_users_and_range(db, target_user_ids, dt_start, dt_end)
+
+        extra_time_adjustments = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(target_user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
+
+        records_map, adj_map = self._build_data_maps(records_flat, extra_time_adjustments, target_user_ids)
+        return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours)
 
     def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: Optional[int] = None,
                                ignore_excessive_hours: bool = False) -> List[AnomalyResponse]:
@@ -198,7 +220,6 @@ class AnomalyService:
         try:
             _, last_day = calendar.monthrange(year, month)
         except ValueError:
-            from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
 
         start_date = date(year, month, 1)

@@ -49,26 +49,14 @@ class EmailService:
                 date_str=now_str
             )
 
-            msg = MIMEMultipart()
-
-            raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
-            if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
-                name, addr = parseaddr(raw_sender if raw_sender else "")
-                email_address = addr if addr else (raw_sender if raw_sender else "")
-                display_name = f"DEVELOPMENT {name}".strip() if name else "DEVELOPMENT"
-                msg['From'] = formataddr((display_name, email_address))
-            else:
-                msg['From'] = raw_sender
-
-            msg['To'] = ", ".join(to_emails)
-            msg['Subject'] = subject
-            msg.attach(MIMEText(body_html, 'html'))
-
-            if attachment:
-                filename = f"Folha_{month:02d}_{year}.xlsx"
-                part = MIMEApplication(attachment.getvalue(), Name=filename)
-                part['Content-Disposition'] = f'attachment; filename="{filename}"'
-                msg.attach(part)
+            msg = self._build_payroll_message(
+                to_emails=to_emails,
+                subject=subject,
+                body_html=body_html,
+                attachment=attachment,
+                month=month,
+                year=year
+            )
 
             server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
             server.ehlo()
@@ -79,9 +67,9 @@ class EmailService:
             server.quit()
             logger.info(f"Payroll email sent successfully for {action} {month:02d}/{year}")
         except smtplib.SMTPException as e:
-            logger.error(f"Failed to send payroll email (SMTP error): {e}")
+            logger.exception(f"Failed to send payroll email (SMTP error): {e}")
         except Exception as e:
-            logger.error(f"Failed to send payroll email: {e}")
+            logger.exception(f"Failed to send payroll email: {e}")
 
     def send_email(self, to_emails: List[str], attachments: List[Tuple[str, str]], report_html: str,
                    period_text: str) -> bool:
@@ -89,40 +77,12 @@ class EmailService:
             return False
 
         try:
-            msg = MIMEMultipart()
-
-            raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
-            tz = ZoneInfo(settings.TIMEZONE)
-            current_date = datetime.now(tz).strftime("%d/%m/%Y")
-            base_subject = f"Backup SPE e Relatórios - {current_date}"
-
-            if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
-                name, addr = parseaddr(raw_sender if raw_sender else "")
-                email_address = addr if addr else (raw_sender if raw_sender else "")
-                display_name = f"DEVELOPMENT {name}".strip() if name else "DEVELOPMENT"
-                msg['From'] = formataddr((display_name, email_address))
-                current_time = datetime.now(tz).strftime("%H:%M:%S")
-                msg['Subject'] = f"Backup SPE DEV - {current_date} {current_time}"
-            else:
-                if raw_sender:
-                    msg['From'] = raw_sender
-                else:
-                    msg['From'] = ""
-                msg['Subject'] = base_subject
-
-            msg['To'] = ", ".join(to_emails)
-
-            body_html = template_service.get_backup_email_html(period_text, report_html)
-
-            msg.attach(MIMEText(body_html, 'html'))
-
-            import os
-            for file_path, filename in attachments:
-                if os.path.exists(file_path):
-                    with open(file_path, "rb") as f:
-                        part = MIMEApplication(f.read(), Name=filename)
-                        part['Content-Disposition'] = f'attachment; filename="{filename}"'
-                        msg.attach(part)
+            msg = self._build_backup_message(
+                to_emails=to_emails,
+                attachments=attachments,
+                report_html=report_html,
+                period_text=period_text
+            )
 
             if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD or not settings.SMTP_PORT:
                 return False
@@ -137,8 +97,85 @@ class EmailService:
             return True
 
         except smtplib.SMTPException as e:
-            logger.error(f"Erro SMTP: {e}")
+            logger.exception(f"Erro SMTP: {e}")
             return False
+
+    def _get_sender_address(self) -> str:
+        raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
+        if not raw_sender:
+            raw_sender = ""
+
+        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            name, addr = parseaddr(raw_sender)
+
+            if addr:
+                email_address = addr
+            else:
+                email_address = raw_sender
+
+            if name:
+                display_name = f"DEVELOPMENT {name}".strip()
+            else:
+                display_name = "DEVELOPMENT"
+
+            return formataddr((display_name, email_address))
+
+        return raw_sender
+
+    def _build_payroll_message(
+            self,
+            to_emails: List[str],
+            subject: str,
+            body_html: str,
+            attachment: Optional[BytesIO],
+            month: int,
+            year: int
+    ) -> MIMEMultipart:
+        msg = MIMEMultipart()
+        msg['From'] = self._get_sender_address()
+        msg['To'] = ", ".join(to_emails)
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body_html, 'html'))
+
+        if attachment:
+            filename = f"Folha_{month:02d}_{year}.xlsx"
+            part = MIMEApplication(attachment.getvalue(), Name=filename)
+            part['Content-Disposition'] = f'attachment; filename="{filename}"'
+            msg.attach(part)
+
+        return msg
+
+    def _build_backup_message(
+            self,
+            to_emails: List[str],
+            attachments: List[Tuple[str, str]],
+            report_html: str,
+            period_text: str
+    ) -> MIMEMultipart:
+        msg = MIMEMultipart()
+        msg['From'] = self._get_sender_address()
+        msg['To'] = ", ".join(to_emails)
+
+        tz = ZoneInfo(settings.TIMEZONE)
+        current_date = datetime.now(tz).strftime("%d/%m/%Y")
+        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            current_time = datetime.now(tz).strftime("%H:%M:%S")
+            msg['Subject'] = f"Backup SPE DEV - {current_date} {current_time}"
+        else:
+            msg['Subject'] = f"Backup SPE e Relatórios - {current_date}"
+
+        body_html = template_service.get_backup_email_html(period_text, report_html)
+        msg.attach(MIMEText(body_html, 'html'))
+
+        import os
+        for file_path, filename in attachments:
+            if os.path.exists(file_path):
+                with open(file_path, "rb") as f:
+                    part = MIMEApplication(f.read(), Name=filename)
+                    part['Content-Disposition'] = f'attachment; filename="{filename}"'
+                    msg.attach(part)
+
+        return msg
 
 
 email_service = EmailService()
@@ -158,4 +195,4 @@ def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, c
 
             email_service.send_payroll_email(db, action, user_name, month, year, attachment)
     except Exception as e:
-        logger.error(f"Error in dispatch_payroll_email: {e}")
+        logger.exception(f"Error in dispatch_payroll_email: {e}")
