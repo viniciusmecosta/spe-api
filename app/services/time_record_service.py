@@ -32,6 +32,46 @@ class TimeRecordService:
         except Exception:
             return datetime.now(tz), False
 
+    def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
+        from app.domain.models.adjustment import AdjustmentRequest
+        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
+        requests = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status == AdjustmentStatus.PENDING
+        ).all()
+        for req in requests:
+            db.delete(req)
+        db.flush()
+
+    def _is_first_entry_affected(self, db: Session, user_id: int, target_date: datetime.date, 
+                                 record_id: int | None = None, 
+                                 new_datetime: datetime | None = None) -> bool:
+        from datetime import time
+        start_of_day = datetime.combine(target_date, time.min, tzinfo=ZoneInfo(settings.TIMEZONE))
+        end_of_day = datetime.combine(target_date, time.max, tzinfo=ZoneInfo(settings.TIMEZONE))
+        
+        first_entry = db.query(TimeRecord).filter(
+            TimeRecord.user_id == user_id,
+            TimeRecord.record_type == RecordType.ENTRY,
+            TimeRecord.deleted_at.is_(None),
+            TimeRecord.record_datetime >= start_of_day,
+            TimeRecord.record_datetime <= end_of_day
+        ).order_by(TimeRecord.record_datetime.asc()).first()
+        
+        if not first_entry:
+            return new_datetime is not None
+
+        if record_id is not None and first_entry.id == record_id:
+            return True
+            
+        if new_datetime is not None:
+            if new_datetime <= first_entry.record_datetime:
+                return True
+                
+        return False
+
     def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
         user = user_repository.get(db, user_id)
         if not user:
@@ -139,6 +179,14 @@ class TimeRecordService:
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
 
+        if previous_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+                
+        if new_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), new_datetime=record.record_datetime):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+
 
 
         record.is_ignored = True
@@ -179,6 +227,10 @@ class TimeRecordService:
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int,
                             ip_address: str, device_name: str | None, platform: str = "WEB_ADMIN") -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+
+        if obj_in.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, obj_in.user_id, obj_in.record_datetime.date(), new_datetime=obj_in.record_datetime):
+                self._invalidate_extra_time_requests(db, obj_in.user_id, obj_in.record_datetime.date())
 
         record = time_record_repository.create(
             db, user_id=obj_in.user_id, record_type=obj_in.record_type,
@@ -229,6 +281,18 @@ class TimeRecordService:
 
         if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
             return record
+
+        old_date = record.record_datetime.date()
+        new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
+
+        if record.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, old_date)
+                
+        if new_record_type == RecordType.ENTRY:
+            new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
+            if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
+                self._invalidate_extra_time_requests(db, record.user_id, new_date)
 
         old_data = {
             "record_type": record.record_type.value,
@@ -289,6 +353,10 @@ class TimeRecordService:
             raise HTTPException(status_code=404, detail="Registro não encontrado.")
 
         payroll_service.validate_period_open(db, record.record_datetime.date())
+
+        if record.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
 
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
 
