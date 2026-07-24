@@ -92,10 +92,16 @@ class TimesheetService:
             if is_weekend:
                 t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
 
+            waiver_credit = daily_res.waiver_seconds
+            formatted_waiver = self._format_duration(waiver_credit)
+
             if is_holiday and not punch_blocks:
                 punches_str = f"Feriado: {holiday_obj.name}" if holiday_obj else "Feriado"
             else:
                 punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
+                if waiver_credit > 0:
+                    abono_str = f"Abono: {formatted_waiver}"
+                    punches_str = f"{punches_str}   <font color='#94A3B8'>|</font>   {abono_str}" if punches_str != "-" else abono_str
 
             worked_time_str = self._format_duration(worked_seconds)
             unapproved_time_str = self._format_duration(unapproved_extra_seconds)
