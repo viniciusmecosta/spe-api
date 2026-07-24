@@ -310,7 +310,7 @@ class ExcelService:
         for user, report in user_reports:
             sum_data = report.summary
 
-            total_real = sum_data.total_worked_hours / 24.0
+            total_real = sum_data.total_worked_minutes / 1440.0
 
             ws_summary.append([""])
             row = ws_summary.max_row

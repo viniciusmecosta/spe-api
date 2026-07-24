@@ -90,28 +90,23 @@ class TimeCalculationService:
             has_schedule: bool = True
     ) -> DailyTimeResult:
 
-        process = _DailyProcessState()
-        for rec in day_records:
-            process.handle_record(rec)
+        raw_worked_seconds, entries, exits, punches, blocks = self._process_records(day_records)
 
-        if process.entry_time is not None:
-            process.punch_blocks.append(f"{process.entry_time.strftime('%H:%M')} - --:--")
-
-        gross_worked_seconds = process.worked_seconds
-
-        unapproved_extra_seconds = self._calculate_unapproved_extra(
-            unapproved_extra_adjs or [], gross_worked_seconds
+        waiver_seconds = self._calculate_waiver(
+            waiver_adj, is_excused, expected_seconds, raw_worked_seconds
         )
 
-        net_worked_seconds = gross_worked_seconds - unapproved_extra_seconds
+        adjusted_worked_seconds = raw_worked_seconds + waiver_seconds
+
+        unapproved_extra_seconds = self._calculate_unapproved_extra(
+            unapproved_extra_adjs or [], adjusted_worked_seconds
+        )
+
+        net_worked_seconds = adjusted_worked_seconds - unapproved_extra_seconds
         if net_worked_seconds < 0:
             net_worked_seconds = 0.0
 
-        if is_excused:
-            waiver_seconds = expected_seconds
-            net_worked_seconds = expected_seconds
-        else:
-            waiver_seconds = 0.0
+        gross_worked_seconds = net_worked_seconds + unapproved_extra_seconds
             
         extra_seconds = 0.0
         missing_seconds = 0.0
@@ -129,10 +124,10 @@ class TimeCalculationService:
             gross_worked_seconds=gross_worked_seconds,
             extra_seconds=extra_seconds,
             missing_seconds=missing_seconds,
-            entries=process.entries,
-            exits=process.exits,
-            punches=process.punches,
-            punch_blocks=process.punch_blocks
+            entries=entries,
+            exits=exits,
+            punches=punches,
+            punch_blocks=blocks
         )
 
     def _process_records(self, day_records: list[TimeRecord]):
@@ -158,9 +153,6 @@ class TimeCalculationService:
 
         if waiver_adj and waiver_adj.amount_hours and waiver_adj.amount_hours > 0:
             return waiver_adj.amount_hours * 3600
-
-        if expected_seconds > 0 and worked_seconds < expected_seconds:
-            return expected_seconds - worked_seconds
 
         return 0.0
 

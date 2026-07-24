@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -116,13 +116,10 @@ class UserWorkScheduleService:
             new_end = valid_until if valid_until else date.max
 
             if sch.valid_from <= new_end and sch_end >= valid_from:
-                if sch.valid_from < valid_from and (sch.valid_until is None or sch.valid_until >= valid_from):
-                    sch.valid_until = valid_from - timedelta(days=1)
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Conflito de datas no expediente. O dia {day_of_week} já possui um horário vigente que sobrepõe este período."
-                    )
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
+                )
 
     def _remove_stale_schedules(self, db: Session, user: User, schedules_in: list):
         current_sch_ids = [s.id for s in user.current_schedules]
