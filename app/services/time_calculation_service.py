@@ -13,6 +13,8 @@ class DailyTimeResult:
     unapproved_extra_seconds: float
     net_worked_seconds: float
     gross_worked_seconds: float
+    extra_seconds: float
+    missing_seconds: float
     entries: list[str]
     exits: list[str]
     punches: list[str]
@@ -26,6 +28,9 @@ class PeriodTimeResult:
     total_expected_seconds: float
     total_waiver_seconds: float
     total_unapproved_extra_seconds: float
+    total_extra_seconds: float
+    total_missing_seconds: float
+    final_balance_seconds: float
     daily_results: dict[date, DailyTimeResult]
     daily_expected_seconds: dict[date, float]
     daily_is_holiday: dict[date, bool]
@@ -79,29 +84,55 @@ class TimeCalculationService:
             self,
             day_records: list[TimeRecord],
             expected_seconds: float,
-            waiver_adj: AdjustmentRequest | None,
-            unapproved_extra_adjs: list[AdjustmentRequest],
-            is_excused: bool = False
+            waiver_adj: AdjustmentRequest | None = None,
+            unapproved_extra_adjs: list[AdjustmentRequest] | None = None,
+            is_excused: bool = False,
+            has_schedule: bool = True
     ) -> DailyTimeResult:
 
-        raw_worked_sec, entries, exits, punches, blocks = self._process_records(day_records)
-        waiver_sec = self._calculate_waiver(waiver_adj, is_excused, expected_seconds, raw_worked_sec)
-        adjusted_worked_sec = raw_worked_sec + waiver_sec
-        unapproved_extra_sec = self._calculate_unapproved_extra(unapproved_extra_adjs, adjusted_worked_sec)
+        process = _DailyProcessState()
+        for rec in day_records:
+            process.handle_record(rec)
 
-        net_worked_sec = adjusted_worked_sec - unapproved_extra_sec
-        gross_worked_sec = net_worked_sec + unapproved_extra_sec
+        if process.entry_time is not None:
+            process.punch_blocks.append(f"{process.entry_time.strftime('%H:%M')} - --:--")
+
+        gross_worked_seconds = process.worked_seconds
+
+        unapproved_extra_seconds = self._calculate_unapproved_extra(
+            unapproved_extra_adjs or [], gross_worked_seconds
+        )
+
+        net_worked_seconds = gross_worked_seconds - unapproved_extra_seconds
+        if net_worked_seconds < 0:
+            net_worked_seconds = 0.0
+
+        if is_excused:
+            waiver_seconds = expected_seconds
+            net_worked_seconds = expected_seconds
+        else:
+            waiver_seconds = 0.0
+            
+        extra_seconds = 0.0
+        missing_seconds = 0.0
+        
+        if has_schedule:
+            balance = net_worked_seconds - expected_seconds
+            extra_seconds = balance if balance > 0 else 0.0
+            missing_seconds = abs(balance) if balance < 0 else 0.0
 
         return DailyTimeResult(
-            raw_worked_seconds=raw_worked_sec,
-            waiver_seconds=waiver_sec,
-            unapproved_extra_seconds=unapproved_extra_sec,
-            net_worked_seconds=net_worked_sec,
-            gross_worked_seconds=gross_worked_sec,
-            entries=entries,
-            exits=exits,
-            punches=punches,
-            punch_blocks=blocks
+            raw_worked_seconds=gross_worked_seconds,
+            waiver_seconds=waiver_seconds,
+            unapproved_extra_seconds=unapproved_extra_seconds,
+            net_worked_seconds=net_worked_seconds,
+            gross_worked_seconds=gross_worked_seconds,
+            extra_seconds=extra_seconds,
+            missing_seconds=missing_seconds,
+            entries=process.entries,
+            exits=process.exits,
+            punches=process.punches,
+            punch_blocks=process.punch_blocks
         )
 
     def _process_records(self, day_records: list[TimeRecord]):
@@ -169,6 +200,8 @@ class TimeCalculationService:
         total_expected = 0.0
         total_waiver = 0.0
         total_unapproved = 0.0
+        total_extra = 0.0
+        total_missing = 0.0
 
         daily_results = {}
         daily_expected = {}
@@ -214,7 +247,8 @@ class TimeCalculationService:
                 expected_seconds=day_expected_hours * 3600,
                 waiver_adj=abono,
                 unapproved_extra_adjs=day_unapproved_extras,
-                is_excused=bool(abono)
+                is_excused=bool(abono),
+                has_schedule=has_schedule
             )
 
             daily_results[current_date] = daily_result
@@ -223,6 +257,8 @@ class TimeCalculationService:
             total_gross += daily_result.gross_worked_seconds
             total_waiver += daily_result.waiver_seconds
             total_unapproved += daily_result.unapproved_extra_seconds
+            total_extra += daily_result.extra_seconds
+            total_missing += daily_result.missing_seconds
 
             current_date += timedelta(days=1)
 
@@ -232,6 +268,9 @@ class TimeCalculationService:
             total_expected_seconds=total_expected,
             total_waiver_seconds=total_waiver,
             total_unapproved_extra_seconds=total_unapproved,
+            total_extra_seconds=total_extra,
+            total_missing_seconds=total_missing,
+            final_balance_seconds=total_extra - total_missing,
             daily_results=daily_results,
             daily_expected_seconds=daily_expected,
             daily_is_holiday=daily_is_holiday,

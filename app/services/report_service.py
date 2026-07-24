@@ -221,12 +221,9 @@ class ReportService:
         day_worked_hours = worked_seconds / 3600.0
         day_expected_hours = expected_seconds / 3600.0
 
-        day_balance = 0.0
-        if has_schedule:
-            day_balance = day_worked_hours - day_expected_hours
-
-        day_extra = day_balance if day_balance > 0 else 0.0
-        day_missing = abs(day_balance) if day_balance < 0 else 0.0
+        day_extra = daily_res.extra_seconds / 3600.0
+        day_missing = daily_res.missing_seconds / 3600.0
+        day_balance = day_extra - day_missing
 
         status = self._determine_daily_status(
             is_future, is_holiday, is_weekend, is_waiver, worked_seconds, expected_seconds, is_today, has_schedule
@@ -384,8 +381,8 @@ class ReportService:
 
         total_worked_seconds = period_result.total_net_worked_seconds
         total_expected_seconds = period_result.total_expected_seconds
-        total_extra_hours = 0.0
-        total_missing_hours = 0.0
+        total_extra_hours = period_result.total_extra_seconds / 3600.0
+        total_missing_hours = period_result.total_missing_seconds / 3600.0
 
         current = start_date
         while current <= end_date:
@@ -404,9 +401,6 @@ class ReportService:
                 days_worked_count += 1
             if item.worked_hours == 0 and item.expected_hours > 0 and not item.is_weekend and not item.is_holiday and not item.adjustment_id and current < today_date:
                 absences_count += 1
-
-            total_extra_hours += item.extra_hours
-            total_missing_hours += item.missing_hours
 
             current += timedelta(days=1)
 

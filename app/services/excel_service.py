@@ -309,13 +309,8 @@ class ExcelService:
 
         for user, report in user_reports:
             sum_data = report.summary
-            
-            total_real = 0.0
-            for day in report.daily_details:
-                bruto = self._time_str_to_fraction(day.worked_time)
-                extra = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
-                real = bruto - extra if bruto > extra else 0.0
-                total_real += real
+
+            total_real = sum_data.total_worked_hours / 24.0
 
             ws_summary.append([""])
             row = ws_summary.max_row
