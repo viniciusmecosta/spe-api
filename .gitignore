@@ -221,6 +221,8 @@ spe.db
 *.db-wal
 temp_backup_*.db
 /uploads
+dump.sql
+spe_dump.sql
 
 # Mosquitto data and logs
 mosquitto/data/

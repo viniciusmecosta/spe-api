@@ -35,5 +35,17 @@ class BackupService:
                 logger.exception(f"Erro backup SQLite: {e}")
                 return None
 
+    def create_sql_dump(self, db_path: str) -> str | None:
+        try:
+            sql_filename = db_path.replace('.db', '.sql')
+            with sqlite3.connect(db_path) as conn:
+                with open(sql_filename, 'w', encoding='utf-8') as f:
+                    for line in conn.iterdump():
+                        f.write('%s\n' % line)
+            return sql_filename
+        except Exception as e:
+            logger.exception(f"Erro ao gerar dump SQL: {e}")
+            return None
+
 
 backup_service = BackupService()
