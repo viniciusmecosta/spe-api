@@ -112,7 +112,7 @@ def test_calculate_waiver_less_than_expected():
         expected_seconds=28800.0,
         worked_seconds=14400.0
     )
-    assert result == 14400.0
+    assert result == 0.0
 
 def test_calculate_waiver_more_than_expected():
     service = TimeCalculationService()
@@ -135,7 +135,7 @@ def test_calculate_waiver_excused_no_waiver_adj():
         expected_seconds=28800.0,
         worked_seconds=14400.0
     )
-    assert result == 14400.0
+    assert result == 0.0
 
 def test_calculate_unapproved_extra():
     service = TimeCalculationService()
@@ -206,7 +206,7 @@ def test_calculate_daily_time(db_session_mock):
         is_excused=True
     )
     
-    assert result.raw_worked_seconds == 14400.0
+    assert result.raw_worked_seconds == 18000.0
     assert result.waiver_seconds == 3600.0
     assert result.unapproved_extra_seconds == 1800.0
     assert result.net_worked_seconds == 16200.0

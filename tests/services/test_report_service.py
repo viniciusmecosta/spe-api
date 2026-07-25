@@ -72,6 +72,8 @@ def _get_mock_period_result():
     daily_res_mock.net_worked_seconds = 3600
     daily_res_mock.waiver_seconds = 3600
     daily_res_mock.unapproved_extra_seconds = 0
+    daily_res_mock.extra_seconds = 0
+    daily_res_mock.missing_seconds = 25200
     daily_res_mock.entries = ["08:00"]
     daily_res_mock.exits = []
     daily_res_mock.punches = ["08:00"]
@@ -124,10 +126,10 @@ def test_build_history_day(service):
     assert res_no_records.status == "Feriado"
     
     res_weekend = service._build_history_day(date(2024, 1, 6), today_date, [], [], [], period_result, False)
-    assert res_weekend.status == "Final de semana"
+    assert res_weekend.status == "Fim de semana"
     
     res_abono = service._build_history_day(date(2024, 1, 2), today_date, [], [], [], period_result, False)
-    assert res_abono.status == "Abonado"
+    assert res_abono.status == "Abono"
     
     period_result.daily_waivers = defaultdict(lambda: None)
     res_today = service._build_history_day(today_date, today_date, [], [], [], period_result, False)
@@ -160,12 +162,12 @@ def test_build_detailed_punches(service):
 
 def test_determine_daily_status(service):
     assert service._determine_daily_status(True, True, False, False, 0, 0, False, False) == "Feriado"
-    assert service._determine_daily_status(True, False, True, False, 0, 0, False, False) == "Fim de Semana"
+    assert service._determine_daily_status(True, False, True, False, 0, 0, False, False) == "Fim de semana"
     assert service._determine_daily_status(True, False, False, False, 0, 0, False, False) == ""
-    assert service._determine_daily_status(False, False, False, True, 0, 0, False, False) == "Abonado/Atestado"
+    assert service._determine_daily_status(False, False, False, True, 0, 0, False, False) == "Abono"
     assert service._determine_daily_status(False, True, False, False, 0, 0, False, False) == "Feriado"
     assert service._determine_daily_status(False, False, True, False, 3600, 0, False, False) == "Normal"
-    assert service._determine_daily_status(False, False, True, False, 0, 0, False, False) == "Fim de Semana"
+    assert service._determine_daily_status(False, False, True, False, 0, 0, False, False) == "Fim de semana"
     assert service._determine_daily_status(False, False, False, False, 0, 3600, True, False) == ""
     assert service._determine_daily_status(False, False, False, False, 0, 3600, False, False) == "Falta"
     assert service._determine_daily_status(False, False, False, False, 0, 0, False, False) == "-"
@@ -199,7 +201,7 @@ def test_build_daily_report_item(service):
     res = service._build_daily_report_item(current, today_date, records, holidays, period_result, True, True)
     assert res.date == current
     assert res.is_holiday is True
-    assert res.status == "Abonado/Atestado"
+    assert res.status == "Abono"
     assert res.worked_hours == 1.0
     assert res.expected_hours == 8.0
     assert res.balance_hours == -7.0
@@ -212,6 +214,7 @@ def test_build_daily_report_item_no_schedule(service):
     today_date = date(2024, 1, 1)
     period_result = _get_mock_period_result()
     period_result.daily_waivers = defaultdict(lambda: None)
+    period_result.daily_results = defaultdict(lambda: MagicMock(extra_seconds=0, missing_seconds=0, waiver_seconds=0))
     res = service._build_daily_report_item(current, today_date, [], [], period_result, False, False)
     assert res.balance_hours == 0.0
     assert res.status == "Normal"

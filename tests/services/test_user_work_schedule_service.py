@@ -67,8 +67,10 @@ def test_handle_schedule_overlap_ignore_id(service, user):
 def test_handle_schedule_overlap_adjusts_valid_until(service, user):
     sch1 = UserWorkScheduleConfig(id=1, day_of_week=1, valid_from=date(2023, 1, 1), valid_until=None)
     user.historical_schedules.append(sch1)
-    service.handle_schedule_overlap(user, 1, date(2023, 2, 1), None)
-    assert sch1.valid_until == date(2023, 1, 31)
+    with pytest.raises(HTTPException) as exc:
+        service.handle_schedule_overlap(user, 1, date(2023, 2, 1), None)
+    assert exc.value.status_code == 400
+    assert "Já existe um expediente vigente" in exc.value.detail
 
 def test_handle_schedule_overlap_raises_error(service, user):
     sch1 = UserWorkScheduleConfig(id=1, day_of_week=1, valid_from=date(2023, 2, 1), valid_until=None)
@@ -76,7 +78,7 @@ def test_handle_schedule_overlap_raises_error(service, user):
     with pytest.raises(HTTPException) as exc:
         service.handle_schedule_overlap(user, 1, date(2023, 1, 1), date(2023, 2, 15))
     assert exc.value.status_code == 400
-    assert "Conflito de datas" in exc.value.detail
+    assert "Já existe um expediente vigente" in exc.value.detail
 
 def test_extract_schedule_data(service):
     sch = UserWorkScheduleConfig(

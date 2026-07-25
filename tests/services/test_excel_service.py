@@ -284,6 +284,7 @@ def test_build_summary_sheet(excel_service):
     mock_report = MagicMock()
     mock_report.summary.user_name = "Test User"
     mock_report.summary.days_worked = 1
+    mock_report.summary.total_worked_minutes = 480
     
     mock_day = MagicMock()
     mock_day.worked_time = "08:00"
@@ -301,6 +302,7 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     mock_report = MagicMock()
     mock_report.summary.user_name = "Test User"
     mock_report.summary.days_worked = 1
+    mock_report.summary.total_worked_minutes = 480
     
     mock_day = MagicMock()
     mock_day.worked_time = "01:00"

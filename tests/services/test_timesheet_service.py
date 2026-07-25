@@ -41,10 +41,16 @@ def test_build_daily_records_table():
     mock_daily_1 = MagicMock(spec=DailyTimeResult)
     mock_daily_1.net_worked_seconds = 3600
     mock_daily_1.unapproved_extra_seconds = 0
+    mock_daily_1.waiver_seconds = 0
+    mock_daily_1.extra_seconds = 0
+    mock_daily_1.missing_seconds = 0
     mock_daily_1.punch_blocks = []
     mock_daily_2 = MagicMock(spec=DailyTimeResult)
     mock_daily_2.net_worked_seconds = 3600
     mock_daily_2.unapproved_extra_seconds = 0
+    mock_daily_2.waiver_seconds = 0
+    mock_daily_2.extra_seconds = 0
+    mock_daily_2.missing_seconds = 0
     mock_daily_2.punch_blocks = ["08:00 - 09:00"]
     
     period_result = MagicMock(spec=PeriodTimeResult)
@@ -111,6 +117,9 @@ def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
         mock_daily.punch_blocks = []
         mock_daily.net_worked_seconds = 0
         mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
         
@@ -203,6 +212,9 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
         mock_daily.punch_blocks = []
         mock_daily.net_worked_seconds = 0
         mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
         
@@ -252,6 +264,9 @@ def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker
         mock_daily.punch_blocks = []
         mock_daily.net_worked_seconds = 0
         mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
         
@@ -302,6 +317,9 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
         mock_daily.punch_blocks = []
         mock_daily.net_worked_seconds = 0
         mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
         
