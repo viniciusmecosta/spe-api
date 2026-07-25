@@ -1,7 +1,9 @@
 import logging
+import os
 import sqlite3
 import threading
 import uuid
+import zipfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -45,6 +47,17 @@ class BackupService:
             return sql_filename
         except Exception as e:
             logger.exception(f"Erro ao gerar dump SQL: {e}")
+            return None
+
+    def compress_file(self, file_path: str) -> str | None:
+        try:
+            zip_filename = file_path + '.zip'
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                zipf.write(file_path, arcname=os.path.basename(file_path).split('_', 1)[
+                    -1] if 'temp_backup_' in file_path else os.path.basename(file_path))
+            return zip_filename
+        except Exception as e:
+            logger.exception(f"Erro ao compactar arquivo {file_path}: {e}")
             return None
 
 

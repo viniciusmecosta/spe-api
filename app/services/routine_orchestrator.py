@@ -49,18 +49,18 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
 
         now_str = now_local.strftime('%H:%M')
         caption = f"[Backup Automático] - {now_str}"
 
-        success = telegram_service.send_document(backup_path, caption)
+        success = telegram_service.send_document(zip_path or backup_path, caption)
         if sql_path and success:
             telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-        if sql_path and os.path.exists(sql_path):
-            os.remove(sql_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -210,17 +210,17 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
 
-        attachments.insert(0, (backup_path, "spe.db"))
+        attachments.insert(0, (zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db"))
         if sql_path:
             attachments.insert(1, (sql_path, "spe_dump.sql"))
 
         success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-        if sql_path and os.path.exists(sql_path):
-            os.remove(sql_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -280,6 +280,7 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
 
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -287,14 +288,13 @@ class RoutineOrchestrator:
         now_str = now_local.strftime('%d/%m/%Y %H:%M')
         caption = f"[Backup Manual Solicitado] - {now_str}"
 
-        success = telegram_service.send_document(backup_path, caption)
+        success = telegram_service.send_document(zip_path or backup_path, caption)
         if sql_path and success:
             telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-        if sql_path and os.path.exists(sql_path):
-            os.remove(sql_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -383,8 +383,9 @@ class RoutineOrchestrator:
                                 detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
         sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
 
-        attachments = [(backup_path, "spe.db")]
+        attachments = [(zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db")]
         if sql_path:
             attachments.append((sql_path, "spe_dump.sql"))
 
@@ -394,10 +395,9 @@ class RoutineOrchestrator:
 
         success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-        if sql_path and os.path.exists(sql_path):
-            os.remove(sql_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         if success:
             return True
