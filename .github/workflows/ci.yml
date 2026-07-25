@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
   test-and-lint:
@@ -30,6 +27,14 @@ jobs:
         run: |
           pip install ruff
           ruff check .
+
+      - name: Check Python Syntax (Compile)
+        run: |
+          python -m compileall -q app/
+
+      - name: Prepare Environment for Tests
+        run: |
+          cp .env.example .env
 
       - name: Run Pytest Coverage
         continue-on-error: true
