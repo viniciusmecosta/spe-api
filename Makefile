@@ -35,3 +35,10 @@ docker-down:
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+dump:
+	@echo "Limpando banco de dados atual..."
+	rm -f spe.db spe.db-shm spe.db-wal
+	@echo "Restaurando banco a partir de spe_dump.sql..."
+	sqlite3 spe.db < spe_dump.sql
+	@echo "Restauração concluída com sucesso!"

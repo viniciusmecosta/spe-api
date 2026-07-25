@@ -3,9 +3,6 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.core.config import settings
 from app.core.logger import get_log_path
 from app.database.session import get_db_session
@@ -16,6 +13,8 @@ from app.services.backup_service import backup_service
 from app.services.daily_report_service import daily_report_service
 from app.services.email_service import email_service
 from app.services.telegram_service import telegram_service
+from sqlalchemy import desc
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 DATE_FORMAT = "%d/%m/%Y"
@@ -49,13 +48,19 @@ class RoutineOrchestrator:
             logger.exception('Backup - "Telegram horário" Error')
             return
 
+        sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
+
         now_str = now_local.strftime('%H:%M')
         caption = f"[Backup Automático] - {now_str}"
 
-        success = telegram_service.send_document(backup_path, caption)
+        success = telegram_service.send_document(zip_path or backup_path, caption)
+        if sql_path and success:
+            telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -204,12 +209,18 @@ class RoutineOrchestrator:
             logger.exception('Backup - "Email diário" Error')
             return
 
-        attachments.insert(0, (backup_path, "spe.db"))
+        sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
+
+        attachments.insert(0, (zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db"))
+        if sql_path:
+            attachments.insert(1, (sql_path, "spe_dump.sql"))
 
         success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -268,16 +279,22 @@ class RoutineOrchestrator:
             logger.exception('Backup - "Telegram manual" Error')
             return
 
+        sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
+
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         now_local = now.replace(tzinfo=None)
         now_str = now_local.strftime('%d/%m/%Y %H:%M')
         caption = f"[Backup Manual Solicitado] - {now_str}"
 
-        success = telegram_service.send_document(backup_path, caption)
+        success = telegram_service.send_document(zip_path or backup_path, caption)
+        if sql_path and success:
+            telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         try:
             with get_db_session() as db_write:
@@ -365,7 +382,12 @@ class RoutineOrchestrator:
             raise HTTPException(status_code=400,
                                 detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
-        attachments = [(backup_path, "spe.db")]
+        sql_path = backup_service.create_sql_dump(backup_path)
+        zip_path = backup_service.compress_file(backup_path)
+
+        attachments = [(zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db")]
+        if sql_path:
+            attachments.append((sql_path, "spe_dump.sql"))
 
         log_path = get_log_path(yesterday)
         if os.path.exists(log_path):
@@ -373,8 +395,9 @@ class RoutineOrchestrator:
 
         success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
 
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
+        for p in [backup_path, sql_path, zip_path]:
+            if p and os.path.exists(p):
+                os.remove(p)
 
         if success:
             return True
