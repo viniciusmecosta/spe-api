@@ -69,10 +69,7 @@ class ReportService:
 
         holiday = next((h for h in holidays if h.date == current), None)
 
-        if current < today_date:
-            day_anomalies = [a for a in anomalies if a.date == current]
-        else:
-            day_anomalies = []
+        day_anomalies = [a for a in anomalies if a.date == current]
 
         daily_res = period_result.daily_results[current]
         worked_seconds = daily_res.net_worked_seconds

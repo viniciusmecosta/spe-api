@@ -77,15 +77,14 @@ class DashboardService:
                 next_punch_type = "EXIT"
 
         month_anomalies = []
-        if today_date > start_of_month:
-            anomalies = anomaly_service.get_anomalies(
-                db, start_of_month, today_date - timedelta(days=1), current_user.id, ignore_excessive_hours=True
-            )
-            for a in anomalies:
-                month_anomalies.append(AnomalyItem(
-                    date=a.date.strftime("%d/%m/%Y"),
-                    description=a.description
-                ))
+        anomalies = anomaly_service.get_anomalies(
+            db, start_of_month, today_date, current_user.id, ignore_excessive_hours=False
+        )
+        for a in anomalies:
+            month_anomalies.append(AnomalyItem(
+                date=a.date.strftime("%d/%m/%Y"),
+                description=a.description
+            ))
 
         aniversariantes_query = db.query(User).filter(
             User.is_active == True,
