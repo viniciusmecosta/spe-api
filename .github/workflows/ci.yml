@@ -28,9 +28,12 @@ jobs:
       - name: Run Ruff (Linting)
         continue-on-error: true
         run: |
+          pip install ruff
           ruff check .
 
       - name: Run Pytest Coverage
         continue-on-error: true
+        env:
+          PYTHONPATH: .
         run: |
-          pytest tests/services/ --cov=app/services/ --cov-report=xml --cov-report=term-missing
+          python -m pytest tests/services/ --cov=app/services/ --cov-report=xml --cov-report=term-missing
