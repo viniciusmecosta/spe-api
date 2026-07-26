@@ -1,16 +1,16 @@
-import os
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
-import pytest
-from sqlalchemy.exc import SQLAlchemyError
-from fastapi import HTTPException
 
+import pytest
 from app.core.config import settings
+from app.domain.models.enums import UserRole
 from app.domain.models.routine_log import RoutineLog
 from app.domain.models.user import User
-from app.domain.models.enums import UserRole
 from app.services.routine_orchestrator import RoutineOrchestrator
+from fastapi import HTTPException
+from sqlalchemy.exc import SQLAlchemyError
+
 
 @pytest.fixture
 def mock_get_db_session(db_session_mock):
@@ -92,7 +92,7 @@ def test_execute_hourly_backup_telegram_success(orchestrator, mock_datetime, moc
         mock_telegram_service.send_document.return_value = True
         orchestrator.execute_hourly_backup_telegram()
         db_session_mock.add.assert_called_once()
-        mock_os[1].assert_called_once_with("/tmp/backup.zip")
+        mock_os[1].assert_any_call("/tmp/backup.zip")
 
 def test_execute_hourly_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock, mock_backup_service, mock_telegram_service, mock_os):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
@@ -278,7 +278,7 @@ def test_run_daily_backup_routine_email_success(orchestrator, mock_datetime, moc
         mock_email_service.send_email.return_value = True
         orchestrator.run_daily_backup_routine_email()
         db_session_mock.add.assert_called_once()
-        mock_os[1].assert_called_once_with("/tmp/backup.zip")
+        mock_os[1].assert_any_call("/tmp/backup.zip")
 
 def test_run_daily_backup_routine_email_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock, mock_backup_service, mock_email_service, mock_daily_report_service, mock_os, mock_get_log_path):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
@@ -373,7 +373,7 @@ def test_execute_manual_backup_telegram_success(orchestrator, mock_datetime, moc
     mock_telegram_service.send_document.return_value = True
     orchestrator.execute_manual_backup_telegram()
     db_session_mock.add.assert_called_once()
-    mock_os[1].assert_called_once_with("/tmp/backup.zip")
+    mock_os[1].assert_any_call("/tmp/backup.zip")
 
 def test_execute_manual_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock, mock_backup_service, mock_telegram_service, mock_os):
     mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
@@ -434,7 +434,7 @@ def test_send_manual_backup_email_success(orchestrator, db_session_mock, mock_ge
         mock_email_service.send_email.return_value = True
         res = orchestrator.send_manual_backup_email(None)
         assert res is True
-        mock_os[1].assert_called_once_with("/tmp/backup.zip")
+        mock_os[1].assert_any_call("/tmp/backup.zip")
 
 def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock_get_db_session, mock_daily_report_service, mock_backup_service, mock_email_service, mock_os, mock_get_log_path, mock_datetime):
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(settings, 'SMTP_PASSWORD', 'pass'):

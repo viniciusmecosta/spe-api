@@ -2,14 +2,13 @@ import logging
 from datetime import date, datetime, time
 
 import requests
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.utils.formatters import format_short_name
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ class TelegramService:
             logger.exception(f"Telegram send text error: {e}")
             return False
 
-    def send_document(self, file_path: str, caption: str) -> bool:
+    def send_document(self, file_path: str, caption: str, filename: str | None = None) -> bool:
         if not self.bot_token or not self.chat_id:
             return False
 
@@ -49,7 +48,7 @@ class TelegramService:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
             with open(file_path, "rb") as file:
                 payload = {"chat_id": self.chat_id, "caption": caption}
-                files = {"document": file}
+                files = {"document": (filename, file)} if filename else {"document": file}
                 response = requests.post(url, data=payload, files=files, timeout=40)
             is_success = 200 <= response.status_code <= 299
             if not is_success:

@@ -40,24 +40,27 @@ class BackupService:
     def create_sql_dump(self, db_path: str) -> str | None:
         try:
             sql_filename = db_path.replace('.db', '.sql')
-            with sqlite3.connect(db_path) as conn:
+            conn = sqlite3.connect(db_path)
+            try:
                 with open(sql_filename, 'w', encoding='utf-8') as f:
                     for line in conn.iterdump():
                         f.write('%s\n' % line)
+            finally:
+                conn.close()
             return sql_filename
         except Exception as e:
             logger.exception(f"Erro ao gerar dump SQL: {e}")
             return None
 
-    def compress_file(self, file_path: str) -> str | None:
+    def compress_files(self, files_to_compress: dict[str, str], output_zip_path: str) -> str | None:
         try:
-            zip_filename = file_path + '.zip'
-            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                zipf.write(file_path, arcname=os.path.basename(file_path).split('_', 1)[
-                    -1] if 'temp_backup_' in file_path else os.path.basename(file_path))
-            return zip_filename
+            with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file_path, arcname in files_to_compress.items():
+                    if file_path and os.path.exists(file_path):
+                        zipf.write(file_path, arcname=arcname)
+            return output_zip_path
         except Exception as e:
-            logger.exception(f"Erro ao compactar arquivo {file_path}: {e}")
+            logger.exception(f"Erro ao compactar arquivos para {output_zip_path}: {e}")
             return None
 
 

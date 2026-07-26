@@ -49,32 +49,39 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
-        zip_path = backup_service.compress_file(backup_path)
+
+        files_to_compress = {backup_path: "spe.db"}
+        if sql_path:
+            files_to_compress[sql_path] = "spe_dump.sql"
+        zip_path = backup_service.compress_files(files_to_compress, backup_path + '.zip')
 
         now_str = now_local.strftime('%H:%M')
         caption = f"[Backup Automático] - {now_str}"
 
-        success = telegram_service.send_document(zip_path or backup_path, caption)
-        if sql_path and success:
-            telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
-
-        for p in [backup_path, sql_path, zip_path]:
-            if p and os.path.exists(p):
-                os.remove(p)
-
         try:
-            with get_db_session() as db_write:
-                if success:
-                    log_entry = RoutineLog(
-                        routine_type="TELEGRAM_HOURLY_BACKUP",
-                        status="SUCCESS",
-                        execution_time=now_local
-                    )
-                    db_write.add(log_entry)
-                else:
-                    logger.exception('Backup - "Telegram horário" Error')
-        except SQLAlchemyError as e:
-            logger.exception(f'Backup - "Telegram horário" DB Error: {e}')
+            success = telegram_service.send_document(zip_path or backup_path, caption,
+                                                     filename="spe.zip" if zip_path else "spe.db")
+
+            try:
+                with get_db_session() as db_write:
+                    if success:
+                        log_entry = RoutineLog(
+                            routine_type="TELEGRAM_HOURLY_BACKUP",
+                            status="SUCCESS",
+                            execution_time=now_local
+                        )
+                        db_write.add(log_entry)
+                    else:
+                        logger.exception('Backup - "Telegram horário" Error')
+            except SQLAlchemyError as e:
+                logger.exception(f'Backup - "Telegram horário" DB Error: {e}')
+        finally:
+            for p in [backup_path, sql_path, zip_path]:
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError as e:
+                        logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
 
     def send_managerial_report_telegram(self):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -210,31 +217,37 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
-        zip_path = backup_service.compress_file(backup_path)
 
-        attachments.insert(0, (zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db"))
+        files_to_compress = {backup_path: "spe.db"}
         if sql_path:
-            attachments.insert(1, (sql_path, "spe_dump.sql"))
+            files_to_compress[sql_path] = "spe_dump.sql"
+        zip_path = backup_service.compress_files(files_to_compress, backup_path + '.zip')
 
-        success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
-
-        for p in [backup_path, sql_path, zip_path]:
-            if p and os.path.exists(p):
-                os.remove(p)
+        attachments.insert(0, (zip_path or backup_path, "spe.zip" if zip_path else "spe.db"))
 
         try:
-            with get_db_session() as db_write:
-                log_entry = RoutineLog(
-                    routine_type="EMAIL_DAILY_BACKUP",
-                    target_date=yesterday,
-                    status="SUCCESS" if success else "FAILED",
-                    execution_time=now_local
-                )
-                db_write.add(log_entry)
-                if not success:
-                    logger.exception('Backup - "Email diário" Error')
-        except SQLAlchemyError as e:
-            logger.exception(f'Backup - "Email diário" DB Error: {e}')
+            success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
+
+            try:
+                with get_db_session() as db_write:
+                    log_entry = RoutineLog(
+                        routine_type="EMAIL_DAILY_BACKUP",
+                        target_date=yesterday,
+                        status="SUCCESS" if success else "FAILED",
+                        execution_time=now_local
+                    )
+                    db_write.add(log_entry)
+                    if not success:
+                        logger.exception('Backup - "Email diário" Error')
+            except SQLAlchemyError as e:
+                logger.exception(f'Backup - "Email diário" DB Error: {e}')
+        finally:
+            for p in [backup_path, sql_path, zip_path]:
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError as e:
+                        logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
 
     def clean_old_logs(self, days_to_keep: int = None):
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
@@ -280,7 +293,11 @@ class RoutineOrchestrator:
             return
 
         sql_path = backup_service.create_sql_dump(backup_path)
-        zip_path = backup_service.compress_file(backup_path)
+
+        files_to_compress = {backup_path: "spe.db"}
+        if sql_path:
+            files_to_compress[sql_path] = "spe_dump.sql"
+        zip_path = backup_service.compress_files(files_to_compress, backup_path + '.zip')
 
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -288,26 +305,29 @@ class RoutineOrchestrator:
         now_str = now_local.strftime('%d/%m/%Y %H:%M')
         caption = f"[Backup Manual Solicitado] - {now_str}"
 
-        success = telegram_service.send_document(zip_path or backup_path, caption)
-        if sql_path and success:
-            telegram_service.send_document(sql_path, f"{caption} (SQL Dump)")
-
-        for p in [backup_path, sql_path, zip_path]:
-            if p and os.path.exists(p):
-                os.remove(p)
-
         try:
-            with get_db_session() as db_write:
-                log_entry = RoutineLog(
-                    routine_type="TELEGRAM_MANUAL_BACKUP",
-                    status="SUCCESS" if success else "FAILED",
-                    execution_time=now_local
-                )
-                db_write.add(log_entry)
-                if not success:
-                    logger.exception('Backup - "Telegram manual" Error')
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro ao salvar rotina manual: {e}")
+            success = telegram_service.send_document(zip_path or backup_path, caption,
+                                                     filename="spe.zip" if zip_path else "spe.db")
+
+            try:
+                with get_db_session() as db_write:
+                    log_entry = RoutineLog(
+                        routine_type="TELEGRAM_MANUAL_BACKUP",
+                        status="SUCCESS" if success else "FAILED",
+                        execution_time=now_local
+                    )
+                    db_write.add(log_entry)
+                    if not success:
+                        logger.exception('Backup - "Telegram manual" Error')
+            except SQLAlchemyError as e:
+                logger.exception(f"Erro ao salvar rotina manual: {e}")
+        finally:
+            for p in [backup_path, sql_path, zip_path]:
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError as e:
+                        logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
 
     def send_manual_report_telegram(self, start_date, end_date):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -383,21 +403,27 @@ class RoutineOrchestrator:
                                 detail="Falha ao gerar a cópia de segurança do banco de dados local.")
 
         sql_path = backup_service.create_sql_dump(backup_path)
-        zip_path = backup_service.compress_file(backup_path)
 
-        attachments = [(zip_path or backup_path, "spe.db.zip" if zip_path else "spe.db")]
+        files_to_compress = {backup_path: "spe.db"}
         if sql_path:
-            attachments.append((sql_path, "spe_dump.sql"))
+            files_to_compress[sql_path] = "spe_dump.sql"
+        zip_path = backup_service.compress_files(files_to_compress, backup_path + '.zip')
+
+        attachments = [(zip_path or backup_path, "spe.zip" if zip_path else "spe.db")]
 
         log_path = get_log_path(yesterday)
         if os.path.exists(log_path):
             attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
 
-        success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
-
-        for p in [backup_path, sql_path, zip_path]:
-            if p and os.path.exists(p):
-                os.remove(p)
+        try:
+            success = email_service.send_email(to_emails, attachments, full_report_html, period_text)
+        finally:
+            for p in [backup_path, sql_path, zip_path]:
+                if p and os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError as e:
+                        logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
 
         if success:
             return True
