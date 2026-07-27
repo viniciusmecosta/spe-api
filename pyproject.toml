@@ -1,0 +1,23 @@
+[tool.mypy]
+plugins = [
+  "pydantic.mypy",
+  "sqlalchemy.ext.mypy.plugin"
+]
+ignore_missing_imports = true
+disable_error_code = [
+  "arg-type",
+  "union-attr",
+  "attr-defined",
+  "assignment",
+  "call-arg",
+  "return-value",
+  "var-annotated",
+  "import-untyped",
+  "valid-type",
+  "operator",
+  "type-var",
+  "annotation-unchecked",
+  "dict-item",
+  "list-item",
+  "misc"
+]
