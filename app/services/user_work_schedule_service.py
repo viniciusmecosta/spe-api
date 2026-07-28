@@ -1,7 +1,11 @@
-from datetime import date
+from datetime import date, timedelta
+from typing import Dict, List, Any
+from collections import defaultdict
 
 from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_
 
 from app.domain.models.user import User, UserWorkScheduleConfig
 from app.repositories.payroll_repository import payroll_repository
@@ -10,56 +14,7 @@ from app.services.audit_service import audit_service
 
 
 class UserWorkScheduleService:
-    def _handle_existing_schedule(self, db, user, existing_sch, sch_data, sch_id, valid_from, valid_until, today):
-        self.check_payroll_closure(db, existing_sch.valid_from, existing_sch.valid_until)
-        new_valid_from = valid_from if valid_from else today
-        self.check_payroll_closure(db, new_valid_from, valid_until)
-        self.handle_schedule_overlap(user, sch_data.day_of_week, new_valid_from, valid_until,
-                                     ignore_id=sch_id)
-        self._apply_schedule_updates_from_obj(existing_sch, sch_data, new_valid_from, valid_until)
-
-    def _create_new_schedule(self, db, user, sch_data, valid_from, valid_until, today, is_create):
-        new_valid_from = valid_from if valid_from else today
-        if not is_create:
-            self.check_payroll_closure(db, new_valid_from, valid_until)
-        self.handle_schedule_overlap(user, sch_data.day_of_week, new_valid_from, valid_until)
-
-        new_sch = UserWorkScheduleConfig(
-            day_of_week=sch_data.day_of_week, daily_hours=sch_data.daily_hours,
-            entry_1=getattr(sch_data, 'entry_1', None), exit_1=getattr(sch_data, 'exit_1', None),
-            entry_2=getattr(sch_data, 'entry_2', None), exit_2=getattr(sch_data, 'exit_2', None),
-            valid_from=new_valid_from, valid_until=valid_until
-        )
-        user.historical_schedules.append(new_sch)
-
-    def _process_single_schedule(self, db: Session, user: User, sch_data: any, is_create: bool):
-        sch_id = getattr(sch_data, 'id', None)
-        daily_hours = sch_data.daily_hours
-        valid_from = getattr(sch_data, 'valid_from', None)
-        valid_until = getattr(sch_data, 'valid_until', None)
-
-        if daily_hours < 0 or daily_hours > 24:
-            raise HTTPException(status_code=400, detail="As horas diárias devem estar entre 0 e 24.")
-
-        today = date.today()
-        if sch_id and not is_create:
-            existing_sch = next((sch for sch in user.historical_schedules if sch.id == sch_id), None)
-            if existing_sch:
-                self._handle_existing_schedule(db, user, existing_sch, sch_data, sch_id, valid_from, valid_until, today)
-        else:
-            self._create_new_schedule(db, user, sch_data, valid_from, valid_until, today, is_create)
-
-    def _apply_schedule_updates_from_obj(self, sch, sch_data, valid_from, valid_until):
-        sch.day_of_week = sch_data.day_of_week
-        sch.daily_hours = sch_data.daily_hours
-        sch.entry_1 = getattr(sch_data, 'entry_1', None)
-        sch.exit_1 = getattr(sch_data, 'exit_1', None)
-        sch.entry_2 = getattr(sch_data, 'entry_2', None)
-        sch.exit_2 = getattr(sch_data, 'exit_2', None)
-        sch.valid_from = valid_from
-        sch.valid_until = valid_until
-
-    def _apply_schedule_updates(self, sch, sch_data: dict, valid_from, valid_until):
+    def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
         sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
         sch.entry_1 = sch_data.get('entry_1', sch.entry_1)
@@ -104,8 +59,7 @@ class UserWorkScheduleService:
                 current_month = 1
                 current_year += 1
 
-    def handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date,
-                                ignore_id: int = None):
+    def handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date, ignore_id: int = None):
         for sch in user.historical_schedules:
             if ignore_id and sch.id == ignore_id:
                 continue
@@ -121,118 +75,269 @@ class UserWorkScheduleService:
                     detail=f"Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
                 )
 
-    def _remove_stale_schedules(self, db: Session, user: User, schedules_in: list):
-        current_sch_ids = [s.id for s in user.current_schedules]
-        incoming_ids = [getattr(s, 'id', None) for s in schedules_in if getattr(s, 'id', None) is not None]
+    def get_bulk_schedules(self, db: Session, month: int, year: int) -> List[Dict[str, Any]]:
+        # Filtra os que tem interseção com o mês atual
+        # Inicio do mês
+        start_of_month = date(year, month, 1)
+        # Fim do mês (aproximado usando +31 dias e voltando pro dia 1, menos 1 dia)
+        next_month = start_of_month.replace(day=28) + timedelta(days=4)
+        end_of_month = next_month - timedelta(days=next_month.day)
 
-        schedules_to_remove = [sch for sch in user.historical_schedules if
-                               sch.id in current_sch_ids and sch.id not in incoming_ids]
-        for sch in schedules_to_remove:
-            self.check_payroll_closure(db, sch.valid_from, sch.valid_until)
-            user.historical_schedules.remove(sch)
+        configs = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.valid_from <= end_of_month,
+            or_(
+                UserWorkScheduleConfig.valid_until == None,
+                UserWorkScheduleConfig.valid_until >= start_of_month
+            )
+        ).all()
 
-    def sync_user_schedules(self, db: Session, user: User, schedules_in: list, is_create: bool = False):
-        if schedules_in is None:
-            return
+        # Agrupar por valid_from e valid_until
+        groups = defaultdict(lambda: defaultdict(list))
+        
+        for cfg in configs:
+            key = (cfg.valid_from, cfg.valid_until)
+            groups[key][cfg.user_id].append({
+                "day_of_week": cfg.day_of_week,
+                "daily_hours": cfg.daily_hours,
+                "entry_1": cfg.entry_1,
+                "exit_1": cfg.exit_1,
+                "entry_2": cfg.entry_2,
+                "exit_2": cfg.exit_2,
+            })
 
-        if not is_create:
-            self._remove_stale_schedules(db, user, schedules_in)
+        result = []
+        for (v_from, v_until), users_dict in groups.items():
+            users_list = []
+            for user_id, sch_list in users_dict.items():
+                users_list.append({
+                    "user_id": user_id,
+                    "schedules": sch_list
+                })
+            
+            result.append({
+                "valid_from": v_from,
+                "valid_until": v_until,
+                "users": users_list
+            })
 
-        for sch_data in schedules_in:
-            self._process_single_schedule(db, user, sch_data, is_create)
+        return result
 
-    def add_schedule(self, db: Session, user_id: int, sch_data: dict, current_user_id: int) -> UserWorkScheduleConfig:
-        user = user_repository.get(db, user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    def get_bulk_schedule(self, db: Session, valid_from: date, valid_until: date) -> Dict[str, Any]:
+        configs = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.valid_from == valid_from,
+            UserWorkScheduleConfig.valid_until == valid_until
+        ).all()
 
-        valid_from = sch_data.get('valid_from') or date.today()
-        self.check_payroll_closure(db, valid_from, sch_data.get('valid_until'))
-        self.handle_schedule_overlap(user, sch_data.get('day_of_week'), valid_from, sch_data.get('valid_until'))
+        if not configs:
+            raise HTTPException(status_code=404, detail="Expediente em massa não encontrado para esse período.")
 
-        new_sch = UserWorkScheduleConfig(user_id=user.id)
-        self._apply_schedule_updates(new_sch, sch_data, valid_from, sch_data.get('valid_until'))
+        users_dict = defaultdict(list)
+        for cfg in configs:
+            users_dict[cfg.user_id].append({
+                "day_of_week": cfg.day_of_week,
+                "daily_hours": cfg.daily_hours,
+                "entry_1": cfg.entry_1,
+                "exit_1": cfg.exit_1,
+                "entry_2": cfg.entry_2,
+                "exit_2": cfg.exit_2,
+            })
 
-        db.add(new_sch)
-        db.commit()
-        db.refresh(new_sch)
+        users_list = []
+        for user_id, sch_list in users_dict.items():
+            users_list.append({
+                "user_id": user_id,
+                "schedules": sch_list
+            })
+
+        return {
+            "valid_from": valid_from,
+            "valid_until": valid_until,
+            "users": users_list
+        }
+
+    def bulk_add_schedules(self, db: Session, bulk_data: dict, current_user_id: int):
+        valid_from = bulk_data.get('valid_from')
+        valid_until = bulk_data.get('valid_until')
+
+        if not valid_from or not valid_until:
+            raise HTTPException(status_code=400, detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            
+        if (valid_until - valid_from).days > 31:
+            raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
+
+        users_input = bulk_data.get('users', [])
+
+        if not users_input:
+            raise HTTPException(status_code=400, detail="Nenhum usuário informado.")
+
+        errors = []
+        new_schedules = []
+        day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
+
+        self.check_payroll_closure(db, valid_from, valid_until)
+
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            user = user_repository.get(db, uid)
+            if not user:
+                errors.append(f"Usuário com ID {uid} não encontrado.")
+                continue
+
+            schedules_in = user_data.get('schedules', [])
+            
+            for sch_data_dict in schedules_in:
+                day_of_week = sch_data_dict.get('day_of_week')
+                day_name = day_names.get(day_of_week, str(day_of_week))
+
+                try:
+                    self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
+                except HTTPException:
+                    errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
+                    continue
+
+                new_sch = UserWorkScheduleConfig(user_id=user.id)
+                self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
+                new_schedules.append(new_sch)
+
+        if errors:
+            raise HTTPException(status_code=400, detail=errors)
+
+        for sch in new_schedules:
+            db.add(sch)
 
         audit_service.log(
             db, user_id=current_user_id, action="CREATE",
-            entity="USER_WORK_SCHEDULE", entity_id=new_sch.id,
-            new_data={
-                "user_id": new_sch.user_id,
-                "day_of_week": new_sch.day_of_week,
-                "daily_hours": new_sch.daily_hours,
-                "valid_from": str(new_sch.valid_from) if new_sch.valid_from else None,
-                "valid_until": str(new_sch.valid_until) if new_sch.valid_until else None
-            }
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
-        return new_sch
-
-    def update_schedule(self, db: Session, user_id: int, schedule_id: int, sch_data: dict,
-                        current_user_id: int) -> UserWorkScheduleConfig:
-        sch = db.query(UserWorkScheduleConfig).filter(
-            UserWorkScheduleConfig.id == schedule_id,
-            UserWorkScheduleConfig.user_id == user_id
-        ).first()
-        if not sch:
-            raise HTTPException(status_code=404, detail="Schedule not found")
-
-        old_data = self._extract_schedule_data(sch)
-
-        self.check_payroll_closure(db, sch.valid_from, sch.valid_until)
-
-        valid_from = sch_data.get('valid_from', sch.valid_from)
-        valid_until = sch_data.get('valid_until', sch.valid_until)
-        self.check_payroll_closure(db, valid_from, valid_until)
-
-        user = user_repository.get(db, user_id)
-        self.handle_schedule_overlap(user, sch_data.get('day_of_week', sch.day_of_week), valid_from, valid_until,
-                                     ignore_id=sch.id)
-
-        self._apply_schedule_updates(sch, sch_data, valid_from, valid_until)
-
-        db.add(sch)
+        
         db.commit()
-        db.refresh(sch)
 
-        new_data_raw = self._extract_schedule_data(sch)
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+        return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
+
+    def update_bulk_schedules(self, db: Session, old_valid_from: date, old_valid_until: date, bulk_data: dict, current_user_id: int):
+        new_valid_from = bulk_data.get('valid_from')
+        new_valid_until = bulk_data.get('valid_until')
+
+        if not new_valid_from or not new_valid_until:
+            raise HTTPException(status_code=400, detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            
+        if (new_valid_until - new_valid_from).days > 31:
+            raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
+
+        self.check_payroll_closure(db, old_valid_from, old_valid_until)
+        self.check_payroll_closure(db, new_valid_from, new_valid_until)
+
+        old_configs = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.valid_from == old_valid_from,
+            UserWorkScheduleConfig.valid_until == old_valid_until
+        ).all()
+
+        # Build a map of existing (user_id, day_of_week) -> config
+        existing_map = {(cfg.user_id, cfg.day_of_week): cfg for cfg in old_configs}
+        
+        users_input = bulk_data.get('users', [])
+        incoming_map = {}
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            for sch_data_dict in user_data.get('schedules', []):
+                incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
+
+        errors = []
+        to_delete = []
+        to_update = []
+        to_create = []
+
+        day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
+
+        # Determine deletes and updates
+        for key, old_cfg in existing_map.items():
+            if key not in incoming_map:
+                to_delete.append(old_cfg)
+            else:
+                to_update.append((old_cfg, incoming_map[key]))
+
+        # Determine creates
+        for key, new_data in incoming_map.items():
+            if key not in existing_map:
+                uid, dow = key
+                user = user_repository.get(db, uid)
+                if not user:
+                    errors.append(f"Usuário com ID {uid} não encontrado.")
+                    continue
+                to_create.append((user, new_data))
+
+        if errors:
+            raise HTTPException(status_code=400, detail=errors)
+
+        # Handle overlaps for updates and creates
+        for old_cfg, new_data in to_update:
+            user = user_repository.get(db, old_cfg.user_id)
+            try:
+                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until, ignore_id=old_cfg.id)
+            except HTTPException:
+                day_name = day_names.get(new_data.get('day_of_week'), str(new_data.get('day_of_week')))
+                errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
+                
+        for user, new_data in to_create:
+            try:
+                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until)
+            except HTTPException:
+                day_name = day_names.get(new_data.get('day_of_week'), str(new_data.get('day_of_week')))
+                errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
+
+        if errors:
+            raise HTTPException(status_code=400, detail=errors)
+
+        # Apply changes
+        for cfg in to_delete:
+            db.delete(cfg)
+
+        for cfg, new_data in to_update:
+            self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
+            db.add(cfg)
+
+        new_schs = []
+        for user, new_data in to_create:
+            new_sch = UserWorkScheduleConfig(user_id=user.id)
+            self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
+            db.add(new_sch)
+            new_schs.append(new_sch)
 
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE",
-            entity="USER_WORK_SCHEDULE", entity_id=sch.id,
-            old_data=actual_old, new_data=actual_new
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
+            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
-
-        return sch
-
-    def delete_schedule(self, db: Session, user_id: int, schedule_id: int, current_user_id: int):
-        sch = db.query(UserWorkScheduleConfig).filter(
-            UserWorkScheduleConfig.id == schedule_id,
-            UserWorkScheduleConfig.user_id == user_id
-        ).first()
-        if not sch:
-            raise HTTPException(status_code=404, detail="Schedule not found")
-
-        self.check_payroll_closure(db, sch.valid_from, sch.valid_until)
-
-        old_data = {
-            "user_id": sch.user_id,
-            "day_of_week": sch.day_of_week,
-            "valid_from": str(sch.valid_from) if sch.valid_from else None,
-            "valid_until": str(sch.valid_until) if sch.valid_until else None
-        }
-
-        db.delete(sch)
+        
         db.commit()
 
+        return {"message": "Expedientes atualizados com sucesso."}
+
+    def delete_bulk_schedules(self, db: Session, valid_from: date, valid_until: date, current_user_id: int):
+        self.check_payroll_closure(db, valid_from, valid_until)
+        
+        configs = db.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.valid_from == valid_from,
+            UserWorkScheduleConfig.valid_until == valid_until
+        ).all()
+
+        if not configs:
+            raise HTTPException(status_code=404, detail="Expediente em massa não encontrado.")
+
+        count = len(configs)
+        for cfg in configs:
+            db.delete(cfg)
+            
         audit_service.log(
             db, user_id=current_user_id, action="DELETE",
-            entity="USER_WORK_SCHEDULE", entity_id=schedule_id,
-            old_data=old_data, new_data=None
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count},
+            new_data=None
         )
-
+        
+        db.commit()
+        return {"message": f"{count} registros removidos com sucesso."}
 
 user_work_schedule_service = UserWorkScheduleService()

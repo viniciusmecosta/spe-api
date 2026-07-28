@@ -89,7 +89,6 @@ class UserService:
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         self._validate_unique_fields(db, user_in)
 
-        schedules_in = getattr(user_in, 'schedules', None)
         biometrics_in = getattr(user_in, 'biometrics', None)
 
         password_hash = get_password_hash(user_in.password)
@@ -109,12 +108,6 @@ class UserService:
             can_manual_punch_mobile=user_in.can_manual_punch_mobile,
             can_export_report=user_in.can_export_report
         )
-
-        if schedules_in:
-            from app.services.user_work_schedule_service import (
-                user_work_schedule_service,
-            )
-            user_work_schedule_service.sync_user_schedules(db, db_user, schedules_in, is_create=True)
 
         if biometrics_in:
             self._sync_biometrics(db, db_user, biometrics_in)
@@ -157,7 +150,6 @@ class UserService:
         self._validate_unique_fields(db, user_in, user)
 
         update_data = user_in.model_dump(exclude_unset=True)
-        schedules_in = update_data.pop("schedules", None)
         biometrics_in = update_data.pop("biometrics", None)
 
         if update_data.get("password"):
@@ -169,12 +161,6 @@ class UserService:
         for field, value in update_data.items():
             if hasattr(user, field):
                 setattr(user, field, value)
-
-        if schedules_in is not None:
-            from app.services.user_work_schedule_service import (
-                user_work_schedule_service,
-            )
-            user_work_schedule_service.sync_user_schedules(db, user, schedules_in, is_create=False)
 
         if biometrics_in is not None:
             self._sync_biometrics(db, user, biometrics_in)

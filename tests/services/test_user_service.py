@@ -109,7 +109,6 @@ def test_validate_unique_fields_dup_cpf(db_session_mock, mocker):
 def test_create_user(db_session_mock, mocker):
     mocker.patch("app.services.user_service.UserService._validate_unique_fields")
     mocker.patch("app.services.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.services.user_work_schedule_service.user_work_schedule_service.sync_user_schedules")
     mocker.patch("app.services.user_service.UserService._sync_biometrics")
     mocker.patch("app.services.audit_service.audit_service.log")
 
@@ -129,7 +128,6 @@ def test_create_user(db_session_mock, mocker):
     user_in.can_manual_punch_desktop = True
     user_in.can_manual_punch_mobile = False
     user_in.can_export_report = False
-    user_in.schedules = [{"day_of_week": 1, "daily_hours": 8}]
     user_in.biometrics = [{"id": 1}]
 
     user = user_service.create_user(db_session_mock, user_in, 99)
@@ -147,13 +145,11 @@ def test_update_user_ok(db_session_mock, mocker):
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
     mocker.patch("app.services.user_service.UserService._validate_unique_fields")
     mocker.patch("app.services.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.services.user_work_schedule_service.user_work_schedule_service.sync_user_schedules")
     mocker.patch("app.services.user_service.UserService._sync_biometrics")
     mocker.patch("app.services.audit_service.audit_service.compute_diffs", return_value=({"old":"val"}, {"new":"val"}))
     mocker.patch("app.services.audit_service.audit_service.log")
 
     user_in = UserUpdate(name="New", password="123456")
-    user_in.schedules = []
     user_in.biometrics = []
 
     res = user_service.update_user(db_session_mock, 1, user_in, 99)

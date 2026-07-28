@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +10,7 @@ from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserUpdateMe
-from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate
+from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate, BulkWorkScheduleCreate, BulkWorkScheduleResponse
 from app.services.user_service import user_service
 from app.services.user_work_schedule_service import user_work_schedule_service
 
@@ -110,6 +111,63 @@ def read_user_me(
     return user_data
 
 
+@router.get("/bulk-schedules", response_model=list[BulkWorkScheduleResponse])
+def get_bulk_schedules(
+        month: int = Query(..., ge=1, le=12),
+        year: int = Query(..., ge=2000, le=2100),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.get_bulk_schedules(db=db, month=month, year=year)
+
+
+@router.get("/bulk-schedules/{valid_from}/{valid_until}", response_model=BulkWorkScheduleResponse)
+def get_bulk_schedule_by_dates(
+        valid_from: date,
+        valid_until: date,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.get_bulk_schedule(db=db, valid_from=valid_from, valid_until=valid_until)
+
+
+@router.post("/bulk-schedules")
+def add_bulk_schedules(
+        schedule_in: BulkWorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.bulk_add_schedules(
+        db=db, bulk_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+
+@router.put("/bulk-schedules/{valid_from}/{valid_until}")
+def update_bulk_schedules(
+        valid_from: date,
+        valid_until: date,
+        schedule_in: BulkWorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.update_bulk_schedules(
+        db=db, old_valid_from=valid_from, old_valid_until=valid_until,
+        bulk_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
+
+
+@router.delete("/bulk-schedules/{valid_from}/{valid_until}")
+def delete_bulk_schedules(
+        valid_from: date,
+        valid_until: date,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.delete_bulk_schedules(
+        db=db, valid_from=valid_from, valid_until=valid_until, current_user_id=current_user.id
+    )
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def read_user_by_id(
         user_id: int,
@@ -148,47 +206,3 @@ def update_user(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{user_id}/schedules", response_model=list[WorkSchedule])
-def get_historical_schedules(
-        user_id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    user = user_repository.get(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
-    return user.historical_schedules
-
-@router.post("/{user_id}/schedules", response_model=WorkSchedule)
-def add_historical_schedule(
-        user_id: int,
-        schedule_in: WorkScheduleCreate,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    return user_work_schedule_service.add_schedule(
-        db=db, user_id=user_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
-    )
-
-@router.put("/{user_id}/schedules/{schedule_id}", response_model=WorkSchedule)
-def update_historical_schedule(
-        user_id: int,
-        schedule_id: int,
-        schedule_in: WorkScheduleCreate,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    return user_work_schedule_service.update_schedule(
-        db=db, user_id=user_id, schedule_id=schedule_id, sch_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
-    )
-
-@router.delete("/{user_id}/schedules/{schedule_id}")
-def delete_historical_schedule(
-        user_id: int,
-        schedule_id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    user_work_schedule_service.delete_schedule(db=db, user_id=user_id, schedule_id=schedule_id,
-                                               current_user_id=current_user.id)
-    return {"detail": "Horário excluído com sucesso"}

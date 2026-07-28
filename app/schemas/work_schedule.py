@@ -23,3 +23,19 @@ class WorkSchedule(WorkScheduleBase):
     user_id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserScheduleInput(BaseModel):
+    user_id: int
+    schedules: list[WorkScheduleBase]
+
+class BulkWorkScheduleCreate(BaseModel):
+    valid_from: date
+    valid_until: date
+    users: list[UserScheduleInput]
+
+
+class BulkWorkScheduleResponse(BaseModel):
+    valid_from: date
+    valid_until: date
+    users: list[UserScheduleInput]
