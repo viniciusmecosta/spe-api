@@ -3,6 +3,7 @@ from typing import Dict, List, Any
 from collections import defaultdict
 
 from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
@@ -203,22 +204,14 @@ class UserWorkScheduleService:
 
         for sch in new_schedules:
             db.add(sch)
-            
-        db.commit()
+
+        audit_service.log(
+            db, user_id=current_user_id, action="CREATE",
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+        )
         
-        for sch in new_schedules:
-            db.refresh(sch)
-            audit_service.log(
-                db, user_id=current_user_id, action="CREATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=sch.id,
-                new_data={
-                    "user_id": sch.user_id,
-                    "day_of_week": sch.day_of_week,
-                    "daily_hours": sch.daily_hours,
-                    "valid_from": str(sch.valid_from) if sch.valid_from else None,
-                    "valid_until": str(sch.valid_until) if sch.valid_until else None
-                }
-            )
+        db.commit()
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
@@ -298,26 +291,11 @@ class UserWorkScheduleService:
 
         # Apply changes
         for cfg in to_delete:
-            old_data = self._extract_schedule_data(cfg)
             db.delete(cfg)
-            audit_service.log(
-                db, user_id=current_user_id, action="DELETE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=cfg.id,
-                old_data=old_data, new_data=None
-            )
 
         for cfg, new_data in to_update:
-            old_data = self._extract_schedule_data(cfg)
             self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
             db.add(cfg)
-            # Need to flush to get actual updates for audit? It's fine to just log diff
-            actual_old, actual_new = audit_service.compute_diffs(old_data, self._extract_schedule_data(cfg))
-            if actual_new: # Only log if there are changes
-                audit_service.log(
-                    db, user_id=current_user_id, action="UPDATE",
-                    entity="USER_WORK_SCHEDULE_BULK", entity_id=cfg.id,
-                    old_data=actual_old, new_data=actual_new
-                )
 
         new_schs = []
         for user, new_data in to_create:
@@ -326,15 +304,14 @@ class UserWorkScheduleService:
             db.add(new_sch)
             new_schs.append(new_sch)
 
+        audit_service.log(
+            db, user_id=current_user_id, action="UPDATE",
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
+            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+        )
+        
         db.commit()
-
-        for sch in new_schs:
-            db.refresh(sch)
-            audit_service.log(
-                db, user_id=current_user_id, action="CREATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=sch.id,
-                new_data=self._extract_schedule_data(sch)
-            )
 
         return {"message": "Expedientes atualizados com sucesso."}
 
@@ -351,14 +328,15 @@ class UserWorkScheduleService:
 
         count = len(configs)
         for cfg in configs:
-            old_data = self._extract_schedule_data(cfg)
             db.delete(cfg)
-            audit_service.log(
-                db, user_id=current_user_id, action="DELETE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=cfg.id,
-                old_data=old_data, new_data=None
-            )
             
+        audit_service.log(
+            db, user_id=current_user_id, action="DELETE",
+            entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count},
+            new_data=None
+        )
+        
         db.commit()
         return {"message": f"{count} registros removidos com sucesso."}
 

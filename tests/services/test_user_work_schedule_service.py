@@ -64,7 +64,12 @@ def test_update_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch("app.services.audit_service.audit_service.log")
     
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
-    db_session_mock.query.return_value.filter.return_value.all.return_value = [old_cfg]
+    mock_query = mocker.MagicMock()
+    mock_filter = mocker.MagicMock()
+    mock_all = mocker.MagicMock()
+    db_session_mock.query.return_value = mock_query
+    mock_query.filter.return_value = mock_filter
+    mock_filter.all.return_value = [old_cfg]
     
     user = User(id=1, name="Test User")
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
@@ -91,7 +96,12 @@ def test_delete_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch("app.services.audit_service.audit_service.log")
     
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
-    db_session_mock.query.return_value.filter.return_value.all.return_value = [old_cfg]
+    mock_query = mocker.MagicMock()
+    mock_filter = mocker.MagicMock()
+    mock_all = mocker.MagicMock()
+    db_session_mock.query.return_value = mock_query
+    mock_query.filter.return_value = mock_filter
+    mock_filter.all.return_value = [old_cfg]
     
     res = user_work_schedule_service.delete_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), 99)
     assert "sucesso" in res["message"]
