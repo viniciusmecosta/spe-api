@@ -244,22 +244,22 @@ def test_build_day_row(excel_service):
     mock_day.date = datetime(2023, 5, 1)
     mock_day.day_name = "Sábado"
     
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1, 1])
+    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
     
     mock_day.is_holiday = True
     mock_day.is_weekend = False
     mock_day.status = "Atestado"
     mock_day.punches = ["08:00"]
     mock_day.holiday_name = None
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1, 1])
+    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
 
     mock_day.status = "Abonado"
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1, 1])
+    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
     
     mock_day.is_holiday = True
     mock_day.punches = []
     mock_day.status = "Feriado"
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1, 1])
+    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
 
 def test_build_employee_sheet_no_phone_endereco(excel_service):
     wb = Workbook()

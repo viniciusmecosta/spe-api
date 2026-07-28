@@ -372,8 +372,8 @@ class ExcelService:
         self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3, val_text=user_endereco, val_width=11, borders=True)
         ws_det.append([""])
 
-        merges = [2, 3, 4, 9, 2, 2, 2]
-        headers_det = ["Data", "Dia Semana", "Status", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
+        merges = [2, 3, 13, 2, 2, 2]
+        headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
         
         ws_det.append([""])
         header_row = ws_det.max_row
@@ -392,7 +392,7 @@ class ExcelService:
 
         ws_det.append([""])
         last_row = ws_det.max_row
-        texts = ["TOTAIS", "", "", "", total_trab_bruto, total_extra, total_trab_real]
+        texts = ["TOTAIS", "", "", total_trab_bruto, total_extra, total_trab_real]
         self._merge_for_table(ws_det, last_row, merges, texts, self.font_bold, self.align_center)
         ws_det.cell(row=last_row, column=19).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
@@ -405,9 +405,9 @@ class ExcelService:
         if day.is_holiday:
             holiday_label = day.holiday_name or "Feriado"
             if not punches_str:
-                punches_str = holiday_label
+                punches_str = f"Feriado: {holiday_label}"
             else:
-                punches_str = f"{holiday_label} ({punches_str})"
+                punches_str = f"Feriado: {holiday_label} ({punches_str})"
 
         ws_det.append([""])
         last_row = ws_det.max_row
@@ -419,7 +419,6 @@ class ExcelService:
         texts = [
             day.date.strftime("%d/%m/%y"),
             day.day_name,
-            day.status,
             punches_str,
             trab_bruto,
             extra_nao_aut,
