@@ -111,44 +111,6 @@ def read_user_me(
     return user_data
 
 
-@router.get("/{user_id}", response_model=UserResponse)
-def read_user_by_id(
-        user_id: int,
-        current_user: User = Depends(deps.get_current_active_user),
-        db: Session = Depends(deps.get_db),
-) -> Any:
-    user = user_repository.get(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
-
-    if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-        raise HTTPException(status_code=400, detail=INSUFFICIENT_PRIVILEGES)
-
-    return user
-
-
-@router.put("/{user_id}", response_model=UserResponse)
-def update_user(
-        *,
-        db: Session = Depends(deps.get_db),
-        user_id: int,
-        user_in: UserUpdate,
-        current_user: User = Depends(deps.get_current_manager),
-) -> Any:
-    user = user_repository.get(db, user_id=user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-    if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
-        raise HTTPException(status_code=403, detail="Privilégios insuficientes para alterar este usuário")
-
-    try:
-        user = user_service.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)
-        return user
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.get("/bulk-schedules", response_model=list[BulkWorkScheduleResponse])
 def get_bulk_schedules(
         month: int = Query(..., ge=1, le=12),
@@ -204,4 +166,43 @@ def delete_bulk_schedules(
     return user_work_schedule_service.delete_bulk_schedules(
         db=db, valid_from=valid_from, valid_until=valid_until, current_user_id=current_user.id
     )
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+def read_user_by_id(
+        user_id: int,
+        current_user: User = Depends(deps.get_current_active_user),
+        db: Session = Depends(deps.get_db),
+) -> Any:
+    user = user_repository.get(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
+
+    if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
+        raise HTTPException(status_code=400, detail=INSUFFICIENT_PRIVILEGES)
+
+    return user
+
+
+@router.put("/{user_id}", response_model=UserResponse)
+def update_user(
+        *,
+        db: Session = Depends(deps.get_db),
+        user_id: int,
+        user_in: UserUpdate,
+        current_user: User = Depends(deps.get_current_manager),
+) -> Any:
+    user = user_repository.get(db, user_id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
+        raise HTTPException(status_code=403, detail="Privilégios insuficientes para alterar este usuário")
+
+    try:
+        user = user_service.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
