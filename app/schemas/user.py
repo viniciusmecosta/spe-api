@@ -90,7 +90,6 @@ class UserUpdate(BaseModel):
     can_export_report: bool | None = None
     is_exempt_from_rules: bool | None = None
     is_tolerance_exempt: bool | None = None
-    schedules: list[WorkScheduleCreate] | None = None
     biometrics: list[UserBiometricUpdate] | None = None
 
     @field_validator('username')

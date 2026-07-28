@@ -30,6 +30,12 @@ class UserScheduleInput(BaseModel):
     schedules: list[WorkScheduleBase]
 
 class BulkWorkScheduleCreate(BaseModel):
-    valid_from: date | None = None
-    valid_until: date | None = None
+    valid_from: date
+    valid_until: date
+    users: list[UserScheduleInput]
+
+
+class BulkWorkScheduleResponse(BaseModel):
+    valid_from: date
+    valid_until: date
     users: list[UserScheduleInput]
