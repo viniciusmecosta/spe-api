@@ -9,7 +9,7 @@ from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserUpdateMe
-from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate
+from app.schemas.work_schedule import WorkSchedule, WorkScheduleCreate, BulkWorkScheduleCreate
 from app.services.user_service import user_service
 from app.services.user_work_schedule_service import user_work_schedule_service
 
@@ -158,6 +158,16 @@ def get_historical_schedules(
     if not user:
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND)
     return user.historical_schedules
+
+@router.post("/bulk-schedules")
+def add_bulk_schedules(
+        schedule_in: BulkWorkScheduleCreate,
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_manager)
+) -> Any:
+    return user_work_schedule_service.bulk_add_schedules(
+        db=db, bulk_data=schedule_in.model_dump(exclude_unset=True), current_user_id=current_user.id
+    )
 
 @router.post("/{user_id}/schedules", response_model=WorkSchedule)
 def add_historical_schedule(

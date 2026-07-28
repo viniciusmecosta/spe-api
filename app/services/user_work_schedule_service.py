@@ -234,5 +234,73 @@ class UserWorkScheduleService:
             old_data=old_data, new_data=None
         )
 
+    def bulk_add_schedules(self, db: Session, bulk_data: dict, current_user_id: int):
+        global_valid_from = bulk_data.get('valid_from') or date.today()
+        global_valid_until = bulk_data.get('valid_until')
+        users_input = bulk_data.get('users', [])
+
+        if not users_input:
+            raise HTTPException(status_code=400, detail="Nenhum usuário informado.")
+
+        errors = []
+        new_schedules = []
+        day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
+
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            user = user_repository.get(db, uid)
+            if not user:
+                errors.append(f"Usuário com ID {uid} não encontrado.")
+                continue
+
+            schedules_in = user_data.get('schedules', [])
+            
+            for sch_data_dict in schedules_in:
+                valid_from = global_valid_from
+                valid_until = global_valid_until
+                
+                day_of_week = sch_data_dict.get('day_of_week')
+                day_name = day_names.get(day_of_week, str(day_of_week))
+
+                try:
+                    self.check_payroll_closure(db, valid_from, valid_until)
+                except HTTPException as e:
+                    errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: {e.detail}")
+                    continue
+
+                try:
+                    self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
+                except HTTPException:
+                    errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
+                    continue
+
+                new_sch = UserWorkScheduleConfig(user_id=user.id)
+                self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
+                new_schedules.append(new_sch)
+
+        if errors:
+            raise HTTPException(status_code=400, detail=errors)
+
+        for sch in new_schedules:
+            db.add(sch)
+            
+        db.commit()
+        
+        for sch in new_schedules:
+            db.refresh(sch)
+            audit_service.log(
+                db, user_id=current_user_id, action="CREATE",
+                entity="USER_WORK_SCHEDULE_BULK", entity_id=sch.id,
+                new_data={
+                    "user_id": sch.user_id,
+                    "day_of_week": sch.day_of_week,
+                    "daily_hours": sch.daily_hours,
+                    "valid_from": str(sch.valid_from) if sch.valid_from else None,
+                    "valid_until": str(sch.valid_until) if sch.valid_until else None
+                }
+            )
+
+        return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
+
 
 user_work_schedule_service = UserWorkScheduleService()
