@@ -29,12 +29,12 @@ class AnomalyService:
         if records and records[0].record_type == RecordType.EXIT:
             anomalies.append(AnomalyResponse(
                 user_id=user_id, user_name=user_name, date=current_date,
-                type="MISSING_ENTRY", description="Saída sem entrada"
+                type="MISSING_ENTRY", description="Saída registrada sem uma entrada correspondente."
             ))
         if records and records[-1].record_type == RecordType.ENTRY and current_date < date.today():
             anomalies.append(AnomalyResponse(
                 user_id=user_id, user_name=user_name, date=current_date,
-                type="MISSING_EXIT", description="Entrada sem saída"
+                type="MISSING_EXIT", description="Entrada registrada sem uma saída correspondente."
             ))
         return anomalies
 
@@ -47,12 +47,12 @@ class AnomalyService:
             if current_record.record_type == RecordType.ENTRY and prev_record.record_type == RecordType.ENTRY:
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
-                    type="DOUBLE_ENTRY", description="Duas entradas consecutivas sem saída entre elas"
+                    type="DOUBLE_ENTRY", description="Registros duplicados: Duas entradas seguidas sem saída no intervalo."
                 ))
             if current_record.record_type == RecordType.EXIT and prev_record.record_type == RecordType.EXIT:
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
-                    type="DOUBLE_EXIT", description="Duas saídas consecutivas sem entrada entre elas"
+                    type="DOUBLE_EXIT", description="Registros duplicados: Duas saídas seguidas sem entrada no intervalo."
                 ))
         return anomalies
 
@@ -70,7 +70,7 @@ class AnomalyService:
                     fmt_time = self._format_duration(seconds)
                     anomalies.append(AnomalyResponse(
                         user_id=user_id, user_name=user_name, date=current_date,
-                        type="LONG_INTERVAL", description=f"Intervalo de {fmt_time}"
+                        type="LONG_INTERVAL", description=f"Intervalo longo detectado ({fmt_time})."
                     ))
                 last_entry_time = None
         return anomalies
@@ -88,11 +88,12 @@ class AnomalyService:
         for adj in day_adjustments:
             if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
-                desc = f"Tempo extra não aprovado ({minutes} minutos)"
                 
                 time_to_show = expected_entry_time or adj.time
                 if time_to_show:
-                    desc += f" - horário de entrada: {time_to_show.strftime('%H:%M')}"
+                    desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+                else:
+                    desc = f"{minutes} minutos extras pendentes de aprovação"
                 
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
@@ -129,7 +130,7 @@ class AnomalyService:
                 user_name=user_name,
                 date=current_date,
                 type="EXCESSIVE_HOURS",
-                description=f"Trabalhou {fmt_total}"
+                description=f"Jornada excessiva: O tempo trabalhado ({fmt_total}) ultrapassou o limite normal de 10 horas."
             ))
 
         return anomalies
