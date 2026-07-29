@@ -15,7 +15,7 @@ def test_check_payroll_closure_closed(db_session_mock, mocker):
     mocker.patch("app.repositories.payroll_repository.payroll_repository.get_by_month", return_value=closure)
     with pytest.raises(HTTPException) as exc:
         user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
-    assert exc.value.status_code == 403
+    assert exc.value.status_code == 400
 
 def test_bulk_add_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")

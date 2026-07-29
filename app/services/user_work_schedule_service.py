@@ -51,7 +51,7 @@ class UserWorkScheduleService:
             closure = payroll_repository.get_by_month(db, current_month, current_year)
             if closure and closure.is_closed:
                 raise HTTPException(
-                    status_code=403,
+                    status_code=400,
                     detail=f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
                 )
             current_month += 1
@@ -76,10 +76,7 @@ class UserWorkScheduleService:
                 )
 
     def get_bulk_schedules(self, db: Session, month: int, year: int) -> List[Dict[str, Any]]:
-        # Filtra os que tem interseção com o mês atual
-        # Inicio do mês
         start_of_month = date(year, month, 1)
-        # Fim do mês (aproximado usando +31 dias e voltando pro dia 1, menos 1 dia)
         next_month = start_of_month.replace(day=28) + timedelta(days=4)
         end_of_month = next_month - timedelta(days=next_month.day)
 
@@ -91,7 +88,6 @@ class UserWorkScheduleService:
             )
         ).all()
 
-        # Agrupar por valid_from e valid_until
         groups = defaultdict(lambda: defaultdict(list))
         
         for cfg in configs:
@@ -233,7 +229,6 @@ class UserWorkScheduleService:
             UserWorkScheduleConfig.valid_until == old_valid_until
         ).all()
 
-        # Build a map of existing (user_id, day_of_week) -> config
         existing_map = {(cfg.user_id, cfg.day_of_week): cfg for cfg in old_configs}
         
         users_input = bulk_data.get('users', [])
@@ -250,14 +245,12 @@ class UserWorkScheduleService:
 
         day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
 
-        # Determine deletes and updates
         for key, old_cfg in existing_map.items():
             if key not in incoming_map:
                 to_delete.append(old_cfg)
             else:
                 to_update.append((old_cfg, incoming_map[key]))
 
-        # Determine creates
         for key, new_data in incoming_map.items():
             if key not in existing_map:
                 uid, dow = key
@@ -270,7 +263,6 @@ class UserWorkScheduleService:
         if errors:
             raise HTTPException(status_code=400, detail=errors)
 
-        # Handle overlaps for updates and creates
         for old_cfg, new_data in to_update:
             user = user_repository.get(db, old_cfg.user_id)
             try:
@@ -289,7 +281,6 @@ class UserWorkScheduleService:
         if errors:
             raise HTTPException(status_code=400, detail=errors)
 
-        # Apply changes
         for cfg in to_delete:
             db.delete(cfg)
 

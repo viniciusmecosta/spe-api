@@ -129,7 +129,7 @@ class ExcelService:
             
         from fastapi import HTTPException
         raise HTTPException(
-            status_code=403,
+            status_code=400,
             detail="Funcionários só podem gerar relatório Excel do mês atual ou do mês anterior."
         )
 
