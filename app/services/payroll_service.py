@@ -1,16 +1,54 @@
 from datetime import date, datetime
-from typing import Any
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.payroll_repository import payroll_repository
 from app.services.audit_service import audit_service
-from app.services.email_service import dispatch_payroll_email
+from app.services.email_service import email_service, dispatch_payroll_email
+
+
+def dispatch_closure_background(month: int, year: int, closure_id: int, current_user_id: int, user_name: str):
+    import os
+    import logging
+    from app.database.session import get_db_session
+    from app.domain.models.payroll import PayrollClosure
+    from app.domain.models.user import User
+    from app.services.excel_service import excel_service
+    from app.core.config import settings
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        with get_db_session() as db:
+            current_user = db.query(User).get(current_user_id)
+            if not current_user:
+                return
+
+            attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
+
+            reports_dir = os.path.join(settings.UPLOAD_DIR, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+
+            filename = f"folha_ponto_{month:02d}_{year}.xlsx"
+            file_path = os.path.join(reports_dir, filename)
+
+            with open(file_path, "wb") as f:
+                f.write(attachment.getvalue())
+
+            closure = db.query(PayrollClosure).get(closure_id)
+            if closure:
+                closure.report_path = f"reports/{filename}"
+                db.commit()
+
+            email_service.send_payroll_email(db, "Fechamento", user_name, month, year, attachment)
+
+    except Exception as e:
+        logger.exception(f"Error in dispatch_closure_background: {e}")
 
 
 class PayrollService:
@@ -53,7 +91,8 @@ class PayrollService:
                 "closed_at": active_closure.closed_at,
                 "closed_by_user_id": active_closure.closed_by_user_id,
                 "closed_by_name": active_closure.closed_by.name if active_closure.closed_by else None,
-                "history": history
+                "history": history,
+                "report_path": active_closure.report_path
             }
         else:
             return {
@@ -64,7 +103,8 @@ class PayrollService:
                 "closed_at": None,
                 "closed_by_user_id": None,
                 "closed_by_name": None,
-                "history": history
+                "history": history,
+                "report_path": None
             }
 
     def list_periods(self, db: Session, year: int) -> list[dict[str, Any]]:
@@ -129,8 +169,8 @@ class PayrollService:
         )
 
         background_tasks.add_task(
-            dispatch_payroll_email,
-            "Fechamento", current_user.name, month, year, current_user.id
+            dispatch_closure_background,
+            month, year, closure.id, current_user.id, current_user.name
         )
         return closure
 

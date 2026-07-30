@@ -1,8 +1,7 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -22,6 +21,7 @@ class PayrollClosure(Base):
 
     closed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     closed_at = Column(DateTime(timezone=True), default=get_local_time)
+    report_path = Column(String, nullable=True)
 
     closed_by = relationship("User", foreign_keys=[closed_by_user_id])
 

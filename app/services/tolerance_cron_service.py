@@ -1,9 +1,8 @@
 import logging
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.session import get_db_session
@@ -94,14 +93,16 @@ class ToleranceCronService:
         
         try:
             with get_db_session() as db:
-                unverified_entries = db.query(TimeRecord).filter(
-                    TimeRecord.record_type == RecordType.ENTRY,
+                unverified_records = db.query(TimeRecord).filter(
                     TimeRecord.is_verified.is_(False),
                     TimeRecord.deleted_at.is_(None)
                 ).all()
-                
-                for record in unverified_entries:
-                    self._process_entry_record(db, record, now, tz)
+
+                for record in unverified_records:
+                    if record.record_type == RecordType.ENTRY:
+                        self._process_entry_record(db, record, now, tz)
+                    elif record.record_type == RecordType.EXIT:
+                        record.is_verified = True
                             
                 db.commit()
         except SQLAlchemyError as e:
@@ -117,7 +118,6 @@ class ToleranceCronService:
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
         entries = db.query(TimeRecord).filter(
-            TimeRecord.record_type == RecordType.ENTRY,
             TimeRecord.deleted_at.is_(None),
             TimeRecord.record_datetime >= start_dt,
             TimeRecord.record_datetime <= end_dt,
@@ -125,7 +125,10 @@ class ToleranceCronService:
         ).all()
         
         for record in entries:
-            self._process_entry_record(db, record, now, tz)
+            if record.record_type == RecordType.ENTRY:
+                self._process_entry_record(db, record, now, tz)
+            elif record.record_type == RecordType.EXIT:
+                record.is_verified = True
             
         db.commit()
 

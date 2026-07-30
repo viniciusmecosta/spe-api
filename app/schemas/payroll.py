@@ -24,10 +24,11 @@ class PayrollHistoryItem(BaseModel):
 
 class PayrollClosureResponse(PayrollClosureCreate):
     id: int | None = None
-    is_closed: bool
     closed_at: datetime | None = None
     closed_by_user_id: int | None = None
     closed_by_name: str | None = None
-    history: list[PayrollHistoryItem] = []
+    is_closed: bool
+    history: list[dict[str, Any]] = []
+    report_path: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
