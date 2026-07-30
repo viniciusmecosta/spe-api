@@ -21,6 +21,9 @@ DATE_FORMAT = "%d/%m/%Y"
 
 class RoutineOrchestrator:
     def execute_hourly_backup_telegram(self):
+        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            return
+
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         now_local = now.replace(tzinfo=None)
@@ -84,6 +87,9 @@ class RoutineOrchestrator:
                         logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
 
     def send_managerial_report_telegram(self):
+        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            return
+
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         now_local = now.replace(tzinfo=None)

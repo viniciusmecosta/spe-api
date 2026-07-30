@@ -169,3 +169,11 @@ def test_disable_user_ok(db_session_mock, mocker):
 
     res = user_service.disable_user(db_session_mock, 1, 99)
     assert res.is_active is False
+
+def test_format_name():
+    assert user_service._format_name("vinicius da costa") == "Vinicius da Costa"
+    assert user_service._format_name("ze do carmo") == "Ze do Carmo"
+    assert user_service._format_name("MARIA DAS GRACAS") == "Maria das Gracas"
+    assert user_service._format_name("ana de almeida") == "Ana de Almeida"
+    assert user_service._format_name("") == ""
+    assert user_service._format_name(None) is None

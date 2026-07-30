@@ -9,25 +9,19 @@ from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
 from app.services.template_service import template_service
 
 logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    def send_payroll_email(self, db, action: str, user_name: str, month: int, year: int,
-                           attachment: BytesIO | None = None):
+    def send_payroll_email(self, action: str, user_name: str, month: int, year: int,
+                           attachment: BytesIO | None = None, to_emails: list[str] = None):
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             logger.warning("SMTP not configured. Skipping payroll email.")
             return
 
         try:
-            maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                                User.email.isnot(None)).all()
-            to_emails = [m.email for m in maintainers if m.email]
-
             if not to_emails:
                 logger.warning("No maintainers with emails to send payroll email.")
                 return
@@ -180,18 +174,8 @@ class EmailService:
 email_service = EmailService()
 
 
-def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, current_user_id: int):
-    from app.database.session import get_db_session
-    from app.services.excel_service import excel_service
-
+def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, to_emails: list[str]):
     try:
-        with get_db_session() as db:
-            attachment = None
-            if action == "Fechamento":
-                current_user = db.query(User).get(current_user_id)
-                if current_user:
-                    attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
-
-            email_service.send_payroll_email(db, action, user_name, month, year, attachment)
+        email_service.send_payroll_email(action, user_name, month, year, None, to_emails)
     except Exception as e:
         logger.exception(f"Error in dispatch_payroll_email: {e}")

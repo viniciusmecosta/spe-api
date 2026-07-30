@@ -12,6 +12,12 @@ from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 
+@pytest.fixture(autouse=True)
+def mock_environment():
+    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "prod"):
+        yield
+
+
 @pytest.fixture
 def mock_get_db_session(db_session_mock):
     with patch("app.services.routine_orchestrator.get_db_session") as m:

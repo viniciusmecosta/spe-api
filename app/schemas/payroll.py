@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,16 +19,18 @@ class PayrollHistoryItem(BaseModel):
     user_id: int
     user_name: str | None = None
     observation: str | None = None
+    report_path: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class PayrollClosureResponse(PayrollClosureCreate):
     id: int | None = None
-    is_closed: bool
     closed_at: datetime | None = None
     closed_by_user_id: int | None = None
     closed_by_name: str | None = None
-    history: list[PayrollHistoryItem] = []
+    is_closed: bool
+    history: list[dict[str, Any]] = []
+    report_path: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

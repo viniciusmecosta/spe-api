@@ -1,8 +1,5 @@
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.domain.models.user import User
 from app.schemas.payroll import (
@@ -12,6 +9,8 @@ from app.schemas.payroll import (
 )
 from app.schemas.time_record import SuccessResponse
 from app.services.payroll_service import payroll_service
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -43,3 +42,13 @@ def reopen_payroll_period(
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
     return payroll_service.reopen_period(db, period.month, period.year, period.observation, current_user, background_tasks)
+
+@router.post("/{closure_id}/legacy-report", response_model=SuccessResponse)
+def upload_legacy_report(
+        closure_id: int,
+        file: UploadFile = File(...),
+        db: Session = Depends(deps.get_db),
+        current_user: User = Depends(deps.get_current_maintainer)
+) -> Any:
+    payroll_service.upload_legacy_report(db, closure_id, file.filename, file.file.read(), current_user)
+    return {"status": "success", "message": "Documento legado anexado com sucesso."}
