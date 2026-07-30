@@ -1,5 +1,3 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
-from sqlalchemy.orm import Session
 from typing import Any
 
 from app.api import deps
@@ -11,6 +9,8 @@ from app.schemas.payroll import (
 )
 from app.schemas.time_record import SuccessResponse
 from app.services.payroll_service import payroll_service
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -43,13 +43,6 @@ def reopen_payroll_period(
 ) -> Any:
     return payroll_service.reopen_period(db, period.month, period.year, period.observation, current_user, background_tasks)
 
-
-import os
-from fastapi import UploadFile, File, HTTPException
-from app.core.config import settings
-from app.domain.models.payroll import PayrollClosure
-
-
 @router.post("/{closure_id}/legacy-report", response_model=SuccessResponse)
 def upload_legacy_report(
         closure_id: int,
@@ -57,20 +50,5 @@ def upload_legacy_report(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
-    closure = db.query(PayrollClosure).get(closure_id)
-    if not closure:
-        raise HTTPException(status_code=404, detail="Fechamento não encontrado.")
-
-    legacy_dir = os.path.join(settings.UPLOAD_DIR, "reports", "legacy")
-    os.makedirs(legacy_dir, exist_ok=True)
-
-    filename = f"legacy_{closure_id}_{file.filename}"
-    file_path = os.path.join(legacy_dir, filename)
-
-    with open(file_path, "wb") as f:
-        f.write(file.file.read())
-
-    closure.report_path = f"reports/legacy/{filename}"
-    db.commit()
-
+    payroll_service.upload_legacy_report(db, closure_id, file.filename, file.file.read(), current_user)
     return {"status": "success", "message": "Documento legado anexado com sucesso."}

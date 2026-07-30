@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,6 +19,7 @@ class PayrollHistoryItem(BaseModel):
     user_id: int
     user_name: str | None = None
     observation: str | None = None
+    report_path: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
