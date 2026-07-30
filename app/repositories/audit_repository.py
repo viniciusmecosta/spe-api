@@ -18,7 +18,7 @@ class AuditRepository:
             new_data=obj_in.new_data
         )
         db.add(db_obj)
-        db.flush()
+        db.commit()
         db.refresh(db_obj)
         return db_obj
 

@@ -41,7 +41,6 @@ def test_bulk_add_schedules_success(db_session_mock, mocker):
     res = user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert "sucesso" in res["message"]
     db_session_mock.add.assert_called()
-    db_session_mock.commit.assert_called()
 
 def test_bulk_add_schedules_missing_dates(db_session_mock):
     bulk_data = {}

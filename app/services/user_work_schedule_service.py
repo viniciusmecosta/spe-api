@@ -241,8 +241,6 @@ class UserWorkScheduleService:
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
             new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
-        
-        db.commit()
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
@@ -336,8 +334,6 @@ class UserWorkScheduleService:
             old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
             new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
-        
-        db.commit()
 
         return {"message": "Expedientes atualizados com sucesso."}
 
@@ -363,7 +359,6 @@ class UserWorkScheduleService:
             new_data=None
         )
         
-        db.commit()
         return {"message": f"{count} registros removidos com sucesso."}
 
 user_work_schedule_service = UserWorkScheduleService()
