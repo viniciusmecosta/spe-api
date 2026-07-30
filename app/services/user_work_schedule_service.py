@@ -15,14 +15,49 @@ from app.services.audit_service import audit_service
 
 class UserWorkScheduleService:
     def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
+        from datetime import datetime, date, time
+        
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
-        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
         sch.entry_1 = sch_data.get('entry_1', sch.entry_1)
         sch.exit_1 = sch_data.get('exit_1', sch.exit_1)
         sch.entry_2 = sch_data.get('entry_2', sch.entry_2)
         sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
         sch.valid_from = valid_from
         sch.valid_until = valid_until
+
+        def _to_datetime(t_obj):
+            if not t_obj:
+                return None
+            if isinstance(t_obj, str):
+                try:
+                    parts = t_obj.split(':')
+                    if len(parts) >= 2:
+                        return datetime.combine(date.today(), time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0))
+                except Exception:
+                    return None
+            if isinstance(t_obj, time):
+                return datetime.combine(date.today(), t_obj)
+            return None
+
+        total_seconds = 0.0
+        
+        dt_entry1 = _to_datetime(sch.entry_1)
+        dt_exit1 = _to_datetime(sch.exit_1)
+        if dt_entry1 and dt_exit1:
+            diff = (dt_exit1 - dt_entry1).total_seconds()
+            if diff < 0:
+                diff += 24 * 3600
+            total_seconds += diff
+            
+        dt_entry2 = _to_datetime(sch.entry_2)
+        dt_exit2 = _to_datetime(sch.exit_2)
+        if dt_entry2 and dt_exit2:
+            diff = (dt_exit2 - dt_entry2).total_seconds()
+            if diff < 0:
+                diff += 24 * 3600
+            total_seconds += diff
+
+        sch.daily_hours = round(total_seconds / 3600, 2)
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
         return {
