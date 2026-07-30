@@ -86,15 +86,33 @@ class UserService:
             if db.query(User).filter(User.cpf == cpf).first():
                 raise HTTPException(status_code=400, detail="CPF já está em uso.")
 
+    def _format_name(self, name: str) -> str:
+        if not name:
+            return name
+        words = name.strip().split()
+        if not words:
+            return name
+            
+        formatted_words = [words[0].capitalize()]
+        for word in words[1:]:
+            if len(word) > 3:
+                formatted_words.append(word.capitalize())
+            else:
+                formatted_words.append(word.lower())
+                
+        return " ".join(formatted_words)
+
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         self._validate_unique_fields(db, user_in)
 
         biometrics_in = getattr(user_in, 'biometrics', None)
 
         password_hash = get_password_hash(user_in.password)
+        
+        formatted_name = self._format_name(user_in.name)
 
         db_user = User(
-            name=user_in.name,
+            name=formatted_name,
             username=user_in.username,
             email=user_in.email,
             cpf=user_in.cpf,
@@ -155,6 +173,9 @@ class UserService:
         if update_data.get("password"):
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
+            
+        if update_data.get("name"):
+            update_data["name"] = self._format_name(update_data["name"])
         
         old_data = self._capture_user_state(user)
 
