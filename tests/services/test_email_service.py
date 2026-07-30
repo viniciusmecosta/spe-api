@@ -41,60 +41,49 @@ def local_mock_get_db_session(db_session_mock):
         yield mock
 
 
-def test_send_payroll_email_no_smtp(db_session_mock):
+def test_send_payroll_email_no_smtp():
     with patch("app.services.email_service.settings.SMTP_HOST", None):
         service = EmailService()
-        service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
-        db_session_mock.query.assert_not_called()
+        service.send_payroll_email("action", "user", 1, 2023, None, ["test@test.com"])
 
 
-def test_send_payroll_email_no_maintainers(db_session_mock):
-    db_session_mock.query.return_value.all = MagicMock(return_value=[])
+def test_send_payroll_email_no_maintainers():
     service = EmailService()
-    service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
-    db_session_mock.query.assert_called_once()
+    service.send_payroll_email("action", "user", 1, 2023, None, [])
 
 
-def test_send_payroll_email_success(db_session_mock, mock_smtp, mock_template_service):
-    user = User(email="maintainer@test.com", role=UserRole.MAINTAINER, is_active=True)
-    db_session_mock.query.return_value.all = MagicMock(return_value=[user])
+def test_send_payroll_email_success(mock_smtp, mock_template_service):
     mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
     service = EmailService()
-    service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
+    service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
     mock_smtp.assert_called_once_with("smtp.test.com", 587, timeout=60)
     server_instance = mock_smtp.return_value
     server_instance.sendmail.assert_called_once()
     server_instance.quit.assert_called_once()
 
 
-def test_send_payroll_email_dev_env(db_session_mock, mock_smtp, mock_template_service):
+def test_send_payroll_email_dev_env(mock_smtp, mock_template_service):
     with patch("app.services.email_service.settings.ENVIRONMENT", "dev"):
-        user = User(email="maintainer@test.com", role=UserRole.MAINTAINER, is_active=True)
-        db_session_mock.query.return_value.all = MagicMock(return_value=[user])
         mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
         service = EmailService()
-        service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
+        service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
         server_instance = mock_smtp.return_value
         sendmail_args = server_instance.sendmail.call_args
         assert "Folha de Ponto DEV - 01/2023" in sendmail_args[0][2]
 
 
-def test_send_payroll_email_smtp_exception(db_session_mock, mock_smtp, mock_template_service):
-    user = User(email="m@test.com")
-    db_session_mock.query.return_value.all = MagicMock(return_value=[user])
+def test_send_payroll_email_smtp_exception(mock_smtp, mock_template_service):
     mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
     mock_smtp.side_effect = smtplib.SMTPException("Error")
     service = EmailService()
-    service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
+    service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
 
 
-def test_send_payroll_email_generic_exception(db_session_mock, mock_smtp, mock_template_service):
-    user = User(email="m@test.com")
-    db_session_mock.query.return_value.all = MagicMock(return_value=[user])
+def test_send_payroll_email_generic_exception(mock_smtp, mock_template_service):
     mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
     mock_smtp.side_effect = Exception("Error")
     service = EmailService()
-    service.send_payroll_email(db_session_mock, "action", "user", 1, 2023)
+    service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
 
 
 def test_send_email_no_smtp():
@@ -209,43 +198,15 @@ def test_build_backup_message_attachment_not_exists(mock_template_service):
         assert payloads[0].get_content_type() == "text/html"
 
 
-def test_dispatch_payroll_email_fechamento_user_found(local_mock_get_db_session, db_session_mock):
-    with patch("app.services.excel_service.excel_service") as mock_excel_service, \
-         patch.object(email_service, "send_payroll_email") as mock_send:
-        mock_excel_service.generate_excel_report.return_value = BytesIO(b"att")
-        user = User(id=1)
-        db_session_mock.query.return_value.get = MagicMock(return_value=user)
-        
-        dispatch_payroll_email("Fechamento", "User", 1, 2023, 1)
-        
-        mock_excel_service.generate_excel_report.assert_called_once_with(db_session_mock, 1, 2023, None, user)
+def test_dispatch_payroll_email_success():
+    with patch.object(email_service, "send_payroll_email") as mock_send:
+        dispatch_payroll_email("Fechamento", "User", 1, 2023, ["test@test.com"])
+        mock_send.assert_called_once_with("Fechamento", "User", 1, 2023, None, ["test@test.com"])
+
+
+def test_dispatch_payroll_email_exception():
+    with patch.object(email_service, "send_payroll_email") as mock_send:
+        mock_send.side_effect = Exception("Err")
+        dispatch_payroll_email("Fechamento", "User", 1, 2023, ["test@test.com"])
         mock_send.assert_called_once()
-        assert mock_send.call_args[0][5].getvalue() == b"att"
-
-
-def test_dispatch_payroll_email_fechamento_user_not_found(local_mock_get_db_session, db_session_mock):
-    with patch("app.services.excel_service.excel_service") as mock_excel_service, \
-         patch.object(email_service, "send_payroll_email") as mock_send:
-        db_session_mock.query.return_value.get = MagicMock(return_value=None)
-        
-        dispatch_payroll_email("Fechamento", "User", 1, 2023, 1)
-        
-        mock_excel_service.generate_excel_report.assert_not_called()
-        mock_send.assert_called_once()
-        assert mock_send.call_args[0][5] is None
-
-
-def test_dispatch_payroll_email_not_fechamento(local_mock_get_db_session, db_session_mock):
-    with patch("app.services.excel_service.excel_service") as mock_excel_service, \
-         patch.object(email_service, "send_payroll_email") as mock_send:
-        dispatch_payroll_email("Other", "User", 1, 2023, 1)
-        
-        mock_excel_service.generate_excel_report.assert_not_called()
-        mock_send.assert_called_once()
-
-
-def test_dispatch_payroll_email_exception(local_mock_get_db_session):
-    with patch("app.services.excel_service.excel_service"):
-        local_mock_get_db_session.side_effect = Exception("Err")
-        dispatch_payroll_email("Other", "User", 1, 2023, 1)
 

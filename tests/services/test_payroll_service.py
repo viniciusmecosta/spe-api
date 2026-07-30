@@ -261,10 +261,11 @@ def test_close_period_already_closed(mock_repo, mock_datetime, db_session_mock, 
 
 @patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.services.payroll_service.datetime")
-@patch("app.services.payroll_service.dispatch_payroll_email")
+@patch("app.services.payroll_service.dispatch_closure_email_background")
 @patch("app.services.payroll_service.audit_service")
 @patch("app.services.payroll_service.payroll_repository")
-def test_close_period_success(mock_repo, mock_audit, mock_dispatch, mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
+@patch("app.services.payroll_service.excel_service")
+def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
     
@@ -272,16 +273,27 @@ def test_close_period_success(mock_repo, mock_audit, mock_dispatch, mock_datetim
     mock_closure = MagicMock(id=99)
     mock_repo.create.return_value = mock_closure
     
-    result = payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+    # Mock file generation
+    from io import BytesIO
+    mock_excel.generate_excel_report.return_value = BytesIO(b"data")
+
+    # Mock DB maintainers query
+    maintainer = MagicMock(spec=User)
+    maintainer.email = "main@test.com"
+    db_session_mock.query.return_value.items = [maintainer]
+
+    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
+        result = payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     
     assert result == mock_closure
     mock_repo.create.assert_called_once_with(db_session_mock, 4, 2024, mock_user_manager.id)
+    assert db_session_mock.commit.call_count == 2
     mock_audit.log.assert_called_once_with(
         db_session_mock, user_id=mock_user_manager.id, action="CLOSE", entity="PAYROLL", entity_id=99,
         new_data={"month": 4, "year": 2024}
     )
     mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, "Fechamento", mock_user_manager.name, 4, 2024, mock_user_manager.id
+        mock_dispatch, 4, 2024, mock_user_manager.name, mock_closure.report_path, ["main@test.com"]
     )
 
 
@@ -307,6 +319,11 @@ def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_
     mock_closure = MagicMock(id=99)
     mock_repo.get_by_month.return_value = mock_closure
     
+    # Mock DB maintainers query
+    maintainer = MagicMock(spec=User)
+    maintainer.email = "main@test.com"
+    db_session_mock.query.return_value.items = [maintainer]
+
     result = payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
     
     assert result["status"] == "success"
@@ -316,8 +333,27 @@ def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_
         old_data={"month": 4, "year": 2024}
     )
     mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, "Reabertura", mock_user_maintainer.name, 4, 2024, mock_user_maintainer.id
+        mock_dispatch, "Reabertura", mock_user_maintainer.name, 4, 2024, ["main@test.com"]
     )
+
+
+def test_upload_legacy_report_success(db_session_mock, mock_user_maintainer):
+    mock_closure = MagicMock(id=1, month=4, year=2024)
+    db_session_mock.query.return_value.get = MagicMock(return_value=mock_closure)
+    
+    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
+        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data", mock_user_maintainer)
+    
+    db_session_mock.commit.assert_called_once()
+    assert mock_closure.report_path.startswith("reports/legacy/folha_ponto_04_2024_")
+    assert mock_closure.report_path.endswith(".pdf")
+
+
+def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
+    db_session_mock.query.return_value.get = MagicMock(return_value=None)
+    with pytest.raises(HTTPException) as exc:
+        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data", mock_user_maintainer)
+    assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
 @patch("app.services.payroll_service.payroll_repository")

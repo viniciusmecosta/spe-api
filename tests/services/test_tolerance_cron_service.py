@@ -24,6 +24,7 @@ def base_record():
     record.user.is_tolerance_exempt = False
     record.record_datetime = datetime(2026, 7, 24, 8, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
     record.is_verified = False
+    record.record_type = RecordType.ENTRY
     return record
 
 @pytest.fixture
