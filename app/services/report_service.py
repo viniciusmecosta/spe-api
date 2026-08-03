@@ -24,7 +24,7 @@ from app.schemas.report import (
     UserPayrollSummary,
 )
 from app.services.anomaly_service import anomaly_service
-from app.utils.formatters import get_weekday_name
+from app.domain.models.enums import DayOfWeek
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +93,9 @@ class ReportService:
                 })
             punches.append(HistoryPunch(**punch_data))
 
-        day_name = get_weekday_name(current.weekday())
-        is_weekend = current.weekday() >= 5
+        target_day = DayOfWeek(current.weekday())
+        day_name = target_day.abreviado
+        is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
         if day_records:
             status = "Normal"
@@ -202,8 +203,8 @@ class ReportService:
         adj_id = adjustment_day.id if adjustment_day else None
         waiver_credit = daily_res.waiver_seconds
 
-        weekday = current.weekday()
-        is_weekend = weekday >= 5
+        target_day = DayOfWeek(current.weekday())
+        is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
         expected_seconds = period_result.daily_expected_seconds[current]
 
@@ -234,7 +235,7 @@ class ReportService:
 
         return DailyReportItem(
             date=current,
-            day_name=get_weekday_name(current.weekday()),
+            day_name=DayOfWeek(current.weekday()).abreviado,
             is_holiday=is_holiday,
             holiday_name=holiday_name,
             is_weekend=is_weekend,
