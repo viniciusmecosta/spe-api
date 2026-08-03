@@ -96,8 +96,11 @@ class AdjustmentRepository:
             
         return query.offset(skip).limit(limit).all()
 
-    def count_pending(self, db: Session) -> int:
-        return db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING, AdjustmentRequest.deleted_at.is_(None)).count()
+    def count_pending(self, db: Session, from_date: date | None = None) -> int:
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING, AdjustmentRequest.deleted_at.is_(None))
+        if from_date:
+            query = query.filter(AdjustmentRequest.target_date >= from_date)
+        return query.count()
 
     def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[
         AdjustmentRequest]:

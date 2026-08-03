@@ -8,6 +8,7 @@ from app.api.v1 import (
     backup,
     biometrics,
     companies,
+    dashboard,
     device,
     device_credentials,
     firmware,
@@ -38,6 +39,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(backup.router, prefix="/backup", tags=["Backup"])
 api_router.include_router(biometrics.router, prefix="/biometric", tags=["Biometric"])
 api_router.include_router(companies.router, prefix="/companies", tags=["Companies"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(device.router, prefix="/device", tags=["Device"])
 api_router.include_router(device_credentials.router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(firmware.router, prefix="/firmware", tags=["Firmware OTA"])

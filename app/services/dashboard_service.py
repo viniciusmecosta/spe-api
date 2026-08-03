@@ -18,7 +18,9 @@ from app.schemas.report import (
     MyDashboardResponse,
     TeamHoursResponse,
     TodayPunch,
+    ManagerDashboardResponse,
 )
+from app.utils.formatters import format_short_name
 from app.services.anomaly_service import anomaly_service
 from app.services.report_service import report_service
 
@@ -127,7 +129,7 @@ class DashboardService:
                     user_hours_rounded = user_minutes // 60
                     employees_data.append(EmployeeHours(
                         user_id=user.id,
-                        short_name=user.name,
+                        short_name=format_short_name(user.name),
                         total_hours=float(user_hours_rounded),
                         formatted_time=f"{user_hours_rounded}h"
                     ))
@@ -141,6 +143,53 @@ class DashboardService:
             team_total_hours=float(t_hours),
             team_formatted_time=f"{t_hours}h",
             employees=employees_data
+        )
+
+    def get_manager_dashboard(self, db: Session, current_user: User) -> ManagerDashboardResponse:
+        tz = ZoneInfo(settings.TIMEZONE)
+        now = datetime.now(tz)
+        today_date = now.date()
+
+        start_dt_today = datetime.combine(today_date, datetime.min.time(), tzinfo=tz)
+        end_dt_today = datetime.combine(today_date, datetime.max.time(), tzinfo=tz)
+
+        today_records = time_record_repository.get_by_range(db, current_user.id, start_dt_today, end_dt_today)
+        today_records.sort(key=lambda x: x.record_datetime)
+
+        today_punches = []
+        for rec in today_records:
+            today_punches.append(TodayPunch(
+                id=rec.id,
+                time=rec.record_datetime.strftime("%H:%M"),
+                record_type=rec.record_type.value
+            ))
+
+        next_punch_type = "ENTRY"
+        if today_records:
+            last_record = today_records[-1]
+            if last_record.record_type == RecordType.ENTRY:
+                next_punch_type = "EXIT"
+
+        all_anomalies = anomaly_service.get_anomalies_by_month(
+            db, now.month, now.year, user_id=None, ignore_excessive_hours=False
+        )
+        total_system_anomalies = len(all_anomalies)
+
+        six_months_ago = today_date - timedelta(days=180)
+        total_pending_adjustments = adjustment_repository.count_pending(db, from_date=six_months_ago)
+
+        today_total_punches = time_record_repository.count_records_in_range(db, start_dt_today, end_dt_today)
+
+        team_hours = self.get_team_worked_hours(db, now.month, now.year, current_user)
+
+        return ManagerDashboardResponse(
+            full_name=current_user.name,
+            next_punch_type=next_punch_type,
+            today_punches=today_punches,
+            total_system_anomalies=total_system_anomalies,
+            total_pending_adjustments=total_pending_adjustments,
+            today_total_punches=today_total_punches,
+            team_hours=team_hours
         )
 
 
