@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from app.core.config import settings
 from app.database.session import get_db_session
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType, DayOfWeek
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import UserWorkScheduleConfig
 
@@ -22,9 +22,10 @@ class ToleranceCronService:
             
         record_date = record.record_datetime.date()
         
+        target_day = DayOfWeek.from_date(record_date)
         config = db.query(UserWorkScheduleConfig).filter(
             UserWorkScheduleConfig.user_id == record.user_id,
-            UserWorkScheduleConfig.day_of_week == record_date.weekday(),
+            UserWorkScheduleConfig.day_of_week == target_day.value,
             UserWorkScheduleConfig.valid_from <= record_date,
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= record_date))
         ).order_by(UserWorkScheduleConfig.valid_from.desc()).first()

@@ -8,7 +8,7 @@ from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.schemas.work_hour import WorkHourBalanceResponse
-
+from app.domain.models.enums import DayOfWeek
 
 class WorkHourService:
     def calculate_balance(self, db: Session, user_id: int, start_date: date, end_date: date) -> WorkHourBalanceResponse:
@@ -57,12 +57,12 @@ class WorkHourService:
 
             day_expected_hours = 0.0
             if not is_holiday and has_schedule:
-                weekday = current_date.weekday()
+                target_day = DayOfWeek.from_date(current_date)
                 valid_schedules = [
                     s for s in user.historical_schedules
                     if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
                 ]
-                schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
+                schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
 
                 if schedule:
                     day_expected_hours = schedule.daily_hours

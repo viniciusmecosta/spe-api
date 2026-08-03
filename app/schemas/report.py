@@ -118,6 +118,15 @@ class MyDashboardResponse(BaseModel):
     month_anomalies: list[AnomalyItem]
     aniversariantes_do_mes: list[Aniversariante] = []
 
+class ManagerDashboardResponse(BaseModel):
+    full_name: str
+    next_punch_type: str
+    today_punches: list[TodayPunch]
+    total_system_anomalies: int
+    total_pending_adjustments: int
+    today_total_punches: int
+    team_hours: "TeamHoursResponse"
+
 class EmployeeHours(BaseModel):
     user_id: int
     short_name: str

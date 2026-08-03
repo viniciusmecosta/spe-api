@@ -8,7 +8,8 @@ from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.services.anomaly_service import anomaly_service
 from app.services.template_service import template_service
-from app.utils.formatters import format_short_name, get_weekday_name
+from app.utils.formatters import format_short_name
+from app.domain.models.enums import DayOfWeek
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class DailyReportService:
     def generate_daily_report_html(self, db: Session, target_date: date) -> str:
         try:
             formatted_date = target_date.strftime("%d/%m/%Y")
-            day_name = get_weekday_name(target_date.weekday(), long_format=True)
+            day_name = DayOfWeek(target_date.weekday()).nome
 
             start_local = datetime.combine(target_date, datetime.min.time())
             end_local = datetime.combine(target_date, datetime.max.time())

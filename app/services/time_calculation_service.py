@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType, DayOfWeek
 from app.domain.models.time_record import TimeRecord
 
 
@@ -210,12 +210,12 @@ class TimeCalculationService:
 
             day_expected_hours = 0.0
             if not is_holiday and has_schedule:
-                weekday = current_date.weekday()
+                target_day = DayOfWeek.from_date(current_date)
                 valid_schedules = [
                     s for s in historical_schedules
                     if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
                 ]
-                schedule = next((s for s in valid_schedules if s.day_of_week == weekday), None)
+                schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
                 if schedule:
                     day_expected_hours = schedule.daily_hours
 

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
 from app.domain.models.user import User, UserWorkScheduleConfig
+from app.domain.models.enums import DayOfWeek
 from app.repositories.payroll_repository import payroll_repository
 from app.repositories.user_repository import user_repository
 from app.services.audit_service import audit_service
@@ -203,7 +204,6 @@ class UserWorkScheduleService:
 
         errors = []
         new_schedules = []
-        day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
 
         self.check_payroll_closure(db, valid_from, valid_until)
 
@@ -218,7 +218,7 @@ class UserWorkScheduleService:
             
             for sch_data_dict in schedules_in:
                 day_of_week = sch_data_dict.get('day_of_week')
-                day_name = day_names.get(day_of_week, str(day_of_week))
+                day_name = DayOfWeek(day_of_week).nome
 
                 try:
                     self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
@@ -276,8 +276,6 @@ class UserWorkScheduleService:
         to_update = []
         to_create = []
 
-        day_names = {0: "Domingo", 1: "Segunda-feira", 2: "Terça-feira", 3: "Quarta-feira", 4: "Quinta-feira", 5: "Sexta-feira", 6: "Sábado"}
-
         for key, old_cfg in existing_map.items():
             if key not in incoming_map:
                 to_delete.append(old_cfg)
@@ -301,14 +299,14 @@ class UserWorkScheduleService:
             try:
                 self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until, ignore_id=old_cfg.id)
             except HTTPException:
-                day_name = day_names.get(new_data.get('day_of_week'), str(new_data.get('day_of_week')))
+                day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
                 
         for user, new_data in to_create:
             try:
                 self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until)
             except HTTPException:
-                day_name = day_names.get(new_data.get('day_of_week'), str(new_data.get('day_of_week')))
+                day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
 
         if errors:

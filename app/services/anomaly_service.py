@@ -10,6 +10,7 @@ from app.domain.models.enums import (
     AdjustmentType,
     RecordType,
     UserRole,
+    DayOfWeek,
 )
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
@@ -90,10 +91,16 @@ class AnomalyService:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
                 
                 time_to_show = expected_entry_time or adj.time
-                if time_to_show:
-                    desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+                if adj.status == AdjustmentStatus.PENDING:
+                    if time_to_show:
+                        desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+                    else:
+                        desc = f"{minutes} minutos extras pendentes de aprovação"
                 else:
-                    desc = f"{minutes} minutos extras pendentes de aprovação"
+                    if time_to_show:
+                        desc = f"Hora extra negada: {minutes} minutos não aprovados (horário de entrada: {time_to_show.strftime('%H:%M')})"
+                    else:
+                        desc = f"Hora extra negada: {minutes} minutos não aprovados"
                 
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
@@ -161,7 +168,8 @@ class AnomalyService:
                 s for s in user.historical_schedules
                 if s.valid_from <= rdate and (s.valid_until is None or s.valid_until >= rdate)
             ]
-            schedule = next((s for s in valid_schedules if s.day_of_week == rdate.weekday()), None)
+            target_day = DayOfWeek.from_date(rdate)
+            schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
             if schedule and schedule.entry_1:
                 return schedule.entry_1
         return None

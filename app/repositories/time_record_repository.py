@@ -74,6 +74,15 @@ class TimeRecordRepository:
             )
         ).scalar()
 
+    def count_records_in_range(self, db: Session, start_date: datetime, end_date: datetime) -> int:
+        return db.query(TimeRecord).filter(
+            and_(
+                TimeRecord.record_datetime >= start_date,
+                TimeRecord.record_datetime <= end_date,
+                TimeRecord.is_ignored == False
+            )
+        ).count()
+
     def update(self, db: Session, db_obj: TimeRecord, obj_in: TimeRecordUpdate) -> TimeRecord:
         update_data = obj_in.model_dump(exclude_unset=True)
         for field, value in update_data.items():

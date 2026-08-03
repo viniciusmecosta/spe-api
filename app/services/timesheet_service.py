@@ -29,7 +29,7 @@ from app.repositories.company_repository import company_repository
 from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
-from app.utils.formatters import get_weekday_name
+from app.domain.models.enums import DayOfWeek
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,8 @@ class TimesheetService:
             daily_res = period_result.daily_results[current_date]
             is_holiday = period_result.daily_is_holiday[current_date]
             holiday_obj = next((h for h in holidays if h.date == current_date), None)
-            is_weekend = current_date.weekday() >= 5
+            target_day = DayOfWeek(current_date.weekday())
+            is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
             worked_seconds = daily_res.net_worked_seconds
             unapproved_extra_seconds = daily_res.unapproved_extra_seconds
@@ -108,7 +109,7 @@ class TimesheetService:
 
             data_table.append([
                 Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
-                Paragraph(get_weekday_name(current_date.weekday()), table_text_style),
+                Paragraph(target_day.nome, table_text_style),
                 Paragraph(punches_str, table_text_style),
                 Paragraph(unapproved_time_str, table_text_style),
                 Paragraph(worked_time_str, table_text_style)
