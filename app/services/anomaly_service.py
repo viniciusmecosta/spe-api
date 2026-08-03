@@ -91,10 +91,16 @@ class AnomalyService:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
                 
                 time_to_show = expected_entry_time or adj.time
-                if time_to_show:
-                    desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+                if adj.status == AdjustmentStatus.PENDING:
+                    if time_to_show:
+                        desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+                    else:
+                        desc = f"{minutes} minutos extras pendentes de aprovação"
                 else:
-                    desc = f"{minutes} minutos extras pendentes de aprovação"
+                    if time_to_show:
+                        desc = f"Hora extra negada: {minutes} minutos não aprovados (horário de entrada: {time_to_show.strftime('%H:%M')})"
+                    else:
+                        desc = f"Hora extra negada: {minutes} minutos não aprovados"
                 
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
