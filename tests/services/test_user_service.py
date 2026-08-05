@@ -140,14 +140,28 @@ def test_update_user_not_found(db_session_mock, mocker):
         user_service.update_user(db_session_mock, 1, MagicMock(), 99)
     assert exc.value.status_code == 404
 
+def test_capture_user_state():
+    from datetime import date
+    user = User(
+        id=1, username="test", is_active=True, data_nascimento=date(2000, 1, 1),
+        is_exempt_from_rules=False, is_tolerance_exempt=True
+    )
+    state = user_service._capture_user_state(user)
+    assert state["is_active"] is True
+    assert state["data_nascimento"] == "2000-01-01"
+    assert state["is_exempt_from_rules"] is False
+    assert state["is_tolerance_exempt"] is True
+    assert "is_exempt_from_rules" in user_service._get_tracked_fields()
+    assert "is_tolerance_exempt" in user_service._get_tracked_fields()
+
 def test_update_user_ok(db_session_mock, mocker):
     user = User(id=1, name="Old", is_active=True)
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
     mocker.patch("app.services.user_service.UserService._validate_unique_fields")
     mocker.patch("app.services.user_service.get_password_hash", return_value="hash")
     mocker.patch("app.services.user_service.UserService._sync_biometrics")
-    mocker.patch("app.services.audit_service.audit_service.compute_diffs", return_value=({"old":"val"}, {"new":"val"}))
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.services.audit_service.audit_service.compute_diffs", return_value=({"name": "Old"}, {"name": "New"}))
+    mock_log = mocker.patch("app.services.audit_service.audit_service.log")
 
     user_in = UserUpdate(name="New", password="123456")
     user_in.biometrics = []
@@ -155,6 +169,8 @@ def test_update_user_ok(db_session_mock, mocker):
     res = user_service.update_user(db_session_mock, 1, user_in, 99)
     assert res.name == "New"
     assert res.password_hash == "hash"
+    mock_log.assert_called_once()
+    assert mock_log.call_args[1]["new_data"] == {"name": "New", "password_changed": True}
 
 def test_disable_user_not_found(db_session_mock, mocker):
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
