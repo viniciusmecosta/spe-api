@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
@@ -145,19 +147,24 @@ class UserService:
         )
         return db_user
 
-    def _get_tracked_fields(self):
+    def _get_tracked_fields(self) -> list[str]:
         return [
             "username", "role", "name", "is_active", "email", "cpf", 
             "pis", "endereco", "data_nascimento", "can_manual_punch_desktop", 
-            "can_manual_punch_mobile", "can_export_report"
+            "can_manual_punch_mobile", "can_export_report",
+            "is_exempt_from_rules", "is_tolerance_exempt"
         ]
 
-    def _capture_user_state(self, user: User) -> dict:
+    def _capture_user_state(self, user: User) -> dict[str, Any]:
+        import datetime
         state = {}
         for field in self._get_tracked_fields():
             if hasattr(user, field):
                 val = getattr(user, field)
-                state[field] = str(val) if val is not None else None
+                if isinstance(val, (datetime.date, datetime.datetime)):
+                    state[field] = val.isoformat()
+                else:
+                    state[field] = val
         return state
 
     def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
@@ -170,9 +177,11 @@ class UserService:
         update_data = user_in.model_dump(exclude_unset=True)
         biometrics_in = update_data.pop("biometrics", None)
 
+        password_changed = False
         if update_data.get("password"):
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
+            password_changed = True
             
         if update_data.get("name"):
             update_data["name"] = self._format_name(update_data["name"])
@@ -193,6 +202,9 @@ class UserService:
         new_data_raw = self._capture_user_state(user)
                 
         actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+
+        if password_changed:
+            actual_new["password_changed"] = True
 
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE",

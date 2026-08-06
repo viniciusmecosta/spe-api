@@ -120,11 +120,17 @@ class AdjustmentService:
         )
         return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
-    def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int):
+    def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
             raise HTTPException(status_code=404, detail="Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
+
+        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+            raise HTTPException(
+                status_code=400,
+                detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
+            )
 
         old_data = {
             "type": request.adjustment_type.value,
@@ -138,15 +144,22 @@ class AdjustmentService:
         adjustment_repository.soft_delete(db, adjustment_id, admin_id)
 
         audit_service.log(
-            db, user_id=admin_id, action="SOFT_DELETE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
+            db, user_id=admin_id, action="DELETE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data,
+            new_data={"reason": reason}
         )
 
-    def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int):
+    def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
             raise HTTPException(status_code=404, detail="Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
+
+        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+            raise HTTPException(
+                status_code=400,
+                detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
+            )
 
         old_data = {
             "type": request.adjustment_type.value,
@@ -160,8 +173,9 @@ class AdjustmentService:
         adjustment_repository.soft_delete(db, adjustment_id, manager_id)
 
         audit_service.log(
-            db, user_id=manager_id, action="SOFT_DELETE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data
+            db, user_id=manager_id, action="DELETE_ADJUSTMENT",
+            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data,
+            new_data={"reason": reason}
         )
 
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):

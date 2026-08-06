@@ -196,19 +196,21 @@ def reject_adjustment(
 @router.delete("/{id}", response_model=dict)
 def delete_adjustment(
         id: int,
+        reason: str = Query(..., min_length=5, description="Justificativa para a exclusão"),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_manager)
 ) -> Any:
-    adjustment_service.delete_adjustment(db, id, current_user.id)
+    adjustment_service.delete_adjustment(db, id, current_user.id, reason)
     return {"status": "success"}
 
 @router.delete("/admin/{id}", response_model=dict)
 def admin_delete_adjustment(
         id: int,
+        reason: str = Query(..., min_length=5, description="Justificativa para a exclusão"),
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
-    adjustment_service.admin_delete_adjustment(db, id, current_user.id)
+    adjustment_service.admin_delete_adjustment(db, id, current_user.id, reason)
     return {"status": "success"}
 
 @router.put("/admin/{id}/revert-status", response_model=AdjustmentRequestResponse)
