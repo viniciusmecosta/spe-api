@@ -13,7 +13,7 @@ from app.services.audit_service import audit_service
 from app.services.punch_service import punch_service
 from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
-from fastapi import Request
+from fastapi import Request, BackgroundTasks
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ class DeviceService:
             sensor_index: int,
             ip_address: str,
             request: Request | None = None,
+            background_tasks: BackgroundTasks | None = None,
     ) -> FeedbackPayload:
         try:
             success, message, record = punch_service.process_biometric_punch(
@@ -33,6 +34,10 @@ class DeviceService:
             )
 
             if success and record:
+                if background_tasks:
+                    from app.services.time_record_service import time_record_service
+                    time_record_service.trigger_auto_print(db, record, background_tasks)
+
                 if request is not None and hasattr(request, "state") and record.user and record.user.name:
                     request.state.attempted_user = record.user.name
                 user_short_name = format_short_name(record.user.name) if record.user and record.user.name else "Usuario"

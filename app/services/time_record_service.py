@@ -256,5 +256,120 @@ class TimeRecordService:
     def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
         return time_record_repository.get_timeline(db, record_id)
 
+    def trigger_auto_print(self, db: Session, record: TimeRecord, background_tasks):
+        from app.repositories.company_repository import company_repository
+        from app.repositories.printer_repository import printer_repository
+        from app.services.hashid_service import hashid_service
+        from app.services.receipt_service import receipt_service
+
+        company = company_repository.get_current(db)
+        if not company:
+            return
+
+        user_auto_print = record.user.auto_print_receipt
+        should_print = user_auto_print if user_auto_print is not None else company.auto_print_receipt
+
+        if should_print and company.default_printer_id:
+            printer = printer_repository.get_by_id(db, company.default_printer_id)
+            if printer and printer.status:
+                short_id = hashid_service.encode(record.id)
+                data = {
+                    "company_name": company.name,
+                    "company_cnpj": company.cnpj,
+                    "employee_name": record.user.name,
+                    "employee_cpf": record.user.cpf,
+                    "employee_pis": record.user.pis,
+                    "record_datetime": record.record_datetime.strftime("%d/%m/%Y %H:%M:%S"),
+                    "device_name": record.device_name or "Desconhecido",
+                    "nsr": record.id,
+                    "short_id": short_id
+                }
+                background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
+
+    def get_receipt_data(self, db: Session, short_id: str, current_user: User) -> dict:
+        from app.repositories.company_repository import company_repository
+        from app.services.hashid_service import hashid_service
+
+        record_id = hashid_service.decode(short_id)
+        if not record_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
+
+        record = time_record_repository.get(db, record_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
+
+        if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this receipt")
+
+        company = company_repository.get_current(db)
+        timeline = self.get_record_timeline(db, record.id)
+
+        return {
+            "short_id": short_id,
+            "record_id": record.id,
+            "company_name": company.name if company else "N/A",
+            "company_cnpj": company.cnpj if company else "N/A",
+            "employee_name": record.user.name,
+            "employee_cpf": record.user.cpf,
+            "employee_pis": record.user.pis,
+            "record_datetime": record.record_datetime,
+            "device_name": record.device_name or "Desconhecido",
+            "record_type": record.record_type,
+            "timeline": [
+                {
+                    "action": t.action,
+                    "timestamp": t.timestamp,
+                    "user_name": t.user.name if t.user else None,
+                    "old_data": t.old_data,
+                    "new_data": t.new_data
+                } for t in timeline
+            ] if hasattr(timeline[0], 'action') else []
+        }
+
+    def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> bytes:
+        from app.repositories.company_repository import company_repository
+        from app.services.hashid_service import hashid_service
+        from app.services.receipt_service import receipt_service
+
+        record_id = hashid_service.decode(short_id)
+        if not record_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
+
+        record = time_record_repository.get(db, record_id)
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
+
+        if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this receipt")
+
+        company = company_repository.get_current(db)
+
+        record_type_str = "Entrada" if record.record_type.name == "ENTRY" else "Saída"
+        date_str = record.record_datetime.strftime("%d/%m/%Y")
+        time_str = record.record_datetime.strftime("%H:%M:%S")
+
+        def mask_cnpj(c: str) -> str:
+            if not c or len(c) != 14: return c
+            return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
+
+        def mask_cpf(c: str) -> str:
+            if not c or len(c) != 11: return c
+            return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
+
+        data = {
+            "company_name": company.name if company else "N/A",
+            "company_cnpj": mask_cnpj(company.cnpj) if company else "N/A",
+            "employee_name": record.user.name,
+            "employee_cpf": mask_cpf(record.user.cpf),
+            "employee_pis": record.user.pis,
+            "record_date": date_str,
+            "record_time": time_str,
+            "record_type_str": record_type_str,
+            "device_name": record.device_name or "Desconhecido",
+            "nsr": record.id,
+            "short_id": short_id.upper()
+        }
+
+        return receipt_service.generate_pdf_receipt(data)
 
 time_record_service = TimeRecordService()

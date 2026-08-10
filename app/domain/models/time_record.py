@@ -61,3 +61,8 @@ class TimeRecord(Base):
     @property
     def editor_name(self) -> str | None:
         return self.editor.name if self.editor else None
+
+    @property
+    def short_id(self) -> str:
+        from app.services.hashid_service import hashid_service
+        return hashid_service.encode(self.id)

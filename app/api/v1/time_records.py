@@ -21,7 +21,7 @@ from app.schemas.time_record import (
 )
 from app.services.time_record_service import time_record_service
 from app.services.tolerance_cron_service import tolerance_cron_service
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
@@ -34,10 +34,13 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 )
 def register_entry(
         request: Request,
+        background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    return time_record_service.register_entry(db, current_user.id, request)
+    record = time_record_service.register_entry(db, current_user.id, request)
+    time_record_service.trigger_auto_print(db, record, background_tasks)
+    return record
 
 
 @router.post(
@@ -47,10 +50,13 @@ def register_entry(
 )
 def register_exit(
         request: Request,
+        background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    return time_record_service.register_exit(db, current_user.id, request)
+    record = time_record_service.register_exit(db, current_user.id, request)
+    time_record_service.trigger_auto_print(db, record, background_tasks)
+    return record
 
 
 @router.put(
@@ -163,3 +169,30 @@ def trigger_tolerance_cron() -> SuccessResponse:
     return SuccessResponse(
         status="success", message="Rotina de tolerância acionada e concluída com sucesso."
     )
+
+
+@router.get("/receipt/{short_id}")
+def get_receipt(
+    short_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user)
+):
+    return time_record_service.get_receipt_data(db, short_id, current_user)
+
+
+@router.get("/receipt/{short_id}/pdf", response_class=Response)
+def get_receipt_pdf(
+    short_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user)
+):
+    from app.services.hashid_service import hashid_service
+    nsr = hashid_service.decode(short_id)
+    if not nsr:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
+        
+    pdf_bytes = time_record_service.get_receipt_pdf(db, short_id, current_user)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{nsr}.pdf"'
+    }
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)

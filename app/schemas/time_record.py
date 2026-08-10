@@ -40,6 +40,7 @@ class TimeRecordSimple(BaseModel):
 
 class TimeRecordResponse(TimeRecordBase):
     id: int
+    short_id: str
     user_id: int
     created_at: datetime
     edited_by: str | None = Field(None, validation_alias=AliasChoices('editor_name', 'edited_by'))

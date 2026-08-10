@@ -12,7 +12,7 @@ from app.schemas.device import (
     TimeResponsePayload,
 )
 from app.services.device_service import device_service
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
@@ -22,6 +22,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
+        background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> FeedbackPayload:
     ip_address = get_client_ip(request)
@@ -30,6 +31,7 @@ def register_device_punch(
         sensor_index=payload.sensor_index,
         ip_address=ip_address,
         request=request,
+        background_tasks=background_tasks,
     )
 
 
