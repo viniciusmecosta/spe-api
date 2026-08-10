@@ -12,6 +12,7 @@ from app.api.v1 import (
     firmware,
     holidays,
     payroll,
+    printers,
     reports,
     routine_logs,
     sync,
@@ -44,6 +45,7 @@ api_router.include_router(device_credentials.router, prefix="/device-credentials
 api_router.include_router(firmware.router, prefix="/firmware", tags=["Firmware OTA"])
 api_router.include_router(holidays.router, prefix="/holidays", tags=["Holidays"])
 api_router.include_router(payroll.router, prefix="/payroll", tags=["Payroll"])
+api_router.include_router(printers.router, prefix="/printers", tags=["Printers"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(routine_logs.router, prefix="/routine-logs", tags=["Routine Logs"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
