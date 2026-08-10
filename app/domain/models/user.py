@@ -58,6 +58,7 @@ class User(Base):
     can_export_report = Column(Boolean, default=False)
     is_exempt_from_rules = Column(Boolean, default=False)
     is_tolerance_exempt = Column(Boolean, default=False)
+    auto_print_receipt = Column(Boolean, nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=get_local_time)
     updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)

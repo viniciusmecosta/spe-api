@@ -9,6 +9,7 @@ from .payroll import PayrollClosure
 from .routine_log import RoutineLog
 from .time_record import TimeRecord
 from .user import User, UserWorkScheduleConfig
+from .printer import Printer
 
 __all__ = [
     "AdjustmentAttachment",
@@ -24,4 +25,5 @@ __all__ = [
     "User",
     "UserBiometric",
     "UserWorkScheduleConfig",
+    "Printer",
 ]

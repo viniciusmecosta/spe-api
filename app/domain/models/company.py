@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
 
 from app.database.base import Base
 
@@ -12,3 +13,8 @@ class Company(Base):
     address = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     logo_path = Column(String, nullable=True)
+    auto_print_receipt = Column(Boolean, default=False, nullable=False)
+    default_printer_id = Column(Integer, ForeignKey("printers.id"), nullable=True)
+
+    printers = relationship("Printer", back_populates="company", foreign_keys="Printer.company_id")
+    default_printer = relationship("Printer", foreign_keys=[default_printer_id])
