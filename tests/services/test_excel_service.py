@@ -6,7 +6,6 @@ from io import BytesIO
 from unittest.mock import MagicMock, patch
 from openpyxl import Workbook
 from fastapi import HTTPException
-
 from app.services.excel_service import ExcelService
 from app.domain.models.user import User
 from app.domain.models.enums import UserRole
@@ -19,50 +18,53 @@ def excel_service():
 def mock_user():
     user = MagicMock(spec=User)
     user.id = 1
-    user.name = "Test User"
-    user.cpf = "12345678901"
-    user.pis = "12345678901"
-    user.phone = "11987654321"
-    user.endereco = "Test Address"
+    user.name = 'Test User'
+    user.cpf = '12345678901'
+    user.pis = '12345678901'
+    user.phone = '11987654321'
+    user.endereco = 'Test Address'
     user.role = UserRole.EMPLOYEE
     return user
 
 def test_setup_styles(excel_service):
-    assert excel_service.font_regular.name == "Times New Roman"
+    assert excel_service.font_regular.name == 'Times New Roman'
 
 def test_set_columns_width(excel_service):
     wb = Workbook()
     ws = wb.active
     excel_service._set_columns_width(ws)
-    assert ws.column_dimensions["A"].width == 5
+    assert ws.column_dimensions['A'].width == 5
 
 def test_format_cnpj(excel_service):
-    assert excel_service._format_cnpj("") == "Não registrado"
-    assert excel_service._format_cnpj("12345678901234") == "12.345.678/9012-34"
-    assert excel_service._format_cnpj("123") == "123"
+    assert excel_service._format_cnpj('') == 'Não registrado'
+    assert excel_service._format_cnpj('12345678901234') == '12.345.678/9012-34'
+    assert excel_service._format_cnpj('123') == '123'
 
 def test_format_phone(excel_service):
-    assert excel_service._format_phone("") == "Não registrado"
-    assert excel_service._format_phone("11987654321") == "(11) 98765-4321"
-    assert excel_service._format_phone("1187654321") == "(11) 8765-4321"
-    assert excel_service._format_phone("118765432") == "118765432"
+    assert excel_service._format_phone('') == 'Não registrado'
+    assert excel_service._format_phone('11987654321') == '(11) 98765-4321'
+    assert excel_service._format_phone('1187654321') == '(11) 8765-4321'
+    assert excel_service._format_phone('118765432') == '118765432'
 
 def test_get_month_name(excel_service):
-    assert excel_service._get_month_name(1) == "JANEIRO"
-    assert excel_service._get_month_name(13) == ""
+    assert excel_service._get_month_name(1) == 'JANEIRO'
+    assert excel_service._get_month_name(13) == ''
 
 def test_time_str_to_fraction(excel_service):
     assert excel_service._time_str_to_fraction(None) == 0.0
-    assert excel_service._time_str_to_fraction("10") == 0.0
-    assert excel_service._time_str_to_fraction("invalid:time") == 0.0
-    assert excel_service._time_str_to_fraction("aa:bb") == 0.0
-    assert excel_service._time_str_to_fraction("10:30") == (10 + (30 / 60.0)) / 24.0
-    assert excel_service._time_str_to_fraction(":") == 0.0
+    assert excel_service._time_str_to_fraction('10') == 0.0
+    assert excel_service._time_str_to_fraction('invalid:time') == 0.0
+    assert excel_service._time_str_to_fraction('aa:bb') == 0.0
+    assert excel_service._time_str_to_fraction('10:30') == (10 + 30 / 60.0) / 24.0
+    assert excel_service._time_str_to_fraction(':') == 0.0
 
 class MockDatetimeMay:
+
     class datetime:
+
         @classmethod
         def now(cls):
+
             class D:
                 month = 5
                 year = 2023
@@ -70,22 +72,22 @@ class MockDatetimeMay:
 
 def test_validate_employee_report_period(excel_service, mock_user, monkeypatch):
     excel_service._validate_employee_report_period(None, 5, 2023)
-    
     manager_user = MagicMock(spec=User)
     manager_user.role = UserRole.MANAGER
     excel_service._validate_employee_report_period(manager_user, 1, 2020)
-    
     monkeypatch.setitem(sys.modules, 'datetime', MockDatetimeMay)
-    
     excel_service._validate_employee_report_period(mock_user, 5, 2023)
     excel_service._validate_employee_report_period(mock_user, 4, 2023)
     with pytest.raises(HTTPException):
         excel_service._validate_employee_report_period(mock_user, 3, 2023)
 
 class MockDatetimeJan:
+
     class datetime:
+
         @classmethod
         def now(cls):
+
             class D:
                 month = 1
                 year = 2023
@@ -93,131 +95,120 @@ class MockDatetimeJan:
 
 def test_validate_employee_report_period_january(excel_service, mock_user, monkeypatch):
     monkeypatch.setitem(sys.modules, 'datetime', MockDatetimeJan)
-    
     excel_service._validate_employee_report_period(mock_user, 1, 2023)
     excel_service._validate_employee_report_period(mock_user, 12, 2022)
     with pytest.raises(HTTPException):
         excel_service._validate_employee_report_period(mock_user, 11, 2022)
 
 @patch.object(ExcelService, '_validate_employee_report_period')
-@patch("app.services.excel_service.report_service")
-@patch("app.services.excel_service.company_repository")
-@patch("os.path.exists")
+@patch('app.services.excel_service.report_service')
+@patch('app.services.excel_service.company_repository')
+@patch('os.path.exists')
 def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service, db_session_mock, mock_user):
     mock_exists.return_value = True
-    
     mock_company = MagicMock()
-    mock_company.logo_path = "logo.png"
-    mock_company.cnpj = "12345678901234"
-    mock_company.phone = "11987654321"
-    mock_company.address = "Address"
-    mock_company.name = "Company"
+    mock_company.logo_path = 'logo.png'
+    mock_company.cnpj = '12345678901234'
+    mock_company.phone = '11987654321'
+    mock_company.address = 'Address'
+    mock_company.name = 'Company'
     mock_company_repo.get_current.return_value = mock_company
-    
     query_mock = MagicMock()
     query_mock.options.return_value = query_mock
     query_mock.all.return_value = [mock_user]
     db_session_mock.query.return_value = query_mock
     mock_report_service._apply_employee_filters.return_value = query_mock
-    
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
-    mock_report.summary.user_name = "Test User"
+    mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
-    
     mock_day = MagicMock()
-    mock_day.worked_time = "08:00"
-    mock_day.unapproved_extra_time = "01:00"
+    mock_day.worked_time = '08:00'
+    mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = False
-    mock_day.status = "Normal"
-    mock_day.punches = ["08:00", "12:00"]
+    mock_day.status = 'Normal'
+    mock_day.punches = ['08:00', '12:00']
     mock_day.date = datetime(2023, 5, 1)
-    mock_day.day_name = "Segunda"
-    
+    mock_day.day_name = 'Segunda'
     mock_report.daily_details = [mock_day]
     mock_report_service.get_advanced_user_report.return_value = mock_report
-    
     output = excel_service.generate_excel_report(db_session_mock, 5, 2023, [1], mock_user)
     assert isinstance(output, BytesIO)
     mock_validate.assert_called_once_with(mock_user, 5, 2023)
 
-@patch("app.services.excel_service.report_service")
-@patch("app.services.excel_service.company_repository")
+@patch('app.services.excel_service.report_service')
+@patch('app.services.excel_service.company_repository')
 def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock, mock_user):
     mock_company = MagicMock()
     mock_company.logo_path = None
-    mock_company.cnpj = "12345678901234"
-    mock_company.phone = "11987654321"
-    mock_company.address = "Address"
-    mock_company.name = "Company"
+    mock_company.cnpj = '12345678901234'
+    mock_company.phone = '11987654321'
+    mock_company.address = 'Address'
+    mock_company.name = 'Company'
     mock_company_repo.get_current.return_value = mock_company
-    
     query_mock = MagicMock()
     query_mock.options.return_value = query_mock
     query_mock.all.return_value = [mock_user]
     db_session_mock.query.return_value = query_mock
     mock_report_service._apply_employee_filters.return_value = query_mock
-    
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
-    mock_report.summary.user_name = "Test User"
+    mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
-    mock_day.worked_time = "08:00"
+    mock_day.worked_time = '08:00'
     mock_day.unapproved_extra_time = None
     mock_day.is_holiday = True
-    mock_day.holiday_name = "Dia do Trabalho"
+    mock_day.holiday_name = 'Dia do Trabalho'
     mock_day.is_weekend = False
-    mock_day.status = "Feriado"
+    mock_day.status = 'Feriado'
     mock_day.punches = []
     mock_day.date = datetime(2023, 5, 1)
-    mock_day.day_name = "Segunda"
+    mock_day.day_name = 'Segunda'
     mock_report.daily_details = [mock_day]
     mock_report_service.get_advanced_user_report.return_value = mock_report
-    
     output = excel_service.generate_excel_report(db_session_mock, 5, 2023, [1])
     assert isinstance(output, BytesIO)
 
 def test_apply_key_value(excel_service):
     wb = Workbook()
     ws = wb.active
-    excel_service._apply_key_value(ws, 1, 1, "Key", 2, "Value", 2, borders=True)
-    assert ws.cell(row=1, column=1).value == "Key"
-    assert ws.cell(row=1, column=3).value == "Value"
-    excel_service._apply_key_value(ws, 2, 1, "Key", 2, "Value", 2, borders=False)
+    excel_service._apply_key_value(ws, 1, 1, 'Key', 2, 'Value', 2, borders=True)
+    assert ws.cell(row=1, column=1).value == 'Key'
+    assert ws.cell(row=1, column=3).value == 'Value'
+    excel_service._apply_key_value(ws, 2, 1, 'Key', 2, 'Value', 2, borders=False)
 
-@patch("app.services.excel_service.OpenpyxlImage")
+@patch('app.services.excel_service.OpenpyxlImage')
 def test_insert_header(mock_image, excel_service):
     wb = Workbook()
     ws = wb.active
     mock_company = MagicMock()
-    mock_company.cnpj = "12345678901234"
-    mock_company.phone = "11987654321"
-    mock_company.address = "Address"
-    excel_service._insert_header(ws, mock_company, "logo.png")
+    mock_company.cnpj = '12345678901234'
+    mock_company.phone = '11987654321'
+    mock_company.address = 'Address'
+    excel_service._insert_header(ws, mock_company, 'logo.png')
     assert ws.max_row > 1
 
-@patch("app.services.excel_service.OpenpyxlImage")
+@patch('app.services.excel_service.OpenpyxlImage')
 def test_insert_header_no_company(mock_image, excel_service):
     wb = Workbook()
     ws = wb.active
     excel_service._insert_header(ws, None, None)
     assert ws.max_row > 1
 
-@patch("app.services.excel_service.OpenpyxlImage")
+@patch('app.services.excel_service.OpenpyxlImage')
 def test_insert_header_image_error(mock_image, excel_service):
-    mock_image.side_effect = ValueError("Invalid image")
+    mock_image.side_effect = ValueError('Invalid image')
     wb = Workbook()
     ws = wb.active
     mock_company = MagicMock()
-    mock_company.cnpj = "12345678901234"
-    mock_company.phone = "11987654321"
-    mock_company.address = "Address"
-    excel_service._insert_header(ws, mock_company, "logo.png")
-    
-    mock_image.side_effect = OSError("No file")
-    excel_service._insert_header(ws, mock_company, "logo.png")
+    mock_company.cnpj = '12345678901234'
+    mock_company.phone = '11987654321'
+    mock_company.address = 'Address'
+    excel_service._insert_header(ws, mock_company, 'logo.png')
+    mock_image.side_effect = OSError('No file')
+    excel_service._insert_header(ws, mock_company, 'logo.png')
 
 def test_append_notes(excel_service):
     wb = Workbook()
@@ -228,86 +219,131 @@ def test_append_notes(excel_service):
 def test_merge_for_table(excel_service):
     wb = Workbook()
     ws = wb.active
-    excel_service._merge_for_table(ws, 1, [2, 2], ["Text1", "Text2"], excel_service.font_regular, excel_service.align_center, fill=excel_service.fill_holiday, borders=True)
-    excel_service._merge_for_table(ws, 2, [1], ["Text"], None, None, fill=None, borders=False)
+    excel_service._merge_for_table(ws, 1, [2, 2], ['Text1', 'Text2'], excel_service.font_regular, excel_service.align_center, fill=excel_service.fill_holiday, borders=True)
+    excel_service._merge_for_table(ws, 2, [1], ['Text'], None, None, fill=None, borders=False)
 
 def test_build_day_row(excel_service):
     wb = Workbook()
     ws = wb.active
     mock_day = MagicMock()
-    mock_day.worked_time = "08:00"
-    mock_day.unapproved_extra_time = "01:00"
+    mock_day.worked_time = '08:00'
+    mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = True
-    mock_day.status = "Falta"
-    mock_day.punches = ["08:00", "12:00"]
+    mock_day.status = 'Falta'
+    mock_day.punches = ['08:00', '12:00']
     mock_day.date = datetime(2023, 5, 1)
-    mock_day.day_name = "Sábado"
-    
+    mock_day.day_name = 'Sábado'
     excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
-    
     mock_day.is_holiday = True
     mock_day.is_weekend = False
-    mock_day.status = "Atestado"
-    mock_day.punches = ["08:00"]
+    mock_day.status = 'Atestado'
+    mock_day.punches = ['08:00']
     mock_day.holiday_name = None
     excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
-
-    mock_day.status = "Abonado"
+    mock_day.status = 'Abonado'
     excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
-    
     mock_day.is_holiday = True
     mock_day.punches = []
-    mock_day.status = "Feriado"
+    mock_day.status = 'Feriado'
     excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
 
 def test_build_employee_sheet_no_phone_endereco(excel_service):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
-    mock_user.name = "Test User"
+    mock_user.name = 'Test User'
     mock_user.cpf = None
     mock_user.pis = None
     mock_user.phone = None
     mock_user.endereco = None
-    
     mock_report = MagicMock()
     mock_report.daily_details = []
-    
     excel_service._build_employee_sheet(wb, mock_user, mock_report, 5, 2023, None, None)
-    assert "Tes" in wb.sheetnames[-1]
+    assert 'Tes' in wb.sheetnames[-1]
 
 def test_build_summary_sheet(excel_service):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
-    mock_user.name = "Test User"
-    
+    mock_user.name = 'Test User'
     mock_report = MagicMock()
-    mock_report.summary.user_name = "Test User"
+    mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
-    
     mock_day = MagicMock()
-    mock_day.worked_time = "08:00"
-    mock_day.unapproved_extra_time = "01:00"
+    mock_day.worked_time = '08:00'
+    mock_day.unapproved_extra_time = '01:00'
     mock_report.daily_details = [mock_day]
-    
     excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
-    assert "Resumo" in wb.sheetnames
+    assert 'Resumo' in wb.sheetnames
 
 def test_build_summary_sheet_bruto_less_extra(excel_service):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
-    mock_user.name = "Test User"
-    
+    mock_user.name = 'Test User'
     mock_report = MagicMock()
-    mock_report.summary.user_name = "Test User"
+    mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
-    
     mock_day = MagicMock()
-    mock_day.worked_time = "01:00"
-    mock_day.unapproved_extra_time = "02:00"
+    mock_day.worked_time = '01:00'
+    mock_day.unapproved_extra_time = '02:00'
     mock_report.daily_details = [mock_day]
-    
     excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
-    assert "Resumo" in wb.sheetnames
+    assert 'Resumo' in wb.sheetnames
+import openpyxl
+from app.schemas.report import AdvancedUserReportResponse, UserPayrollSummary, DailyReportItem
+
+@patch.object(ExcelService, '_validate_employee_report_period')
+@patch('app.services.excel_service.report_service')
+@patch('app.services.excel_service.company_repository')
+@patch('os.path.exists')
+def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service, db_session_mock, mock_user):
+    """
+    Testa rigorosamente a geração do Excel lendo o buffer (BytesIO) com openpyxl e inspecionando
+    valores, cores (fill), bordas e nomes das abas criadas para assegurar que regras de negócios 
+    como cores para feriados e fins de semana sejam aplicadas e mantidas perfeitas.
+    """
+    mock_exists.return_value = False
+    mock_company = MagicMock()
+    mock_company.logo_path = None
+    mock_company.cnpj = '12345678901234'
+    mock_company.phone = '11987654321'
+    mock_company.address = 'Address'
+    mock_company.name = 'Company'
+    mock_company_repo.get_current.return_value = mock_company
+    query_mock = MagicMock()
+    query_mock.options.return_value = query_mock
+    query_mock.all.return_value = [mock_user]
+    db_session_mock.query.return_value = query_mock
+    mock_report_service._apply_employee_filters.return_value = query_mock
+    mock_report = MagicMock()
+    mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Silva', total_worked_time='10:00', total_expected_time='08:00', total_worked_minutes=600, total_expected_minutes=480, days_worked=2, absences=1, total_worked_hours=10.0, total_expected_hours=8.0, total_extra_hours=2.0, total_missing_hours=0.0, final_balance=2.0)
+    day1 = DailyReportItem(date=datetime(2023, 10, 10), day_name='Terça', is_holiday=False, is_weekend=False, status='Normal', worked_hours=10.0, expected_hours=8.0, balance_hours=2.0, extra_hours=2.0, missing_hours=0.0, worked_minutes=600, worked_time='10:00', expected_time='08:00', unapproved_extra_time='00:00', punches=['08:00', '18:00'], holiday_name=None, entries=[], exits=[], detailed_punches=None, adjustment_id=None)
+    day2 = DailyReportItem(date=datetime(2023, 10, 12), day_name='Quinta', is_holiday=True, is_weekend=False, status='Feriado', worked_hours=0.0, expected_hours=8.0, balance_hours=0.0, extra_hours=0.0, missing_hours=0.0, worked_minutes=0, worked_time='00:00', expected_time='08:00', unapproved_extra_time='00:00', punches=[], holiday_name='Nossa Sra', entries=[], exits=[], detailed_punches=None, adjustment_id=None)
+    day3 = DailyReportItem(date=datetime(2023, 10, 13), day_name='Sexta', is_holiday=False, is_weekend=False, status='Falta', worked_hours=0.0, expected_hours=8.0, balance_hours=-8.0, extra_hours=0.0, missing_hours=8.0, worked_minutes=0, worked_time='00:00', expected_time='08:00', unapproved_extra_time='00:00', punches=[], holiday_name=None, entries=[], exits=[], detailed_punches=None, adjustment_id=None)
+    mock_report.daily_details = [day1, day2, day3]
+    mock_report_service.get_advanced_user_report.return_value = mock_report
+    output = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
+    wb = openpyxl.load_workbook(output)
+    assert 'Resumo' in wb.sheetnames, 'Aba Resumo deve existir'
+    assert 'Test User' in wb.sheetnames, 'Aba com nome do funcionário deve existir'
+    ws_resumo = wb['Resumo']
+    company_title = ws_resumo['A1'].value
+    assert 'Company' in str(company_title)
+    ws_func = wb['Test User']
+    data_header_row = None
+    for row in ws_func.iter_rows(min_row=1, max_row=20):
+        if row[0].value == 'Data':
+            data_header_row = row[0].row
+            break
+    assert data_header_row is not None
+    row_day1 = data_header_row + 1
+    row_day2 = data_header_row + 2
+    row_day3 = data_header_row + 3
+    cell_day2 = ws_func.cell(row=row_day2, column=6)
+    assert cell_day2.fill.start_color.rgb in ['00FEF3C7', 'FEF3C7', 'FFFEF3C7']
+    cell_day3 = ws_func.cell(row=row_day3, column=6)
+    assert cell_day3.fill.start_color.rgb in ['00FEE2E2', 'FEE2E2', 'FFFEE2E2']
+    assert ws_func.cell(row=data_header_row, column=1).font.bold == True
+    assert ws_func.cell(row=row_day1, column=1).border.left.style is not None
+    assert ws_func.cell(row=row_day1, column=1).alignment.horizontal is not None
