@@ -322,6 +322,122 @@ class ExcelService:
             
             col += width
             
+    def _format_day_groups(self, days: list[int]) -> str:
+        names_short = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+        if not days:
+            return ""
+        days = sorted(list(set(days)))
+        
+        blocks = []
+        current_block = [days[0]]
+        for d in days[1:]:
+            if d == current_block[-1] + 1:
+                current_block.append(d)
+            else:
+                blocks.append(current_block)
+                current_block = [d]
+        blocks.append(current_block)
+        
+        parts = []
+        for block in blocks:
+            if len(block) >= 3:
+                parts.append(f"{names_short[block[0]]} a {names_short[block[-1]]}")
+            elif len(block) == 2:
+                parts.append(f"{names_short[block[0]]} e {names_short[block[1]]}")
+            else:
+                parts.append(names_short[block[0]])
+        
+        if len(parts) > 1:
+            return ", ".join(parts[:-1]) + " e " + parts[-1]
+        return parts[0]
+
+    def _build_work_schedules_section(self, ws, user, start_date, end_date):
+        if not user.historical_schedules:
+            return
+
+        from datetime import date, timedelta
+        
+        transitions = set([start_date, end_date + timedelta(days=1)])
+        for sch in user.historical_schedules:
+            if sch.valid_from and start_date <= sch.valid_from <= end_date:
+                transitions.add(sch.valid_from)
+            if sch.valid_until and start_date <= sch.valid_until <= end_date:
+                transitions.add(sch.valid_until + timedelta(days=1))
+                
+        transitions = sorted(list(transitions))
+        
+        periods = []
+        for i in range(len(transitions) - 1):
+            p_start = transitions[i]
+            p_end = transitions[i+1] - timedelta(days=1)
+            if p_start > p_end:
+                continue
+            
+            active_schedules = []
+            for sch in user.historical_schedules:
+                if sch.valid_from <= p_end and (not sch.valid_until or sch.valid_until >= p_start):
+                    active_schedules.append(sch)
+            
+            periods.append((p_start, p_end, active_schedules))
+
+        if not periods:
+            return
+
+        ws.append([""])
+        ws.append(["Expediente Cadastrado"])
+        title_row = ws.max_row
+        ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=self.MAX_COLS)
+        c = ws.cell(row=title_row, column=1)
+        c.font = self.font_bold
+        c.alignment = self.align_center
+        for c_idx in range(1, self.MAX_COLS + 1):
+            ws.cell(row=title_row, column=c_idx).border = self.border_standard
+            ws.cell(row=title_row, column=c_idx).fill = self.fill_section_title
+
+        is_single_period = len(periods) == 1 and periods[0][0] == start_date and periods[0][1] == end_date
+        
+        for p_start, p_end, schedules in periods:
+            if not is_single_period:
+                ws.append([""])
+                per_row = ws.max_row
+                ws.merge_cells(start_row=per_row, start_column=1, end_row=per_row, end_column=self.MAX_COLS)
+                c_per = ws.cell(row=per_row, column=1)
+                c_per.value = f"Período: {p_start.strftime('%d/%m/%Y')} a {p_end.strftime('%d/%m/%Y')}"
+                c_per.font = self.font_italic
+                c_per.alignment = self.align_left
+            
+            grouped = {}
+            for sch in schedules:
+                if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
+                    continue
+                
+                parts = []
+                if sch.entry_1 and sch.exit_1:
+                    parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
+                if sch.entry_2 and sch.exit_2:
+                    parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
+                
+                if not parts:
+                    continue
+                    
+                time_str = " e ".join(parts)
+                grouped.setdefault(time_str, []).append(sch.day_of_week)
+                
+            if not grouped:
+                ws.append([""])
+                no_sch_row = ws.max_row
+                ws.merge_cells(start_row=no_sch_row, start_column=1, end_row=no_sch_row, end_column=self.MAX_COLS)
+                ws.cell(row=no_sch_row, column=1).value = "Sem expediente cadastrado"
+                ws.cell(row=no_sch_row, column=1).font = self.font_regular
+                continue
+
+            for time_str, days in grouped.items():
+                day_str = self._format_day_groups(days)
+                ws.append([""])
+                row = ws.max_row
+                self._apply_key_value(ws, row, start_col=1, key_text=day_str, key_width=6, val_text=time_str, val_width=18, borders=True)
+                ws.cell(row=row, column=1).alignment = self.align_left
+
     def _build_summary_sheet(self, wb, month, year, user_reports, company, logo_path):
         ws_summary = wb.active
         ws_summary.title = "Resumo"
@@ -435,6 +551,9 @@ class ExcelService:
         ws_det.cell(row=last_row, column=19).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
+
+        start_date, end_date = report_service._get_month_range(month, year)
+        self._build_work_schedules_section(ws_det, user, start_date, end_date)
 
         self._append_notes(ws_det)
 

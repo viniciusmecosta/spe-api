@@ -378,3 +378,51 @@ def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, 
     assert ws_func.cell(row=data_header_row, column=1).font.bold == True
     assert ws_func.cell(row=row_day1, column=1).border.left.style is not None
     assert ws_func.cell(row=row_day1, column=1).alignment.horizontal is not None
+
+def test_format_day_groups(excel_service):
+    assert excel_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
+    assert excel_service._format_day_groups([0, 2, 4]) == "Segunda, Quarta e Sexta"
+    assert excel_service._format_day_groups([0, 1, 2, 4, 5, 6]) == "Segunda a Quarta e Sexta a Domingo"
+    assert excel_service._format_day_groups([5]) == "Sábado"
+    assert excel_service._format_day_groups([]) == ""
+
+def test_build_work_schedules_section(excel_service):
+    from app.domain.models.user import UserWorkScheduleConfig
+    from datetime import date, time
+    from openpyxl import Workbook
+    
+    wb = Workbook()
+    ws = wb.active
+    
+    mock_user = MagicMock(spec=User)
+    sch1 = UserWorkScheduleConfig(
+        day_of_week=0,
+        valid_from=date(2023, 5, 1),
+        valid_until=date(2023, 5, 14),
+        entry_1=time(8, 0), exit_1=time(12, 0), entry_2=time(13, 0), exit_2=time(17, 0)
+    )
+    sch2 = UserWorkScheduleConfig(
+        day_of_week=1,
+        valid_from=date(2023, 5, 15),
+        valid_until=None,
+        entry_1=time(9, 0), exit_1=time(13, 0), entry_2=time(14, 0), exit_2=time(18, 0)
+    )
+    mock_user.historical_schedules = [sch1, sch2]
+    
+    excel_service._build_work_schedules_section(ws, mock_user, date(2023, 5, 1), date(2023, 5, 31))
+    
+    assert ws.max_row > 1
+    found_title = False
+    found_first_period = False
+    found_second_period = False
+    for row in ws.iter_rows(values_only=True):
+        if row[0] == "Expediente Cadastrado":
+            found_title = True
+        if row[0] == "Período: 01/05/2023 a 14/05/2023":
+            found_first_period = True
+        if row[0] == "Período: 15/05/2023 a 31/05/2023":
+            found_second_period = True
+            
+    assert found_title
+    assert found_first_period
+    assert found_second_period
