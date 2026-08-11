@@ -150,9 +150,47 @@ class ExcelService:
             if os.path.exists(full_logo_path):
                 logo_path = full_logo_path
 
+        user_ids = [u.id for u in users]
+        start_date, end_date = report_service._get_month_range(month, year)
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        from app.domain.models.time_record import TimeRecord
+        all_records_batch = db.query(TimeRecord).filter(
+            TimeRecord.user_id.in_(user_ids),
+            TimeRecord.record_datetime >= start_dt,
+            TimeRecord.record_datetime <= end_dt,
+            TimeRecord.deleted_at.is_(None)
+        ).all() if user_ids else []
+        records_by_user = {}
+        for r in all_records_batch:
+            records_by_user.setdefault(r.user_id, []).append(r)
+
+        from app.domain.models.adjustment import AdjustmentRequest
+        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all() if user_ids else []
+        adjustments_by_user = {}
+        for a in all_adjustments_batch:
+            adjustments_by_user.setdefault(a.user_id, []).append(a)
+
+        from app.repositories.holiday_repository import holiday_repository
+        holidays_batch = holiday_repository.get_by_month(db, month, year)
+
         user_reports = []
         for user in users:
-            report = report_service.get_advanced_user_report(db, user.id, month, year, current_user)
+            report = report_service.get_advanced_user_report(
+                db, user.id, month, year, current_user,
+                prefetched_records=records_by_user.get(user.id, []),
+                prefetched_adjustments=adjustments_by_user.get(user.id, []),
+                prefetched_holidays=holidays_batch
+            )
             if report and report.summary.total_worked_minutes > 0:
                 user_reports.append((user, report))
 

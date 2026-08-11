@@ -299,11 +299,16 @@ def test_get_monthly_summary(service, mock_db):
     user.name = 'Test'
     user.role = UserRole.EMPLOYEE
     user.historical_schedules = []
-    mock_query = MagicMock()
-    mock_query.options.return_value = mock_query
-    mock_query.filter.return_value = mock_query
-    mock_query.all.return_value = [user]
-    mock_db.query.return_value = mock_query
+    def mock_query_side_effect(model):
+        mock_query = MagicMock()
+        mock_query.options.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        if getattr(model, '__name__', '') == 'User':
+            mock_query.all.return_value = [user]
+        else:
+            mock_query.all.return_value = []
+        return mock_query
+    mock_db.query.side_effect = mock_query_side_effect
     with patch.object(service, 'get_advanced_user_report') as mock_adv_report:
         adv_res = MagicMock()
         adv_res.summary = UserPayrollSummary(user_id=1, user_name='Test', total_worked_time='01:00', total_expected_time='08:00', total_worked_minutes=60, total_expected_minutes=480, days_worked=1, absences=0, total_worked_hours=1.0, total_expected_hours=8.0, total_extra_hours=0.0, total_missing_hours=7.0, final_balance=-7.0)
@@ -319,11 +324,16 @@ def test_get_monthly_summary_no_minutes(service, mock_db):
     user.name = 'Test'
     user.role = UserRole.EMPLOYEE
     user.historical_schedules = []
-    mock_query = MagicMock()
-    mock_query.options.return_value = mock_query
-    mock_query.filter.return_value = mock_query
-    mock_query.all.return_value = [user]
-    mock_db.query.return_value = mock_query
+    def mock_query_side_effect(model):
+        mock_query = MagicMock()
+        mock_query.options.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        if getattr(model, '__name__', '') == 'User':
+            mock_query.all.return_value = [user]
+        else:
+            mock_query.all.return_value = []
+        return mock_query
+    mock_db.query.side_effect = mock_query_side_effect
     with patch.object(service, 'get_advanced_user_report') as mock_adv_report:
         adv_res = MagicMock()
         adv_res.summary = UserPayrollSummary(user_id=1, user_name='Test', total_worked_time='00:00', total_expected_time='08:00', total_worked_minutes=0, total_expected_minutes=480, days_worked=0, absences=0, total_worked_hours=0.0, total_expected_hours=8.0, total_extra_hours=0.0, total_missing_hours=8.0, final_balance=-8.0)

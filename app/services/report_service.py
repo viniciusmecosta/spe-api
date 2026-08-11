@@ -337,7 +337,10 @@ class ReportService:
         )
 
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
-                                 current_user: User | None = None) -> AdvancedUserReportResponse | None:
+                                 current_user: User | None = None,
+                                 prefetched_records: list[TimeRecord] | None = None,
+                                 prefetched_adjustments: list | None = None,
+                                 prefetched_holidays: list | None = None) -> AdvancedUserReportResponse | None:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -350,16 +353,26 @@ class ReportService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-        holidays = holiday_repository.get_by_month(db, month, year)
+        if prefetched_records is not None:
+            all_records = prefetched_records
+        else:
+            all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+            
+        if prefetched_holidays is not None:
+            holidays = prefetched_holidays
+        else:
+            holidays = holiday_repository.get_by_month(db, month, year)
 
-        from app.domain.models.adjustment import AdjustmentRequest
-        all_adjustments = db.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id == user_id,
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
+        if prefetched_adjustments is not None:
+            all_adjustments = prefetched_adjustments
+        else:
+            from app.domain.models.adjustment import AdjustmentRequest
+            all_adjustments = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all()
 
         daily_details = []
         days_worked_count = 0
@@ -427,9 +440,43 @@ class ReportService:
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 
+        user_ids = [u.id for u in users]
+        start_date, end_date = self._get_month_range(month, year)
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        all_records_batch = db.query(TimeRecord).filter(
+            TimeRecord.user_id.in_(user_ids),
+            TimeRecord.record_datetime >= start_dt,
+            TimeRecord.record_datetime <= end_dt,
+            TimeRecord.deleted_at.is_(None)
+        ).all() if user_ids else []
+        records_by_user = {}
+        for r in all_records_batch:
+            records_by_user.setdefault(r.user_id, []).append(r)
+
+        from app.domain.models.adjustment import AdjustmentRequest
+        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all() if user_ids else []
+        adjustments_by_user = {}
+        for a in all_adjustments_batch:
+            adjustments_by_user.setdefault(a.user_id, []).append(a)
+
+        holidays_batch = holiday_repository.get_by_month(db, month, year)
+
         payroll_data = []
         for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
+            report = self.get_advanced_user_report(
+                db, user.id, month, year, current_user,
+                prefetched_records=records_by_user.get(user.id, []),
+                prefetched_adjustments=adjustments_by_user.get(user.id, []),
+                prefetched_holidays=holidays_batch
+            )
             if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
 
