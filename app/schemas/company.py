@@ -33,6 +33,8 @@ class CompanyBase(BaseModel):
     address: str
     phone: str | None = None
     logo_path: str | None = None
+    auto_print_receipt: bool | None = False
+    default_printer_id: int | None = None
 
     @field_validator('cnpj')
     @classmethod
@@ -53,6 +55,8 @@ class CompanyUpdate(BaseModel):
     address: str | None = None
     phone: str | None = None
     logo_path: str | None = None
+    auto_print_receipt: bool | None = None
+    default_printer_id: int | None = None
 
     @field_validator('cnpj')
     @classmethod

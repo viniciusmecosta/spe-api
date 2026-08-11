@@ -41,6 +41,7 @@ class UserBase(BaseModel):
     can_export_report: bool | None = False
     is_exempt_from_rules: bool | None = False
     is_tolerance_exempt: bool | None = False
+    auto_print_receipt: bool | None = None
 
     @field_validator('username')
     @classmethod
@@ -90,6 +91,7 @@ class UserUpdate(BaseModel):
     can_export_report: bool | None = None
     is_exempt_from_rules: bool | None = None
     is_tolerance_exempt: bool | None = None
+    auto_print_receipt: bool | None = None
     biometrics: list[UserBiometricUpdate] | None = None
 
     @field_validator('username')
