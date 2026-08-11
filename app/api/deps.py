@@ -41,12 +41,17 @@ def get_current_user(
         token_data = TokenPayload(**payload)
     except (jwt.PyJWTError, ValidationError):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not token_data.sub:
-        raise HTTPException(status_code=403, detail="Invalid token subject")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid token subject",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
     if not user:
@@ -90,7 +95,7 @@ def verify_device_api_key(
         db: Session = Depends(get_db)
 ):
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Device API Key missing")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device API Key missing")
 
     hashed_key = get_api_key_hash(api_key)
     device = db.query(DeviceCredential).filter(
@@ -99,7 +104,7 @@ def verify_device_api_key(
     ).first()
 
     if not device or not device.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Device API Key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive Device API Key")
 
     request.state.device_name = device.name
     return device
@@ -111,7 +116,7 @@ def verify_consumer_api_key(
         db: Session = Depends(get_db)
 ):
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Consumer API Key missing")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Consumer API Key missing")
 
     hashed_key = get_api_key_hash(api_key)
     consumer = db.query(DeviceCredential).filter(
@@ -120,7 +125,7 @@ def verify_consumer_api_key(
     ).first()
 
     if not consumer or not consumer.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid or inactive Consumer API Key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive Consumer API Key")
 
     request.state.device_name = consumer.name
     return consumer
