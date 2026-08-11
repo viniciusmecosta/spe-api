@@ -60,6 +60,7 @@ def mock_get_client_device_name():
 
 
 def test_get_trusted_time_success(mock_ntp_client):
+    time_record_service._reset_ntp_cache()
     mock_client_instance = mock_ntp_client.return_value
     mock_response = MagicMock()
     mock_response.tx_time = 1627819200.0
@@ -73,6 +74,7 @@ def test_get_trusted_time_success(mock_ntp_client):
 
 
 def test_get_trusted_time_failure(mock_ntp_client):
+    time_record_service._reset_ntp_cache()
     mock_client_instance = mock_ntp_client.return_value
     mock_client_instance.request.side_effect = Exception("NTP server down")
 

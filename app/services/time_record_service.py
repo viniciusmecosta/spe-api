@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import threading
 from zoneinfo import ZoneInfo
 
 import ntplib
@@ -22,14 +23,67 @@ from app.services.payroll_service import payroll_service
 
 
 class TimeRecordService:
+    _ntp_offset: float | None = None
+    _last_ntp_sync: datetime | None = None
+    _ntp_lock = threading.Lock()
+
+    @classmethod
+    def _reset_ntp_cache(cls):
+        with cls._ntp_lock:
+            cls._ntp_offset = None
+            cls._last_ntp_sync = None
+
     def _get_trusted_time(self) -> tuple[datetime, bool]:
         tz = ZoneInfo(settings.TIMEZONE)
-        try:
-            client = ntplib.NTPClient()
-            response = client.request('pool.ntp.org', version=3, timeout=2)
-            utc_time = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
-            return utc_time.astimezone(tz), True
-        except Exception:
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        
+        needs_sync = True
+        if self.__class__._last_ntp_sync is not None:
+            elapsed = (now_utc - self.__class__._last_ntp_sync).total_seconds()
+            if self.__class__._ntp_offset is not None and elapsed < 3600:
+                needs_sync = False
+            elif self.__class__._ntp_offset is None and elapsed < 60:
+                needs_sync = False
+                
+        if needs_sync:
+            with self.__class__._ntp_lock:
+                now_utc_locked = datetime.now(ZoneInfo("UTC"))
+                
+                # Double-checked locking
+                if self.__class__._last_ntp_sync is not None:
+                    elapsed = (now_utc_locked - self.__class__._last_ntp_sync).total_seconds()
+                    if self.__class__._ntp_offset is not None and elapsed < 3600:
+                        needs_sync = False
+                    elif self.__class__._ntp_offset is None and elapsed < 60:
+                        needs_sync = False
+
+                if needs_sync:
+                    try:
+                        client = ntplib.NTPClient()
+                        response = None
+                        
+                        # Fallback NTP servers
+                        for server in ['pool.ntp.br', 'pool.ntp.org', 'time.google.com']:
+                            try:
+                                response = client.request(server, version=3, timeout=0.5)
+                                break
+                            except Exception:
+                                continue
+                                
+                        if response:
+                            utc_ntp = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
+                            self.__class__._ntp_offset = (utc_ntp - now_utc_locked).total_seconds()
+                            self.__class__._last_ntp_sync = now_utc_locked
+                        else:
+                            raise Exception("All NTP servers failed")
+                    except Exception:
+                        self.__class__._ntp_offset = None
+                        self.__class__._last_ntp_sync = now_utc_locked
+
+        if self.__class__._ntp_offset is not None:
+            trusted_utc = datetime.now(ZoneInfo("UTC")) + timedelta(seconds=self.__class__._ntp_offset)
+            return trusted_utc.astimezone(tz), True
+        else:
             return datetime.now(tz), False
 
     def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
