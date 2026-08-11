@@ -103,8 +103,6 @@ class TimeCalculationService:
         )
 
         net_worked_seconds = adjusted_worked_seconds - unapproved_extra_seconds
-        if net_worked_seconds < 0:
-            net_worked_seconds = 0.0
 
         gross_worked_seconds = net_worked_seconds + unapproved_extra_seconds
             
