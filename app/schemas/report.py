@@ -117,6 +117,8 @@ class MyDashboardResponse(BaseModel):
     today_punches: list[TodayPunch]
     month_anomalies: list[AnomalyItem]
     aniversariantes_do_mes: list[Aniversariante] = []
+    server_time_unix: int
+    server_time_formatted: str
 
 class ManagerDashboardResponse(BaseModel):
     full_name: str
