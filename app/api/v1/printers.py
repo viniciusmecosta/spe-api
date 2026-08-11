@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, get_current_active_user
+from app.api.deps import get_db, get_current_manager
 from app.domain.models.user import User
 from app.repositories.printer_repository import printer_repository
 from app.schemas.printer import Printer, PrinterCreate, PrinterUpdate
@@ -16,7 +16,7 @@ def read_printers(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_manager),
 ):
     printers = printer_repository.get_all(db, skip=skip, limit=limit)
     return printers
@@ -26,7 +26,7 @@ def read_printers(
 def read_printer(
     printer_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_manager),
 ):
     printer = printer_repository.get_by_id(db, printer_id=printer_id)
     if not printer:
@@ -39,7 +39,7 @@ def create_printer(
     *,
     db: Session = Depends(get_db),
     printer_in: PrinterCreate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_manager),
 ):
     return printer_repository.create(db, obj_in=printer_in)
 
@@ -50,7 +50,7 @@ def update_printer(
     db: Session = Depends(get_db),
     printer_id: int,
     printer_in: PrinterUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_manager),
 ):
     printer = printer_repository.get_by_id(db, printer_id=printer_id)
     if not printer:
@@ -63,7 +63,7 @@ def delete_printer(
     *,
     db: Session = Depends(get_db),
     printer_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_manager),
 ):
     printer = printer_repository.get_by_id(db, printer_id=printer_id)
     if not printer:
