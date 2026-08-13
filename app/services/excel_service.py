@@ -10,6 +10,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
+from app.domain.models.enums import DayOfWeek
 from app.domain.models.user import User
 from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
@@ -322,7 +323,6 @@ class ExcelService:
             col += width
             
     def _format_day_groups(self, days: list[int]) -> str:
-        names_short = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
         if not days:
             return ""
         days = sorted(set(days))
@@ -340,11 +340,11 @@ class ExcelService:
         parts = []
         for block in blocks:
             if len(block) >= 3:
-                parts.append(f"{names_short[block[0]]} a {names_short[block[-1]]}")
+                parts.append(f"{DayOfWeek(block[0]).abreviado} a {DayOfWeek(block[-1]).abreviado}")
             elif len(block) == 2:
-                parts.append(f"{names_short[block[0]]} e {names_short[block[1]]}")
+                parts.append(f"{DayOfWeek(block[0]).abreviado} e {DayOfWeek(block[1]).abreviado}")
             else:
-                parts.append(names_short[block[0]])
+                parts.append(DayOfWeek(block[0]).abreviado)
         
         if len(parts) > 1:
             return ", ".join(parts[:-1]) + " e " + parts[-1]

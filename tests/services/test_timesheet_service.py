@@ -1,11 +1,12 @@
 import io
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import Paragraph, Table
 import pytest
-from datetime import date
+from datetime import date, time
 from unittest.mock import MagicMock
 from fastapi import HTTPException
 from app.services.timesheet_service import timesheet_service
-from app.domain.models.user import User
+from app.domain.models.user import User, UserWorkScheduleConfig
 from app.domain.models.enums import UserRole
 from app.domain.models.company import Company
 from app.domain.models.holiday import Holiday
@@ -346,5 +347,141 @@ def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     row_dia_12 = daily_table._cellvalues[12]
     assert '12/10/2023' in str(row_dia_12[0].getPlainText())
     assert 'Feriado' in str(row_dia_12[2].getPlainText())
+    assert str(row_dia_12[1].getPlainText()) in ['Quinta', 'Quinta-feira', 'Qui']
     bg_style = [cmd for cmd in daily_table._bkgrndcmds if cmd[0] == 'BACKGROUND']
     assert len(bg_style) > 0, 'Deveria ter comando de Background color no header e finais de semana'
+
+def test_format_day_groups():
+    assert timesheet_service._format_day_groups([]) == ""
+    assert timesheet_service._format_day_groups([0]) == "Segunda"
+    assert timesheet_service._format_day_groups([0, 1]) == "Segunda e Terça"
+    assert timesheet_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
+    assert timesheet_service._format_day_groups([0, 1, 3, 4, 6]) == "Segunda e Terça, Quinta e Sexta e Domingo"
+
+def test_get_schedule_transitions_and_grouping():
+    user = MagicMock(spec=User)
+    sch1 = MagicMock(spec=UserWorkScheduleConfig)
+    sch1.valid_from = date(2023, 10, 10)
+    sch1.valid_until = date(2023, 10, 20)
+    user.historical_schedules = [sch1]
+    transitions = timesheet_service._get_schedule_transitions(user, date(2023, 10, 1), date(2023, 10, 31))
+    assert date(2023, 10, 10) in transitions
+    assert date(2023, 10, 21) in transitions
+
+    periods = timesheet_service._group_schedules_by_period(user, [date(2023, 10, 1), date(2023, 10, 10), date(2023, 10, 5), date(2023, 10, 31)])
+    assert len(periods) > 0
+
+def test_build_work_schedules_section_empty_periods(mocker):
+    story = []
+    style_heading = ParagraphStyle('H', fontSize=10)
+    style_header = ParagraphStyle('T', fontSize=10)
+    user = MagicMock(spec=User)
+    sch = MagicMock(spec=UserWorkScheduleConfig)
+    sch.valid_from = date(2023, 10, 1)
+    sch.valid_until = date(2023, 10, 31)
+    user.historical_schedules = [sch]
+    mocker.patch.object(timesheet_service, '_group_schedules_by_period', return_value=[])
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    assert len(story) == 0
+
+def test_build_work_schedules_section_branches():
+    story = []
+    style_heading = ParagraphStyle('H', fontSize=10)
+    style_header = ParagraphStyle('T', fontSize=10)
+
+    timesheet_service._build_work_schedules_section(story, None, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    assert len(story) == 0
+
+    user = MagicMock(spec=User)
+    user.historical_schedules = []
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    assert len(story) == 0
+
+    sch_empty = MagicMock(spec=UserWorkScheduleConfig)
+    sch_empty.valid_from = date(2023, 10, 1)
+    sch_empty.valid_until = date(2023, 10, 31)
+    sch_empty.entry_1 = None
+    sch_empty.exit_1 = None
+    sch_empty.entry_2 = None
+    sch_empty.exit_2 = None
+    user.historical_schedules = [sch_empty]
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    assert any(isinstance(item, Table) for item in story)
+
+    story.clear()
+    sch_active = MagicMock(spec=UserWorkScheduleConfig)
+    sch_active.valid_from = date(2023, 10, 1)
+    sch_active.valid_until = date(2023, 10, 15)
+    sch_active.day_of_week = 0
+    sch_active.entry_1 = time(8, 0)
+    sch_active.exit_1 = time(12, 0)
+    sch_active.entry_2 = time(13, 0)
+    sch_active.exit_2 = time(17, 0)
+
+    sch_active2 = MagicMock(spec=UserWorkScheduleConfig)
+    sch_active2.valid_from = date(2023, 10, 16)
+    sch_active2.valid_until = date(2023, 10, 31)
+    sch_active2.day_of_week = 1
+    sch_active2.entry_1 = time(9, 0)
+    sch_active2.exit_1 = time(18, 0)
+    sch_active2.entry_2 = None
+    sch_active2.exit_2 = None
+
+    user.historical_schedules = [sch_active, sch_active2]
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    assert any(isinstance(item, Table) for item in story)
+
+def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = 'Funcionario Com Expediente'
+    mock_user.cpf = '12345678901'
+    mock_user.pis = '12345678901'
+    mock_user.role = UserRole.EMPLOYEE
+
+    sch = MagicMock(spec=UserWorkScheduleConfig)
+    sch.valid_from = date(2023, 10, 1)
+    sch.valid_until = date(2023, 10, 31)
+    sch.day_of_week = 0
+    sch.entry_1 = time(8, 0)
+    sch.exit_1 = time(17, 0)
+    sch.entry_2 = None
+    sch.exit_2 = None
+    mock_user.historical_schedules = [sch]
+
+    mock_company = MagicMock(spec=Company)
+    mock_company.name = 'Empresa'
+    mock_company.cnpj = '12345678901234'
+    mock_company.address = 'Rua'
+    mock_company.phone = '11987654321'
+    mock_company.logo_path = None
+
+    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
+    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    db_session_mock.query.return_value = MagicMock()
+    db_session_mock.query.return_value.filter.return_value.all.return_value = []
+
+    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    daily_res = {}
+    daily_hol = {}
+    for d in range(1, 32):
+        dt = date(2023, 10, d)
+        mock_daily = MagicMock(spec=DailyTimeResult)
+        mock_daily.punch_blocks = []
+        mock_daily.net_worked_seconds = 0
+        mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
+        daily_res[dt] = mock_daily
+        daily_hol[dt] = False
+    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period.total_net_worked_seconds = 3600
+    mock_period.daily_results = daily_res
+    mock_period.daily_is_holiday = daily_hol
+    mock_calc.return_value = mock_period
+
+    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    assert isinstance(buffer, io.BytesIO)
