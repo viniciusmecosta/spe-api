@@ -1,14 +1,13 @@
-from datetime import date, datetime
-from unittest.mock import MagicMock, patch
-
 import pytest
-from zoneinfo import ZoneInfo
+from datetime import date, datetime
 from sqlalchemy.orm import Session
+from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType
 from app.domain.models.user import User
-from app.schemas.report import DashboardMetricsResponse
+from app.schemas.report import DashboardMetricsResponse, TeamHoursResponse
 from app.services.dashboard_service import dashboard_service
 
 
@@ -55,8 +54,10 @@ def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_use
 @patch("app.services.dashboard_service.anomaly_service.get_anomalies")
 @patch("app.services.dashboard_service.time_record_repository.get_by_range")
 @patch("app.services.dashboard_service.date")
+@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.services.dashboard_service.datetime")
-def test_get_my_dashboard_with_records(mock_datetime, mock_date, mock_get_by_range, mock_get_anomalies, db_session_mock, mock_db_query):
+def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+                                       mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -65,6 +66,7 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_date, mock_get_by_ran
     mock_datetime.min = datetime.min
     mock_datetime.max = datetime.max
     mock_date.side_effect = date
+    mock_get_trusted_time.return_value = (fixed_now, True)
 
     record1 = MagicMock()
     record1.id = 1
@@ -112,8 +114,10 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_date, mock_get_by_ran
 @patch("app.services.dashboard_service.anomaly_service.get_anomalies")
 @patch("app.services.dashboard_service.time_record_repository.get_by_range")
 @patch("app.services.dashboard_service.date")
+@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.services.dashboard_service.datetime")
-def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_date, mock_get_by_range, mock_get_anomalies, db_session_mock, mock_db_query):
+def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+                                                 mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -122,6 +126,7 @@ def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_date, mock_
     mock_datetime.min = datetime.min
     mock_datetime.max = datetime.max
     mock_date.side_effect = date
+    mock_get_trusted_time.return_value = (fixed_now, True)
 
     mock_get_by_range.return_value = []
     mock_get_anomalies.return_value = []
@@ -140,8 +145,10 @@ def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_date, mock_
 
 @patch("app.services.dashboard_service.time_record_repository.get_by_range")
 @patch("app.services.dashboard_service.date")
+@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.services.dashboard_service.datetime")
-def test_get_my_dashboard_start_of_month(mock_datetime, mock_date, mock_get_by_range, db_session_mock, mock_db_query):
+def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+                                         db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
     fixed_now = datetime(2026, 7, 1, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -150,6 +157,7 @@ def test_get_my_dashboard_start_of_month(mock_datetime, mock_date, mock_get_by_r
     mock_datetime.min = datetime.min
     mock_datetime.max = datetime.max
     mock_date.side_effect = date
+    mock_get_trusted_time.return_value = (fixed_now, True)
 
     mock_get_by_range.return_value = []
     mock_db_query["filter"].all.return_value = []
@@ -162,8 +170,10 @@ def test_get_my_dashboard_start_of_month(mock_datetime, mock_date, mock_get_by_r
 @patch("app.services.dashboard_service.anomaly_service.get_anomalies")
 @patch("app.services.dashboard_service.time_record_repository.get_by_range")
 @patch("app.services.dashboard_service.date")
+@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.services.dashboard_service.datetime")
-def test_get_my_dashboard_last_record_entry(mock_datetime, mock_date, mock_get_by_range, mock_get_anomalies, db_session_mock, mock_db_query):
+def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+                                            mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -172,6 +182,7 @@ def test_get_my_dashboard_last_record_entry(mock_datetime, mock_date, mock_get_b
     mock_datetime.min = datetime.min
     mock_datetime.max = datetime.max
     mock_date.side_effect = date
+    mock_get_trusted_time.return_value = (fixed_now, True)
 
     record1 = MagicMock()
     record1.id = 1
@@ -239,3 +250,66 @@ def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_
     assert response.team_total_hours == 0.0
     assert response.team_formatted_time == "0h"
     assert len(response.employees) == 0
+
+
+@patch("app.services.dashboard_service.time_record_repository.count_records_in_range")
+@patch("app.services.dashboard_service.adjustment_repository.count_pending")
+@patch("app.services.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.services.dashboard_service.time_record_repository.get_by_range")
+@patch("app.services.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch("app.services.dashboard_service.datetime")
+def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
+    user = User(id=1, name="Manager User")
+    fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    mock_datetime.now.return_value = fixed_now
+    mock_datetime.combine = datetime.combine
+    mock_datetime.min = datetime.min
+    mock_datetime.max = datetime.max
+
+    rec1 = MagicMock()
+    rec1.id = 10
+    rec1.record_datetime = datetime(2026, 7, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    rec1.record_type = RecordType.ENTRY
+
+    mock_get_by_range.return_value = [rec1]
+    mock_anomalies.return_value = [MagicMock()]
+    mock_pending.return_value = 4
+    mock_count_punches.return_value = 12
+    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h", employees=[])
+
+    response = dashboard_service.get_manager_dashboard(db_session_mock, user)
+
+    assert response.full_name == "Manager User"
+    assert response.next_punch_type == "EXIT"
+    assert len(response.today_punches) == 1
+    assert response.today_punches[0].id == 10
+    assert response.today_punches[0].time == "08:00"
+    assert response.total_system_anomalies == 1
+    assert response.total_pending_adjustments == 4
+    assert response.today_total_punches == 12
+
+
+@patch("app.services.dashboard_service.time_record_repository.count_records_in_range")
+@patch("app.services.dashboard_service.adjustment_repository.count_pending")
+@patch("app.services.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.services.dashboard_service.time_record_repository.get_by_range")
+@patch("app.services.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch("app.services.dashboard_service.datetime")
+def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
+    user = User(id=1, name="Manager User")
+    fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    mock_datetime.now.return_value = fixed_now
+    mock_datetime.combine = datetime.combine
+    mock_datetime.min = datetime.min
+    mock_datetime.max = datetime.max
+
+    mock_get_by_range.return_value = []
+    mock_anomalies.return_value = []
+    mock_pending.return_value = 0
+    mock_count_punches.return_value = 0
+    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h", employees=[])
+
+    response = dashboard_service.get_manager_dashboard(db_session_mock, user)
+
+    assert response.next_punch_type == "ENTRY"
+    assert len(response.today_punches) == 0

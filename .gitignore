@@ -247,4 +247,4 @@ portarias/
 htmlcov/
 *.xml
 *.log
-
+docs/

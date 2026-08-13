@@ -449,3 +449,17 @@ def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock
         mock_email_service.send_email.return_value = False
         with pytest.raises(HTTPException):
             orchestrator.send_manual_backup_email(db_session_mock)
+
+def test_execute_hourly_backup_telegram_dev_environment(orchestrator):
+    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "dev"):
+        orchestrator.execute_hourly_backup_telegram()
+
+def test_send_managerial_report_telegram_dev_environment(orchestrator):
+    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "dev"):
+        orchestrator.send_managerial_report_telegram()
+
+def test_cleanup_backup_files_os_error(orchestrator):
+    with patch("app.services.routine_orchestrator.os.path.exists", return_value=True), patch("app.services.routine_orchestrator.os.remove", side_effect=OSError("Remove error")), patch("app.services.routine_orchestrator.logger.exception") as mock_log:
+        orchestrator._cleanup_backup_files("/tmp/b.db", "/tmp/b.sql", "/tmp/b.zip")
+        assert mock_log.call_count == 3
+

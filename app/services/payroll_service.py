@@ -227,8 +227,7 @@ class PayrollService:
                 detail=f"Ação bloqueada: A folha de ponto referente a {target_date.month:02d}/{target_date.year} está FECHADA."
             )
 
-    def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes,
-                             current_user: User):
+    def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes):
         closure = db.query(PayrollClosure).get(closure_id)
         if not closure:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fechamento não encontrado.")

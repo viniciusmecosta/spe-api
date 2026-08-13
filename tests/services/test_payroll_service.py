@@ -1,7 +1,7 @@
 import pytest
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 from fastapi import BackgroundTasks, HTTPException, status
 
 from app.domain.models.enums import UserRole
@@ -273,11 +273,9 @@ def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, 
     mock_closure = MagicMock(id=99)
     mock_repo.create.return_value = mock_closure
     
-    # Mock file generation
     from io import BytesIO
     mock_excel.generate_excel_report.return_value = BytesIO(b"data")
 
-    # Mock DB maintainers query
     maintainer = MagicMock(spec=User)
     maintainer.email = "main@test.com"
     db_session_mock.query.return_value.items = [maintainer]
@@ -319,7 +317,6 @@ def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_
     mock_closure = MagicMock(id=99)
     mock_repo.get_by_month.return_value = mock_closure
     
-    # Mock DB maintainers query
     maintainer = MagicMock(spec=User)
     maintainer.email = "main@test.com"
     db_session_mock.query.return_value.items = [maintainer]
@@ -342,7 +339,7 @@ def test_upload_legacy_report_success(db_session_mock, mock_user_maintainer):
     db_session_mock.query.return_value.get = MagicMock(return_value=mock_closure)
     
     with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data", mock_user_maintainer)
+        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data")
     
     db_session_mock.commit.assert_called_once()
     assert mock_closure.report_path.startswith("reports/legacy/folha_ponto_04_2024_")
@@ -352,7 +349,7 @@ def test_upload_legacy_report_success(db_session_mock, mock_user_maintainer):
 def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
     db_session_mock.query.return_value.get = MagicMock(return_value=None)
     with pytest.raises(HTTPException) as exc:
-        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data", mock_user_maintainer)
+        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data")
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -370,3 +367,38 @@ def test_validate_period_open_success(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = None
     
     payroll_service.validate_period_open(db_session_mock, date(2024, 4, 15))
+
+
+@patch("app.services.payroll_service.email_service.send_payroll_email")
+@patch("os.path.exists", return_value=True)
+def test_dispatch_closure_email_background_with_attachment(mock_exists, mock_send):
+    from app.services.payroll_service import dispatch_closure_email_background
+    with patch("builtins.open", mock_open(read_data=b"dummycontent")):
+        dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
+    mock_send.assert_called_once()
+
+
+@patch("app.services.payroll_service.email_service.send_payroll_email")
+@patch("os.path.exists", return_value=False)
+def test_dispatch_closure_email_background_no_attachment(mock_exists, mock_send):
+    from app.services.payroll_service import dispatch_closure_email_background
+    dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
+    mock_send.assert_called_once()
+
+
+@patch("app.services.payroll_service.email_service.send_payroll_email", side_effect=Exception("Email error"))
+@patch("app.services.payroll_service.logger.exception")
+def test_dispatch_closure_email_background_error(mock_log, mock_send):
+    from app.services.payroll_service import dispatch_closure_email_background
+    dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
+    mock_log.assert_called_once()
+
+
+@patch("app.services.payroll_service.excel_service.generate_excel_report", side_effect=Exception("Excel generation error"))
+@patch("app.services.payroll_service.payroll_repository")
+def test_close_period_excel_error(mock_repo, mock_gen, db_session_mock, mock_user_manager, mock_background_tasks):
+    mock_repo.get_by_month.return_value = None
+    with pytest.raises(HTTPException) as exc:
+        payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Excel generation error" in exc.value.detail

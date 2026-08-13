@@ -1,11 +1,4 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
-
 from app.api import deps
-from app.core.config import settings
 from app.core.security import get_client_ip
 from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
@@ -25,7 +18,10 @@ from app.schemas.device import (
 from app.services.audit_service import audit_service
 from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
+from app.services.time_record_service import time_record_service
 from app.utils.formatters import format_short_name
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -167,11 +163,10 @@ def sync_device_ack(
 def get_device_time(
         device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
-    tz = ZoneInfo(settings.TIMEZONE)
-    now = datetime.now(tz)
+    trusted_now, _ = time_record_service._get_trusted_time()
     return TimeResponsePayload(
-        unix=int(now.timestamp()),
-        formatted=now.strftime("%d/%m/%Y %H:%M:%S")
+        unix=int(trusted_now.timestamp()),
+        formatted=trusted_now.strftime("%d/%m/%Y %H:%M:%S")
     )
 
 

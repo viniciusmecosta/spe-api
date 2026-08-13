@@ -192,4 +192,5 @@ def test_format_name():
     assert user_service._format_name("MARIA DAS GRACAS") == "Maria das Gracas"
     assert user_service._format_name("ana de almeida") == "Ana de Almeida"
     assert user_service._format_name("") == ""
+    assert user_service._format_name("   ") == "   "
     assert user_service._format_name(None) is None

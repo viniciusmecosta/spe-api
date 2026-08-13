@@ -25,8 +25,11 @@ from app.schemas.report import (
 )
 from app.services.anomaly_service import anomaly_service
 from app.domain.models.enums import DayOfWeek
+from app.schemas.time_record import TimeRecordResponse
 
 logger = logging.getLogger(__name__)
+
+WEEKEND_STATUS = "Fim de semana"
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
@@ -54,6 +57,39 @@ class ReportService:
             query = query.filter(User.id.in_(employee_ids))
         return query
 
+    def _build_history_punches(self, day_records, is_manager) -> list:
+        punches = []
+        for rec in day_records:
+            punch_data = {
+                "id": rec.id,
+                "time": rec.record_datetime.strftime("%H:%M"),
+                "record_type": rec.record_type.value,
+            }
+            if is_manager:
+                punch_data.update({
+                    "ip_address": rec.ip_address,
+                    "device_name": rec.device_name,
+                    "platform": rec.platform,
+                    "biometric_id": rec.biometric_id,
+                    "edited_by": rec.editor_name,
+                    "edit_justification": rec.edit_justification if rec.edit_justification else None
+                })
+            punches.append(HistoryPunch(**punch_data))
+        return punches
+
+    def _determine_history_status(self, has_records: bool, has_holiday: bool, is_weekend: bool, has_abono: bool, is_today: bool) -> str:
+        if has_records:
+            return "Normal"
+        if has_holiday:
+            return "Feriado"
+        if is_weekend:
+            return WEEKEND_STATUS
+        if has_abono:
+            return "Abono"
+        if is_today:
+            return ""
+        return "Falta"
+
     def _build_history_day(
             self,
             current: date,
@@ -75,40 +111,19 @@ class ReportService:
         worked_seconds = daily_res.net_worked_seconds
         abono = period_result.daily_waivers[current]
 
-        punches = []
-        for rec in day_records:
-            punch_data = {
-                "id": rec.id,
-                "time": rec.record_datetime.strftime("%H:%M"),
-                "record_type": rec.record_type.value,
-            }
-            if is_manager:
-                punch_data.update({
-                    "ip_address": rec.ip_address,
-                    "device_name": rec.device_name,
-                    "platform": rec.platform,
-                    "biometric_id": rec.biometric_id,
-                    "edited_by": rec.editor_name,
-                    "edit_justification": rec.edit_justification if rec.edit_justification else None
-                })
-            punches.append(HistoryPunch(**punch_data))
+        punches = self._build_history_punches(day_records, is_manager)
 
         target_day = DayOfWeek(current.weekday())
         day_name = target_day.abreviado
         is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
-        if day_records:
-            status = "Normal"
-        elif holiday:
-            status = "Feriado"
-        elif is_weekend:
-            status = "Fim de semana"
-        elif abono:
-            status = "Abono"
-        elif current == today_date:
-            status = ""
-        else:
-            status = "Falta"
+        status = self._determine_history_status(
+            has_records=bool(day_records),
+            has_holiday=bool(holiday),
+            is_weekend=is_weekend,
+            has_abono=bool(abono),
+            is_today=current == today_date
+        )
 
         total_minutes = int(round(worked_seconds / 60))
         hours = total_minutes // 60
@@ -158,7 +173,7 @@ class ReportService:
             if is_holiday:
                 return "Feriado"
             elif is_weekend:
-                return "Fim de semana"
+                return WEEKEND_STATUS
             return ""
         if is_waiver:
             return "Abono"
@@ -167,7 +182,7 @@ class ReportService:
         if is_weekend:
             if worked_seconds > 0:
                 return "Normal"
-            return "Fim de semana"
+            return WEEKEND_STATUS
         if worked_seconds == 0 and expected_seconds > 0:
             if is_today:
                 return ""
@@ -336,8 +351,36 @@ class ReportService:
             days=history_days
         )
 
+    def _fetch_report_data(self, db: Session, user_id: int, month: int, year: int,
+                           start_dt: datetime, end_dt: datetime,
+                           prefetched_records, prefetched_adjustments, prefetched_holidays):
+        if prefetched_records is not None:
+            all_records = prefetched_records
+        else:
+            all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+
+        if prefetched_holidays is not None:
+            holidays = prefetched_holidays
+        else:
+            holidays = holiday_repository.get_by_month(db, month, year)
+
+        if prefetched_adjustments is not None:
+            all_adjustments = prefetched_adjustments
+        else:
+            from app.domain.models.adjustment import AdjustmentRequest
+            all_adjustments = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_dt.date(),
+                AdjustmentRequest.target_date <= end_dt.date(),
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all()
+        return all_records, all_adjustments, holidays
+
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
-                                 current_user: User | None = None) -> AdvancedUserReportResponse | None:
+                                 current_user: User | None = None,
+                                 prefetched_records: list[TimeRecord] | None = None,
+                                 prefetched_adjustments: list | None = None,
+                                 prefetched_holidays: list | None = None) -> AdvancedUserReportResponse | None:
         start_date, end_date = self._get_month_range(month, year)
         user = user_repository.get(db, user_id)
         if not user:
@@ -350,16 +393,10 @@ class ReportService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-        holidays = holiday_repository.get_by_month(db, month, year)
-
-        from app.domain.models.adjustment import AdjustmentRequest
-        all_adjustments = db.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id == user_id,
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
+        all_records, all_adjustments, holidays = self._fetch_report_data(
+            db, user_id, month, year, start_dt, end_dt,
+            prefetched_records, prefetched_adjustments, prefetched_holidays
+        )
 
         daily_details = []
         days_worked_count = 0
@@ -427,9 +464,44 @@ class ReportService:
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 
+        user_ids = [u.id for u in users]
+        start_date, end_date = self._get_month_range(month, year)
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        all_records_batch = db.query(TimeRecord).filter(
+            TimeRecord.user_id.in_(user_ids),
+            TimeRecord.record_datetime >= start_dt,
+            TimeRecord.record_datetime <= end_dt,
+            TimeRecord.deleted_at.is_(None),
+            TimeRecord.is_ignored == False
+        ).all() if user_ids else []
+        records_by_user = {}
+        for r in all_records_batch:
+            records_by_user.setdefault(r.user_id, []).append(r)
+
+        from app.domain.models.adjustment import AdjustmentRequest
+        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all() if user_ids else []
+        adjustments_by_user = {}
+        for a in all_adjustments_batch:
+            adjustments_by_user.setdefault(a.user_id, []).append(a)
+
+        holidays_batch = holiday_repository.get_by_month(db, month, year)
+
         payroll_data = []
         for user in users:
-            report = self.get_advanced_user_report(db, user.id, month, year, current_user)
+            report = self.get_advanced_user_report(
+                db, user.id, month, year, current_user,
+                prefetched_records=records_by_user.get(user.id, []),
+                prefetched_adjustments=adjustments_by_user.get(user.id, []),
+                prefetched_holidays=holidays_batch
+            )
             if report and report.summary.total_worked_minutes > 0:
                 payroll_data.append(report.summary)
 

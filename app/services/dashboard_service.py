@@ -1,9 +1,8 @@
 import logging
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.domain.models.enums import RecordType, UserRole
@@ -20,9 +19,10 @@ from app.schemas.report import (
     TodayPunch,
     ManagerDashboardResponse,
 )
-from app.utils.formatters import format_short_name
 from app.services.anomaly_service import anomaly_service
 from app.services.report_service import report_service
+from app.services.trusted_time_service import trusted_time_service
+from app.utils.formatters import format_short_name
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ class DashboardService:
         )
 
     def get_my_dashboard(self, db: Session, current_user: User) -> MyDashboardResponse:
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
+        now, _ = trusted_time_service.get_trusted_time()
+        tz = now.tzinfo
         today_date = now.date()
         start_of_month = date(now.year, now.month, 1)
 
@@ -108,7 +108,9 @@ class DashboardService:
             next_punch_type=next_punch_type,
             today_punches=today_punches,
             month_anomalies=month_anomalies,
-            aniversariantes_do_mes=aniversariantes_do_mes
+            aniversariantes_do_mes=aniversariantes_do_mes,
+            server_time_unix=int(now.timestamp()),
+            server_time_formatted=now.strftime("%d/%m/%Y %H:%M:%S")
         )
 
     def get_team_worked_hours(self, db: Session, month: int, year: int, current_user: User) -> TeamHoursResponse:

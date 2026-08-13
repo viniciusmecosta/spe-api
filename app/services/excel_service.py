@@ -1,7 +1,6 @@
 import os
 import re
 from io import BytesIO
-
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -11,9 +10,11 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
+from app.domain.models.enums import DayOfWeek
 from app.domain.models.user import User
 from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
+from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 
 FONT_NAME = "Times New Roman"
@@ -150,18 +151,62 @@ class ExcelService:
             if os.path.exists(full_logo_path):
                 logo_path = full_logo_path
 
+        user_ids = [u.id for u in users]
+        start_date, end_date = report_service._get_month_range(month, year)
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        from app.domain.models.time_record import TimeRecord
+        all_records_batch = db.query(TimeRecord).filter(
+            TimeRecord.user_id.in_(user_ids),
+            TimeRecord.record_datetime >= start_dt,
+            TimeRecord.record_datetime <= end_dt,
+            TimeRecord.deleted_at.is_(None),
+            TimeRecord.is_ignored == False
+        ).all() if user_ids else []
+        records_by_user = {}
+        for r in all_records_batch:
+            records_by_user.setdefault(r.user_id, []).append(r)
+
+        from app.domain.models.adjustment import AdjustmentRequest
+        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all() if user_ids else []
+        adjustments_by_user = {}
+        for a in all_adjustments_batch:
+            adjustments_by_user.setdefault(a.user_id, []).append(a)
+
+        from app.repositories.holiday_repository import holiday_repository
+        holidays_batch = holiday_repository.get_by_month(db, month, year)
+
         user_reports = []
         for user in users:
-            report = report_service.get_advanced_user_report(db, user.id, month, year, current_user)
+            report = report_service.get_advanced_user_report(
+                db, user.id, month, year, current_user,
+                prefetched_records=records_by_user.get(user.id, []),
+                prefetched_adjustments=adjustments_by_user.get(user.id, []),
+                prefetched_holidays=holidays_batch
+            )
             if report and report.summary.total_worked_minutes > 0:
                 user_reports.append((user, report))
 
         wb = Workbook()
+        now, _ = trusted_time_service.get_trusted_time()
+        wb.properties.creator = settings.PROJECT_NAME
+        wb.properties.title = "Relatório de Ponto - Excel"
+        wb.properties.subject = "Documento oficial de registro de ponto"
+        wb.properties.created = now
         
         self._build_summary_sheet(wb, month, year, user_reports, company, logo_path)
 
         for user, report in user_reports:
-            self._build_employee_sheet(wb, user, report, month, year, company, logo_path)
+            self._build_employee_sheet(wb, user, report, month, year, company, logo_path, start_date, end_date)
 
         output = BytesIO()
         wb.save(output)
@@ -259,6 +304,13 @@ class ExcelService:
         note_row2 = ws.max_row
         ws.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=self.MAX_COLS)
         ws.cell(row=note_row2, column=1).font = self.font_italic
+
+        now, _ = trusted_time_service.get_trusted_time()
+        generated_at = now.strftime("%d/%m/%Y %H:%M")
+        ws.append([f"* Documento gerado em: {generated_at}"])
+        note_row3 = ws.max_row
+        ws.merge_cells(start_row=note_row3, start_column=1, end_row=note_row3, end_column=self.MAX_COLS)
+        ws.cell(row=note_row3, column=1).font = self.font_italic
         ws.append([""])
 
     def _merge_for_table(self, ws, row, merges: list[int], texts: list[any], font, alignment, fill=None, borders=True):
@@ -284,6 +336,120 @@ class ExcelService:
             
             col += width
             
+    def _format_day_groups(self, days: list[int]) -> str:
+        if not days:
+            return ""
+        days = sorted(set(days))
+        
+        blocks = []
+        current_block = [days[0]]
+        for d in days[1:]:
+            if d == current_block[-1] + 1:
+                current_block.append(d)
+            else:
+                blocks.append(current_block)
+                current_block = [d]
+        blocks.append(current_block)
+        
+        parts = []
+        for block in blocks:
+            if len(block) >= 3:
+                parts.append(f"{DayOfWeek(block[0]).abreviado} a {DayOfWeek(block[-1]).abreviado}")
+            elif len(block) == 2:
+                parts.append(f"{DayOfWeek(block[0]).abreviado} e {DayOfWeek(block[1]).abreviado}")
+            else:
+                parts.append(DayOfWeek(block[0]).abreviado)
+        
+        if len(parts) > 1:
+            return ", ".join(parts[:-1]) + " e " + parts[-1]
+        return parts[0]
+
+    def _get_schedule_transitions(self, user, start_date, end_date):
+        from datetime import date, timedelta
+        transitions = {start_date, end_date + timedelta(days=1)}
+        for sch in user.historical_schedules:
+            if sch.valid_from and start_date <= sch.valid_from <= end_date:
+                transitions.add(sch.valid_from)
+            if sch.valid_until and start_date <= sch.valid_until <= end_date:
+                transitions.add(sch.valid_until + timedelta(days=1))
+        return sorted(transitions)
+
+    def _group_schedules_by_period(self, user, transitions):
+        from datetime import date, timedelta
+        periods = []
+        for i in range(len(transitions) - 1):
+            p_start = transitions[i]
+            p_end = transitions[i+1] - timedelta(days=1)
+            if p_start > p_end:
+                continue
+            active_schedules = []
+            for sch in user.historical_schedules:
+                if sch.valid_from <= p_end and (not sch.valid_until or sch.valid_until >= p_start):
+                    active_schedules.append(sch)
+            periods.append((p_start, p_end, active_schedules))
+        return periods
+
+    def _write_schedules_to_sheet(self, ws, periods, start_date, end_date):
+        ws.append([""])
+        ws.append(["Expediente Cadastrado"])
+        title_row = ws.max_row
+        ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=self.MAX_COLS)
+        c = ws.cell(row=title_row, column=1)
+        c.font = self.font_bold
+        c.alignment = self.align_center
+        for c_idx in range(1, self.MAX_COLS + 1):
+            ws.cell(row=title_row, column=c_idx).border = self.border_standard
+            ws.cell(row=title_row, column=c_idx).fill = self.fill_section_title
+
+        is_single_period = len(periods) == 1 and periods[0][0] == start_date and periods[0][1] == end_date
+        for p_start, p_end, schedules in periods:
+            self._write_period_schedules(ws, p_start, p_end, schedules, is_single_period)
+
+    def _write_period_schedules(self, ws, p_start, p_end, schedules, is_single_period):
+        if not is_single_period:
+            ws.append([""])
+            per_row = ws.max_row
+            ws.merge_cells(start_row=per_row, start_column=1, end_row=per_row, end_column=self.MAX_COLS)
+            c_per = ws.cell(row=per_row, column=1)
+            c_per.value = f"Período: {p_start.strftime('%d/%m/%Y')} a {p_end.strftime('%d/%m/%Y')}"
+            c_per.font = self.font_italic
+            c_per.alignment = self.align_left
+        grouped = {}
+        for sch in schedules:
+            if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
+                continue
+            parts = []
+            if sch.entry_1 and sch.exit_1:
+                parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
+            if sch.entry_2 and sch.exit_2:
+                parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
+            if parts:
+                time_str = " e ".join(parts)
+                grouped.setdefault(time_str, []).append(sch.day_of_week)
+        if not grouped:
+            ws.append([""])
+            no_sch_row = ws.max_row
+            ws.merge_cells(start_row=no_sch_row, start_column=1, end_row=no_sch_row, end_column=self.MAX_COLS)
+            ws.cell(row=no_sch_row, column=1).value = "Sem expediente cadastrado"
+            ws.cell(row=no_sch_row, column=1).font = self.font_regular
+            return
+        for time_str, days in grouped.items():
+            day_str = self._format_day_groups(days)
+            ws.append([""])
+            row = ws.max_row
+            self._apply_key_value(ws, row, start_col=1, key_text=day_str, key_width=6, val_text=time_str, val_width=18,
+                                  borders=True)
+            ws.cell(row=row, column=1).alignment = self.align_left
+
+    def _build_work_schedules_section(self, ws, user, start_date, end_date):
+        if not user.historical_schedules:
+            return
+        transitions = self._get_schedule_transitions(user, start_date, end_date)
+        periods = self._group_schedules_by_period(user, transitions)
+        if not periods:
+            return
+        self._write_schedules_to_sheet(ws, periods, start_date, end_date)
+
     def _build_summary_sheet(self, wb, month, year, user_reports, company, logo_path):
         ws_summary = wb.active
         ws_summary.title = "Resumo"
@@ -325,7 +491,7 @@ class ExcelService:
 
         self._append_notes(ws_summary)
 
-    def _build_employee_sheet(self, wb, user, report, month, year, company, logo_path):
+    def _build_employee_sheet(self, wb, user, report, month, year, company, logo_path, start_date, end_date):
         short_name = format_short_name(user.name)
         
         ws_det = wb.create_sheet(title=short_name[:31])
@@ -397,6 +563,8 @@ class ExcelService:
         ws_det.cell(row=last_row, column=19).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
+
+        self._build_work_schedules_section(ws_det, user, start_date, end_date)
 
         self._append_notes(ws_det)
 
