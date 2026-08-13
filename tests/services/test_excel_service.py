@@ -1,14 +1,16 @@
 import os
-import sys
 import pytest
+import sys
 from datetime import datetime
-from io import BytesIO
-from unittest.mock import MagicMock, patch
-from openpyxl import Workbook
 from fastapi import HTTPException
-from app.services.excel_service import ExcelService
-from app.domain.models.user import User
+from io import BytesIO
+from openpyxl import Workbook
+from unittest.mock import MagicMock, patch
+
 from app.domain.models.enums import UserRole
+from app.domain.models.user import User
+from app.services.excel_service import ExcelService
+
 
 @pytest.fixture
 def excel_service():
@@ -279,7 +281,9 @@ def test_build_employee_sheet_no_phone_endereco(excel_service):
     mock_user.endereco = None
     mock_report = MagicMock()
     mock_report.daily_details = []
-    excel_service._build_employee_sheet(wb, mock_user, mock_report, 5, 2023, None, None)
+    from datetime import date
+    excel_service._build_employee_sheet(wb, mock_user, mock_report, 5, 2023, None, None, date(2023, 5, 1),
+                                        date(2023, 5, 31))
     assert 'Tes' in wb.sheetnames[-1]
 
 def test_build_summary_sheet(excel_service):
@@ -312,18 +316,13 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
     assert 'Resumo' in wb.sheetnames
 import openpyxl
-from app.schemas.report import AdvancedUserReportResponse, UserPayrollSummary, DailyReportItem
+from app.schemas.report import UserPayrollSummary, DailyReportItem
 
 @patch.object(ExcelService, '_validate_employee_report_period')
 @patch('app.services.excel_service.report_service')
 @patch('app.services.excel_service.company_repository')
 @patch('os.path.exists')
 def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service, db_session_mock, mock_user):
-    """
-    Testa rigorosamente a geração do Excel lendo o buffer (BytesIO) com openpyxl e inspecionando
-    valores, cores (fill), bordas e nomes das abas criadas para assegurar que regras de negócios 
-    como cores para feriados e fins de semana sejam aplicadas e mantidas perfeitas.
-    """
     mock_exists.return_value = False
     mock_company = MagicMock()
     mock_company.logo_path = None

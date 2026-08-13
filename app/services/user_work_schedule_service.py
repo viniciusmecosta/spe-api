@@ -1,14 +1,13 @@
-from datetime import date, timedelta
-from typing import Dict, List, Any
 from collections import defaultdict
-
+from datetime import date, timedelta
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
+from sqlalchemy.orm import Session
+from typing import Dict, List, Any
 
-from app.domain.models.user import User, UserWorkScheduleConfig
 from app.domain.models.enums import DayOfWeek
+from app.domain.models.user import User, UserWorkScheduleConfig
 from app.repositories.payroll_repository import payroll_repository
 from app.repositories.user_repository import user_repository
 from app.services.audit_service import audit_service
@@ -108,7 +107,7 @@ class UserWorkScheduleService:
             if sch.valid_from <= new_end and sch_end >= valid_from:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
+                    detail="Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
                 )
 
     def get_bulk_schedules(self, db: Session, month: int, year: int) -> List[Dict[str, Any]]:
@@ -187,7 +186,21 @@ class UserWorkScheduleService:
             "users": users_list
         }
 
-    def bulk_add_schedules(self, db: Session, bulk_data: dict, current_user_id: int):
+    def _process_single_user_bulk_add(self, user, schedules_in, valid_from, valid_until, errors, new_schedules):
+        for sch_data_dict in schedules_in:
+            day_of_week = sch_data_dict.get('day_of_week')
+            day_name = DayOfWeek(day_of_week).nome
+            try:
+                self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
+            except HTTPException:
+                errors.append(
+                    f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
+                continue
+            new_sch = UserWorkScheduleConfig(user_id=user.id)
+            self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
+            new_schedules.append(new_sch)
+
+    def bulk_add_schedules(self, db, bulk_data: dict, current_user_id: int):
         valid_from = bulk_data.get('valid_from')
         valid_until = bulk_data.get('valid_until')
 
@@ -213,22 +226,8 @@ class UserWorkScheduleService:
             if not user:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
-
-            schedules_in = user_data.get('schedules', [])
-            
-            for sch_data_dict in schedules_in:
-                day_of_week = sch_data_dict.get('day_of_week')
-                day_name = DayOfWeek(day_of_week).nome
-
-                try:
-                    self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
-                except HTTPException:
-                    errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
-                    continue
-
-                new_sch = UserWorkScheduleConfig(user_id=user.id)
-                self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
-                new_schedules.append(new_sch)
+            self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors,
+                                               new_schedules)
 
         if errors:
             raise HTTPException(status_code=400, detail=errors)
@@ -236,6 +235,7 @@ class UserWorkScheduleService:
         for sch in new_schedules:
             db.add(sch)
 
+        from fastapi.encoders import jsonable_encoder
         audit_service.log(
             db, user_id=current_user_id, action="CREATE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
@@ -276,24 +276,31 @@ class UserWorkScheduleService:
         to_update = []
         to_create = []
 
+        self._map_bulk_updates(db, existing_map, incoming_map, to_delete, to_update, to_create, errors)
+
+        if errors:
+            raise HTTPException(status_code=400, detail=errors)
+
+        self._apply_bulk_updates_db(db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
+                                    old_valid_from, old_valid_until, bulk_data, current_user_id)
+
+    def _map_bulk_updates(self, db, existing_map, incoming_map, to_delete, to_update, to_create, errors):
         for key, old_cfg in existing_map.items():
             if key not in incoming_map:
                 to_delete.append(old_cfg)
             else:
                 to_update.append((old_cfg, incoming_map[key]))
-
         for key, new_data in incoming_map.items():
             if key not in existing_map:
-                uid, dow = key
+                uid, _ = key
                 user = user_repository.get(db, uid)
                 if not user:
                     errors.append(f"Usuário com ID {uid} não encontrado.")
                     continue
                 to_create.append((user, new_data))
 
-        if errors:
-            raise HTTPException(status_code=400, detail=errors)
-
+    def _apply_bulk_updates_db(self, db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
+                               old_valid_from, old_valid_until, bulk_data, current_user_id):
         for old_cfg, new_data in to_update:
             user = user_repository.get(db, old_cfg.user_id)
             try:
@@ -319,12 +326,10 @@ class UserWorkScheduleService:
             self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
             db.add(cfg)
 
-        new_schs = []
         for user, new_data in to_create:
             new_sch = UserWorkScheduleConfig(user_id=user.id)
             self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
             db.add(new_sch)
-            new_schs.append(new_sch)
 
         audit_service.log(
             db, user_id=current_user_id, action="UPDATE",

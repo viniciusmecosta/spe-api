@@ -1,11 +1,11 @@
 import logging
-
 from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.services.audit_service import audit_service
 from app.services.time_record_service import time_record_service
+from app.services.trusted_time_service import trusted_time_service
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class PunchService:
             if not user.is_active:
                 return False, "Bloqueado", None
 
-            server_time, used_ntp = time_record_service._get_trusted_time()
+            server_time, used_ntp = trusted_time_service.get_trusted_time()
 
             new_record = time_record_service.create_punch(
                 db,

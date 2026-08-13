@@ -6,6 +6,10 @@ from zoneinfo import ZoneInfo
 from app.core.config import settings
 
 
+class NTPException(Exception):
+    pass
+
+
 class TrustedTimeService:
 
     def __init__(self) -> None:
@@ -56,7 +60,7 @@ class TrustedTimeService:
                 self._ntp_offset = (utc_ntp - now_utc_locked).total_seconds()
                 self._last_ntp_sync = now_utc_locked
             else:
-                raise Exception("NTP_FAILED")
+                raise NTPException("NTP_FAILED")
         except Exception:
             self._ntp_offset = None
             self._last_ntp_sync = now_utc_locked

@@ -1,12 +1,13 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
-from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.time_record import TimeRecord
+from app.domain.models.adjustment import AdjustmentRequest
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
+from app.domain.models.time_record import TimeRecord, get_local_time
 from app.domain.models.user import User
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
@@ -19,8 +20,6 @@ from app.services.trusted_time_service import trusted_time_service
 class TimeRecordService:
 
     def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
-        from app.domain.models.adjustment import AdjustmentRequest
-        from app.domain.models.enums import AdjustmentType, AdjustmentStatus
         requests = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id,
                                                       AdjustmentRequest.target_date == target_date,
                                                       AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
@@ -31,7 +30,6 @@ class TimeRecordService:
 
     def _is_first_entry_affected(self, db: Session, user_id: int, target_date: datetime.date,
                                  record_id: int | None = None, new_datetime: datetime | None = None) -> bool:
-        from datetime import time
         start_of_day = datetime.combine(target_date, time.min, tzinfo=ZoneInfo(settings.TIMEZONE))
         end_of_day = datetime.combine(target_date, time.max, tzinfo=ZoneInfo(settings.TIMEZONE))
         first_entry = (db.query(TimeRecord).filter(TimeRecord.user_id == user_id,
@@ -160,6 +158,25 @@ class TimeRecordService:
                                     "justification": justification_val})
         return record
 
+    def _handle_admin_update_invalidations(self, db: Session, record: TimeRecord, obj_in: TimeRecordUpdate,
+                                           old_date: datetime.date, new_date: datetime.date,
+                                           new_record_type: RecordType):
+        if record.record_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, old_date)
+        if new_record_type == RecordType.ENTRY:
+            new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
+            if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
+                self._invalidate_extra_time_requests(db, record.user_id, new_date)
+
+    def _log_admin_update_audit(self, db: Session, manager_id: int, new_record: TimeRecord, old_data: dict):
+        justification_val = new_record.edit_justification if new_record.edit_justification else ""
+        new_data_raw = {"record_type": new_record.record_type.value, "record_time": str(new_record.record_datetime),
+                        "justification": justification_val}
+        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
+        audit_service.log(db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD",
+                          entity_id=new_record.id, old_data=actual_old, new_data=actual_new)
+
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int,
                             ip_address: str | None = None, device_name: str | None = None,
                             platform: str | None = None) -> TimeRecord:
@@ -175,16 +192,11 @@ class TimeRecordService:
             return record
         old_date = record.record_datetime.date()
         new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
-        if record.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
-                self._invalidate_extra_time_requests(db, record.user_id, old_date)
-        if new_record_type == RecordType.ENTRY:
-            new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
-            if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
-                self._invalidate_extra_time_requests(db, record.user_id, new_date)
+        self._handle_admin_update_invalidations(db, record, obj_in, old_date, new_date, new_record_type)
+
         old_data = {"record_type": record.record_type.value, "record_time": str(record.record_datetime),
                     "justification": record.edit_justification if record.edit_justification else ""}
-        from app.domain.models.time_record import get_local_time
+
         record.is_ignored = True
         new_record = TimeRecord(user_id=record.user_id, record_type=new_record_type,
                                 record_datetime=new_record_datetime, ip_address=ip_address,
@@ -196,12 +208,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(new_record)
-        justification_val = new_record.edit_justification if new_record.edit_justification else ""
-        new_data_raw = {"record_type": new_record.record_type.value, "record_time": str(new_record.record_datetime),
-                        "justification": justification_val}
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-        audit_service.log(db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=new_record.id, old_data=actual_old, new_data=actual_new)
+        self._log_admin_update_audit(db, manager_id, new_record, old_data)
         return new_record
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):

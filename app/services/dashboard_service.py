@@ -1,5 +1,7 @@
 import logging
 from datetime import date, datetime, timedelta
+from sqlalchemy import extract
+from sqlalchemy.orm import Session, joinedload
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -19,10 +21,8 @@ from app.schemas.report import (
 )
 from app.services.anomaly_service import anomaly_service
 from app.services.report_service import report_service
-from app.services.time_record_service import time_record_service
+from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
-from sqlalchemy import extract
-from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class DashboardService:
         )
 
     def get_my_dashboard(self, db: Session, current_user: User) -> MyDashboardResponse:
-        now, _ = time_record_service._get_trusted_time()
+        now, _ = trusted_time_service.get_trusted_time()
         tz = now.tzinfo
         today_date = now.date()
         start_of_month = date(now.year, now.month, 1)
