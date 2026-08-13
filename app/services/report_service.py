@@ -57,6 +57,39 @@ class ReportService:
             query = query.filter(User.id.in_(employee_ids))
         return query
 
+    def _build_history_punches(self, day_records, is_manager) -> list:
+        punches = []
+        for rec in day_records:
+            punch_data = {
+                "id": rec.id,
+                "time": rec.record_datetime.strftime("%H:%M"),
+                "record_type": rec.record_type.value,
+            }
+            if is_manager:
+                punch_data.update({
+                    "ip_address": rec.ip_address,
+                    "device_name": rec.device_name,
+                    "platform": rec.platform,
+                    "biometric_id": rec.biometric_id,
+                    "edited_by": rec.editor_name,
+                    "edit_justification": rec.edit_justification if rec.edit_justification else None
+                })
+            punches.append(HistoryPunch(**punch_data))
+        return punches
+
+    def _determine_history_status(self, has_records: bool, has_holiday: bool, is_weekend: bool, has_abono: bool, is_today: bool) -> str:
+        if has_records:
+            return "Normal"
+        if has_holiday:
+            return "Feriado"
+        if is_weekend:
+            return WEEKEND_STATUS
+        if has_abono:
+            return "Abono"
+        if is_today:
+            return ""
+        return "Falta"
+
     def _build_history_day(
             self,
             current: date,
@@ -78,40 +111,19 @@ class ReportService:
         worked_seconds = daily_res.net_worked_seconds
         abono = period_result.daily_waivers[current]
 
-        punches = []
-        for rec in day_records:
-            punch_data = {
-                "id": rec.id,
-                "time": rec.record_datetime.strftime("%H:%M"),
-                "record_type": rec.record_type.value,
-            }
-            if is_manager:
-                punch_data.update({
-                    "ip_address": rec.ip_address,
-                    "device_name": rec.device_name,
-                    "platform": rec.platform,
-                    "biometric_id": rec.biometric_id,
-                    "edited_by": rec.editor_name,
-                    "edit_justification": rec.edit_justification if rec.edit_justification else None
-                })
-            punches.append(HistoryPunch(**punch_data))
+        punches = self._build_history_punches(day_records, is_manager)
 
         target_day = DayOfWeek(current.weekday())
         day_name = target_day.abreviado
         is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
-        if day_records:
-            status = "Normal"
-        elif holiday:
-            status = "Feriado"
-        elif is_weekend:
-            status = WEEKEND_STATUS
-        elif abono:
-            status = "Abono"
-        elif current == today_date:
-            status = ""
-        else:
-            status = "Falta"
+        status = self._determine_history_status(
+            has_records=bool(day_records),
+            has_holiday=bool(holiday),
+            is_weekend=is_weekend,
+            has_abono=bool(abono),
+            is_today=current == today_date
+        )
 
         total_minutes = int(round(worked_seconds / 60))
         hours = total_minutes // 60
