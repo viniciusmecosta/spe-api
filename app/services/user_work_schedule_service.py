@@ -281,8 +281,8 @@ class UserWorkScheduleService:
         if errors:
             raise HTTPException(status_code=400, detail=errors)
 
-        self._apply_bulk_updates_db(db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
-                                    old_valid_from, old_valid_until, bulk_data, current_user_id)
+        return self._apply_bulk_updates_db(db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
+                                           old_valid_from, old_valid_until, bulk_data, current_user_id)
 
     def _map_bulk_updates(self, db, existing_map, incoming_map, to_delete, to_update, to_create, errors):
         for key, old_cfg in existing_map.items():
