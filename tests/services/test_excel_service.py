@@ -425,3 +425,152 @@ def test_build_work_schedules_section(excel_service):
     assert found_title
     assert found_first_period
     assert found_second_period
+
+def test_format_day_groups_two_days(excel_service):
+    assert excel_service._format_day_groups([0, 1]) == "Segunda e Terça"
+
+def test_build_work_schedules_section_edge_cases(excel_service):
+    from datetime import date, time
+    from openpyxl import Workbook
+    from app.domain.models.user import UserWorkScheduleConfig
+    
+    wb = Workbook()
+    ws = wb.active
+    
+    mock_user_no_sched = MagicMock(spec=User)
+    mock_user_no_sched.historical_schedules = []
+    excel_service._build_work_schedules_section(ws, mock_user_no_sched, date(2023, 5, 1), date(2023, 5, 31))
+    
+    mock_user_empty_periods = MagicMock(spec=User)
+    mock_user_empty_periods.historical_schedules = [
+        UserWorkScheduleConfig(day_of_week=0, valid_from=date(2023, 5, 1), valid_until=date(2023, 5, 1))
+    ]
+    with patch.object(excel_service, "_group_schedules_by_period", return_value=[]):
+        excel_service._build_work_schedules_section(ws, mock_user_empty_periods, date(2023, 5, 1), date(2023, 5, 31))
+
+def test_group_schedules_by_period_start_greater_than_end(excel_service):
+    from datetime import date
+    user = MagicMock()
+    user.historical_schedules = []
+    transitions = [date(2023, 5, 10), date(2023, 5, 10)]
+    periods = excel_service._group_schedules_by_period(user, transitions)
+    assert periods == []
+
+def test_write_period_schedules_empty_entries_and_no_grouped(excel_service):
+    from openpyxl import Workbook
+    from app.domain.models.user import UserWorkScheduleConfig
+    from datetime import date
+    
+    wb = Workbook()
+    ws = wb.active
+    
+    sch_empty = UserWorkScheduleConfig(
+        day_of_week=0,
+        valid_from=date(2023, 5, 1),
+        valid_until=date(2023, 5, 31),
+        entry_1=None, exit_1=None, entry_2=None, exit_2=None
+    )
+    excel_service._write_period_schedules(ws, date(2023, 5, 1), date(2023, 5, 31), [sch_empty], is_single_period=False)
+    
+    found_no_sched = False
+    for row in ws.iter_rows(values_only=True):
+        if "Sem expediente cadastrado" in str(row):
+            found_no_sched = True
+    assert found_no_sched
+
+def test_time_str_to_fraction_fallback(excel_service):
+    class CustomStr(str):
+        def __contains__(self, item):
+            return True
+        def split(self, sep=None, maxsplit=-1):
+            return ["10"]
+    assert excel_service._time_str_to_fraction(CustomStr("10:00")) == 0.0
+
+def test_build_day_row_abono_status(excel_service):
+    from openpyxl import Workbook
+    from datetime import datetime
+    from app.schemas.report import DailyReportItem
+    
+    wb = Workbook()
+    ws = wb.active
+    
+    day_abono = DailyReportItem(
+        date=datetime(2023, 10, 10),
+        day_name="Terça",
+        is_holiday=False,
+        is_weekend=False,
+        status="Abono Parcial",
+        worked_hours=4.0,
+        expected_hours=8.0,
+        balance_hours=-4.0,
+        extra_hours=0.0,
+        missing_hours=4.0,
+        worked_minutes=240,
+        worked_time="04:00",
+        expected_time="08:00",
+        unapproved_extra_time="00:00",
+        punches=["08:00", "12:00"],
+        holiday_name=None,
+        entries=[],
+        exits=[],
+        detailed_punches=None,
+        adjustment_id=None
+    )
+    
+    merges = [2, 3, 13, 2, 2, 2]
+    excel_service._build_day_row(ws, day_abono, merges)
+    last_row = ws.max_row
+    assert ws.cell(row=last_row, column=6).fill == excel_service.fill_excused
+
+@patch("app.services.excel_service.company_repository")
+@patch("app.services.excel_service.report_service")
+def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service, db_session_mock):
+    from datetime import datetime, date
+    from app.domain.models.time_record import TimeRecord
+    from app.domain.models.adjustment import AdjustmentRequest
+    from app.schemas.report import AdvancedUserReportResponse, UserPayrollSummary
+    
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = "Test User Batch"
+    user.role = UserRole.EMPLOYEE
+    user.historical_schedules = []
+    
+    query_mock = MagicMock()
+    query_mock.options.return_value = query_mock
+    query_mock.all.return_value = [user]
+    
+    rec = MagicMock(spec=TimeRecord)
+    rec.user_id = 1
+    rec.record_datetime = datetime(2023, 10, 10, 8, 0)
+    
+    adj = MagicMock(spec=AdjustmentRequest)
+    adj.user_id = 1
+    adj.target_date = date(2023, 10, 10)
+    
+    def side_query_filter(model):
+        m = MagicMock()
+        if model == TimeRecord:
+            m.filter.return_value.all.return_value = [rec]
+        elif model == AdjustmentRequest:
+            m.filter.return_value.all.return_value = [adj]
+        else:
+            m.options.return_value.all.return_value = [user]
+        return m
+        
+    db_session_mock.query.side_effect = side_query_filter
+    mock_comp_repo.get_current.return_value = None
+    mock_report_service._get_month_range.return_value = (date(2023, 10, 1), date(2023, 10, 31))
+    mock_report_service._apply_employee_filters.side_effect = lambda q, e: q
+    
+    mock_rep = MagicMock(spec=AdvancedUserReportResponse)
+    mock_rep.summary = UserPayrollSummary(
+        user_id=1, user_name="Test User Batch", total_worked_time="00:00", total_expected_time="00:00",
+        total_worked_minutes=0, total_expected_minutes=0, days_worked=0, absences=0,
+        total_worked_hours=0.0, total_expected_hours=0.0, total_extra_hours=0.0, total_missing_hours=0.0, final_balance=0.0
+    )
+    mock_rep.daily_details = []
+    mock_report_service.get_advanced_user_report.return_value = mock_rep
+    
+    res = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
+    assert res is not None

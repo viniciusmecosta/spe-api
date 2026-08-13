@@ -120,7 +120,7 @@ def test_daily_process_state_over_24h(record_factory):
 )
 def test_calculate_waiver_matrix(adjustment_factory, is_excused, adj_hours, expected_waiver_sec):
     adj = adjustment_factory(date(2023,10,10), AdjustmentType.WAIVER, AdjustmentStatus.APPROVED, adj_hours) if adj_hours is not None else None
-    assert time_calculation_service._calculate_waiver(adj, is_excused, 28800, 0) == expected_waiver_sec
+    assert time_calculation_service._calculate_waiver(adj, is_excused) == expected_waiver_sec
 
 @pytest.mark.parametrize(
     "adj_hours_list, worked_seconds, expected_unapproved_sec",

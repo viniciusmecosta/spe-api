@@ -41,23 +41,23 @@ def test_build_daily_records_table():
     mock_daily_1 = MagicMock(spec=DailyTimeResult)
     mock_daily_1.net_worked_seconds = 3600
     mock_daily_1.unapproved_extra_seconds = 0
-    mock_daily_1.waiver_seconds = 0
+    mock_daily_1.waiver_seconds = 1800
     mock_daily_1.extra_seconds = 0
     mock_daily_1.missing_seconds = 0
-    mock_daily_1.punch_blocks = []
+    mock_daily_1.punch_blocks = ['08:00 - 09:00']
     mock_daily_2 = MagicMock(spec=DailyTimeResult)
     mock_daily_2.net_worked_seconds = 3600
     mock_daily_2.unapproved_extra_seconds = 0
     mock_daily_2.waiver_seconds = 0
     mock_daily_2.extra_seconds = 0
     mock_daily_2.missing_seconds = 0
-    mock_daily_2.punch_blocks = ['08:00 - 09:00']
+    mock_daily_2.punch_blocks = []
     period_result = MagicMock(spec=PeriodTimeResult)
     period_result.total_net_worked_seconds = 3600
     period_result.daily_results = {date(2023, 10, 1): mock_daily_1, date(2023, 10, 2): mock_daily_2}
-    period_result.daily_is_holiday = {date(2023, 10, 1): True, date(2023, 10, 2): False}
+    period_result.daily_is_holiday = {date(2023, 10, 1): False, date(2023, 10, 2): True}
     holiday = MagicMock(spec=Holiday)
-    holiday.date = date(2023, 10, 1)
+    holiday.date = date(2023, 10, 2)
     holiday.name = 'Test Holiday'
     data_table = []
     t_style = []
@@ -257,7 +257,7 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
     mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
     mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.services.timesheet_service.Image', side_effect=OSError('File not found'))
+    mocker.patch('reportlab.platypus.Image', side_effect=OSError('File not found'))
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
     mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
@@ -285,12 +285,6 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
 from reportlab.platypus import Paragraph, Table
 
 def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
-    """
-    Teste que faz uma verificação estrutural profunda dos itens passados para construir o PDF.
-    Captura os dados mockados passados para a API de montagem da ReportLab (story).
-    Isso assegura perfeitamente que o layout, textos, e estilos não quebraram em refatorações,
-    verificando a existência do título, tabela da empresa, colaborador, tabela de dias e termos.
-    """
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Teste Funcionario Silva'

@@ -157,3 +157,29 @@ def test_reprocess_historical_entries(tolerance_service, db_session_mock, base_r
     tolerance_service.reprocess_historical_entries(db_session_mock, start_date, end_date, user_ids)
     tolerance_service._process_entry_record.assert_called_once()
     db_session_mock.commit.assert_called_once()
+
+def test_process_unverified_entries_exit_record(tolerance_service, db_session_mock, base_record, mocker):
+    class ContextManagerMock:
+        def __enter__(self):
+            return db_session_mock
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+    mocker.patch("app.services.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
+    base_record.record_type = RecordType.EXIT
+    base_record.is_verified = False
+    db_session_mock.query.return_value = make_query_mock([base_record])
+    tolerance_service.process_unverified_entries()
+    assert base_record.is_verified is True
+    db_session_mock.commit.assert_called_once()
+
+def test_reprocess_historical_entries_exit_record(tolerance_service, db_session_mock, base_record):
+    base_record.record_type = RecordType.EXIT
+    base_record.is_verified = False
+    db_session_mock.query.return_value = make_query_mock([base_record])
+    start_date = date(2026, 7, 1)
+    end_date = date(2026, 7, 31)
+    user_ids = [1]
+    tolerance_service.reprocess_historical_entries(db_session_mock, start_date, end_date, user_ids)
+    assert base_record.is_verified is True
+    db_session_mock.commit.assert_called_once()
+

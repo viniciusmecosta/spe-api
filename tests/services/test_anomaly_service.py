@@ -111,7 +111,6 @@ def test_check_long_intervals():
 def test_check_unapproved_adjustments():
     current_date = date.today()
     
-    # Test PENDING with adj.time
     adj1 = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.PENDING, 2.5, datetime(2023, 1, 1, 18, 0).time())
     anomalies1 = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj1], None)
     assert len(anomalies1) == 1
@@ -119,18 +118,20 @@ def test_check_unapproved_adjustments():
     assert "150 minutos extras pendentes de aprovação" in anomalies1[0].description
     assert "horário de entrada definido: 18:00" in anomalies1[0].description
     
-    # Test PENDING with expected_entry_time and no hours
     adj2 = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.PENDING, None)
     anomalies2 = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj2], datetime(2023, 1, 1, 9, 0).time())
     assert len(anomalies2) == 1
     assert "0 minutos extras pendentes de aprovação" in anomalies2[0].description
     
-    # Test APPROVED (should generate no anomalies)
+    adj_pending_no_time = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.PENDING, 1.0, None)
+    anomalies_pending_no_time = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj_pending_no_time], None)
+    assert len(anomalies_pending_no_time) == 1
+    assert anomalies_pending_no_time[0].description == "60 minutos extras pendentes de aprovação"
+    
     adj3 = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.APPROVED, 1.0)
     anomalies3 = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj3], None)
     assert len(anomalies3) == 0
     
-    # Test REJECTED with time
     adj4 = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.REJECTED, 1.5, datetime(2023, 1, 1, 19, 0).time())
     anomalies4 = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj4], None)
     assert len(anomalies4) == 1
@@ -138,7 +139,6 @@ def test_check_unapproved_adjustments():
     assert "Hora extra negada: 90 minutos não aprovados" in anomalies4[0].description
     assert "horário de entrada: 19:00" in anomalies4[0].description
     
-    # Test REJECTED without time
     adj5 = MockAdjustmentRequest(1, current_date, AdjustmentType.EXTRA_TIME, AdjustmentStatus.REJECTED, 1.0)
     anomalies5 = anomaly_service._check_unapproved_adjustments(1, "Test", current_date, [adj5], None)
     assert len(anomalies5) == 1

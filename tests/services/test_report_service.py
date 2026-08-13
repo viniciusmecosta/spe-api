@@ -393,3 +393,76 @@ def test_exhaustive_build_daily_report_item(service):
     item3 = service._build_daily_report_item(current, today_date, [], [], period_result, True, False)
     assert item3.status == 'Abono'
     assert 'Abono: 01:00' in item3.punches
+
+def test_get_advanced_user_report_with_prefetched_data(service, mock_db, mock_repo_user):
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = "Test Prefetch"
+    user.historical_schedules = []
+    mock_repo_user.get.return_value = user
+    
+    records = [MagicMock(spec=TimeRecord)]
+    adjustments = [MagicMock()]
+    holidays = [MagicMock()]
+    
+    with patch("app.services.time_calculation_service.time_calculation_service.calculate_period_time") as mock_calc:
+        res_calc = MagicMock()
+        res_calc.total_net_worked_seconds = 0
+        res_calc.total_expected_seconds = 0
+        res_calc.total_extra_seconds = 0
+        res_calc.total_missing_seconds = 0
+        res_calc.daily_results = defaultdict(lambda: MagicMock(net_worked_seconds=0, waiver_seconds=0, unapproved_extra_seconds=0, entries=[], exits=[], punches=[]))
+        res_calc.daily_waivers = defaultdict(lambda: None)
+        res_calc.daily_expected_seconds = defaultdict(lambda: 0)
+        mock_calc.return_value = res_calc
+        
+        rep = service.get_advanced_user_report(
+            mock_db, 1, 1, 2024,
+            prefetched_records=records,
+            prefetched_adjustments=adjustments,
+            prefetched_holidays=holidays
+        )
+        assert rep is not None
+
+def test_get_monthly_summary_with_records_and_adjustments(service, mock_db, mock_repo_holiday):
+    from app.domain.models.adjustment import AdjustmentRequest
+    
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = 'Test'
+    user.role = UserRole.EMPLOYEE
+    user.historical_schedules = []
+    
+    rec = MagicMock(spec=TimeRecord)
+    rec.user_id = 1
+    
+    adj = MagicMock(spec=AdjustmentRequest)
+    adj.user_id = 1
+    
+    def mock_query_side_effect(model):
+        mock_query = MagicMock()
+        mock_query.options.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        if getattr(model, '__name__', '') == 'User':
+            mock_query.all.return_value = [user]
+        elif getattr(model, '__name__', '') == 'TimeRecord':
+            mock_query.all.return_value = [rec]
+        elif getattr(model, '__name__', '') == 'AdjustmentRequest':
+            mock_query.all.return_value = [adj]
+        else:
+            mock_query.all.return_value = []
+        return mock_query
+        
+    mock_db.query.side_effect = mock_query_side_effect
+    mock_repo_holiday.get_by_month.return_value = []
+    
+    with patch.object(service, 'get_advanced_user_report') as mock_adv_report:
+        adv_res = MagicMock()
+        adv_res.summary = UserPayrollSummary(
+            user_id=1, user_name='Test', total_worked_time='10:00', total_expected_time='08:00',
+            total_worked_minutes=600, total_expected_minutes=480, days_worked=1, absences=0,
+            total_worked_hours=10.0, total_expected_hours=8.0, total_extra_hours=2.0, total_missing_hours=0.0, final_balance=2.0
+        )
+        mock_adv_report.return_value = adv_res
+        res = service.get_monthly_summary(mock_db, 1, 2024, [1])
+        assert len(res.payroll_data) == 1
