@@ -17,12 +17,11 @@ from sqlalchemy.orm import Session
 router = APIRouter()
 
 
-@router.post("/punch")
+@router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
 def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
-        device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
 ) -> FeedbackPayload:
     ip_address = get_client_ip(request)
     return device_service.process_punch(
@@ -33,10 +32,8 @@ def register_device_punch(
     )
 
 
-@router.get("/time")
-def get_device_time(
-        device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
-) -> TimeResponsePayload:
+@router.get("/time", dependencies=[Depends(deps.verify_device_api_key)])
+def get_device_time() -> TimeResponsePayload:
     return device_service.get_device_time()
 
 
