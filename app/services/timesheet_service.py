@@ -7,7 +7,6 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -19,9 +18,9 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.domain.models.enums import DayOfWeek
 from app.domain.models.enums import UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
@@ -30,7 +29,8 @@ from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
 from app.services.trusted_time_service import trusted_time_service
-from app.domain.models.enums import DayOfWeek
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,6 @@ class TimesheetService:
             full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
             if os.path.exists(full_logo_path):
                 try:
-                    from reportlab.platypus import Image
                     logo_img = Image(full_logo_path, width=50, height=50)
                     header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
                     header_table.setStyle(TableStyle([

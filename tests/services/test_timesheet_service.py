@@ -151,6 +151,17 @@ def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker)
     assert isinstance(buffer, io.BytesIO)
 
 def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
+    from reportlab.platypus import Flowable
+    class DummyLogo(Flowable):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            self.width = 50
+            self.height = 50
+        def wrap(self, availWidth, availHeight):
+            return self.width, self.height
+        def draw(self):
+            pass
+
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User'
@@ -169,7 +180,7 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
     mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.services.timesheet_service.Image')
+    mocker.patch('app.services.timesheet_service.Image', side_effect=DummyLogo)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
     mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
@@ -258,7 +269,7 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
     mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
     mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('reportlab.platypus.Image', side_effect=OSError('File not found'))
+    mocker.patch('app.services.timesheet_service.Image', side_effect=OSError('File not found'))
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
     mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
