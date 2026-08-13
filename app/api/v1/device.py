@@ -4,21 +4,17 @@ from app.domain.models.device import DeviceCredential
 from app.domain.models.enums import RecordType, UserRole
 from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
-    BiometricSyncAck,
-    BiometricSyncData,
     BuzzerNote,
     DeviceActions,
     DevicePunchRequest,
-    EnrollResultPayload,
     FeedbackPayload,
     ManagerVerifyRequest,
     ManagerVerifyResponse,
     TimeResponsePayload,
 )
 from app.services.audit_service import audit_service
-from app.services.biometric_service import biometric_service
 from app.services.punch_service import punch_service
-from app.services.time_record_service import time_record_service
+from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -88,82 +84,11 @@ def register_device_punch(
         )
 
 
-@router.post("/enroll", response_model=FeedbackPayload)
-def enroll_device_biometric(
-        payload: EnrollResultPayload,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    try:
-        success, msg = biometric_service.save_enrolled_biometric(db, payload)
-
-        if success:
-            return FeedbackPayload(
-                line1="Cadastro OK",
-                line2=f"ID: {payload.sensor_index}",
-                line3="",
-                led="green",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=2000, duration_ms=100),
-                        BuzzerNote(frequency=0, duration_ms=50),
-                        BuzzerNote(frequency=2500, duration_ms=400)
-                    ]
-                )
-            )
-        else:
-            return FeedbackPayload(
-                line1="Erro Cadastro",
-                line2=msg[:16],
-                line3="",
-                led="red",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=150, duration_ms=300),
-                        BuzzerNote(frequency=0, duration_ms=80),
-                        BuzzerNote(frequency=150, duration_ms=600)
-                    ]
-                )
-            )
-    except Exception:
-        return FeedbackPayload(
-            line1="Erro Interno",
-            line2="Contate Admin",
-            line3="",
-            led="red",
-            actions=DeviceActions(
-                buzzer_melody=[
-                    BuzzerNote(frequency=150, duration_ms=300),
-                    BuzzerNote(frequency=0, duration_ms=80),
-                    BuzzerNote(frequency=150, duration_ms=600)
-                ]
-            )
-        )
-
-
-@router.get("/sync", response_model=list[BiometricSyncData])
-def sync_device_data(
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    return biometric_service.get_all_for_sync(db)
-
-
-@router.post("/sync/ack", status_code=200)
-def sync_device_ack(
-        payload: BiometricSyncAck,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    biometric_service.process_sync_ack(db, payload)
-    return {"status": "success"}
-
-
 @router.get("/time", response_model=TimeResponsePayload)
 def get_device_time(
         device: DeviceCredential = Depends(deps.verify_device_api_key)
 ):
-    trusted_now, _ = time_record_service._get_trusted_time()
+    trusted_now, _ = trusted_time_service.get_trusted_time()
     return TimeResponsePayload(
         unix=int(trusted_now.timestamp()),
         formatted=trusted_now.strftime("%d/%m/%Y %H:%M:%S")

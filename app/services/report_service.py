@@ -4,9 +4,8 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import Session, joinedload
-
 from app.core.config import settings
+from app.domain.models.enums import DayOfWeek
 from app.domain.models.enums import UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
@@ -24,8 +23,7 @@ from app.schemas.report import (
     UserPayrollSummary,
 )
 from app.services.anomaly_service import anomaly_service
-from app.domain.models.enums import DayOfWeek
-from app.schemas.time_record import TimeRecordResponse
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +36,13 @@ except locale.Error:
 
 
 class ReportService:
-    def _get_month_range(self, month: int, year: int):
+    def get_month_range(self, month: int, year: int) -> tuple[date, date]:
         start_date = date(year, month, 1)
         _, last_day = monthrange(year, month)
         end_date = date(year, month, last_day)
         return start_date, end_date
+
+    _get_month_range = get_month_range
 
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
@@ -50,12 +50,14 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours:02d}:{minutes:02d}"
 
-    def _apply_employee_filters(self, query, employee_ids: list[int] | None = None):
+    def apply_employee_filters(self, query, employee_ids: list[int] | None = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
         query = query.filter(User.is_exempt_from_rules.is_(False))
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
         return query
+
+    _apply_employee_filters = apply_employee_filters
 
     def _build_history_punches(self, day_records, is_manager) -> list:
         punches = []

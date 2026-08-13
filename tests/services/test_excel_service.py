@@ -1,15 +1,15 @@
-import os
-import pytest
 import sys
 from datetime import datetime
-from fastapi import HTTPException
 from io import BytesIO
-from openpyxl import Workbook
 from unittest.mock import MagicMock, patch
 
+from openpyxl import Workbook
+
+import pytest
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.services.excel_service import ExcelService
+from fastapi import HTTPException
 
 
 @pytest.fixture
@@ -128,9 +128,8 @@ def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_servi
             other_mock.all.return_value = []
             return other_mock
     db_session_mock.query.side_effect = mock_query_side_effect
-    mock_report_service._apply_employee_filters.return_value = query_mock
-    mock_report_service._get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
-    mock_report_service._get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
+    mock_report_service.apply_employee_filters.return_value = query_mock
+    mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
     mock_report.summary.user_name = 'Test User'
@@ -173,8 +172,8 @@ def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, e
             other_mock.all.return_value = []
             return other_mock
     db_session_mock.query.side_effect = mock_query_side_effect
-    mock_report_service._apply_employee_filters.return_value = query_mock
-    mock_report_service._get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
+    mock_report_service.apply_employee_filters.return_value = query_mock
+    mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
     mock_report.summary.user_name = 'Test User'
@@ -344,8 +343,8 @@ def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, 
             other_mock.all.return_value = []
             return other_mock
     db_session_mock.query.side_effect = mock_query_side_effect
-    mock_report_service._apply_employee_filters.return_value = query_mock
-    mock_report_service._get_month_range.return_value = (datetime(2023, 10, 1).date(), datetime(2023, 10, 31).date())
+    mock_report_service.apply_employee_filters.return_value = query_mock
+    mock_report_service.get_month_range.return_value = (datetime(2023, 10, 1).date(), datetime(2023, 10, 31).date())
     mock_report = MagicMock()
     mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Silva', total_worked_time='10:00', total_expected_time='08:00', total_worked_minutes=600, total_expected_minutes=480, days_worked=2, absences=1, total_worked_hours=10.0, total_expected_hours=8.0, total_extra_hours=2.0, total_missing_hours=0.0, final_balance=2.0)
     day1 = DailyReportItem(date=datetime(2023, 10, 10), day_name='Terça', is_holiday=False, is_weekend=False, status='Normal', worked_hours=10.0, expected_hours=8.0, balance_hours=2.0, extra_hours=2.0, missing_hours=0.0, worked_minutes=600, worked_time='10:00', expected_time='08:00', unapproved_extra_time='00:00', punches=['08:00', '18:00'], holiday_name=None, entries=[], exits=[], detailed_punches=None, adjustment_id=None)
@@ -430,7 +429,7 @@ def test_format_day_groups_two_days(excel_service):
     assert excel_service._format_day_groups([0, 1]) == "Segunda e Terça"
 
 def test_build_work_schedules_section_edge_cases(excel_service):
-    from datetime import date, time
+    from datetime import date
     from openpyxl import Workbook
     from app.domain.models.user import UserWorkScheduleConfig
     
@@ -560,8 +559,8 @@ def test_generate_excel_report_with_records_and_adjustments(mock_report_service,
         
     db_session_mock.query.side_effect = side_query_filter
     mock_comp_repo.get_current.return_value = None
-    mock_report_service._get_month_range.return_value = (date(2023, 10, 1), date(2023, 10, 31))
-    mock_report_service._apply_employee_filters.side_effect = lambda q, e: q
+    mock_report_service.get_month_range.return_value = (date(2023, 10, 1), date(2023, 10, 31))
+    mock_report_service.apply_employee_filters.side_effect = lambda q, e: q
     
     mock_rep = MagicMock(spec=AdvancedUserReportResponse)
     mock_rep.summary = UserPayrollSummary(

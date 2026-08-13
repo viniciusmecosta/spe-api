@@ -1,84 +1,20 @@
 import logging
 
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
-
 from app.domain.models.biometric import UserBiometric
-from app.domain.models.user import User
-from app.schemas.device import BiometricSyncAck, BiometricSyncData, EnrollResultPayload
-from app.services.audit_service import audit_service
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 
 class BiometricService:
-    def get_all_for_sync(self, db: Session) -> list[BiometricSyncData]:
-        biometrics = db.query(UserBiometric).join(User).filter(
-            User.is_active.is_(True),
-            UserBiometric.template_data.isnot(None)
-        ).all()
-
-        result = []
-        for bio in biometrics:
-            result.append(BiometricSyncData(
-                biometric_id=bio.id,
-                template_data=bio.template_data,
-                user_id=bio.user_id
-            ))
-        return result
-
-    def process_sync_ack(self, db: Session, payload: BiometricSyncAck):
-        raise NotImplementedError("Sync ACK not supported")
-
-    def save_enrolled_biometric(self, db: Session, result: EnrollResultPayload):
-        try:
-            if not result.success:
-                return False, result.error
-
-            user = db.query(User).filter(User.id == result.user_id).first()
-            if not user:
-                return False, "Usuario nao encontrado"
-
-            if result.finger_id is not None:
-                existing_finger = db.query(UserBiometric).filter(
-                    UserBiometric.user_id == user.id,
-                    UserBiometric.finger_id == result.finger_id
-                ).first()
-                if existing_finger:
-                    return False, f"O usuario ja possui uma biometria cadastrada para o dedo com ID {result.finger_id}"
-
-            new_bio = UserBiometric(
-                user_id=user.id,
-                template_data=result.template_data,
-                sensor_index=result.sensor_index,
-                finger_id=result.finger_id
-            )
-            db.add(new_bio)
-            db.commit()
-            db.refresh(new_bio)
-
-            audit_service.log(
-                db, user_id=user.id, action="ENROLL", entity="BIOMETRIC",
-                entity_id=new_bio.id, new_data={"sensor_index": result.sensor_index, "finger_id": result.finger_id}
-            )
-
-            return True, "Sucesso"
-        except (SQLAlchemyError, ValueError) as e:
-            logger.exception(f"Erro Enroll: {e}")
-            return False, str(e)
-
     def get_available_sensor_indices(self, db: Session) -> list[int]:
-
         used_indices_query = db.query(UserBiometric.sensor_index).filter(
             UserBiometric.sensor_index.isnot(None)
         ).all()
 
         used_indices = {index[0] for index in used_indices_query}
-
         all_possible_indices = set(range(1, 128))
-
         available_indices = all_possible_indices - used_indices
-
         return sorted(available_indices)
 
 
