@@ -29,6 +29,7 @@ from app.repositories.company_repository import company_repository
 from app.repositories.holiday_repository import holiday_repository
 from app.repositories.time_record_repository import time_record_repository
 from app.repositories.user_repository import user_repository
+from app.services.trusted_time_service import trusted_time_service
 from app.domain.models.enums import DayOfWeek
 
 logger = logging.getLogger(__name__)
@@ -351,7 +352,18 @@ class TimesheetService:
         company = company_repository.get_current(db)
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=15, bottomMargin=15)
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=15,
+            bottomMargin=15,
+            title="Espelho de Ponto Oficial",
+            author=settings.PROJECT_NAME,
+            subject="Relatório Oficial de Ponto",
+            creator=settings.PROJECT_NAME
+        )
         story = []
 
         styles = getSampleStyleSheet()
@@ -466,8 +478,11 @@ class TimesheetService:
             fontName='Helvetica-Oblique',
             textColor=colors.HexColor("#64748B")
         )
+        now, _ = trusted_time_service.get_trusted_time()
+        generated_at = now.strftime("%d/%m/%Y %H:%M")
         story.append(Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style))
         story.append(Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
+        story.append(Paragraph(f"* Documento gerado em: {generated_at}", note_style))
         story.append(Spacer(1, 8))
 
         term_style = ParagraphStyle(

@@ -616,3 +616,52 @@ def test_generate_excel_report_filters_ignored_records(excel_service, db_session
             break
             
     assert is_ignored_filtered, "O filtro TimeRecord.is_ignored == False deve ser aplicado no ExcelService!"
+
+def test_insert_header_includes_generated_at_and_metadata(excel_service, db_session_mock):
+    from openpyxl import load_workbook
+    from unittest.mock import patch, MagicMock
+    from app.domain.models.user import User
+    
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = 'Test'
+    user.historical_schedules = []
+    
+    mock_query_tr = MagicMock()
+    mock_query_tr.options.return_value = mock_query_tr
+    mock_query_tr.filter.return_value = mock_query_tr
+    mock_query_tr.all.return_value = []
+    
+    def mock_query_side_effect(model):
+        mock_q = MagicMock()
+        mock_q.options.return_value = mock_q
+        if getattr(model, '__name__', '') == 'User':
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = [user]
+            return mock_q
+        elif getattr(model, '__name__', '') == 'TimeRecord':
+            return mock_query_tr
+        else:
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = []
+            return mock_q
+            
+    db_session_mock.query.side_effect = mock_query_side_effect
+    
+    with patch('app.services.excel_service.company_repository.get_current', return_value=None), \
+         patch('app.services.report_service.report_service.get_advanced_user_report', return_value=None):
+        res = excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
+        
+    wb = load_workbook(res)
+    from app.core.config import settings
+    assert wb.properties.creator == settings.PROJECT_NAME
+    assert wb.properties.title == "Relatório de Ponto - Excel"
+    assert wb.properties.created is not None
+    
+    ws = wb.active
+    found_generated_at = False
+    for row in ws.iter_rows(values_only=True):
+        if any("gerado em:" in str(c).lower() for c in row if c is not None):
+            found_generated_at = True
+            break
+    assert found_generated_at

@@ -14,6 +14,7 @@ from app.domain.models.enums import DayOfWeek
 from app.domain.models.user import User
 from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
+from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 
 FONT_NAME = "Times New Roman"
@@ -196,6 +197,11 @@ class ExcelService:
                 user_reports.append((user, report))
 
         wb = Workbook()
+        now, _ = trusted_time_service.get_trusted_time()
+        wb.properties.creator = settings.PROJECT_NAME
+        wb.properties.title = "Relatório de Ponto - Excel"
+        wb.properties.subject = "Documento oficial de registro de ponto"
+        wb.properties.created = now
         
         self._build_summary_sheet(wb, month, year, user_reports, company, logo_path)
 
@@ -298,6 +304,13 @@ class ExcelService:
         note_row2 = ws.max_row
         ws.merge_cells(start_row=note_row2, start_column=1, end_row=note_row2, end_column=self.MAX_COLS)
         ws.cell(row=note_row2, column=1).font = self.font_italic
+
+        now, _ = trusted_time_service.get_trusted_time()
+        generated_at = now.strftime("%d/%m/%Y %H:%M")
+        ws.append([f"* Documento gerado em: {generated_at}"])
+        note_row3 = ws.max_row
+        ws.merge_cells(start_row=note_row3, start_column=1, end_row=note_row3, end_column=self.MAX_COLS)
+        ws.cell(row=note_row3, column=1).font = self.font_italic
         ws.append([""])
 
     def _merge_for_table(self, ws, row, merges: list[int], texts: list[any], font, alignment, fill=None, borders=True):

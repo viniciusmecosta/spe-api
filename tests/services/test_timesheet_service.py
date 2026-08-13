@@ -485,3 +485,32 @@ def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
 
     buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
+
+def test_draw_company_header_and_notes(mocker):
+    from app.domain.models.company import Company
+    mock_company = MagicMock(spec=Company)
+    mock_company.name = 'Test Company'
+    mock_company.cnpj = '12345678901234'
+    mock_company.address = 'Test Addr'
+    mock_company.phone = '11987654321'
+    mock_company.logo_path = None
+
+    story = []
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'])
+    section_heading_style = ParagraphStyle('Section', parent=styles['Normal'])
+    header_style = ParagraphStyle('Header', parent=styles['Normal'])
+
+    timesheet_service._draw_company_header(story, mock_company, title_style, section_heading_style, header_style)
+    
+    found_table = False
+    for item in story:
+        if isinstance(item, Table):
+            found_table = True
+            cell_texts = []
+            for row in item._cellvalues:
+                for cell in row:
+                    if hasattr(cell, 'text'):
+                        cell_texts.append(cell.text)
+            assert any('Razão Social:' in t for t in cell_texts)
+    assert found_table
