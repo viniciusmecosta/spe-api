@@ -325,7 +325,7 @@ class ExcelService:
         names_short = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
         if not days:
             return ""
-        days = sorted(list(set(days)))
+        days = sorted(set(days))
         
         blocks = []
         current_block = [days[0]]
@@ -358,7 +358,7 @@ class ExcelService:
                 transitions.add(sch.valid_from)
             if sch.valid_until and start_date <= sch.valid_until <= end_date:
                 transitions.add(sch.valid_until + timedelta(days=1))
-        return sorted(list(transitions))
+        return sorted(transitions)
 
     def _group_schedules_by_period(self, user, transitions):
         from datetime import date, timedelta

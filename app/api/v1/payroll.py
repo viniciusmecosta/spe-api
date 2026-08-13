@@ -50,5 +50,5 @@ def upload_legacy_report(
         db: Session = Depends(deps.get_db),
         current_user: User = Depends(deps.get_current_maintainer)
 ) -> Any:
-    payroll_service.upload_legacy_report(db, closure_id, file.filename, file.file.read(), current_user)
+    payroll_service.upload_legacy_report(db, closure_id, file.filename, file.file.read())
     return {"status": "success", "message": "Documento legado anexado com sucesso."}

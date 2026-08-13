@@ -122,6 +122,87 @@ class TimesheetService:
         t.setStyle(TableStyle(t_style))
         return t
 
+    def _draw_company_header(self, story, company, title_style, section_heading_style, header_style):
+        company_name = company.name if company else "Empresa Não Cadastrada"
+        document_title = f"{company_name} - Registro de Ponto"
+
+        if company and company.logo_path:
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            if os.path.exists(full_logo_path):
+                try:
+                    from reportlab.platypus import Image
+                    logo_img = Image(full_logo_path, width=50, height=50)
+                    header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
+                    header_table.setStyle(TableStyle([
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('ALIGN', (1, 0), (1, 0), 'RIGHT')
+                    ]))
+                    story.append(header_table)
+                    story.append(Spacer(1, 10))
+                except (OSError, ValueError):
+                    story.append(Paragraph(document_title, title_style))
+            else:
+                story.append(Paragraph(document_title, title_style))
+        else:
+            story.append(Paragraph(document_title, title_style))
+
+        company_cnpj = self._format_cnpj(company.cnpj if company else "")
+        company_addr = company.address if company else "-"
+        company_phone = self._format_phone(company.phone if company else "")
+
+        story.append(Paragraph("DADOS DA EMPRESA", section_heading_style))
+        company_info = [
+            [Paragraph(f"<b>Razão Social:</b> {company_name}", header_style),
+             Paragraph(f"<b>CNPJ:</b> {company_cnpj}", header_style)],
+            [Paragraph(f"<b>Endereço:</b> {company_addr}", header_style),
+             Paragraph(f"<b>Telefone:</b> {company_phone}", header_style)]
+        ]
+        comp_table = Table(company_info, colWidths=[320, 215])
+        comp_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
+        ]))
+        story.append(comp_table)
+        story.append(Spacer(1, 15))
+
+    def _draw_employee_header(self, story, user, section_heading_style, header_style):
+        role_map = {
+            "EMPLOYEE": "Funcionário",
+            "MANAGER": "Gestor",
+            "MAINTAINER": "Mantenedor"
+        }
+        translated_role = role_map.get(user.role, user.role)
+
+        user_cpf_formatted = self._format_cpf(user.cpf)
+        user_pis_formatted = self._format_pis(user.pis)
+
+        story.append(Paragraph("DADOS DO COLABORADOR", section_heading_style))
+        employee_info = [
+            [Paragraph(f"<b>Colaborador:</b> {user.name}", header_style),
+             Paragraph(f"<b>CPF:</b> {user_cpf_formatted}", header_style)],
+            [Paragraph(f"<b>PIS:</b> {user_pis_formatted}", header_style),
+             Paragraph(f"<b>Cargo:</b> {translated_role}", header_style)]
+        ]
+        emp_table = Table(employee_info, colWidths=[320, 215])
+        emp_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
+        ]))
+        story.append(emp_table)
+        story.append(Spacer(1, 15))
+
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
         user = user_repository.get(db, user_id)
         if not user:
@@ -196,83 +277,8 @@ class TimesheetService:
             textColor=colors.white
         )
 
-        company_name = company.name if company else "Empresa Não Cadastrada"
-        document_title = f"{company_name} - Registro de Ponto"
-
-        if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
-            if os.path.exists(full_logo_path):
-                try:
-                    logo_img = Image(full_logo_path, width=50, height=50)
-                    header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
-                    header_table.setStyle(TableStyle([
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('ALIGN', (1, 0), (1, 0), 'RIGHT')
-                    ]))
-                    story.append(header_table)
-                    story.append(Spacer(1, 10))
-                except (OSError, ValueError):
-                    story.append(Paragraph(document_title, title_style))
-            else:
-                story.append(Paragraph(document_title, title_style))
-        else:
-            story.append(Paragraph(document_title, title_style))
-
-        company_cnpj = self._format_cnpj(company.cnpj if company else "")
-        company_addr = company.address if company else "-"
-        company_phone = self._format_phone(company.phone if company else "")
-
-        story.append(Paragraph("DADOS DA EMPRESA", section_heading_style))
-        company_info = [
-            [Paragraph(f"<b>Razão Social:</b> {company_name}", header_style),
-             Paragraph(f"<b>CNPJ:</b> {company_cnpj}", header_style)],
-            [Paragraph(f"<b>Endereço:</b> {company_addr}", header_style),
-             Paragraph(f"<b>Telefone:</b> {company_phone}", header_style)]
-        ]
-        comp_table = Table(company_info, colWidths=[320, 215])
-        comp_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
-        ]))
-        story.append(comp_table)
-        story.append(Spacer(1, 15))
-
-        role_map = {
-            "EMPLOYEE": "Funcionário",
-            "MANAGER": "Gestor",
-            "MAINTAINER": "Mantenedor"
-        }
-        translated_role = role_map.get(user.role, user.role)
-
-        user_cpf_formatted = self._format_cpf(user.cpf)
-        user_pis_formatted = self._format_pis(user.pis)
-
-        story.append(Paragraph("DADOS DO COLABORADOR", section_heading_style))
-        employee_info = [
-            [Paragraph(f"<b>Colaborador:</b> {user.name}", header_style),
-             Paragraph(f"<b>CPF:</b> {user_cpf_formatted}", header_style)],
-            [Paragraph(f"<b>PIS:</b> {user_pis_formatted}", header_style),
-             Paragraph(f"<b>Cargo:</b> {translated_role}", header_style)]
-        ]
-        emp_table = Table(employee_info, colWidths=[320, 215])
-        emp_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
-        ]))
-        story.append(emp_table)
-        story.append(Spacer(1, 15))
+        self._draw_company_header(story, company, title_style, section_heading_style, header_style)
+        self._draw_employee_header(story, user, section_heading_style, header_style)
 
         period_info = [
             [Paragraph(f"<b>Mês/Ano de Referência:</b> {month:02d}/{year}", header_style),
@@ -369,6 +375,7 @@ class TimesheetService:
         sig_table = Table(sig_line, colWidths=[265, 270])
         story.append(sig_table)
 
+        company_name = company.name if company else "Empresa Não Cadastrada"
         def _add_pdf_meta(canvas, document):
             canvas.setTitle(f"{company_name} - Registro de Ponto")
             canvas.setAuthor(company_name)

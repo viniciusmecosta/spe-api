@@ -83,24 +83,23 @@ class AnomalyService:
         anomalies.extend(self._check_long_intervals(user_id, user_name, current_date, records))
         return anomalies
 
+    def _build_unapproved_extra_description(self, status, minutes: int, time_to_show) -> str:
+        if status == AdjustmentStatus.PENDING:
+            if time_to_show:
+                return f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
+            return f"{minutes} minutos extras pendentes de aprovação"
+        if time_to_show:
+            return f"Hora extra negada: {minutes} minutos não aprovados (horário de entrada: {time_to_show.strftime('%H:%M')})"
+        return f"Hora extra negada: {minutes} minutos não aprovados"
+
     def _check_unapproved_adjustments(self, user_id: int, user_name: str, current_date: date, day_adjustments: list,
                                       expected_entry_time) -> list[AnomalyResponse]:
         anomalies = []
         for adj in day_adjustments:
             if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
-                
                 time_to_show = expected_entry_time or adj.time
-                if adj.status == AdjustmentStatus.PENDING:
-                    if time_to_show:
-                        desc = f"{minutes} minutos extras pendentes de aprovação (horário de entrada definido: {time_to_show.strftime('%H:%M')})"
-                    else:
-                        desc = f"{minutes} minutos extras pendentes de aprovação"
-                else:
-                    if time_to_show:
-                        desc = f"Hora extra negada: {minutes} minutos não aprovados (horário de entrada: {time_to_show.strftime('%H:%M')})"
-                    else:
-                        desc = f"Hora extra negada: {minutes} minutos não aprovados"
+                desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
                 
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
@@ -192,7 +191,7 @@ class AnomalyService:
 
         for uid in target_user_ids:
             user = user_map.get(uid)
-            all_dates = sorted(list(set(records_map[uid].keys()).union(set(adj_map[uid].keys()))))
+            all_dates = sorted(set(records_map[uid].keys()).union(adj_map[uid].keys()))
             all_anomalies.extend(
                 self._process_user_anomalies(uid, user, all_dates, records_map, adj_map, ignore_excessive_hours))
 

@@ -93,7 +93,7 @@ class TimeCalculationService:
         raw_worked_seconds, entries, exits, punches, blocks = self._process_records(day_records)
 
         waiver_seconds = self._calculate_waiver(
-            waiver_adj, is_excused, expected_seconds, raw_worked_seconds
+            waiver_adj, is_excused
         )
 
         adjusted_worked_seconds = raw_worked_seconds + waiver_seconds
@@ -142,9 +142,7 @@ class TimeCalculationService:
     def _calculate_waiver(
             self,
             waiver_adj: AdjustmentRequest | None,
-            is_excused: bool,
-            expected_seconds: float,
-            worked_seconds: float
+            is_excused: bool
     ) -> float:
         if not (is_excused or waiver_adj):
             return 0.0

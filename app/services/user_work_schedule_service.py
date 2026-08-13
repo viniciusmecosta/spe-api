@@ -299,8 +299,7 @@ class UserWorkScheduleService:
                     continue
                 to_create.append((user, new_data))
 
-    def _apply_bulk_updates_db(self, db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
-                               old_valid_from, old_valid_until, bulk_data, current_user_id):
+    def _validate_bulk_overlap(self, db, to_update, to_create, new_valid_from, new_valid_until, errors):
         for old_cfg, new_data in to_update:
             user = user_repository.get(db, old_cfg.user_id)
             try:
@@ -315,6 +314,10 @@ class UserWorkScheduleService:
             except HTTPException:
                 day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
+
+    def _apply_bulk_updates_db(self, db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
+                               old_valid_from, old_valid_until, bulk_data, current_user_id):
+        self._validate_bulk_overlap(db, to_update, to_create, new_valid_from, new_valid_until, errors)
 
         if errors:
             raise HTTPException(status_code=400, detail=errors)

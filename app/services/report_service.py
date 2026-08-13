@@ -25,8 +25,11 @@ from app.schemas.report import (
 )
 from app.services.anomaly_service import anomaly_service
 from app.domain.models.enums import DayOfWeek
+from app.schemas.time_record import TimeRecordResponse
 
 logger = logging.getLogger(__name__)
+
+WEEKEND_STATUS = "Fim de semana"
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.utf8')
@@ -102,7 +105,7 @@ class ReportService:
         elif holiday:
             status = "Feriado"
         elif is_weekend:
-            status = "Fim de semana"
+            status = WEEKEND_STATUS
         elif abono:
             status = "Abono"
         elif current == today_date:
@@ -158,7 +161,7 @@ class ReportService:
             if is_holiday:
                 return "Feriado"
             elif is_weekend:
-                return "Fim de semana"
+                return WEEKEND_STATUS
             return ""
         if is_waiver:
             return "Abono"
@@ -167,7 +170,7 @@ class ReportService:
         if is_weekend:
             if worked_seconds > 0:
                 return "Normal"
-            return "Fim de semana"
+            return WEEKEND_STATUS
         if worked_seconds == 0 and expected_seconds > 0:
             if is_today:
                 return ""
@@ -336,6 +339,31 @@ class ReportService:
             days=history_days
         )
 
+    def _fetch_report_data(self, db: Session, user_id: int, month: int, year: int,
+                           start_dt: datetime, end_dt: datetime,
+                           prefetched_records, prefetched_adjustments, prefetched_holidays):
+        if prefetched_records is not None:
+            all_records = prefetched_records
+        else:
+            all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+
+        if prefetched_holidays is not None:
+            holidays = prefetched_holidays
+        else:
+            holidays = holiday_repository.get_by_month(db, month, year)
+
+        if prefetched_adjustments is not None:
+            all_adjustments = prefetched_adjustments
+        else:
+            from app.domain.models.adjustment import AdjustmentRequest
+            all_adjustments = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_dt.date(),
+                AdjustmentRequest.target_date <= end_dt.date(),
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all()
+        return all_records, all_adjustments, holidays
+
     def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
                                  current_user: User | None = None,
                                  prefetched_records: list[TimeRecord] | None = None,
@@ -353,26 +381,10 @@ class ReportService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        if prefetched_records is not None:
-            all_records = prefetched_records
-        else:
-            all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-            
-        if prefetched_holidays is not None:
-            holidays = prefetched_holidays
-        else:
-            holidays = holiday_repository.get_by_month(db, month, year)
-
-        if prefetched_adjustments is not None:
-            all_adjustments = prefetched_adjustments
-        else:
-            from app.domain.models.adjustment import AdjustmentRequest
-            all_adjustments = db.query(AdjustmentRequest).filter(
-                AdjustmentRequest.user_id == user_id,
-                AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date,
-                AdjustmentRequest.deleted_at.is_(None)
-            ).all()
+        all_records, all_adjustments, holidays = self._fetch_report_data(
+            db, user_id, month, year, start_dt, end_dt,
+            prefetched_records, prefetched_adjustments, prefetched_holidays
+        )
 
         daily_details = []
         days_worked_count = 0

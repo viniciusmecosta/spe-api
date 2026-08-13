@@ -79,7 +79,7 @@ class BiometricService:
 
         available_indices = all_possible_indices - used_indices
 
-        return sorted(list(available_indices))
+        return sorted(available_indices)
 
 
 biometric_service = BiometricService()
