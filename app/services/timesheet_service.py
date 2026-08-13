@@ -160,16 +160,16 @@ class TimesheetService:
         comp_table = Table(company_info, colWidths=[320, 215])
         comp_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
             ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
         ]))
         story.append(comp_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 8))
 
     def _draw_employee_header(self, story, user, section_heading_style, header_style):
         role_map = {
@@ -192,16 +192,16 @@ class TimesheetService:
         emp_table = Table(employee_info, colWidths=[320, 215])
         emp_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('LEFTPADDING', (0, 0), (-1, -1), 8),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
             ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
         ]))
         story.append(emp_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 8))
 
     def _format_day_groups(self, days: list[int]) -> str:
         if not days:
@@ -270,7 +270,7 @@ class TimesheetService:
             if not is_single_period:
                 period_str = f"<b>Período:</b> {p_start.strftime('%d/%m/%Y')} a {p_end.strftime('%d/%m/%Y')}"
                 story.append(Paragraph(period_str, header_style))
-                story.append(Spacer(1, 4))
+                story.append(Spacer(1, 2))
 
             grouped = {}
             for sch in schedules:
@@ -290,15 +290,15 @@ class TimesheetService:
                 no_sch_table = Table(no_sch_data, colWidths=[535])
                 no_sch_table.setStyle(TableStyle([
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                    ('TOPPADDING', (0, 0), (-1, -1), 2),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
                     ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
                     ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
                 ]))
                 story.append(no_sch_table)
-                story.append(Spacer(1, 10))
+                story.append(Spacer(1, 5))
                 continue
 
             rows = []
@@ -312,16 +312,16 @@ class TimesheetService:
             sch_table = Table(rows, colWidths=[180, 355])
             sch_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
                 ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
                 ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
             ]))
             story.append(sch_table)
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 5))
 
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
         user = user_repository.get(db, user_id)
@@ -351,7 +351,7 @@ class TimesheetService:
         company = company_repository.get_current(db)
 
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+        doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=15, bottomMargin=15)
         story = []
 
         styles = getSampleStyleSheet()
@@ -359,39 +359,39 @@ class TimesheetService:
         title_style = ParagraphStyle(
             'DocTitle',
             parent=styles['Heading1'],
-            fontSize=18,
-            leading=22,
+            fontSize=14,
+            leading=17,
             alignment=1,
-            spaceAfter=20
+            spaceAfter=10
         )
 
         section_heading_style = ParagraphStyle(
             'SectionHeading',
-            fontSize=10,
-            leading=14,
+            fontSize=9,
+            leading=12,
             fontName='Helvetica-Bold',
             textColor=colors.HexColor("#1A365D"),
-            spaceAfter=4
+            spaceAfter=2
         )
 
         header_style = ParagraphStyle(
             'HeaderStyle',
-            fontSize=11,
-            leading=15,
+            fontSize=9,
+            leading=12,
             textColor=colors.HexColor("#222222")
         )
 
         table_text_style = ParagraphStyle(
             'TableText',
-            fontSize=10,
-            leading=14,
+            fontSize=9,
+            leading=12,
             alignment=1
         )
 
         table_header_style = ParagraphStyle(
             'TableHeader',
-            fontSize=11,
-            leading=14,
+            fontSize=10,
+            leading=13,
             fontName='Helvetica-Bold',
             alignment=1,
             textColor=colors.white
@@ -409,7 +409,7 @@ class TimesheetService:
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(per_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 8))
 
         data_table = [[
             Paragraph("Data", table_header_style),
@@ -424,8 +424,8 @@ class TimesheetService:
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]
 
         from app.services.time_calculation_service import time_calculation_service
@@ -440,12 +440,12 @@ class TimesheetService:
 
         story.append(self._build_daily_records_table(start_date, end_date, period_result, holidays, data_table, t_style,
                                                      table_text_style))
-        story.append(Spacer(1, 20))
+        story.append(Spacer(1, 10))
 
         total_duration_str = self._format_duration(period_result.total_net_worked_seconds)
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
-                       ParagraphStyle('BoldHeaderStyle', fontSize=11, leading=15, fontName='Helvetica-Bold',
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
              Paragraph(total_duration_str, header_style)]
         ]
@@ -455,37 +455,37 @@ class TimesheetService:
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]))
         story.append(sum_table)
-        story.append(Spacer(1, 15))
+        story.append(Spacer(1, 8))
 
         self._build_work_schedules_section(story, user, start_date, end_date, section_heading_style, header_style)
 
         note_style = ParagraphStyle(
             'NoteStyle',
-            fontSize=9,
-            leading=12,
+            fontSize=8,
+            leading=10,
             fontName='Helvetica-Oblique',
             textColor=colors.HexColor("#64748B")
         )
         story.append(Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style))
         story.append(Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
-        story.append(Spacer(1, 25))
+        story.append(Spacer(1, 8))
 
         term_style = ParagraphStyle(
             'TermStyle',
-            fontSize=10,
-            leading=14,
+            fontSize=8,
+            leading=11,
             alignment=4,
             textColor=colors.HexColor("#444444")
         )
         story.append(Paragraph(
             "Reconheço a exatidão das anotações de horários registradas neste documento, servindo o mesmo como espelho de ponto mensal regulamentar. Declaro estar ciente de que as informações contidas refletem fielmente as jornadas executadas, passível de validação manual ou assinatura eletrônica via Gov.br.",
             term_style))
-        story.append(Spacer(1, 60))
+        story.append(Spacer(1, 30))
 
         sig_text_style = ParagraphStyle(
             'SigText',
-            fontSize=10,
-            leading=14,
+            fontSize=8,
+            leading=11,
             alignment=1,
             textColor=colors.HexColor("#555555")
         )

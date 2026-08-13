@@ -462,7 +462,8 @@ class ReportService:
             TimeRecord.user_id.in_(user_ids),
             TimeRecord.record_datetime >= start_dt,
             TimeRecord.record_datetime <= end_dt,
-            TimeRecord.deleted_at.is_(None)
+            TimeRecord.deleted_at.is_(None),
+            TimeRecord.is_ignored == False
         ).all() if user_ids else []
         records_by_user = {}
         for r in all_records_batch:
