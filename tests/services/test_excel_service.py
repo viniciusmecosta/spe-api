@@ -574,3 +574,45 @@ def test_generate_excel_report_with_records_and_adjustments(mock_report_service,
     
     res = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
     assert res is not None
+def test_generate_excel_report_filters_ignored_records(excel_service, db_session_mock):
+    from app.domain.models.user import User
+    from unittest.mock import patch, MagicMock
+    
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = 'Test'
+    user.historical_schedules = []
+    
+    mock_query_tr = MagicMock()
+    mock_query_tr.options.return_value = mock_query_tr
+    mock_query_tr.filter.return_value = mock_query_tr
+    mock_query_tr.all.return_value = []
+    
+    def mock_query_side_effect(model):
+        mock_q = MagicMock()
+        mock_q.options.return_value = mock_q
+        if getattr(model, '__name__', '') == 'User':
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = [user]
+            return mock_q
+        elif getattr(model, '__name__', '') == 'TimeRecord':
+            return mock_query_tr
+        else:
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = []
+            return mock_q
+            
+    db_session_mock.query.side_effect = mock_query_side_effect
+    
+    with patch('app.services.excel_service.company_repository.get_current', return_value=None), \
+         patch('app.services.report_service.report_service.get_advanced_user_report', return_value=None):
+        excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
+        
+    filter_args = mock_query_tr.filter.call_args[0]
+    is_ignored_filtered = False
+    for arg in filter_args:
+        if 'is_ignored' in str(arg) and 'false' in str(arg).lower():
+            is_ignored_filtered = True
+            break
+            
+    assert is_ignored_filtered, "O filtro TimeRecord.is_ignored == False deve ser aplicado no ExcelService!"

@@ -466,3 +466,47 @@ def test_get_monthly_summary_with_records_and_adjustments(service, mock_db, mock
         mock_adv_report.return_value = adv_res
         res = service.get_monthly_summary(mock_db, 1, 2024, [1])
         assert len(res.payroll_data) == 1
+def test_get_monthly_summary_filters_ignored_records(service, mock_db, mock_repo_holiday):
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = 'Test'
+    user.historical_schedules = []
+    
+    mock_query_tr = MagicMock()
+    mock_query_tr.options.return_value = mock_query_tr
+    mock_query_tr.filter.return_value = mock_query_tr
+    mock_query_tr.all.return_value = []
+    
+    def mock_query_side_effect(model):
+        mock_q = MagicMock()
+        mock_q.options.return_value = mock_q
+        if getattr(model, '__name__', '') == 'User':
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = [user]
+            return mock_q
+        elif getattr(model, '__name__', '') == 'TimeRecord':
+            return mock_query_tr
+        else:
+            mock_q.filter.return_value = mock_q
+            mock_q.all.return_value = []
+            return mock_q
+            
+    mock_db.query.side_effect = mock_query_side_effect
+    
+    with patch.object(service, 'get_advanced_user_report') as mock_adv_report:
+        mock_summary = UserPayrollSummary(
+            user_id=1, user_name='Test', total_worked_time='10:00', total_expected_time='08:00',
+            total_worked_minutes=60, total_expected_minutes=48, days_worked=1, absences=0,
+            total_worked_hours=1.0, total_expected_hours=0.8, total_extra_hours=0.2, total_missing_hours=0.0, final_balance=0.2
+        )
+        mock_adv_report.return_value = MagicMock(summary=mock_summary)
+        service.get_monthly_summary(mock_db, 1, 2024, [1])
+        
+    filter_args = mock_query_tr.filter.call_args[0]
+    is_ignored_filtered = False
+    for arg in filter_args:
+        if 'is_ignored' in str(arg) and 'false' in str(arg).lower():
+            is_ignored_filtered = True
+            break
+            
+    assert is_ignored_filtered, "O filtro TimeRecord.is_ignored == False deve ser aplicado na busca em lote!"
