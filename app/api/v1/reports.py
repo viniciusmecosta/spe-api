@@ -51,8 +51,8 @@ def get_my_dashboard(
 def get_my_history(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: int | None = Query(None, ge=1, le=12),
-    year: int | None = Query(None, ge=2000),
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> HistoryResponse:
     return report_service.get_history_report(db, current_user.id, month, year, current_user)
 
@@ -65,8 +65,8 @@ def get_user_history(
     user_id: int,
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: int | None = Query(None, ge=1, le=12),
-    year: int | None = Query(None, ge=2000),
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> HistoryResponse:
     report_service.check_user_report_access(
         current_user, user_id, detail="Sem permissão para acessar o histórico deste usuário."
@@ -81,8 +81,8 @@ def get_user_history(
 def get_team_hours(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: int | None = Query(None, ge=1, le=12),
-    year: int | None = Query(None, ge=2000),
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> TeamHoursResponse:
     report_service.check_report_permission(current_user)
     now = datetime.now()
@@ -101,9 +101,9 @@ def get_team_hours(
 def export_monthly_report_excel(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: int = Query(None, ge=1, le=12),
-    year: int = Query(None, ge=2000),
-    employee_ids: list[int] | None = Query(None),
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
+    employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     report_service.check_report_permission(current_user)
     now = datetime.now()
@@ -132,8 +132,8 @@ def get_user_detailed_report(
     user_id: int,
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: int = Query(None, ge=1, le=12),
-    year: int = Query(None, ge=2000),
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> AdvancedUserReportResponse:
     report_service.check_user_report_access(
         current_user, user_id, detail="Sem permissão para ver relatório de outros usuários."
@@ -146,3 +146,4 @@ def get_user_detailed_report(
         year = now.year
 
     return report_service.get_advanced_user_report_or_404(db, user_id, month, year, current_user)
+

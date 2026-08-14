@@ -21,7 +21,7 @@ def read_audit_logs(
     action: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    order_by: str = Query("desc", pattern="^(asc|desc)$"),
+    order_by: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
     skip: int = 0,
     limit: int = 100,
 ) -> list[AuditLogResponse]:

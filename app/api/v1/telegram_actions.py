@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
@@ -31,8 +32,8 @@ def trigger_manual_backup(
 )
 def trigger_manual_report(
     background_tasks: BackgroundTasks,
-    start_date: date = Query(..., description="Data inicial do período (YYYY-MM-DD)"),
-    end_date: date = Query(..., description="Data final do período (YYYY-MM-DD)"),
+    start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
+    end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
 ) -> dict[str, str]:
     telegram_service.validate_manual_report_dates(start_date, end_date)
     background_tasks.add_task(routine_orchestrator.send_manual_report_telegram, start_date, end_date)

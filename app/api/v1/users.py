@@ -32,13 +32,15 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 def read_users(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    is_active: bool | None = Query(None),
-    role: UserRole | None = Query(None),
-    search: str | None = Query(None),
-    order_by: str = Query("id", pattern="^(id|name|username|created_at|updated_at)$"),
-    order_direction: str = Query("asc", pattern="^(asc|desc)$"),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    is_active: Annotated[bool | None, Query()] = None,
+    role: Annotated[UserRole | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    order_by: Annotated[
+        str, Query(pattern="^(id|name|username|created_at|updated_at)$")
+    ] = "id",
+    order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
 ) -> list[UserResponse]:
     role_value = role.value if role else None
     return user_service.get_multi(
@@ -99,8 +101,8 @@ def read_user_me(
 )
 def get_bulk_schedules(
     db: Annotated[Session, Depends(deps.get_db)],
-    month: int = Query(..., ge=1, le=12),
-    year: int = Query(..., ge=2000, le=2100),
+    month: Annotated[int, Query(ge=1, le=12)],
+    year: Annotated[int, Query(ge=2000, le=2100)],
 ) -> list[BulkWorkScheduleResponse]:
     return user_work_schedule_service.get_bulk_schedules(db=db, month=month, year=year)
 

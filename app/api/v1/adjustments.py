@@ -111,15 +111,16 @@ def download_adjustment_attachment(
 def read_my_adjustments(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
-    month: int | None = Query(None, ge=1, le=12),
-    year: int | None = Query(None, ge=2000),
-    status: str | None = Query(
-        None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"
-    ),
-    order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
-    order_direction: str = Query("desc", pattern="^(asc|desc)$"),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
+    status: Annotated[
+        str | None,
+        Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+    ] = None,
+    order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
+    order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
     return adjustment_service.get_my_enriched(
         db, current_user.id, skip, limit, month, year, status, order_by, order_direction
@@ -133,15 +134,16 @@ def read_my_adjustments(
 def read_all_adjustments(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=100),
-    month: int | None = Query(None, ge=1, le=12),
-    year: int | None = Query(None, ge=2000),
-    status: str | None = Query(
-        None, pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"
-    ),
-    order_by: str = Query("created_at", pattern="^(created_at|target_date)$"),
-    order_direction: str = Query("desc", pattern="^(asc|desc)$"),
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    month: Annotated[int | None, Query(ge=1, le=12)] = None,
+    year: Annotated[int | None, Query(ge=2000)] = None,
+    status: Annotated[
+        str | None,
+        Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
+    ] = None,
+    order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
+    order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
     return adjustment_service.get_all_enriched(
         db, skip, limit, month, year, status, order_by, order_direction

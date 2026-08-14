@@ -23,8 +23,8 @@ router = APIRouter(responses={**AUTH_RESPONSES})
 def get_official_timesheet_user_pdf(
     user_id: int,
     db: Annotated[Session, Depends(deps.get_db)],
-    month: int = Query(..., ge=1, le=12),
-    year: int = Query(..., ge=2000),
+    month: Annotated[int, Query(ge=1, le=12)],
+    year: Annotated[int, Query(ge=2000)],
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     pdf_buffer = timesheet_service.generate_user_timesheet_pdf(db, user_id, month, year)
@@ -43,9 +43,9 @@ def get_official_timesheet_user_pdf(
 )
 def get_official_timesheet_all_pdf(
     db: Annotated[Session, Depends(deps.get_db)],
-    month: int = Query(..., ge=1, le=12),
-    year: int = Query(..., ge=2000),
-    employee_ids: list[int] | None = Query(None),
+    month: Annotated[int, Query(ge=1, le=12)],
+    year: Annotated[int, Query(ge=2000)],
+    employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     zip_buffer = timesheet_service.generate_all_timesheets_pdf_zip(db, month, year, employee_ids)
