@@ -21,3 +21,8 @@ disable_error_code = [
   "list-item",
   "misc"
 ]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+  "ignore::DeprecationWarning:pytest_asyncio.*",
+]
