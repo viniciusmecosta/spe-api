@@ -1,11 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.api.openapi_responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, UNAUTHORIZED_RESPONSE
 from app.services.routine_orchestrator import routine_orchestrator
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE})
 
@@ -16,7 +15,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE})
     responses={**BAD_REQUEST_RESPONSE},
 )
 def trigger_manual_backup(
-    db: Annotated[Session, Depends(deps.get_db)],
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> dict[str, str]:
     sent = routine_orchestrator.send_manual_backup_email(db)
     if not sent:

@@ -1,9 +1,5 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-
 from app.api.deps import get_current_maintainer, get_db, verify_device_api_key
 from app.api.openapi_responses import (
     AUTH_RESPONSES,
@@ -15,6 +11,9 @@ from app.api.openapi_responses import (
 from app.domain.models.user import User
 from app.schemas.firmware import FirmwareListResponse, FirmwareResponse
 from app.services.firmware_service import firmware_service
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -25,7 +24,7 @@ router = APIRouter()
     responses={**AUTH_RESPONSES},
 )
 def list_firmwares(
-    db: Annotated[Session, Depends(get_db)],
+        db: Annotated[Session, Depends(get_db)],
 ) -> list[FirmwareListResponse]:
     return firmware_service.get_all_firmwares(db)
 
@@ -36,10 +35,10 @@ def list_firmwares(
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def upload_firmware(
-    version: Annotated[str, Form(...)],
-    file: Annotated[UploadFile, File(...)],
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_maintainer)],
+        version: Annotated[str, Form(...)],
+        file: Annotated[UploadFile, File(...)],
+        db: Annotated[Session, Depends(get_db)],
+        current_user: Annotated[User, Depends(get_current_maintainer)],
 ) -> FirmwareResponse:
     return firmware_service.upload_firmware(db, version, file, current_user.id)
 
@@ -49,10 +48,10 @@ def upload_firmware(
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def update_firmware(
-    version: str,
-    file: Annotated[UploadFile, File(...)],
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_maintainer)],
+        version: str,
+        file: Annotated[UploadFile, File(...)],
+        db: Annotated[Session, Depends(get_db)],
+        current_user: Annotated[User, Depends(get_current_maintainer)],
 ) -> FirmwareResponse:
     return firmware_service.update_firmware_file(db, version, file, current_user.id)
 
@@ -63,7 +62,7 @@ def update_firmware(
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def check_firmware(
-    db: Annotated[Session, Depends(get_db)],
+        db: Annotated[Session, Depends(get_db)],
 ) -> FirmwareResponse:
     return firmware_service.get_latest_firmware(db)
 
@@ -74,8 +73,8 @@ def check_firmware(
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def download_firmware(
-    version: str,
-    db: Annotated[Session, Depends(get_db)],
+        version: str,
+        db: Annotated[Session, Depends(get_db)],
 ) -> FileResponse:
     file_path = firmware_service.get_firmware_file(db, version)
     return FileResponse(

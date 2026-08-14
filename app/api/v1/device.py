@@ -1,8 +1,5 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.api.openapi_responses import UNAUTHORIZED_RESPONSE
 from app.core.security import get_client_ip
@@ -15,15 +12,17 @@ from app.schemas.device import (
     TimeResponsePayload,
 )
 from app.services.device_service import device_service
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
 def register_device_punch(
-    payload: DevicePunchRequest,
-    request: Request,
-    db: Annotated[Session, Depends(deps.get_db)],
+        payload: DevicePunchRequest,
+        request: Request,
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> FeedbackPayload:
     ip_address = get_client_ip(request)
     return device_service.process_punch(
@@ -41,9 +40,9 @@ def get_device_time() -> TimeResponsePayload:
 
 @router.post("/verify-manager")
 def verify_manager_access(
-    payload: ManagerVerifyRequest,
-    db: Annotated[Session, Depends(deps.get_db)],
-    device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
+        payload: ManagerVerifyRequest,
+        db: Annotated[Session, Depends(deps.get_db)],
+        device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
 ) -> ManagerVerifyResponse:
     return device_service.verify_manager_access(
         db=db,

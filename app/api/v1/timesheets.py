@@ -1,9 +1,5 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.api.openapi_responses import (
     AUTH_RESPONSES,
@@ -11,6 +7,9 @@ from app.api.openapi_responses import (
     CRUD_RESPONSES,
 )
 from app.services.timesheet_service import timesheet_service
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**AUTH_RESPONSES})
 
@@ -21,10 +20,10 @@ router = APIRouter(responses={**AUTH_RESPONSES})
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def get_official_timesheet_user_pdf(
-    user_id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    month: Annotated[int, Query(ge=1, le=12)],
-    year: Annotated[int, Query(ge=2000)],
+        user_id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        month: Annotated[int, Query(ge=1, le=12)],
+        year: Annotated[int, Query(ge=2000)],
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     pdf_buffer = timesheet_service.generate_user_timesheet_pdf(db, user_id, month, year)
@@ -42,10 +41,10 @@ def get_official_timesheet_user_pdf(
     responses={**BAD_REQUEST_RESPONSE},
 )
 def get_official_timesheet_all_pdf(
-    db: Annotated[Session, Depends(deps.get_db)],
-    month: Annotated[int, Query(ge=1, le=12)],
-    year: Annotated[int, Query(ge=2000)],
-    employee_ids: Annotated[list[int] | None, Query()] = None,
+        db: Annotated[Session, Depends(deps.get_db)],
+        month: Annotated[int, Query(ge=1, le=12)],
+        year: Annotated[int, Query(ge=2000)],
+        employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     zip_buffer = timesheet_service.generate_all_timesheets_pdf_zip(db, month, year, employee_ids)

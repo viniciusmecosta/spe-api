@@ -1,5 +1,3 @@
-from fastapi import APIRouter
-
 from app.api.v1 import (
     adjustments,
     anomalies,
@@ -23,6 +21,7 @@ from app.api.v1 import (
     users,
 )
 from app.core.config import settings
+from fastapi import APIRouter
 
 api_router = APIRouter()
 

@@ -1,10 +1,6 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.api.openapi_responses import (
     BAD_REQUEST_RESPONSE,
@@ -23,6 +19,9 @@ from app.schemas.report import (
 from app.services.dashboard_service import dashboard_service
 from app.services.excel_service import excel_service
 from app.services.report_service import report_service
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -32,8 +31,8 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     responses={**FORBIDDEN_RESPONSE},
 )
 def get_dashboard(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> DashboardMetricsResponse:
     report_service.check_report_permission(current_user)
     return dashboard_service.get_dashboard_metrics(db)
@@ -41,18 +40,18 @@ def get_dashboard(
 
 @router.get("/my/dashboard")
 def get_my_dashboard(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> MyDashboardResponse:
     return dashboard_service.get_my_dashboard(db, current_user)
 
 
 @router.get("/history/me")
 def get_my_history(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-    year: Annotated[int | None, Query(ge=2000)] = None,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        month: Annotated[int | None, Query(ge=1, le=12)] = None,
+        year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> HistoryResponse:
     return report_service.get_history_report(db, current_user.id, month, year, current_user)
 
@@ -62,11 +61,11 @@ def get_my_history(
     responses={**FORBIDDEN_RESPONSE},
 )
 def get_user_history(
-    user_id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-    year: Annotated[int | None, Query(ge=2000)] = None,
+        user_id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        month: Annotated[int | None, Query(ge=1, le=12)] = None,
+        year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> HistoryResponse:
     report_service.check_user_report_access(
         current_user, user_id, detail="Sem permissão para acessar o histórico deste usuário."
@@ -79,10 +78,10 @@ def get_user_history(
     responses={**FORBIDDEN_RESPONSE},
 )
 def get_team_hours(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-    year: Annotated[int | None, Query(ge=2000)] = None,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        month: Annotated[int | None, Query(ge=1, le=12)] = None,
+        year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> TeamHoursResponse:
     report_service.check_report_permission(current_user)
     now = datetime.now()
@@ -99,11 +98,11 @@ def get_team_hours(
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def export_monthly_report_excel(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-    year: Annotated[int | None, Query(ge=2000)] = None,
-    employee_ids: Annotated[list[int] | None, Query()] = None,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        month: Annotated[int | None, Query(ge=1, le=12)] = None,
+        year: Annotated[int | None, Query(ge=2000)] = None,
+        employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     report_service.check_report_permission(current_user)
     now = datetime.now()
@@ -129,11 +128,11 @@ def export_monthly_report_excel(
     responses={**CRUD_RESPONSES},
 )
 def get_user_detailed_report(
-    user_id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
-    month: Annotated[int | None, Query(ge=1, le=12)] = None,
-    year: Annotated[int | None, Query(ge=2000)] = None,
+        user_id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        month: Annotated[int | None, Query(ge=1, le=12)] = None,
+        year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> AdvancedUserReportResponse:
     report_service.check_user_report_access(
         current_user, user_id, detail="Sem permissão para ver relatório de outros usuários."
@@ -146,4 +145,3 @@ def get_user_detailed_report(
         year = now.year
 
     return report_service.get_advanced_user_report_or_404(db, user_id, month, year, current_user)
-
