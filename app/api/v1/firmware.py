@@ -5,6 +5,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_maintainer, get_db, verify_device_api_key
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.user import User
 from app.schemas.firmware import FirmwareListResponse, FirmwareResponse
 from app.services.firmware_service import firmware_service
@@ -15,10 +22,7 @@ router = APIRouter()
 @router.get(
     "/",
     dependencies=[Depends(get_current_maintainer)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**AUTH_RESPONSES},
 )
 def list_firmwares(
     db: Annotated[Session, Depends(get_db)],
@@ -29,11 +33,7 @@ def list_firmwares(
 @router.post(
     "/upload",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Arquivo inválido ou versão duplicada"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def upload_firmware(
     version: Annotated[str, Form(...)],
@@ -46,12 +46,7 @@ def upload_firmware(
 
 @router.put(
     "/{version}",
-    responses={
-        400: {"description": "Arquivo inválido"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Firmware não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def update_firmware(
     version: str,
@@ -65,10 +60,7 @@ def update_firmware(
 @router.get(
     "/check",
     dependencies=[Depends(verify_device_api_key)],
-    responses={
-        401: {"description": "Chave de dispositivo inválida"},
-        404: {"description": "Nenhum firmware disponível"},
-    },
+    responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def check_firmware(
     db: Annotated[Session, Depends(get_db)],
@@ -79,10 +71,7 @@ def check_firmware(
 @router.get(
     "/download",
     dependencies=[Depends(verify_device_api_key)],
-    responses={
-        401: {"description": "Chave de dispositivo inválida"},
-        404: {"description": "Firmware não encontrado"},
-    },
+    responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def download_firmware(
     version: str,

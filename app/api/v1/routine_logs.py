@@ -5,20 +5,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import AUTH_RESPONSES
 from app.schemas.routine_log import RoutineLogResponse
 from app.services.routine_log_service import routine_log_service
 
-router = APIRouter()
+router = APIRouter(responses={**AUTH_RESPONSES})
 
 
 @router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        422: {"description": "Erro de validação"},
-    },
 )
 def read_routine_logs(
     db: Annotated[Session, Depends(deps.get_db)],

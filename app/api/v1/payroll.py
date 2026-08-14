@@ -4,6 +4,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+)
 from app.domain.models.user import User
 from app.schemas.payroll import (
     PayrollClosureCreate,
@@ -13,16 +18,12 @@ from app.schemas.payroll import (
 from app.schemas.time_record import SuccessResponse
 from app.services.payroll_service import payroll_service
 
-router = APIRouter()
+router = APIRouter(responses={**AUTH_RESPONSES})
 
 
 @router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
 )
 def list_payroll_periods(
     year: int,
@@ -33,11 +34,7 @@ def list_payroll_periods(
 
 @router.post(
     "/close",
-    responses={
-        400: {"description": "Período já fechado ou inválido"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def close_payroll_period(
     period: PayrollClosureCreate,
@@ -50,11 +47,7 @@ def close_payroll_period(
 
 @router.post(
     "/reopen",
-    responses={
-        400: {"description": "Período não está fechado ou dados inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def reopen_payroll_period(
     period: PayrollReopenCreate,
@@ -70,12 +63,7 @@ def reopen_payroll_period(
 @router.post(
     "/{closure_id}/legacy-report",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={
-        400: {"description": "Arquivo inválido ou erro no upload"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Fechamento não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def upload_legacy_report(
     closure_id: int,

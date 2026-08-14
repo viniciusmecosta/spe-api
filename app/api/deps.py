@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from typing import Annotated
 
 import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -22,7 +23,7 @@ api_key_header = APIKeyHeader(name="X-API-KEY", scheme_name="DeviceApiKey", auto
 consumer_api_key_header = APIKeyHeader(name="X-CONSUMER-API-KEY", scheme_name="ConsumerApiKey", auto_error=False)
 
 
-def get_db() -> Generator:
+def get_db() -> Generator[Session, None, None]:
     try:
         db = SessionLocal()
         yield db
@@ -31,8 +32,8 @@ def get_db() -> Generator:
 
 
 def get_current_user(
-        db: Session = Depends(get_db),
-        token: str = Depends(reusable_oauth2)
+    db: Annotated[Session, Depends(get_db)],
+    token: Annotated[str, Depends(reusable_oauth2)],
 ) -> User:
     try:
         payload = jwt.decode(
@@ -48,7 +49,7 @@ def get_current_user(
 
     if not token_data.sub:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token subject",
             headers={"WWW-Authenticate": "Bearer"},
         )
@@ -60,7 +61,7 @@ def get_current_user(
 
 
 def get_current_active_user(
-        current_user: User = Depends(get_current_user),
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
@@ -68,7 +69,7 @@ def get_current_active_user(
 
 
 def get_current_manager(
-        current_user: User = Depends(get_current_active_user),
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(
@@ -79,7 +80,7 @@ def get_current_manager(
 
 
 def get_current_maintainer(
-        current_user: User = Depends(get_current_active_user),
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     if current_user.role != UserRole.MAINTAINER:
         raise HTTPException(
@@ -90,10 +91,10 @@ def get_current_maintainer(
 
 
 def verify_device_api_key(
-        request: Request,
-        api_key: str = Security(api_key_header),
-        db: Session = Depends(get_db)
-):
+    request: Request,
+    api_key: Annotated[str | None, Security(api_key_header)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DeviceCredential:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device API Key missing")
 
@@ -111,10 +112,10 @@ def verify_device_api_key(
 
 
 def verify_consumer_api_key(
-        request: Request,
-        api_key: str = Security(consumer_api_key_header),
-        db: Session = Depends(get_db)
-):
+    request: Request,
+    api_key: Annotated[str | None, Security(consumer_api_key_header)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DeviceCredential:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Consumer API Key missing")
 

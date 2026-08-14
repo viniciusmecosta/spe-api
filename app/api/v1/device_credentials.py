@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import AUTH_RESPONSES, CRUD_RESPONSES
 from app.domain.models.user import User
 from app.schemas.device import (
     DeviceCredentialCreate,
@@ -12,16 +13,12 @@ from app.schemas.device import (
 )
 from app.services.device_credential_service import device_credential_service
 
-router = APIRouter()
+router = APIRouter(responses={**AUTH_RESPONSES})
 
 
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
 )
 def create_credential(
     credential_in: DeviceCredentialCreate,
@@ -34,10 +31,6 @@ def create_credential(
 @router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
 )
 def list_credentials(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -47,11 +40,7 @@ def list_credentials(
 
 @router.put(
     "/{id}",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Credencial não encontrada."},
-    },
+    responses={**CRUD_RESPONSES},
 )
 def update_credential(
     id: int,
@@ -64,11 +53,7 @@ def update_credential(
 
 @router.delete(
     "/{id}",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Credencial não encontrada."},
-    },
+    responses={**CRUD_RESPONSES},
 )
 def delete_credential(
     id: int,

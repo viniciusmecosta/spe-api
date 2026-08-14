@@ -39,6 +39,14 @@ NON_DIGIT_REGEX = re.compile(r'\D')
 
 class TimesheetService:
 
+    def validate_date_not_future(self, month: int, year: int) -> None:
+        now = datetime.now()
+        if year > now.year or (year == now.year and month > now.month):
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível solicitar espelhos de ponto referentes a meses futuros.",
+            )
+
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60

@@ -4,19 +4,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_manager, get_db
+from app.api.openapi_responses import AUTH_RESPONSES
 from app.schemas.anomaly import AnomalyResponse
 from app.services.anomaly_service import anomaly_service
 
-router = APIRouter()
+router = APIRouter(responses={**AUTH_RESPONSES})
 
 
 @router.get(
     "/all",
     dependencies=[Depends(get_current_manager)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
 )
 def get_all_anomalies(
     month: int,
@@ -29,10 +26,6 @@ def get_all_anomalies(
 @router.get(
     "/user/{user_id}",
     dependencies=[Depends(get_current_manager)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
 )
 def get_user_anomalies(
     user_id: int,

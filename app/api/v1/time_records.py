@@ -5,6 +5,14 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    FORBIDDEN_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.user import User
 from app.schemas.time_record import (
@@ -18,16 +26,13 @@ from app.schemas.time_record import (
 from app.services.time_record_service import time_record_service
 from app.services.tolerance_cron_service import tolerance_cron_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.post(
     "/entry",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Erro de batida ou permissão negada"},
-        401: {"description": "Não autenticado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def register_entry(
     request: Request,
@@ -40,10 +45,7 @@ def register_entry(
 @router.post(
     "/exit",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Erro de batida ou permissão negada"},
-        401: {"description": "Não autenticado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def register_exit(
     request: Request,
@@ -55,11 +57,7 @@ def register_exit(
 
 @router.put(
     "/{id}/toggle",
-    responses={
-        400: {"description": "Período fechado ou erro na alternância"},
-        401: {"description": "Não autenticado"},
-        404: {"description": "Registro não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def toggle_record_type(
     id: int,
@@ -69,12 +67,7 @@ def toggle_record_type(
     return time_record_service.toggle_record_type(db, id, current_user)
 
 
-@router.get(
-    "/my",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
-)
+@router.get("/my")
 def read_my_records(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -86,10 +79,7 @@ def read_my_records(
 
 @router.get(
     "/admin/list",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def list_records_for_admin(
     user_id: int,
@@ -104,11 +94,7 @@ def list_records_for_admin(
 @router.post(
     "/admin",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Período fechado ou dados inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def create_time_record_admin(
     record_in: TimeRecordCreateAdmin,
@@ -126,12 +112,7 @@ def create_time_record_admin(
 
 @router.put(
     "/admin/{record_id}",
-    responses={
-        400: {"description": "Período fechado ou dados inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Registro não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def update_time_record_admin(
     record_id: int,
@@ -150,12 +131,7 @@ def update_time_record_admin(
 
 @router.delete(
     "/admin/{record_id}",
-    responses={
-        400: {"description": "Período fechado"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Registro não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def delete_time_record_admin(
     record_id: int,
@@ -169,10 +145,7 @@ def delete_time_record_admin(
 
 @router.get(
     "/{id}/timeline",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def get_time_record_timeline(
     id: int,
@@ -185,10 +158,7 @@ def get_time_record_timeline(
 @router.post(
     "/admin/tolerance/process",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def trigger_tolerance_cron() -> SuccessResponse:
     tolerance_cron_service.process_unverified_entries()

@@ -517,6 +517,22 @@ class ReportService:
                 detail="O usuário não possui privilégios suficientes para acessar relatórios globais.",
             )
 
+    def check_user_report_access(self, current_user: User, user_id: int, detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        if not is_manager and not current_user.can_export_report and current_user.id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail=detail,
+            )
+
+    def get_advanced_user_report_or_404(
+        self, db: Session, user_id: int, month: int, year: int, current_user: User
+    ) -> AdvancedUserReportResponse:
+        report = self.get_advanced_user_report(db, user_id, month, year, current_user)
+        if not report:
+            raise HTTPException(status_code=404, detail="User not found or data missing")
+        return report
+
     def validate_excel_export_permission(
         self, db: Session, current_user: User, month: int, year: int, now: datetime
     ) -> None:

@@ -5,6 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import BAD_REQUEST_RESPONSE, UNAUTHORIZED_RESPONSE
 from app.domain.models.user import User
 from app.schemas.token import Token
 from app.schemas.user import UserResponse
@@ -15,10 +16,7 @@ router = APIRouter()
 
 @router.post(
     "/login",
-    responses={
-        400: {"description": "Usuário inativo"},
-        401: {"description": "Credenciais incorretas"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE},
 )
 def login_access_token(
     request: Request,
@@ -35,9 +33,7 @@ def login_access_token(
 
 @router.get(
     "/me",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
+    responses={**UNAUTHORIZED_RESPONSE},
 )
 def read_users_me(
     current_user: Annotated[User, Depends(deps.get_current_active_user)],

@@ -20,6 +20,21 @@ class TelegramService:
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
 
+    def validate_manual_report_dates(self, start_date: date, end_date: date) -> None:
+        from fastapi import HTTPException
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=400,
+                detail="A data de início não pode ser maior que a data de fim.",
+            )
+
+        delta_days = (end_date - start_date).days
+        if delta_days > 7:
+            raise HTTPException(
+                status_code=400,
+                detail="Período excedido. O relatório gerencial no Telegram é limitado a no máximo 7 dias. Utilize a plataforma web para consultar períodos mais extensos.",
+            )
+
     def send_text(self, text: str) -> bool:
         if not self.bot_token or not self.chat_id:
             return False

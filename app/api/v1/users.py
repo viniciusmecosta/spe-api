@@ -5,6 +5,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    FORBIDDEN_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserUpdateMe
@@ -15,15 +22,12 @@ from app.schemas.work_schedule import (
 from app.services.user_service import user_service
 from app.services.user_work_schedule_service import user_work_schedule_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.get(
     "/",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def read_users(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -52,11 +56,7 @@ def read_users(
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Dados duplicados ou inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def create_user(
     user_in: UserCreate,
@@ -68,10 +68,7 @@ def create_user(
 
 @router.put(
     "/me",
-    responses={
-        400: {"description": "Dados inválidos"},
-        401: {"description": "Não autenticado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def update_user_me(
     user_in: UserUpdateMe,
@@ -87,12 +84,7 @@ def update_user_me(
     )
 
 
-@router.get(
-    "/me",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
-)
+@router.get("/me")
 def read_user_me(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -103,10 +95,7 @@ def read_user_me(
 @router.get(
     "/bulk-schedules",
     dependencies=[Depends(deps.get_current_manager)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def get_bulk_schedules(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -119,11 +108,7 @@ def get_bulk_schedules(
 @router.get(
     "/bulk-schedules/{valid_from}/{valid_until}",
     dependencies=[Depends(deps.get_current_manager)],
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Escala não encontrada"},
-    },
+    responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def get_bulk_schedule_by_dates(
     valid_from: date,
@@ -137,11 +122,7 @@ def get_bulk_schedule_by_dates(
 
 @router.post(
     "/bulk-schedules",
-    responses={
-        400: {"description": "Dados de escala inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def add_bulk_schedules(
     schedule_in: BulkWorkScheduleCreate,
@@ -157,11 +138,7 @@ def add_bulk_schedules(
 
 @router.put(
     "/bulk-schedules/{valid_from}/{valid_until}",
-    responses={
-        400: {"description": "Dados de escala inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def update_bulk_schedules(
     valid_from: date,
@@ -181,10 +158,7 @@ def update_bulk_schedules(
 
 @router.delete(
     "/bulk-schedules/{valid_from}/{valid_until}",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def delete_bulk_schedules(
     valid_from: date,
@@ -202,11 +176,7 @@ def delete_bulk_schedules(
 
 @router.get(
     "/{user_id}",
-    responses={
-        400: {"description": "Privilégios insuficientes"},
-        401: {"description": "Não autenticado"},
-        404: {"description": "Usuário não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def read_user_by_id(
     user_id: int,
@@ -218,12 +188,7 @@ def read_user_by_id(
 
 @router.put(
     "/{user_id}",
-    responses={
-        400: {"description": "Dados inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Privilégios insuficientes para alterar este usuário"},
-        404: {"description": "Usuário não encontrado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def update_user(
     user_id: int,

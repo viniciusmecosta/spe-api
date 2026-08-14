@@ -1,12 +1,17 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.domain.models.enums import UserRole
+from app.api.openapi_responses import (
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    FORBIDDEN_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.user import User
 from app.schemas.report import (
     AdvancedUserReportResponse,
@@ -19,15 +24,12 @@ from app.services.dashboard_service import dashboard_service
 from app.services.excel_service import excel_service
 from app.services.report_service import report_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.get(
     "/dashboard",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente para relatórios globais"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def get_dashboard(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -37,12 +39,7 @@ def get_dashboard(
     return dashboard_service.get_dashboard_metrics(db)
 
 
-@router.get(
-    "/my/dashboard",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
-)
+@router.get("/my/dashboard")
 def get_my_dashboard(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -50,12 +47,7 @@ def get_my_dashboard(
     return dashboard_service.get_my_dashboard(db, current_user)
 
 
-@router.get(
-    "/history/me",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
-)
+@router.get("/history/me")
 def get_my_history(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -67,10 +59,7 @@ def get_my_history(
 
 @router.get(
     "/history/user/{user_id}",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Sem permissão para acessar o histórico deste usuário."},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def get_user_history(
     user_id: int,
@@ -79,22 +68,15 @@ def get_user_history(
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2000),
 ) -> HistoryResponse:
-    is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
-    if not is_manager and not current_user.can_export_report and current_user.id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Sem permissão para acessar o histórico deste usuário.",
-        )
-
+    report_service.check_user_report_access(
+        current_user, user_id, detail="Sem permissão para acessar o histórico deste usuário."
+    )
     return report_service.get_history_report(db, user_id, month, year, current_user)
 
 
 @router.get(
     "/team-hours",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def get_team_hours(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -114,11 +96,7 @@ def get_team_hours(
 
 @router.get(
     "/export/excel",
-    responses={
-        400: {"description": "Mês inválido ou ajustes pendentes"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def export_monthly_report_excel(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -148,11 +126,7 @@ def export_monthly_report_excel(
 
 @router.get(
     "/user/{user_id}",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Sem permissão para ver relatório de outros usuários."},
-        404: {"description": "User not found or data missing"},
-    },
+    responses={**CRUD_RESPONSES},
 )
 def get_user_detailed_report(
     user_id: int,
@@ -161,12 +135,9 @@ def get_user_detailed_report(
     month: int = Query(None, ge=1, le=12),
     year: int = Query(None, ge=2000),
 ) -> AdvancedUserReportResponse:
-    is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
-    if not is_manager and not current_user.can_export_report and current_user.id != user_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Sem permissão para ver relatório de outros usuários.",
-        )
+    report_service.check_user_report_access(
+        current_user, user_id, detail="Sem permissão para ver relatório de outros usuários."
+    )
 
     now = datetime.now()
     if not month:
@@ -174,8 +145,4 @@ def get_user_detailed_report(
     if not year:
         year = now.year
 
-    report = report_service.get_advanced_user_report(db, user_id, month, year, current_user)
-    if not report:
-        raise HTTPException(status_code=404, detail="User not found or data missing")
-
-    return report
+    return report_service.get_advanced_user_report_or_404(db, user_id, month, year, current_user)

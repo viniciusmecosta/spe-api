@@ -4,19 +4,23 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    FORBIDDEN_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.user import User
 from app.schemas.company import CompanyCreate, CompanyResponse, CompanyUpdate
 from app.services.company_service import company_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.get(
     "/",
     dependencies=[Depends(deps.get_current_active_user)],
-    responses={
-        401: {"description": "Não autenticado"},
-    },
 )
 def get_company(
     request: Request,
@@ -28,11 +32,7 @@ def get_company(
 
 @router.post(
     "/",
-    responses={
-        400: {"description": "Empresa já cadastrada"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def create_company(
     obj_in: CompanyCreate,
@@ -46,11 +46,7 @@ def create_company(
 
 @router.put(
     "/",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Nenhuma empresa cadastrada para atualizar"},
-    },
+    responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def update_company(
     obj_in: CompanyUpdate,
@@ -64,12 +60,7 @@ def update_company(
 
 @router.post(
     "/logo",
-    responses={
-        400: {"description": "Formato de arquivo inválido ou erro ao salvar"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Nenhuma empresa cadastrada para associar o logotipo"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def upload_company_logo(
     request: Request,

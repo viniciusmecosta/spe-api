@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import (
     APIRouter,
@@ -13,6 +13,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+    FORBIDDEN_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.enums import AdjustmentStatus
 from app.domain.models.user import User
 from app.schemas.adjustment import (
@@ -24,16 +31,13 @@ from app.schemas.adjustment import (
 )
 from app.services.adjustment_service import adjustment_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Período fechado ou limite de solicitações excedido"},
-        401: {"description": "Não autenticado"},
-    },
+    responses={**BAD_REQUEST_RESPONSE},
 )
 def create_adjustment_request(
     request_in: AdjustmentRequestCreate,
@@ -46,11 +50,7 @@ def create_adjustment_request(
 @router.post(
     "/admin/waive",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Período fechado ou limite de horas excedido"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def waive_absence_admin(
     waiver_in: AdjustmentWaiverCreate,
@@ -63,11 +63,7 @@ def waive_absence_admin(
 @router.post(
     "/admin/reprocess-extra-time",
     status_code=status.HTTP_200_OK,
-    responses={
-        400: {"description": "Período fechado ou dados inválidos"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente (somente MAINTAINER)"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def reprocess_historical_extra_time(
     request_in: BulkReprocessExtraTimeRequest,
@@ -80,12 +76,7 @@ def reprocess_historical_extra_time(
 @router.post(
     "/{id}/attachments",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Formato de arquivo inválido ou erro no upload"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def upload_adjustment_attachment(
     id: int,
@@ -99,11 +90,7 @@ def upload_adjustment_attachment(
 @router.get(
     "/{id}/download",
     response_class=FileResponse,
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Sem permissão para acessar este arquivo"},
-        404: {"description": "Ajuste ou anexo não encontrado"},
-    },
+    responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def download_adjustment_attachment(
     id: int,
@@ -120,12 +107,7 @@ def download_adjustment_attachment(
     )
 
 
-@router.get(
-    "/my",
-    responses={
-        401: {"description": "Não autenticado"},
-    },
-)
+@router.get("/my")
 def read_my_adjustments(
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -146,10 +128,7 @@ def read_my_adjustments(
 
 @router.get(
     "/",
-    responses={
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**FORBIDDEN_RESPONSE},
 )
 def read_all_adjustments(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -171,12 +150,7 @@ def read_all_adjustments(
 
 @router.put(
     "/{id}/approve",
-    responses={
-        400: {"description": "Período fechado ou solicitação já processada"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def approve_adjustment(
     id: int,
@@ -189,12 +163,7 @@ def approve_adjustment(
 
 @router.put(
     "/{id}/reject",
-    responses={
-        400: {"description": "Período fechado ou solicitação já processada"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def reject_adjustment(
     id: int,
@@ -207,12 +176,7 @@ def reject_adjustment(
 
 @router.delete(
     "/{id}",
-    responses={
-        400: {"description": "Período fechado ou solicitação já decidida"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def delete_adjustment(
     id: int,
@@ -226,12 +190,7 @@ def delete_adjustment(
 
 @router.delete(
     "/admin/{id}",
-    responses={
-        400: {"description": "Período fechado"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente (somente MAINTAINER)"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def admin_delete_adjustment(
     id: int,
@@ -245,12 +204,7 @@ def admin_delete_adjustment(
 
 @router.put(
     "/admin/{id}/revert-status",
-    responses={
-        400: {"description": "Período fechado"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente (somente MAINTAINER)"},
-        404: {"description": "Solicitação não encontrada"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def admin_revert_adjustment_status(
     id: int,

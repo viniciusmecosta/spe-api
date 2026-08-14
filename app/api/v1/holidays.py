@@ -4,21 +4,22 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.user import User
 from app.schemas.holiday import HolidayCreate, HolidayResponse
 from app.services.holiday_service import holiday_service
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Já existe um feriado cadastrado para esta data ou período fechado"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def create_holiday(
     holiday_in: HolidayCreate,
@@ -31,9 +32,6 @@ def create_holiday(
 @router.get(
     "/",
     dependencies=[Depends(deps.get_current_active_user)],
-    responses={
-        401: {"description": "Não autenticado"},
-    },
 )
 def read_holidays(
     db: Annotated[Session, Depends(deps.get_db)],
@@ -43,11 +41,7 @@ def read_holidays(
 
 @router.delete(
     "/{id}",
-    responses={
-        400: {"description": "Período fechado"},
-        401: {"description": "Não autenticado"},
-        403: {"description": "Permissão insuficiente"},
-    },
+    responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def delete_holiday(
     id: int,
