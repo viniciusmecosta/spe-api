@@ -1,54 +1,45 @@
-from typing import Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.core import security
-from app.core.config import settings
-from app.domain.models.enums import UserRole
 from app.domain.models.user import User
-from app.repositories.user_repository import user_repository
 from app.schemas.token import Token
 from app.schemas.user import UserResponse
+from app.services.auth_service import auth_service
 
 router = APIRouter()
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    responses={
+        400: {"description": "Usuário inativo"},
+        401: {"description": "Credenciais incorretas"},
+    },
+)
 def login_access_token(
-        request: Request,
-        db: Session = Depends(deps.get_db),
-        form_data: OAuth2PasswordRequestForm = Depends()
-) -> Any:
-    username = form_data.username.lower()
-    request.state.attempted_user = username
-    user = user_repository.get_by_username(db, username=username)
-
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-
-    is_dev = settings.ENVIRONMENT.lower() == "dev"
-    allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
-
-    if not allow_bypass:
-        if not security.verify_password(form_data.password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
-
-    access_token = security.create_access_token(subject=user.id, name=user.name)
-
-    from app.services.audit_service import audit_service
-    audit_service.log(
-        db, user_id=user.id, action="LOGIN", entity="USER", entity_id=user.id
+    request: Request,
+    db: Annotated[Session, Depends(deps.get_db)],
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+) -> Token:
+    request.state.attempted_user = form_data.username.lower()
+    return auth_service.authenticate(
+        db=db,
+        username=form_data.username,
+        password=form_data.password,
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
 
-
-@router.get("/me", response_model=UserResponse)
-def read_users_me(current_user: User = Depends(deps.get_current_active_user)) -> Any:
+@router.get(
+    "/me",
+    responses={
+        401: {"description": "Não autenticado"},
+    },
+)
+def read_users_me(
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+) -> UserResponse:
     return current_user
