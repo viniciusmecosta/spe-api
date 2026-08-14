@@ -509,5 +509,69 @@ class ReportService:
 
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
+    def check_report_permission(self, current_user: User) -> None:
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        if not is_manager and not current_user.can_export_report:
+            raise HTTPException(
+                status_code=403,
+                detail="O usuário não possui privilégios suficientes para acessar relatórios globais.",
+            )
+
+    def validate_excel_export_permission(
+        self, db: Session, current_user: User, month: int, year: int, now: datetime
+    ) -> None:
+        is_maintainer = current_user.role == UserRole.MAINTAINER
+        is_manager = current_user.role == UserRole.MANAGER
+
+        if is_maintainer:
+            return
+
+        if is_manager:
+            from sqlalchemy import extract
+            from app.domain.models.adjustment import AdjustmentRequest
+            from app.domain.models.enums import AdjustmentStatus
+
+            pending_adjustments = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+                extract("month", AdjustmentRequest.target_date) == month,
+                extract("year", AdjustmentRequest.target_date) == year,
+            ).first()
+
+            if pending_adjustments:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Não é possível gerar o relatório pois existem ajustes pendentes neste mês.",
+                )
+            return
+
+        if not current_user.can_export_report:
+            raise HTTPException(
+                status_code=403, detail="Você não tem permissão para gerar relatórios."
+            )
+
+        prev_month = now.month - 1 if now.month > 1 else 12
+        prev_year = now.year if now.month > 1 else now.year - 1
+
+        if month != prev_month or year != prev_year:
+            raise HTTPException(
+                status_code=400,
+                detail="Funcionários só podem gerar o relatório referente ao mês anterior.",
+            )
+
+        from app.domain.models.payroll import PayrollClosure
+
+        payroll_closed = db.query(PayrollClosure).filter(
+            PayrollClosure.month == month,
+            PayrollClosure.year == year,
+            PayrollClosure.is_closed == True,
+            PayrollClosure.deleted_at.is_(None),
+        ).first()
+
+        if not payroll_closed:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível gerar o relatório pois a folha deste mês ainda não está fechada.",
+            )
+
 
 report_service = ReportService()
