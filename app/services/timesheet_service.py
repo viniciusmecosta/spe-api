@@ -83,6 +83,20 @@ class TimesheetService:
             return f"({c[:2]}) {c[2:6]}-{c[6:]}"
         return phone
 
+    def _format_daily_punches(self, daily_res, is_holiday: bool, holiday_obj) -> str:
+        punch_blocks = daily_res.punch_blocks
+        waiver_credit = daily_res.waiver_seconds
+        formatted_waiver = self._format_duration(waiver_credit)
+
+        if is_holiday and not punch_blocks:
+            return f"Feriado: {holiday_obj.name}" if holiday_obj else "Feriado"
+
+        punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
+        if waiver_credit > 0:
+            abono_str = f"Abono: {formatted_waiver}"
+            return f"{punches_str}   <font color='#94A3B8'>|</font>   {abono_str}" if punches_str != "-" else abono_str
+        return punches_str
+
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
                                    table_text_style):
         current_date = start_date
@@ -95,26 +109,12 @@ class TimesheetService:
             target_day = DayOfWeek.from_date(current_date)
             is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
-            worked_seconds = daily_res.net_worked_seconds
-            unapproved_extra_seconds = daily_res.unapproved_extra_seconds
-            punch_blocks = daily_res.punch_blocks
-
             if is_weekend:
                 t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
 
-            waiver_credit = daily_res.waiver_seconds
-            formatted_waiver = self._format_duration(waiver_credit)
-
-            if is_holiday and not punch_blocks:
-                punches_str = f"Feriado: {holiday_obj.name}" if holiday_obj else "Feriado"
-            else:
-                punches_str = "   <font color='#94A3B8'>|</font>   ".join(punch_blocks) if punch_blocks else "-"
-                if waiver_credit > 0:
-                    abono_str = f"Abono: {formatted_waiver}"
-                    punches_str = f"{punches_str}   <font color='#94A3B8'>|</font>   {abono_str}" if punches_str != "-" else abono_str
-
-            worked_time_str = self._format_duration(worked_seconds)
-            unapproved_time_str = self._format_duration(unapproved_extra_seconds)
+            punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
+            worked_time_str = self._format_duration(daily_res.net_worked_seconds)
+            unapproved_time_str = self._format_duration(daily_res.unapproved_extra_seconds)
 
             data_table.append([
                 Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
@@ -262,6 +262,60 @@ class TimesheetService:
             periods.append((p_start, p_end, active_schedules))
         return periods
 
+    def _format_schedule_time_interval(self, sch) -> str | None:
+        if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
+            return None
+        parts = []
+        if sch.entry_1 and sch.exit_1:
+            parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
+        if sch.entry_2 and sch.exit_2:
+            parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
+        return " e ".join(parts) if parts else None
+
+    def _group_schedules_by_interval(self, schedules) -> dict[str, list[int]]:
+        grouped = {}
+        for sch in schedules:
+            time_str = self._format_schedule_time_interval(sch)
+            if time_str:
+                grouped.setdefault(time_str, []).append(sch.day_of_week)
+        return grouped
+
+    def _build_schedule_table_element(self, grouped: dict[str, list[int]], header_style) -> Table:
+        if not grouped:
+            no_sch_data = [[Paragraph("Sem expediente cadastrado", header_style)]]
+            no_sch_table = Table(no_sch_data, colWidths=[535])
+            no_sch_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ]))
+            return no_sch_table
+
+        rows = []
+        for time_str, days in grouped.items():
+            day_str = self._format_day_groups(days)
+            rows.append([
+                Paragraph(f"<b>{day_str}:</b>", header_style),
+                Paragraph(time_str, header_style)
+            ])
+
+        sch_table = Table(rows, colWidths=[180, 355])
+        sch_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
+        ]))
+        return sch_table
+
     def _build_work_schedules_section(self, story, user, start_date, end_date, section_heading_style, header_style):
         if not user or not user.historical_schedules:
             return
@@ -280,55 +334,9 @@ class TimesheetService:
                 story.append(Paragraph(period_str, header_style))
                 story.append(Spacer(1, 2))
 
-            grouped = {}
-            for sch in schedules:
-                if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
-                    continue
-                parts = []
-                if sch.entry_1 and sch.exit_1:
-                    parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
-                if sch.entry_2 and sch.exit_2:
-                    parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
-                if parts:
-                    time_str = " e ".join(parts)
-                    grouped.setdefault(time_str, []).append(sch.day_of_week)
-
-            if not grouped:
-                no_sch_data = [[Paragraph("Sem expediente cadastrado", header_style)]]
-                no_sch_table = Table(no_sch_data, colWidths=[535])
-                no_sch_table.setStyle(TableStyle([
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 2),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                    ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ]))
-                story.append(no_sch_table)
-                story.append(Spacer(1, 5))
-                continue
-
-            rows = []
-            for time_str, days in grouped.items():
-                day_str = self._format_day_groups(days)
-                rows.append([
-                    Paragraph(f"<b>{day_str}:</b>", header_style),
-                    Paragraph(time_str, header_style)
-                ])
-
-            sch_table = Table(rows, colWidths=[180, 355])
-            sch_table.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('TOPPADDING', (0, 0), (-1, -1), 2),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
-                ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
-            ]))
-            story.append(sch_table)
+            grouped = self._group_schedules_by_interval(schedules)
+            table = self._build_schedule_table_element(grouped, header_style)
+            story.append(table)
             story.append(Spacer(1, 5))
 
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:

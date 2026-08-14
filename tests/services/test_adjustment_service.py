@@ -27,8 +27,9 @@ def test_validate_waiver_limit_ok(db_session_mock, mocker):
 
 def test_validate_waiver_limit_exceeded(db_session_mock, mocker):
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get_waivers_by_user_and_date", return_value=[AdjustmentRequest(amount_hours=8.0)])
+    target_date = date(2023, 10, 1)
     with pytest.raises(HTTPException) as exc:
-        adjustment_service._validate_waiver_limit(db_session_mock, 1, date(2023, 10, 1), 5.0)
+        adjustment_service._validate_waiver_limit(db_session_mock, 1, target_date, 5.0)
     assert exc.value.status_code == 400
 
 def test_create_adjustment_request(db_session_mock, mocker):
@@ -224,39 +225,44 @@ def test_admin_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
 
 def test_upload_attachment_not_found(db_session_mock, mocker):
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get", return_value=None)
+    upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
     with pytest.raises(HTTPException) as exc:
-        adjustment_service.upload_attachment(db_session_mock, 1, UploadFile(filename="test.png", file=BytesIO(b"")), 1)
+        adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 404
 
 def test_upload_attachment_forbidden(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=2)
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get", return_value=request)
+    upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
     with pytest.raises(HTTPException) as exc:
-        adjustment_service.upload_attachment(db_session_mock, 1, UploadFile(filename="test.png", file=BytesIO(b"")), 1)
+        adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 403
 
 def test_upload_attachment_invalid_name(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.services.payroll_service.payroll_service.validate_period_open")
+    upload_file = UploadFile(filename="test", file=BytesIO(b""))
     with pytest.raises(HTTPException) as exc:
-        adjustment_service.upload_attachment(db_session_mock, 1, UploadFile(filename="test", file=BytesIO(b"")), 1)
+        adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
 def test_upload_attachment_invalid_ext(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.services.payroll_service.payroll_service.validate_period_open")
+    upload_file = UploadFile(filename="test.txt", file=BytesIO(b""))
     with pytest.raises(HTTPException) as exc:
-        adjustment_service.upload_attachment(db_session_mock, 1, UploadFile(filename="test.txt", file=BytesIO(b"")), 1)
+        adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
 def test_upload_attachment_invalid_content(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.repositories.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.services.payroll_service.payroll_service.validate_period_open")
+    upload_file = UploadFile(filename="test.png", file=BytesIO(b"invalid"))
     with pytest.raises(HTTPException) as exc:
-        adjustment_service.upload_attachment(db_session_mock, 1, UploadFile(filename="test.png", file=BytesIO(b"invalid")), 1)
+        adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
 def test_upload_attachment_success(db_session_mock, mocker):

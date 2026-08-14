@@ -71,10 +71,10 @@ def test_update_device_credential_not_found(db_session_mock: MagicMock, mocker: 
         "app.services.device_credential_service.device_credential_repository.get",
         return_value=None,
     )
-
+    payload = DeviceCredentialUpdate(name="New Name")
     with pytest.raises(HTTPException) as exc_info:
         device_credential_service.update(
-            db_session_mock, 99, DeviceCredentialUpdate(name="New Name"), current_user_id=1
+            db_session_mock, 99, payload, current_user_id=1
         )
     assert exc_info.value.status_code == 404
 

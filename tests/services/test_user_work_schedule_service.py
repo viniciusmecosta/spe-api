@@ -13,8 +13,10 @@ def test_check_payroll_closure_closed(db_session_mock, mocker):
     closure = MagicMock()
     closure.is_closed = True
     mocker.patch("app.repositories.payroll_repository.payroll_repository.get_by_month", return_value=closure)
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
+        user_work_schedule_service.check_payroll_closure(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 400
 
 def test_check_payroll_closure_year_span(db_session_mock, mocker):
@@ -70,8 +72,9 @@ def test_handle_schedule_overlap():
     user_work_schedule_service.handle_schedule_overlap(user, 2, date(2026, 9, 1), date(2026, 9, 30))
     user_work_schedule_service.handle_schedule_overlap(user, 1, date(2026, 10, 1), date(2026, 10, 31))
 
+    overlap_date = date(2026, 9, 15)
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.handle_schedule_overlap(user, 1, date(2026, 9, 15), None)
+        user_work_schedule_service.handle_schedule_overlap(user, 1, overlap_date, None)
     assert exc.value.status_code == 400
 
 def test_get_bulk_schedules(db_session_mock):
@@ -109,8 +112,10 @@ def test_get_bulk_schedule_not_found(db_session_mock):
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
 
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.get_bulk_schedule(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
+        user_work_schedule_service.get_bulk_schedule(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 404
 
 def test_bulk_add_schedules_success(db_session_mock, mocker):
@@ -227,18 +232,23 @@ def test_update_bulk_schedules_success(db_session_mock, mocker):
     db_session_mock.delete.assert_called_with(old_cfg_delete)
 
 def test_update_bulk_schedules_invalid_dates(db_session_mock):
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
+    empty_data = {}
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), {}, 99)
+        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, empty_data, 99)
     assert exc.value.status_code == 400
 
 def test_update_bulk_schedules_exceeds_duration(db_session_mock):
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 11, 30),
         "users": []
     }
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), bulk_data, 99)
+        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
@@ -248,13 +258,15 @@ def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
     db_session_mock.query.return_value = query_mock
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
 
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 9, 30),
         "users": [{"user_id": 999, "schedules": [{"day_of_week": 0}]}]
     }
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), bulk_data, 99)
+        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
@@ -268,6 +280,8 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap", side_effect=HTTPException(status_code=400))
 
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 9, 30),
@@ -276,7 +290,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
         ]
     }
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), bulk_data, 99)
+        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 def test_delete_bulk_schedules_success(db_session_mock, mocker):
@@ -298,6 +312,8 @@ def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
 
+    start_date = date(2026, 9, 1)
+    end_date = date(2026, 9, 30)
     with pytest.raises(HTTPException) as exc:
-        user_work_schedule_service.delete_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), 99)
+        user_work_schedule_service.delete_bulk_schedules(db_session_mock, start_date, end_date, 99)
     assert exc.value.status_code == 404

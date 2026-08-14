@@ -14,9 +14,35 @@ from app.services.audit_service import audit_service
 
 
 class UserWorkScheduleService:
-    def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
+    @staticmethod
+    def _parse_schedule_time(t_obj):
         from datetime import datetime, date, time
-        
+        if not t_obj:
+            return None
+        if isinstance(t_obj, time):
+            return datetime.combine(date.today(), t_obj)
+        if isinstance(t_obj, str):
+            try:
+                parts = t_obj.split(':')
+                if len(parts) >= 2:
+                    sec = int(parts[2]) if len(parts) > 2 else 0
+                    return datetime.combine(date.today(), time(int(parts[0]), int(parts[1]), sec))
+            except (ValueError, IndexError):
+                return None
+        return None
+
+    @classmethod
+    def _calculate_shift_seconds(cls, entry_time, exit_time) -> float:
+        dt_entry = cls._parse_schedule_time(entry_time)
+        dt_exit = cls._parse_schedule_time(exit_time)
+        if not dt_entry or not dt_exit:
+            return 0.0
+        diff = (dt_exit - dt_entry).total_seconds()
+        if diff < 0:
+            diff += 24 * 3600
+        return diff
+
+    def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
         sch.entry_1 = sch_data.get('entry_1', sch.entry_1)
         sch.exit_1 = sch_data.get('exit_1', sch.exit_1)
@@ -25,38 +51,10 @@ class UserWorkScheduleService:
         sch.valid_from = valid_from
         sch.valid_until = valid_until
 
-        def _to_datetime(t_obj):
-            if not t_obj:
-                return None
-            if isinstance(t_obj, str):
-                try:
-                    parts = t_obj.split(':')
-                    if len(parts) >= 2:
-                        return datetime.combine(date.today(), time(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 0))
-                except Exception:
-                    return None
-            if isinstance(t_obj, time):
-                return datetime.combine(date.today(), t_obj)
-            return None
-
-        total_seconds = 0.0
-        
-        dt_entry1 = _to_datetime(sch.entry_1)
-        dt_exit1 = _to_datetime(sch.exit_1)
-        if dt_entry1 and dt_exit1:
-            diff = (dt_exit1 - dt_entry1).total_seconds()
-            if diff < 0:
-                diff += 24 * 3600
-            total_seconds += diff
-            
-        dt_entry2 = _to_datetime(sch.entry_2)
-        dt_exit2 = _to_datetime(sch.exit_2)
-        if dt_entry2 and dt_exit2:
-            diff = (dt_exit2 - dt_entry2).total_seconds()
-            if diff < 0:
-                diff += 24 * 3600
-            total_seconds += diff
-
+        total_seconds = (
+            self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
+            self._calculate_shift_seconds(sch.entry_2, sch.exit_2)
+        )
         sch.daily_hours = round(total_seconds / 3600, 2)
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
@@ -110,6 +108,24 @@ class UserWorkScheduleService:
                     detail="Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
                 )
 
+    @staticmethod
+    def _extract_schedule_item(cfg: UserWorkScheduleConfig) -> dict:
+        return {
+            "day_of_week": cfg.day_of_week,
+            "daily_hours": cfg.daily_hours,
+            "entry_1": cfg.entry_1,
+            "exit_1": cfg.exit_1,
+            "entry_2": cfg.entry_2,
+            "exit_2": cfg.exit_2,
+        }
+
+    @staticmethod
+    def _format_users_schedule_list(users_dict: dict) -> list[dict]:
+        return [
+            {"user_id": user_id, "schedules": sch_list}
+            for user_id, sch_list in users_dict.items()
+        ]
+
     def get_bulk_schedules(self, db: Session, month: int, year: int) -> List[Dict[str, Any]]:
         start_of_month = date(year, month, 1)
         next_month = start_of_month.replace(day=28) + timedelta(days=4)
@@ -124,34 +140,18 @@ class UserWorkScheduleService:
         ).all()
 
         groups = defaultdict(lambda: defaultdict(list))
-        
         for cfg in configs:
             key = (cfg.valid_from, cfg.valid_until)
-            groups[key][cfg.user_id].append({
-                "day_of_week": cfg.day_of_week,
-                "daily_hours": cfg.daily_hours,
-                "entry_1": cfg.entry_1,
-                "exit_1": cfg.exit_1,
-                "entry_2": cfg.entry_2,
-                "exit_2": cfg.exit_2,
-            })
+            groups[key][cfg.user_id].append(self._extract_schedule_item(cfg))
 
-        result = []
-        for (v_from, v_until), users_dict in groups.items():
-            users_list = []
-            for user_id, sch_list in users_dict.items():
-                users_list.append({
-                    "user_id": user_id,
-                    "schedules": sch_list
-                })
-            
-            result.append({
+        return [
+            {
                 "valid_from": v_from,
                 "valid_until": v_until,
-                "users": users_list
-            })
-
-        return result
+                "users": self._format_users_schedule_list(users_dict)
+            }
+            for (v_from, v_until), users_dict in groups.items()
+        ]
 
     def get_bulk_schedule(self, db: Session, valid_from: date, valid_until: date) -> Dict[str, Any]:
         configs = db.query(UserWorkScheduleConfig).filter(
@@ -164,26 +164,12 @@ class UserWorkScheduleService:
 
         users_dict = defaultdict(list)
         for cfg in configs:
-            users_dict[cfg.user_id].append({
-                "day_of_week": cfg.day_of_week,
-                "daily_hours": cfg.daily_hours,
-                "entry_1": cfg.entry_1,
-                "exit_1": cfg.exit_1,
-                "entry_2": cfg.entry_2,
-                "exit_2": cfg.exit_2,
-            })
-
-        users_list = []
-        for user_id, sch_list in users_dict.items():
-            users_list.append({
-                "user_id": user_id,
-                "schedules": sch_list
-            })
+            users_dict[cfg.user_id].append(self._extract_schedule_item(cfg))
 
         return {
             "valid_from": valid_from,
             "valid_until": valid_until,
-            "users": users_list
+            "users": self._format_users_schedule_list(users_dict)
         }
 
     def _process_single_user_bulk_add(self, user, schedules_in, valid_from, valid_until, errors, new_schedules):
@@ -227,7 +213,7 @@ class UserWorkScheduleService:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
             self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors,
-                                               new_schedules)
+                                                new_schedules)
 
         if errors:
             raise HTTPException(status_code=400, detail=errors)
@@ -243,6 +229,15 @@ class UserWorkScheduleService:
         )
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
+
+    @staticmethod
+    def _build_incoming_schedule_map(users_input: list[dict]) -> dict:
+        incoming_map = {}
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            for sch_data_dict in user_data.get('schedules', []):
+                incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
+        return incoming_map
 
     def update_bulk_schedules(self, db: Session, old_valid_from: date, old_valid_until: date, bulk_data: dict, current_user_id: int):
         new_valid_from = bulk_data.get('valid_from')
@@ -263,13 +258,7 @@ class UserWorkScheduleService:
         ).all()
 
         existing_map = {(cfg.user_id, cfg.day_of_week): cfg for cfg in old_configs}
-        
-        users_input = bulk_data.get('users', [])
-        incoming_map = {}
-        for user_data in users_input:
-            uid = user_data.get('user_id')
-            for sch_data_dict in user_data.get('schedules', []):
-                incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
+        incoming_map = self._build_incoming_schedule_map(bulk_data.get('users', []))
 
         errors = []
         to_delete = []
