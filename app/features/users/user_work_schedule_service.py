@@ -223,8 +223,8 @@ class UserWorkScheduleService:
         for sch in new_schedules:
             db.add(sch)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="CREATE",
+        audit_service.log_change(
+            db, current_user_id, "CREATE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
             new_data={"valid_from": str(valid_from), "valid_until": str(valid_until),
                       "bulk_data": jsonable_encoder(bulk_data)}
@@ -328,8 +328,8 @@ class UserWorkScheduleService:
             self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
             db.add(new_sch)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE",
+        audit_service.log_change(
+            db, current_user_id, "UPDATE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
             old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
             new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until),
@@ -353,11 +353,10 @@ class UserWorkScheduleService:
         for cfg in configs:
             db.delete(cfg)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="DELETE",
+        audit_service.log_change(
+            db, current_user_id, "DELETE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count},
-            new_data=None
+            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
         )
 
         return {"message": f"{count} registros removidos com sucesso."}

@@ -21,7 +21,7 @@ def test_create_device_credential(db_session_mock: MagicMock, mocker: MagicMock)
         "app.features.devices.device_credential_service.device_credential_repository.create",
         return_value=mock_device,
     )
-    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log_change")
 
     payload = DeviceCredentialCreate(
         name="Device ESP",
@@ -56,7 +56,7 @@ def test_update_device_credential_success(db_session_mock: MagicMock, mocker: Ma
         "app.features.devices.device_credential_service.device_credential_repository.update",
         return_value=updated_device,
     )
-    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log_change")
 
     result = device_credential_service.update(
         db_session_mock, 1, DeviceCredentialUpdate(name="New Name"), current_user_id=1
@@ -87,7 +87,7 @@ def test_delete_device_credential_success(db_session_mock: MagicMock, mocker: Ma
     delete_mock = mocker.patch(
         "app.features.devices.device_credential_service.device_credential_repository.delete"
     )
-    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_credential_service.audit_service.log_change")
 
     result = device_credential_service.delete(db_session_mock, 1, current_user_id=1)
     assert result == {"status": "success"}

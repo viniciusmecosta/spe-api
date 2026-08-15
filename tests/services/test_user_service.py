@@ -114,7 +114,7 @@ def test_create_user(db_session_mock, mocker):
     mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
     mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     class DummyCreate:
         pass
@@ -165,9 +165,7 @@ def test_update_user_ok(db_session_mock, mocker):
     mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
     mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
-                 return_value=({"name": "Old"}, {"name": "New"}))
-    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     user_in = UserUpdate(name="New", password="123456")
     user_in.biometrics = []
@@ -176,7 +174,7 @@ def test_update_user_ok(db_session_mock, mocker):
     assert res.name == "New"
     assert res.password_hash == "hash"
     mock_log.assert_called_once()
-    assert mock_log.call_args[1]["new_data"] == {"name": "New", "password_changed": True}
+    assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
 
 def test_disable_user_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
@@ -187,7 +185,7 @@ def test_disable_user_not_found(db_session_mock, mocker):
 def test_disable_user_ok(db_session_mock, mocker):
     user = User(id=1, is_active=True)
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     res = user_service.disable_user(db_session_mock, 1, 99)
     assert res.is_active is False

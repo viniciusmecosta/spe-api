@@ -37,10 +37,7 @@ class CompanyService:
                 detail="Empresa já cadastrada. Utilize a atualização."
             )
         company = company_repository.create(db, obj_in)
-        audit_service.log(
-            db, user_id=current_user_id, action="CREATE", entity="COMPANY", entity_id=company.id,
-            new_data=obj_in.model_dump()
-        )
+        audit_service.log_change(db, current_user_id, "CREATE", new_model=company)
         return company
 
     def update_company(self, db: Session, obj_in: CompanyUpdate, current_user_id: int) -> Company:
@@ -51,30 +48,8 @@ class CompanyService:
                 detail="Nenhuma empresa cadastrada para atualizar."
             )
 
-        old_data = {
-            "name": existing.name,
-            "cnpj": existing.cnpj,
-            "address": existing.address,
-            "phone": existing.phone,
-            "logo_path": existing.logo_path
-        }
-
         company = company_repository.update(db, existing, obj_in)
-
-        new_data_raw = {
-            "name": company.name,
-            "cnpj": company.cnpj,
-            "address": company.address,
-            "phone": company.phone,
-            "logo_path": company.logo_path
-        }
-
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE", entity="COMPANY", entity_id=company.id,
-            old_data=actual_old, new_data=actual_new
-        )
+        audit_service.log_change(db, current_user_id, "UPDATE", old_model=existing, new_model=company)
         return company
 
     def upload_logo(self, db: Session, file: UploadFile, current_user_id: int) -> Company:
@@ -118,8 +93,8 @@ class CompanyService:
         db.commit()
         db.refresh(existing)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
+        audit_service.log_change(
+            db, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
             old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
         )
         return existing

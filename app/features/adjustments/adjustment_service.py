@@ -116,16 +116,7 @@ class AdjustmentService:
         adjustment = adjustment_repository.update_status(
             db, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
         )
-
-        audit_service.log(
-            db, user_id=manager_id, action="CREATE_WAIVER",
-            entity="ADJUSTMENT", entity_id=adjustment.id,
-            new_data={
-                "target_date": str(waiver_in.target_date),
-                "amount_hours": waiver_in.amount_hours,
-                "reason": waiver_in.reason_text
-            }
-        )
+        audit_service.log_change(db, manager_id, "CREATE_WAIVER", new_model=adjustment)
         return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
     def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int, reason: str) -> None:
@@ -140,21 +131,12 @@ class AdjustmentService:
                 detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
             )
 
-        old_data = {
-            "type": request.adjustment_type.value,
-            "target_date": str(request.target_date),
-            "status": request.status.value
-        }
-
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, admin_id)
 
         adjustment_repository.soft_delete(db, adjustment_id, admin_id)
-
-        audit_service.log(
-            db, user_id=admin_id, action="DELETE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data,
-            new_data={"reason": reason}
+        audit_service.log_change(
+            db, admin_id, "DELETE_ADJUSTMENT", old_model=request, new_data={"reason": reason}
         )
 
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
@@ -169,21 +151,12 @@ class AdjustmentService:
                 detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
             )
 
-        old_data = {
-            "type": request.adjustment_type.value,
-            "target_date": str(request.target_date),
-            "status": request.status.value
-        }
-
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, manager_id)
 
         adjustment_repository.soft_delete(db, adjustment_id, manager_id)
-
-        audit_service.log(
-            db, user_id=manager_id, action="DELETE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=adjustment_id, old_data=old_data,
-            new_data={"reason": reason}
+        audit_service.log_change(
+            db, manager_id, "DELETE_ADJUSTMENT", old_model=request, new_data={"reason": reason}
         )
 
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
@@ -232,9 +205,8 @@ class AdjustmentService:
             shutil.copyfileobj(file.file, buffer)
 
         attachment = adjustment_repository.create_attachment(db, request_id, safe_filename, file.content_type or "")
-
-        audit_service.log(
-            db, user_id=user_id, action="UPLOAD_ATTACHMENT",
+        audit_service.log_change(
+            db, user_id, "UPLOAD_ATTACHMENT",
             entity="ADJUSTMENT", entity_id=request_id,
             new_data={"file_name": safe_filename, "file_type": file.content_type}
         )
@@ -253,17 +225,11 @@ class AdjustmentService:
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             self._execute_adjustment_action(db, request, manager_id)
 
-        old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
-
-        old_data = {"status": old_status}
-        new_data_raw = {"status": updated.status.value, "comment": comment}
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        audit_service.log(
-            db, user_id=manager_id, action="APPROVE_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=request_id,
-            old_data=actual_old, new_data=actual_new
+        audit_service.log_change(
+            db, manager_id, "APPROVE_ADJUSTMENT",
+            old_model=request, new_model=updated,
+            new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
@@ -307,17 +273,11 @@ class AdjustmentService:
             raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
-        old_status = request.status.value
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
-
-        old_data = {"status": old_status}
-        new_data_raw = {"status": updated.status.value, "comment": comment}
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        audit_service.log(
-            db, user_id=manager_id, action="REJECT_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=request_id,
-            old_data=actual_old, new_data=actual_new
+        audit_service.log_change(
+            db, manager_id, "REJECT_ADJUSTMENT",
+            old_model=request, new_model=updated,
+            new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
@@ -386,14 +346,10 @@ class AdjustmentService:
                 self._execute_adjustment_action(db, request, manager_id)
 
         updated = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
-
-        actual_old, actual_new = audit_service.compute_diffs({"status": old_status.value},
-                                                             {"status": updated.status.value, "comment": comment})
-
-        audit_service.log(
-            db, user_id=manager_id, action="REVERT_ADJUSTMENT",
-            entity="ADJUSTMENT", entity_id=request_id,
-            old_data=actual_old, new_data=actual_new
+        audit_service.log_change(
+            db, manager_id, "REVERT_ADJUSTMENT",
+            old_model=request, new_model=updated,
+            new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
@@ -452,10 +408,10 @@ class AdjustmentService:
             user_ids=request_in.user_ids,
         )
 
-        audit_service.log(
+        audit_service.log_change(
             db,
-            user_id=current_user.id,
-            action="REPROCESS",
+            current_user.id,
+            "REPROCESS",
             entity="EXTRA_TIME",
             entity_id=0,
             new_data={

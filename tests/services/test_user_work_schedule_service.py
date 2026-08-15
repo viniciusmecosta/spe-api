@@ -126,7 +126,7 @@ def test_bulk_add_schedules_success(db_session_mock, mocker):
     user = User(id=1, name="Test User")
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     bulk_data = {
         "valid_from": date(2026, 9, 1),
@@ -203,7 +203,7 @@ def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
 
 def test_update_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     old_cfg_update = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
     old_cfg_delete = UserWorkScheduleConfig(id=11, user_id=1, day_of_week=2, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
@@ -298,7 +298,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
 
 def test_delete_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
     query_mock = MagicMock()

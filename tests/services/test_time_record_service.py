@@ -131,7 +131,7 @@ def test_register_entry_ntp_fallback(mock_get_trusted_time, mock_validate, db_se
     db_session_mock.add.assert_called_once_with(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(record)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
@@ -174,7 +174,7 @@ def test_register_exit_ntp_fallback(mock_get_trusted_time, mock_validate, db_ses
     db_session_mock.add.assert_called_once_with(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(record)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 def test_toggle_record_type_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
@@ -209,7 +209,7 @@ def test_toggle_record_type_success(db_session_mock, mock_time_record_repo, mock
     db_session_mock.flush.assert_called_once()
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(result)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 def test_toggle_record_type_success_employee(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -240,7 +240,7 @@ def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_payrol
     db_session_mock.add.assert_called_once_with(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(record)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 def test_create_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -276,7 +276,6 @@ def test_update_admin_record_with_changes(db_session_mock, mock_time_record_repo
                         original_record_id=5)
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordUpdate(record_type=RecordType.EXIT, record_datetime=dt_new, edit_justification="Fixed")
-    mock_audit_service.compute_diffs.return_value = ({"a": 1}, {"a": 2})
     result = time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2, "1.1.1.1", "Dev", "Plat")
     assert result.record_type == RecordType.EXIT
     assert result.record_datetime == dt_new
@@ -293,14 +292,13 @@ def test_update_admin_record_with_changes(db_session_mock, mock_time_record_repo
     db_session_mock.add.assert_any_call(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(result)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 def test_update_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     record = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY, record_datetime=dt)
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordUpdate(record_type=RecordType.EXIT, edit_justification="")
-    mock_audit_service.compute_diffs.return_value = ({}, {})
     result = time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert result.device_name == ""
 
@@ -320,7 +318,7 @@ def test_delete_admin_record_success(db_session_mock, mock_time_record_repo, moc
     time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
     mock_payroll_service.validate_period_open.assert_called_once_with(db_session_mock, dt.date())
     mock_time_record_repo.delete.assert_called_once_with(db_session_mock, 1, 2)
-    mock_audit_service.log.assert_called_once()
+    mock_audit_service.log_change.assert_called_once()
 
 def test_delete_admin_record_no_justification(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -328,8 +326,8 @@ def test_delete_admin_record_no_justification(db_session_mock, mock_time_record_
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordDeleteAdmin(edit_justification="")
     time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
-    mock_audit_service.log.assert_called_once()
-    call_args = mock_audit_service.log.call_args[1]
+    mock_audit_service.log_change.assert_called_once()
+    call_args = mock_audit_service.log_change.call_args[1]
     assert call_args["new_data"]["justification"] == ""
 
 

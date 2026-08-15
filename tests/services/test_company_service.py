@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException, UploadFile
 
 import pytest
+import app.features.printers.printer_models
 from app.features.companies.company_models import Company
 from app.features.companies.company_schemas import CompanyCreate, CompanyUpdate
 from app.features.companies.company_service import company_service
@@ -35,13 +36,12 @@ def test_create_company_success(mocker, db_session_mock):
     obj_in = CompanyCreate(name="New", cnpj="44555666000181", address="Addr2", phone="321")
     created_company = Company(id=2, name="New", cnpj="44555666000181", address="Addr2", phone="321")
     mocker.patch("app.features.companies.company_repository.company_repository.create", return_value=created_company)
-    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     result = company_service.create_company(db_session_mock, obj_in, 99)
     assert result == created_company
     mock_audit.assert_called_once_with(
-        db_session_mock, user_id=99, action="CREATE", entity="COMPANY", entity_id=2,
-        new_data=obj_in.model_dump()
+        db_session_mock, 99, "CREATE", new_model=created_company
     )
 
 def test_update_company_not_found(mocker, db_session_mock):
@@ -60,18 +60,14 @@ def test_update_company_success(mocker, db_session_mock):
     
     updated = Company(id=1, name="New", cnpj="11222333000181", address="A1", phone="P1", logo_path="L1")
     mocker.patch("app.features.companies.company_repository.company_repository.update", return_value=updated)
-
-    mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
-                 return_value=({"name": "Old"}, {"name": "New"}))
-    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     obj_in = CompanyUpdate(name="New")
     result = company_service.update_company(db_session_mock, obj_in, 100)
     
     assert result == updated
     mock_audit.assert_called_once_with(
-        db_session_mock, user_id=100, action="UPDATE", entity="COMPANY", entity_id=1,
-        old_data={"name": "Old"}, new_data={"name": "New"}
+        db_session_mock, 100, "UPDATE", old_model=existing, new_model=updated
     )
 
 def test_upload_logo_not_found(mocker, db_session_mock):
@@ -107,7 +103,7 @@ def test_upload_logo_success_no_old_logo(mocker, db_session_mock):
     mocker.patch("uuid.uuid4", return_value=MagicMock(hex="123456"))
     mock_open = mocker.patch("builtins.open", mocker.mock_open())
     mock_copy = mocker.patch("shutil.copyfileobj")
-    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_audit = mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     result = company_service.upload_logo(db_session_mock, file_mock, 50)
     
@@ -118,7 +114,7 @@ def test_upload_logo_success_no_old_logo(mocker, db_session_mock):
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(existing)
     mock_audit.assert_called_once_with(
-        db_session_mock, user_id=50, action="UPDATE_LOGO", entity="COMPANY", entity_id=1,
+        db_session_mock, 50, "UPDATE_LOGO", entity="COMPANY", entity_id=1,
         old_data={"logo_path": None}, new_data={"logo_path": "logo_123456.png"}
     )
 
@@ -146,7 +142,7 @@ def test_upload_logo_success_old_logo_exists_and_removed(mocker, db_session_mock
     
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("shutil.copyfileobj")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     mocker.patch("uuid.uuid4", return_value=MagicMock(hex="654321"))
     
     mock_exists = mocker.patch("os.path.exists", return_value=True)
@@ -168,7 +164,7 @@ def test_upload_logo_success_old_logo_remove_oserror(mocker, db_session_mock):
     
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("shutil.copyfileobj")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     mocker.patch("os.path.exists", return_value=True)
     mock_remove = mocker.patch("os.remove", side_effect=OSError("Cannot remove"))

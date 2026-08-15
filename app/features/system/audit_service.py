@@ -1,9 +1,65 @@
-from datetime import date
+from datetime import date, datetime, time
+from decimal import Decimal
+from enum import Enum
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.features.system.system_repository import audit_repository
 from app.features.system.system_schemas import AuditLogCreate
+
+
+def serialize_model(model: Any, visited: set[int] | None = None) -> dict[str, Any]:
+    if model is None:
+        return {}
+    if isinstance(model, dict):
+        return {
+            k: (v.isoformat() if isinstance(v, (datetime, date, time)) else v.value if isinstance(v, Enum) else float(v) if isinstance(v, Decimal) else v)
+            for k, v in model.items()
+        }
+    if visited is None:
+        visited = set()
+
+    obj_id = id(model)
+    if obj_id in visited:
+        return {}
+    visited.add(obj_id)
+
+    result: dict[str, Any] = {}
+    if hasattr(model, "__table__"):
+        for column in model.__table__.columns:
+            val = getattr(model, column.name, None)
+            if isinstance(val, (datetime, date, time)):
+                result[column.name] = val.isoformat()
+            elif isinstance(val, Enum):
+                result[column.name] = val.value
+            elif isinstance(val, Decimal):
+                result[column.name] = float(val)
+            elif isinstance(val, (bytes, bytearray)):
+                result[column.name] = "<binary>"
+            else:
+                result[column.name] = val
+
+    if hasattr(model, "__mapper__"):
+        for rel in model.__mapper__.relationships:
+            if rel.key in model.__dict__:
+                rel_val = getattr(model, rel.key, None)
+                if rel_val is None:
+                    continue
+                if isinstance(rel_val, (list, set, tuple)):
+                    serialized_items = [
+                        serialize_model(item, visited)
+                        for item in rel_val
+                        if item is not None
+                    ]
+                    serialized_items = [i for i in serialized_items if i]
+                    if serialized_items:
+                        result[rel.key] = serialized_items
+                else:
+                    serialized_obj = serialize_model(rel_val, visited)
+                    if serialized_obj:
+                        result[rel.key] = serialized_obj
+    return result
 
 
 class AuditService:
@@ -19,6 +75,58 @@ class AuditService:
             new_data=new_data
         )
         return audit_repository.create(db, obj_in)
+
+    def log_change(
+        self,
+        db: Session,
+        user_id: int | None,
+        action: str,
+        *,
+        entity: str | None = None,
+        entity_id: int | None = None,
+        old_model: Any | None = None,
+        new_model: Any | None = None,
+        old_data: dict | None = None,
+        new_data: dict | None = None,
+    ):
+        raw_old = serialize_model(old_model) if old_model is not None else (old_data or None)
+        raw_new = serialize_model(new_model) if new_model is not None else (new_data or None)
+
+        if entity is None:
+            if new_model is not None and hasattr(new_model, "__tablename__"):
+                entity = new_model.__tablename__.upper()
+            elif old_model is not None and hasattr(old_model, "__tablename__"):
+                entity = old_model.__tablename__.upper()
+            else:
+                entity = "SYSTEM"
+
+        if entity_id is None:
+            if new_model is not None and hasattr(new_model, "id"):
+                entity_id = getattr(new_model, "id", 0)
+            elif old_model is not None and hasattr(old_model, "id"):
+                entity_id = getattr(old_model, "id", 0)
+            else:
+                entity_id = 0
+
+        final_old = None
+        final_new = None
+
+        if raw_old is not None and raw_new is not None:
+            final_old, final_new = self.compute_diffs(raw_old, raw_new)
+        elif raw_old is not None:
+            final_old = raw_old
+        elif raw_new is not None:
+            final_new = raw_new
+
+        return self.log(
+            db,
+            user_id=user_id,
+            action=action,
+            entity=entity,
+            entity_id=entity_id,
+            old_data=final_old,
+            new_data=final_new,
+        )
 
     def compute_diffs(self, old_data: dict, new_data: dict) -> tuple[dict, dict]:
         actual_old = {}

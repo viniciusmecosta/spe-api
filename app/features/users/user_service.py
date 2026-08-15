@@ -142,15 +142,7 @@ class UserService:
         db.commit()
         db.refresh(db_user)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="CREATE",
-            entity="USER", entity_id=db_user.id,
-            new_data={
-                "username": db_user.username,
-                "role": db_user.role,
-                "name": db_user.name
-            }
-        )
+        audit_service.log_change(db, current_user_id, "CREATE", new_model=db_user)
         return db_user
 
     def _get_tracked_fields(self) -> list[str]:
@@ -204,17 +196,10 @@ class UserService:
         db.commit()
         db.refresh(user)
 
-        new_data_raw = self._capture_user_state(user)
-
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        if password_changed:
-            actual_new["password_changed"] = True
-
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE",
-            entity="USER", entity_id=user.id,
-            old_data=actual_old, new_data=actual_new
+        audit_service.log_change(
+            db, current_user_id, "UPDATE",
+            old_model=old_data, new_model=user,
+            new_data={"password_changed": True} if password_changed else None
         )
         return user
 
@@ -230,10 +215,9 @@ class UserService:
         db.commit()
         db.refresh(user)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="DISABLE",
-            entity="USER", entity_id=user.id,
-            old_data=old_data, new_data={"is_active": False}
+        audit_service.log_change(
+            db, current_user_id, "DISABLE",
+            old_model=old_data, new_model=user
         )
         return user
 

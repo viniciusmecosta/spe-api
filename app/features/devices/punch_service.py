@@ -45,10 +45,10 @@ class PunchService:
                 db.commit()
                 db.refresh(new_record)
 
-                audit_service.log(
+                audit_service.log_change(
                     db,
-                    user_id=user.id,
-                    action="NTP_FALLBACK",
+                    user.id,
+                    "NTP_FALLBACK",
                     entity="TIME_RECORD",
                     entity_id=new_record.id,
                     new_data={"justification": new_record.edit_justification}

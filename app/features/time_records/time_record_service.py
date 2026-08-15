@@ -101,8 +101,8 @@ class TimeRecordService:
             db.add(record)
             db.commit()
             db.refresh(record)
-            audit_service.log(db, user_id=user_id, action="NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
-                              new_data={"justification": record.edit_justification})
+            audit_service.log_change(db, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+                                     new_data={"justification": record.edit_justification})
         return record
 
     def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
@@ -120,8 +120,8 @@ class TimeRecordService:
             db.add(record)
             db.commit()
             db.refresh(record)
-            audit_service.log(db, user_id=user_id, action="NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
-                              new_data={"justification": record.edit_justification})
+            audit_service.log_change(db, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+                                     new_data={"justification": record.edit_justification})
         return record
 
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
@@ -154,9 +154,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(new_record)
-        audit_service.log(db, user_id=current_user.id, action="TOGGLE_RECORD", entity="TIME_RECORD",
-                          entity_id=new_record.id, old_data={"record_type": previous_type.value},
-                          new_data={"record_type": new_type.value})
+        audit_service.log_change(db, current_user.id, "TOGGLE_RECORD", old_model=record, new_model=new_record)
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int, ip_address: str,
@@ -175,11 +173,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(record)
-        justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
-        audit_service.log(db, user_id=manager_id, action="CREATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record.id,
-                          new_data={"record_time": str(obj_in.record_datetime), "record_type": obj_in.record_type.value,
-                                    "justification": justification_val})
+        audit_service.log_change(db, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
         return record
 
     def _handle_admin_update_invalidations(self, db: Session, record: TimeRecord, obj_in: TimeRecordUpdate,
@@ -192,14 +186,6 @@ class TimeRecordService:
             new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
             if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
                 self._invalidate_extra_time_requests(db, record.user_id, new_date)
-
-    def _log_admin_update_audit(self, db: Session, manager_id: int, new_record: TimeRecord, old_data: dict):
-        justification_val = new_record.edit_justification if new_record.edit_justification else ""
-        new_data_raw = {"record_type": new_record.record_type.value, "record_time": str(new_record.record_datetime),
-                        "justification": justification_val}
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-        audit_service.log(db, user_id=manager_id, action="UPDATE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=new_record.id, old_data=actual_old, new_data=actual_new)
 
     def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int,
                             ip_address: str | None = None, device_name: str | None = None,
@@ -218,9 +204,6 @@ class TimeRecordService:
         new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
         self._handle_admin_update_invalidations(db, record, obj_in, old_date, new_date, new_record_type)
 
-        old_data = {"record_type": record.record_type.value, "record_time": str(record.record_datetime),
-                    "justification": record.edit_justification if record.edit_justification else ""}
-
         record.is_ignored = True
         new_record = TimeRecord(user_id=record.user_id, record_type=new_record_type,
                                 record_datetime=new_record_datetime, ip_address=ip_address,
@@ -232,7 +215,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(new_record)
-        self._log_admin_update_audit(db, manager_id, new_record, old_data)
+        audit_service.log_change(db, manager_id, "UPDATE_RECORD_ADMIN", old_model=record, new_model=new_record)
         return new_record
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
@@ -244,10 +227,8 @@ class TimeRecordService:
             if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
                 self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
-        old_data = {"record_type": record.record_type.value, "record_time": str(record.record_datetime)}
         time_record_repository.delete(db, record_id, manager_id)
-        audit_service.log(db, user_id=manager_id, action="DELETE_RECORD_ADMIN", entity="TIME_RECORD",
-                          entity_id=record_id, old_data=old_data, new_data={"justification": justification_val})
+        audit_service.log_change(db, manager_id, "DELETE_RECORD_ADMIN", old_model=record, new_data={"justification": justification_val})
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
                      biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:

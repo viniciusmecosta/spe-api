@@ -50,7 +50,7 @@ def test_process_biometric_punch_success_no_ntp_with_request(db_session_mock, mo
                  return_value=(datetime(2023, 10, 1), False))
     mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
                  return_value=TimeRecord(id=1))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     req = MagicMock()
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1, request=req)
@@ -65,7 +65,7 @@ def test_process_biometric_punch_success_no_ntp_no_request(db_session_mock, mock
                  return_value=(datetime(2023, 10, 1), False))
     mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
                  return_value=TimeRecord(id=1))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1)
     assert success

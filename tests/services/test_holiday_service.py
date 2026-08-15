@@ -14,7 +14,7 @@ def test_create_holiday_success(db_session_mock: MagicMock, mocker: MagicMock) -
     mocker.patch("app.features.holidays.holiday_service.holiday_repository.get_by_date", return_value=None)
     mock_holiday = Holiday(id=1, name="Ano Novo", date=date(2026, 1, 1))
     mocker.patch("app.features.holidays.holiday_service.holiday_repository.create", return_value=mock_holiday)
-    audit_mock = mocker.patch("app.features.holidays.holiday_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.holidays.holiday_service.audit_service.log_change")
 
     payload = HolidayCreate(name="Ano Novo", date=date(2026, 1, 1))
     result = holiday_service.create_holiday(db_session_mock, payload, current_user_id=1)
@@ -54,7 +54,7 @@ def test_delete_holiday_exists(db_session_mock: MagicMock, mocker: MagicMock) ->
     mocker.patch("app.features.holidays.holiday_service.holiday_repository.get_by_id", return_value=mock_holiday)
     mocker.patch("app.features.holidays.holiday_service.payroll_service.validate_period_open")
     delete_mock = mocker.patch("app.features.holidays.holiday_service.holiday_repository.delete")
-    audit_mock = mocker.patch("app.features.holidays.holiday_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.holidays.holiday_service.audit_service.log_change")
 
     result = holiday_service.delete_holiday(db_session_mock, holiday_id=1, current_user_id=1)
     assert result == {"status": "success"}

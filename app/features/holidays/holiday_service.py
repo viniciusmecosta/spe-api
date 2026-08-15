@@ -23,14 +23,7 @@ class HolidayService:
             )
 
         holiday = holiday_repository.create(db, holiday_in)
-        audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="CREATE",
-            entity="HOLIDAY",
-            entity_id=holiday.id,
-            new_data={"date": str(holiday.date), "name": holiday.name},
-        )
+        audit_service.log_change(db, current_user_id, "CREATE", new_model=holiday)
         return holiday
 
     def get_all_holidays(self, db: Session) -> list[Holiday]:
@@ -45,16 +38,8 @@ class HolidayService:
         holiday = holiday_repository.get_by_id(db, holiday_id)
         if holiday:
             payroll_service.validate_period_open(db, holiday.date)
-            old_data = {"date": str(holiday.date), "name": holiday.name}
             holiday_repository.delete(db, holiday_id)
-            audit_service.log(
-                db,
-                user_id=current_user_id,
-                action="DELETE",
-                entity="HOLIDAY",
-                entity_id=holiday_id,
-                old_data=old_data,
-            )
+            audit_service.log_change(db, current_user_id, "DELETE", old_model=holiday)
         return {"status": "success"}
 
 

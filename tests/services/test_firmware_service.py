@@ -48,7 +48,7 @@ def test_upload_firmware_success(mock_copy, mock_file, mock_time, mock_audit, mo
         
     assert result == mock_fw
     mock_repo.create.assert_called_once()
-    mock_audit.log.assert_called_once()
+    mock_audit.log_change.assert_called_once()
     mock_copy.assert_called_once_with(mock_upload_file.file, mock_file())
 
 def test_upload_firmware_invalid_version(firmware_service, db_session_mock, mock_upload_file):
@@ -128,14 +128,13 @@ def test_update_firmware_file_success(mock_copy, mock_file, mock_time, mock_audi
     mock_repo.get_by_version.return_value = old_fw
     new_fw = Firmware(id=2, version="v1.0.0", file_path="new/path")
     mock_repo.create.return_value = new_fw
-    mock_audit.compute_diffs.return_value = ({"file_path": "old/path"}, {"file_path": "new/path"})
     
     with patch("os.path.relpath", return_value="new/path"):
         result = firmware_service.update_firmware_file(db_session_mock, "v1.0.0", mock_upload_file, 1)
         
     assert result == new_fw
     mock_repo.create.assert_called_once()
-    mock_audit.log.assert_called_once()
+    mock_audit.log_change.assert_called_once()
     mock_copy.assert_called_once_with(mock_upload_file.file, mock_file())
 
 
