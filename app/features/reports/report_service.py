@@ -71,6 +71,7 @@ class ReportService:
         for rec in day_records:
             punch_data = {
                 "id": rec.id,
+                "short_id": rec.short_id,
                 "time": rec.record_datetime.strftime("%H:%M"),
                 "record_type": rec.record_type.value,
             }
@@ -165,6 +166,7 @@ class ReportService:
         for rec in day_records:
             detailed_punches.append(PunchDetail(
                 id=rec.id,
+                short_id=rec.short_id,
                 time=rec.record_datetime.strftime("%H:%M:%S"),
                 record_type=rec.record_type.value,
                 ip_address=rec.ip_address,

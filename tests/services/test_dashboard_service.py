@@ -69,11 +69,13 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, moc
 
     record1 = MagicMock()
     record1.id = 1
+    record1.short_id = "short1"
     record1.record_datetime = datetime(2026, 7, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     record1.record_type = RecordType.ENTRY
 
     record2 = MagicMock()
     record2.id = 2
+    record2.short_id = "short2"
     record2.record_datetime = datetime(2026, 7, 15, 12, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     record2.record_type = RecordType.EXIT
 
@@ -185,6 +187,7 @@ def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time
 
     record1 = MagicMock()
     record1.id = 1
+    record1.short_id = "short1"
     record1.record_datetime = datetime(2026, 7, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     record1.record_type = RecordType.ENTRY
 
@@ -267,6 +270,7 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
 
     rec1 = MagicMock()
     rec1.id = 10
+    rec1.short_id = "short10"
     rec1.record_datetime = datetime(2026, 7, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     rec1.record_type = RecordType.ENTRY
 
