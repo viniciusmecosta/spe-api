@@ -1,14 +1,18 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: spe_backend
     ports:
       - "8000:8000"
     volumes:
       - .:/app
+      - /app/.venv
       - ./uploads:/app/uploads
+      - ./logs:/app/logs
     environment:
-      - PROJECT_NAME=${PROJECT_NAME}
-      - TIMEZONE=${TIMEZONE}
-      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI}
+      - PROJECT_NAME=${PROJECT_NAME:-SPE}
+      - TIMEZONE=${TIMEZONE:-America/Sao_Paulo}
+      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI:-sqlite:///spe.db}
     restart: unless-stopped

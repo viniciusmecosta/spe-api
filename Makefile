@@ -2,8 +2,7 @@
 
 setup:
 	pip install uv
-	uv venv
-	uv pip install -r requirements.txt
+	uv sync
 
 run:
 	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
