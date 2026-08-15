@@ -4,9 +4,9 @@ from alembic import context
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
+import app.domain.models
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.models import *
 
 config = context.config
 

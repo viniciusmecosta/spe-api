@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta, time
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
@@ -286,8 +287,9 @@ class TimeRecordService:
                 }
                 background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
-    def get_receipt_data(self, db: Session, short_id: str, current_user: User) -> dict:
+    def get_receipt_data(self, db: Session, short_id: str, current_user: User):
         from app.repositories.company_repository import company_repository
+        from app.schemas.time_record import ReceiptResponse, ReceiptTimelineItem
         from app.services.hashid_service import hashid_service
 
         record_id = hashid_service.decode(short_id)
@@ -304,29 +306,34 @@ class TimeRecordService:
         company = company_repository.get_current(db)
         timeline = self.get_record_timeline(db, record.id)
 
-        return {
-            "short_id": short_id,
-            "record_id": record.id,
-            "company_name": company.name if company else "N/A",
-            "company_cnpj": company.cnpj if company else "N/A",
-            "employee_name": record.user.name,
-            "employee_cpf": record.user.cpf,
-            "employee_pis": record.user.pis,
-            "record_datetime": record.record_datetime,
-            "device_name": record.device_name or "Desconhecido",
-            "record_type": record.record_type,
-            "timeline": [
-                {
-                    "action": t.action,
-                    "timestamp": t.timestamp,
-                    "user_name": t.user.name if t.user else None,
-                    "old_data": t.old_data,
-                    "new_data": t.new_data
-                } for t in timeline
-            ] if hasattr(timeline[0], 'action') else []
-        }
+        timeline_items: list[ReceiptTimelineItem] = []
+        if timeline and hasattr(timeline[0], "action"):
+            for t in timeline:
+                timeline_items.append(
+                    ReceiptTimelineItem(
+                        action=t.action,
+                        timestamp=t.timestamp,
+                        user_name=t.user.name if t.user else None,
+                        old_data=t.old_data,
+                        new_data=t.new_data,
+                    )
+                )
 
-    def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> bytes:
+        return ReceiptResponse(
+            short_id=short_id,
+            record_id=record.id,
+            company_name=company.name if company else "N/A",
+            company_cnpj=company.cnpj if company else "N/A",
+            employee_name=record.user.name,
+            employee_cpf=record.user.cpf,
+            employee_pis=record.user.pis,
+            record_datetime=record.record_datetime,
+            device_name=record.device_name or "Desconhecido",
+            record_type=record.record_type,
+            timeline=timeline_items,
+        )
+
+    def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> tuple[bytes, str]:
         from app.repositories.company_repository import company_repository
         from app.services.hashid_service import hashid_service
         from app.services.receipt_service import receipt_service
@@ -349,11 +356,13 @@ class TimeRecordService:
         time_str = record.record_datetime.strftime("%H:%M:%S")
 
         def mask_cnpj(c: str) -> str:
-            if not c or len(c) != 14: return c
+            if not c or len(c) != 14:
+                return c
             return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
 
         def mask_cpf(c: str) -> str:
-            if not c or len(c) != 11: return c
+            if not c or len(c) != 11:
+                return c
             return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
 
         data = {
@@ -367,9 +376,12 @@ class TimeRecordService:
             "record_type_str": record_type_str,
             "device_name": record.device_name or "Desconhecido",
             "nsr": record.id,
-            "short_id": short_id.upper()
+            "short_id": short_id.upper(),
         }
 
-        return receipt_service.generate_pdf_receipt(data)
+        pdf_bytes = receipt_service.generate_pdf_receipt(data)
+        filename = f"{record.id}.pdf"
+        return pdf_bytes, filename
+
 
 time_record_service = TimeRecordService()

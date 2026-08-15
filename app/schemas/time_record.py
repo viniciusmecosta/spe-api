@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -50,4 +51,28 @@ class TimeRecordResponse(TimeRecordBase):
 
 class TimeRecordTimelineResponse(TimeRecordResponse):
     is_ignored: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReceiptTimelineItem(BaseModel):
+    action: str | None = None
+    timestamp: datetime | str | None = None
+    user_name: str | None = None
+    old_data: Any | None = None
+    new_data: Any | None = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ReceiptResponse(BaseModel):
+    short_id: str
+    record_id: int
+    company_name: str
+    company_cnpj: str
+    employee_name: str
+    employee_cpf: str | None = None
+    employee_pis: str | None = None
+    record_datetime: datetime
+    device_name: str
+    record_type: RecordType
+    timeline: list[ReceiptTimelineItem] = []
     model_config = ConfigDict(from_attributes=True)

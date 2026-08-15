@@ -1,15 +1,15 @@
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
+import pytest
 from app.api import deps
 from app.domain.models.enums import RecordType, UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.main import app
-from app.schemas.time_record import TimeRecordResponse, TimeRecordTimelineResponse
+from app.schemas.time_record import TimeRecordTimelineResponse
 
 
 @pytest.fixture
@@ -190,6 +190,7 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
         record_datetime=now,
         created_at=now,
         is_ignored=False,
+        short_id="test_id"
     )
     mocker.patch(
         "app.api.v1.time_records.time_record_service.get_record_timeline",

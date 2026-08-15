@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import Annotated
 
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
+from sqlalchemy.orm import Session
+
 from app.api import deps
 from app.api.openapi_responses import (
     BAD_REQUEST_RESPONSE,
@@ -12,6 +15,7 @@ from app.api.openapi_responses import (
 from app.core.security import get_client_device_name, get_client_ip
 from app.domain.models.user import User
 from app.schemas.time_record import (
+    ReceiptResponse,
     SuccessResponse,
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
@@ -21,8 +25,6 @@ from app.schemas.time_record import (
 )
 from app.services.time_record_service import time_record_service
 from app.services.tolerance_cron_service import tolerance_cron_service
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy.orm import Session
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -171,28 +173,31 @@ def trigger_tolerance_cron() -> SuccessResponse:
     )
 
 
-@router.get("/receipt/{short_id}")
+@router.get(
+    "/receipt/{short_id}",
+    responses={**NOT_FOUND_RESPONSE, **FORBIDDEN_RESPONSE},
+)
 def get_receipt(
     short_id: str,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user)
-):
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+) -> ReceiptResponse:
     return time_record_service.get_receipt_data(db, short_id, current_user)
 
 
-@router.get("/receipt/{short_id}/pdf", response_class=Response)
+@router.get(
+    "/receipt/{short_id}/pdf",
+    response_class=Response,
+    responses={**NOT_FOUND_RESPONSE, **FORBIDDEN_RESPONSE},
+)
 def get_receipt_pdf(
     short_id: str,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user)
-):
-    from app.services.hashid_service import hashid_service
-    nsr = hashid_service.decode(short_id)
-    if not nsr:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
-        
-    pdf_bytes = time_record_service.get_receipt_pdf(db, short_id, current_user)
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+) -> Response:
+    pdf_bytes, filename = time_record_service.get_receipt_pdf(db, short_id, current_user)
     headers = {
-        "Content-Disposition": f'attachment; filename="{nsr}.pdf"'
+        "Content-Disposition": f'attachment; filename="{filename}"'
     }
     return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+

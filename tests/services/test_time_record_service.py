@@ -1,10 +1,10 @@
-import pytest
-from datetime import datetime, timedelta, date, time
-from fastapi import HTTPException, Request, status
-from sqlalchemy.orm import Session
+from datetime import datetime, timedelta, date
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException, Request, status
+
+import pytest
 from app.core.config import settings
 from app.domain.models.adjustment import AdjustmentRequest
 from app.domain.models.enums import RecordType, UserRole
@@ -549,3 +549,75 @@ def test_delete_admin_record_invalidates(mock_invalidate, mock_is_first, db_sess
     time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
     mock_is_first.assert_called_with(db_session_mock, 1, dt.date(), record_id=1)
     mock_invalidate.assert_called_once_with(db_session_mock, 1, dt.date())
+
+
+def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
+    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=None)
+    user = User(id=1, role=UserRole.EMPLOYEE)
+    with pytest.raises(HTTPException) as exc_info:
+        time_record_service.get_receipt_data(db_session_mock, "invalid", user)
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Invalid receipt ID"
+
+
+def test_get_receipt_data_record_not_found(db_session_mock, mocker):
+    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=None)
+    user = User(id=1, role=UserRole.EMPLOYEE)
+    with pytest.raises(HTTPException) as exc_info:
+        time_record_service.get_receipt_data(db_session_mock, "valid", user)
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Record not found"
+
+
+def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
+    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    mock_record = TimeRecord(id=123, user_id=2, user=User(id=2, name="Other", cpf="111", pis="222"),
+                             record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)), record_type=RecordType.ENTRY)
+    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
+    user = User(id=1, role=UserRole.EMPLOYEE)
+    with pytest.raises(HTTPException) as exc_info:
+        time_record_service.get_receipt_data(db_session_mock, "valid", user)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Not allowed to view this receipt"
+
+
+def test_get_receipt_data_success(db_session_mock, mocker):
+    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.EMPLOYEE)
+    mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
+                             record_type=RecordType.ENTRY, device_name="Device 1")
+    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=None)
+    mocker.patch.object(time_record_service, "get_record_timeline", return_value=[])
+
+    result = time_record_service.get_receipt_data(db_session_mock, "valid", user)
+    assert result.short_id == "valid"
+    assert result.record_id == 123
+    assert result.employee_name == "John"
+
+
+def test_get_receipt_pdf_success(db_session_mock, mocker):
+    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.MANAGER)
+    mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
+                             record_type=RecordType.ENTRY, device_name="Device 1")
+    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=None)
+    mocker.patch("app.services.receipt_service.receipt_service.generate_pdf_receipt", return_value=b"%PDF-1.4...")
+
+    pdf_bytes, filename = time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
+    assert pdf_bytes == b"%PDF-1.4..."
+    assert filename == "123.pdf"
+
+
+def test_trigger_auto_print_disabled(db_session_mock, mocker):
+    mock_company = MagicMock()
+    mock_company.auto_print_receipt = False
+    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=mock_company)
+    mock_bg = MagicMock()
+
+    user = User(id=1, name="John", auto_print_receipt=None)
+    record = TimeRecord(id=1, user=user)
+    time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
+    mock_bg.add_task.assert_not_called()
