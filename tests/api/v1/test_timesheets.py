@@ -1,12 +1,12 @@
 import io
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import UserRole
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -31,7 +31,7 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 def test_get_official_timesheet_user_pdf_success(client: TestClient, mocker: MagicMock) -> None:
     fake_buffer = io.BytesIO(b"%PDF-1.4 fake pdf")
     mocker.patch(
-        "app.api.v1.timesheets.timesheet_service.generate_user_timesheet_pdf",
+        "app.features.timesheets.timesheet_router.timesheet_service.generate_user_timesheet_pdf",
         return_value=fake_buffer,
     )
 
@@ -50,7 +50,7 @@ def test_get_official_timesheet_user_pdf_future_date(client: TestClient) -> None
 def test_get_official_timesheet_all_pdf_success(client: TestClient, mocker: MagicMock) -> None:
     fake_zip = io.BytesIO(b"PK fake zip")
     mocker.patch(
-        "app.api.v1.timesheets.timesheet_service.generate_all_timesheets_pdf_zip",
+        "app.features.timesheets.timesheet_router.timesheet_service.generate_all_timesheets_pdf_zip",
         return_value=fake_zip,
     )
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.v1 import api_router as api_v1_router
+from app.router import api_router as api_v1_router
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan

@@ -1,11 +1,11 @@
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import UserRole
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -29,7 +29,7 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.backup.routine_orchestrator.send_manual_backup_email",
+        "app.features.system.system_router.routine_orchestrator.send_manual_backup_email",
         return_value=True,
     )
 
@@ -42,7 +42,7 @@ def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) ->
 
 def test_trigger_manual_backup_failure(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.backup.routine_orchestrator.send_manual_backup_email",
+        "app.features.system.system_router.routine_orchestrator.send_manual_backup_email",
         return_value=False,
     )
 

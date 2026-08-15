@@ -1,11 +1,11 @@
-import pytest
 from datetime import date, datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from app.services.daily_report_service import DailyReportService
-from app.domain.models.enums import RecordType
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User
+import pytest
+from app.domain.enums import RecordType
+from app.features.reports.daily_report_service import DailyReportService
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.users.user_models import User
 
 
 @pytest.fixture
@@ -13,8 +13,8 @@ def service():
     return DailyReportService()
 
 
-@patch("app.services.daily_report_service.anomaly_service")
-@patch("app.services.daily_report_service.template_service")
+@patch("app.features.reports.daily_report_service.anomaly_service")
+@patch("app.features.reports.daily_report_service.template_service")
 def test_generate_daily_report_html_with_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
     target_date = date(2026, 7, 24)
     
@@ -74,8 +74,8 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
     assert args[4] == ["<strong>Jane Smith</strong>: Missing Exit"]
 
 
-@patch("app.services.daily_report_service.anomaly_service")
-@patch("app.services.daily_report_service.template_service")
+@patch("app.features.reports.daily_report_service.anomaly_service")
+@patch("app.features.reports.daily_report_service.template_service")
 def test_generate_daily_report_html_no_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
     target_date = date(2026, 7, 24)
     

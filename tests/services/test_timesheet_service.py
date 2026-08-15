@@ -1,16 +1,18 @@
 import io
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import Paragraph, Table
-import pytest
 from datetime import date, time
 from unittest.mock import MagicMock
+
 from fastapi import HTTPException
-from app.services.timesheet_service import timesheet_service
-from app.domain.models.user import User, UserWorkScheduleConfig
-from app.domain.models.enums import UserRole
-from app.domain.models.company import Company
-from app.domain.models.holiday import Holiday
-from app.services.time_calculation_service import PeriodTimeResult, DailyTimeResult
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+import pytest
+from app.domain.enums import UserRole
+from app.features.companies.company_models import Company
+from app.features.holidays.holiday_models import Holiday
+from app.features.timesheets.timesheet_service import timesheet_service
+from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
+
 
 def test_format_duration():
     assert timesheet_service._format_duration(3600) == '01:00'
@@ -68,7 +70,7 @@ def test_build_daily_records_table():
     assert t is not None
 
 def test_generate_user_timesheet_pdf_not_found(db_session_mock, mocker):
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=None)
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=None)
     with pytest.raises(HTTPException) as excinfo:
         timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert excinfo.value.status_code == 404
@@ -87,13 +89,14 @@ def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_company.address = 'Test Addr'
     mock_company.phone = '11987654321'
     mock_company.logo_path = None
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -131,7 +134,7 @@ def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.services.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
+    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
     mock_pdf.return_value = io.BytesIO(b'dummy pdf content')
     buffer = timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
     assert isinstance(buffer, io.BytesIO)
@@ -145,7 +148,7 @@ def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker)
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.services.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
+    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
     mock_pdf.side_effect = ValueError('Test error')
     buffer = timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
     assert isinstance(buffer, io.BytesIO)
@@ -175,15 +178,16 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     mock_company.address = 'Test Addr'
     mock_company.phone = '11987654321'
     mock_company.logo_path = 'logo.png'
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.services.timesheet_service.Image', side_effect=DummyLogo)
+    mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=DummyLogo)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -220,14 +224,15 @@ def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker
     mock_company.address = 'Test Addr'
     mock_company.phone = '11987654321'
     mock_company.logo_path = 'logo.png'
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=False)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -264,15 +269,16 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
     mock_company.address = 'Test Addr'
     mock_company.phone = '11987654321'
     mock_company.logo_path = 'logo.png'
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.services.timesheet_service.Image', side_effect=OSError('File not found'))
+    mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=OSError('File not found'))
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -310,13 +316,14 @@ def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_company.address = 'Av Paulista 1000'
     mock_company.phone = '11987654321'
     mock_company.logo_path = None
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -339,7 +346,8 @@ def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
 
     def fake_build(story, onFirstPage=None, onLaterPages=None):
         captured_story.extend(story)
-    mocker.patch('app.services.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
+
+    mocker.patch('app.features.timesheets.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
     buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert len(captured_story) > 10, 'A story deve conter múltiplos elementos (Parágrafos e Tabelas)'
     paragraphs = [item for item in captured_story if isinstance(item, Paragraph)]
@@ -467,14 +475,15 @@ def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     mock_company.phone = '11987654321'
     mock_company.logo_path = None
 
-    mocker.patch('app.repositories.user_repository.user_repository.get', return_value=mock_user)
-    mocker.patch('app.repositories.company_repository.company_repository.get_current', return_value=mock_company)
-    mocker.patch('app.repositories.time_record_repository.time_record_repository.get_by_range', return_value=[])
-    mocker.patch('app.repositories.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range',
+                 return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
 
-    mock_calc = mocker.patch('app.services.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -498,7 +507,7 @@ def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     assert isinstance(buffer, io.BytesIO)
 
 def test_draw_company_header_and_notes(mocker):
-    from app.domain.models.company import Company
+    from app.features.companies.company_models import Company
     mock_company = MagicMock(spec=Company)
     mock_company.name = 'Test Company'
     mock_company.cnpj = '12345678901234'

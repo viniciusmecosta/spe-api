@@ -1,8 +1,8 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from app.services.receipt_service import ReceiptService
-from app.domain.models.printer import Printer
+from app.features.printers.printer_models import Printer
+from app.features.time_records.receipt_service import ReceiptService
 
 
 @pytest.fixture
@@ -26,21 +26,21 @@ def receipt_data():
 
 
 def test_get_escpos_printer_network(mock_printer):
-    with patch('app.services.receipt_service.Network') as mock_network:
+    with patch('app.features.time_records.receipt_service.Network') as mock_network:
         ReceiptService._get_escpos_printer(mock_printer)
         mock_network.assert_called_once_with("192.168.1.100")
 
 
 def test_get_escpos_printer_file(mock_printer):
     mock_printer.address = "/dev/usb/lp0"
-    with patch('app.services.receipt_service.File') as mock_file:
+    with patch('app.features.time_records.receipt_service.File') as mock_file:
         ReceiptService._get_escpos_printer(mock_printer)
         mock_file.assert_called_once_with("/dev/usb/lp0")
 
 
 @pytest.mark.asyncio
 async def test_print_receipt_async(mock_printer, receipt_data):
-    with patch('app.services.receipt_service.ReceiptService._print_escpos_receipt') as mock_print:
+    with patch('app.features.time_records.receipt_service.ReceiptService._print_escpos_receipt') as mock_print:
         await ReceiptService.print_receipt_async(mock_printer, receipt_data)
         mock_print.assert_called_once_with(mock_printer, receipt_data)
 

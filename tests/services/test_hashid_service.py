@@ -1,5 +1,5 @@
 import pytest
-from app.services.hashid_service import HashidService
+from app.shared.hashid_service import HashidService
 
 def test_hashid_encode_decode():
     service = HashidService(salt="test_salt", min_length=6)

@@ -1,11 +1,14 @@
-import pytest
 from unittest.mock import MagicMock
+
 from fastapi import HTTPException
-from app.services.user_service import user_service
-from app.domain.models.user import User
-from app.domain.models.biometric import UserBiometric
-from app.schemas.user import UserCreate, UserUpdate
-from app.domain.models.enums import UserRole
+
+import pytest
+from app.domain.enums import UserRole
+from app.features.devices.device_models import UserBiometric
+from app.features.users.user_models import User
+from app.features.users.user_schemas import UserUpdate
+from app.features.users.user_service import user_service
+
 
 def test_get_bio_attr():
     assert user_service._get_bio_attr({"id": 1}, "id") == 1
@@ -42,8 +45,8 @@ def test_validate_finger_id():
     assert exc.value.status_code == 400
 
 def test_process_single_biometric(db_session_mock, mocker):
-    mocker.patch("app.services.user_service.UserService._validate_sensor_index")
-    mocker.patch("app.services.user_service.UserService._validate_finger_id")
+    mocker.patch("app.features.users.user_service.UserService._validate_sensor_index")
+    mocker.patch("app.features.users.user_service.UserService._validate_finger_id")
     
     user = User(id=1)
     seen_idx, seen_fgr = set(), set()
@@ -63,13 +66,14 @@ def test_process_single_biometric(db_session_mock, mocker):
     assert res2.finger_id == 4
 
 def test_sync_biometrics(db_session_mock, mocker):
-    mocker.patch("app.services.user_service.UserService._process_single_biometric", return_value=UserBiometric(id=1))
+    mocker.patch("app.features.users.user_service.UserService._process_single_biometric",
+                 return_value=UserBiometric(id=1))
     user = User(id=1, biometrics=[])
     user_service._sync_biometrics(db_session_mock, user, [{"id": 1}])
     assert len(user.biometrics) == 1
 
 def test_validate_unique_fields_ok(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get_by_username", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
     db_session_mock.query.return_value.first = MagicMock(return_value=None)
     user_in = MagicMock()
     user_in.username = "test"
@@ -78,7 +82,7 @@ def test_validate_unique_fields_ok(db_session_mock, mocker):
     user_service._validate_unique_fields(db_session_mock, user_in)
 
 def test_validate_unique_fields_dup_user(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get_by_username", return_value=True)
+    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=True)
     user_in = MagicMock()
     user_in.username = "test"
     with pytest.raises(HTTPException) as exc:
@@ -86,7 +90,7 @@ def test_validate_unique_fields_dup_user(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 def test_validate_unique_fields_dup_email(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get_by_username", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
     db_session_mock.query.return_value.first = MagicMock(return_value=True)
     user_in = MagicMock()
     user_in.username = "test"
@@ -96,7 +100,7 @@ def test_validate_unique_fields_dup_email(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 def test_validate_unique_fields_dup_cpf(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get_by_username", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
     db_session_mock.query.return_value.first = MagicMock(side_effect=[None, True])
     user_in = MagicMock()
     user_in.username = "test"
@@ -107,10 +111,10 @@ def test_validate_unique_fields_dup_cpf(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 def test_create_user(db_session_mock, mocker):
-    mocker.patch("app.services.user_service.UserService._validate_unique_fields")
-    mocker.patch("app.services.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.services.user_service.UserService._sync_biometrics")
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
+    mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
+    mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
+    mocker.patch("app.features.system.audit_service.audit_service.log")
 
     class DummyCreate:
         pass
@@ -135,7 +139,7 @@ def test_create_user(db_session_mock, mocker):
     assert user.password_hash == "hash"
 
 def test_update_user_not_found(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
     user_in = MagicMock()
     with pytest.raises(HTTPException) as exc:
         user_service.update_user(db_session_mock, 1, user_in, 99)
@@ -157,12 +161,13 @@ def test_capture_user_state():
 
 def test_update_user_ok(db_session_mock, mocker):
     user = User(id=1, name="Old", is_active=True)
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.services.user_service.UserService._validate_unique_fields")
-    mocker.patch("app.services.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.services.user_service.UserService._sync_biometrics")
-    mocker.patch("app.services.audit_service.audit_service.compute_diffs", return_value=({"name": "Old"}, {"name": "New"}))
-    mock_log = mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
+    mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
+    mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
+    mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
+                 return_value=({"name": "Old"}, {"name": "New"}))
+    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log")
 
     user_in = UserUpdate(name="New", password="123456")
     user_in.biometrics = []
@@ -174,15 +179,15 @@ def test_update_user_ok(db_session_mock, mocker):
     assert mock_log.call_args[1]["new_data"] == {"name": "New", "password_changed": True}
 
 def test_disable_user_not_found(db_session_mock, mocker):
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
     with pytest.raises(HTTPException) as exc:
         user_service.disable_user(db_session_mock, 1, 99)
     assert exc.value.status_code == 404
 
 def test_disable_user_ok(db_session_mock, mocker):
     user = User(id=1, is_active=True)
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.system.audit_service.audit_service.log")
 
     res = user_service.disable_user(db_session_mock, 1, 99)
     assert res.is_active is False

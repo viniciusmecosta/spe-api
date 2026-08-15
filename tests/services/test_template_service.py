@@ -1,4 +1,4 @@
-from app.services.template_service import TemplateService, template_service
+from app.features.reports.template_service import TemplateService, template_service
 
 def test_generate_punches_html_even_punches(db_session_mock):
     user_activity = {

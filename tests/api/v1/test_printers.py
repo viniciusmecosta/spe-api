@@ -3,8 +3,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import pytest
-from app.api.deps import get_current_manager
-from app.domain.models.user import User
+from app.shared.deps import get_current_manager
+from app.features.users.user_models import User
 from app.main import app
 
 client = TestClient(app)
@@ -17,7 +17,7 @@ def override_dependency():
     app.dependency_overrides.clear()
 
 
-@patch("app.api.v1.printers.printer_service")
+@patch("app.features.printers.printer_router.printer_service")
 def test_read_printers(mock_service):
     mock_service.get_all.return_value = []
     response = client.get("/api/v1/printers/")
@@ -25,7 +25,7 @@ def test_read_printers(mock_service):
     assert response.json() == []
 
 
-@patch("app.api.v1.printers.printer_service")
+@patch("app.features.printers.printer_router.printer_service")
 def test_read_printer(mock_service):
     class MockPrinter:
         id = 1
@@ -41,7 +41,7 @@ def test_read_printer(mock_service):
     assert response.json()["id"] == 1
 
 
-@patch("app.api.v1.printers.printer_service")
+@patch("app.features.printers.printer_router.printer_service")
 def test_create_printer(mock_service):
     class MockPrinter:
         id = 1
@@ -65,7 +65,7 @@ def test_create_printer(mock_service):
     assert response.json()["id"] == 1
 
 
-@patch("app.api.v1.printers.printer_service")
+@patch("app.features.printers.printer_router.printer_service")
 def test_update_printer(mock_service):
     class MockPrinter:
         id = 1
@@ -81,7 +81,7 @@ def test_update_printer(mock_service):
     assert response.json()["name"] == "Updated Printer"
 
 
-@patch("app.api.v1.printers.printer_service")
+@patch("app.features.printers.printer_router.printer_service")
 def test_delete_printer(mock_service):
     mock_service.delete.return_value = None
     response = client.delete("/api/v1/printers/1")

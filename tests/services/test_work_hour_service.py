@@ -1,19 +1,21 @@
-from datetime import date, datetime
+from datetime import date
 from unittest.mock import MagicMock
-from app.services.work_hour_service import work_hour_service
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType
-from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User, UserWorkScheduleConfig
-from app.domain.models.holiday import Holiday
-from app.services.time_calculation_service import DailyTimeResult
+
+from app.domain.enums import AdjustmentType
+from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.holidays.holiday_models import Holiday
+from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.features.users.work_hour_service import work_hour_service
+from app.shared.time_calculation_service import DailyTimeResult
+
 
 def test_calculate_balance_no_schedule(mocker, db_session_mock):
-    mocker.patch("app.repositories.time_record_repository.time_record_repository.get_by_range", return_value=[])
-    mocker.patch("app.repositories.holiday_repository.holiday_repository.get_all", return_value=[])
+    mocker.patch("app.features.time_records.time_record_repository.time_record_repository.get_by_range",
+                 return_value=[])
+    mocker.patch("app.features.holidays.holiday_repository.holiday_repository.get_all", return_value=[])
     mock_user = MagicMock(spec=User)
     mock_user.historical_schedules = []
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=mock_user)
     
     response = work_hour_service.calculate_balance(db_session_mock, 1, date(2023, 10, 1), date(2023, 10, 5))
     
@@ -29,12 +31,13 @@ def test_calculate_balance_with_schedule_perfect_attendance(mocker, db_session_m
     mock_schedule.daily_hours = 8.0
     mock_schedule.day_of_week = 0
     mock_user.historical_schedules = [mock_schedule]
-    
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=mock_user)
-    mocker.patch("app.repositories.holiday_repository.holiday_repository.get_all", return_value=[])
-    mocker.patch("app.repositories.time_record_repository.time_record_repository.get_by_range", return_value=[])
-    
-    mock_calc = mocker.patch("app.services.time_calculation_service.time_calculation_service.calculate_daily_time")
+
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.holidays.holiday_repository.holiday_repository.get_all", return_value=[])
+    mocker.patch("app.features.time_records.time_record_repository.time_record_repository.get_by_range",
+                 return_value=[])
+
+    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_daily_time")
     res_mock = DailyTimeResult(
         raw_worked_seconds=8 * 3600,
         net_worked_seconds=8 * 3600,
@@ -67,12 +70,13 @@ def test_calculate_balance_with_holiday(mocker, db_session_mock):
     
     mock_holiday = MagicMock(spec=Holiday)
     mock_holiday.date = date(2023, 10, 2)
-    
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=mock_user)
-    mocker.patch("app.repositories.holiday_repository.holiday_repository.get_all", return_value=[mock_holiday])
-    mocker.patch("app.repositories.time_record_repository.time_record_repository.get_by_range", return_value=[])
-    
-    mock_calc = mocker.patch("app.services.time_calculation_service.time_calculation_service.calculate_daily_time")
+
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.holidays.holiday_repository.holiday_repository.get_all", return_value=[mock_holiday])
+    mocker.patch("app.features.time_records.time_record_repository.time_record_repository.get_by_range",
+                 return_value=[])
+
+    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_daily_time")
     res_mock = DailyTimeResult(
         raw_worked_seconds=0,
         net_worked_seconds=0,
@@ -102,10 +106,11 @@ def test_calculate_balance_with_waiver_and_unapproved_extra(mocker, db_session_m
     mock_schedule.daily_hours = 8.0
     mock_schedule.day_of_week = 0
     mock_user.historical_schedules = [mock_schedule]
-    
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=mock_user)
-    mocker.patch("app.repositories.holiday_repository.holiday_repository.get_all", return_value=[])
-    mocker.patch("app.repositories.time_record_repository.time_record_repository.get_by_range", return_value=[])
+
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.holidays.holiday_repository.holiday_repository.get_all", return_value=[])
+    mocker.patch("app.features.time_records.time_record_repository.time_record_repository.get_by_range",
+                 return_value=[])
     
     mock_waiver = MagicMock(spec=AdjustmentRequest)
     mock_waiver.target_date = date(2023, 10, 2)
@@ -127,8 +132,8 @@ def test_calculate_balance_with_waiver_and_unapproved_extra(mocker, db_session_m
             return [mock_unapproved]
             
     db_session_mock.query.return_value = MultiQueryMock()
-    
-    mock_calc = mocker.patch("app.services.time_calculation_service.time_calculation_service.calculate_daily_time")
+
+    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_daily_time")
     res_mock = DailyTimeResult(
         raw_worked_seconds=10 * 3600,
         net_worked_seconds=8 * 3600,

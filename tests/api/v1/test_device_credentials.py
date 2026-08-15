@@ -1,13 +1,13 @@
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.device import DeviceCredential
-from app.domain.models.enums import DeviceKeyType, UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import DeviceKeyType, UserRole
+from app.features.devices.device_models import DeviceCredential
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -40,7 +40,7 @@ def test_create_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
         updated_at=now,
     )
     mocker.patch(
-        "app.api.v1.device_credentials.device_credential_service.create",
+        "app.features.devices.device_router.device_credential_service.create",
         return_value=mock_dev,
     )
 
@@ -63,7 +63,7 @@ def test_list_credentials_endpoint(client: TestClient, mocker: MagicMock) -> Non
         updated_at=now,
     )
     mocker.patch(
-        "app.api.v1.device_credentials.device_credential_service.get_all",
+        "app.features.devices.device_router.device_credential_service.get_all",
         return_value=[mock_dev],
     )
 
@@ -83,7 +83,7 @@ def test_update_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
         updated_at=now,
     )
     mocker.patch(
-        "app.api.v1.device_credentials.device_credential_service.update",
+        "app.features.devices.device_router.device_credential_service.update",
         return_value=mock_dev,
     )
 
@@ -97,7 +97,7 @@ def test_update_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
 
 def test_delete_credential_endpoint(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.device_credentials.device_credential_service.delete",
+        "app.features.devices.device_router.device_credential_service.delete",
         return_value={"status": "success"},
     )
 

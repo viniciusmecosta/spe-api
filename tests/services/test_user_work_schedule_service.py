@@ -1,18 +1,21 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from datetime import date, time, datetime
+from datetime import date, time
+from unittest.mock import MagicMock
+
 from fastapi import HTTPException
-from app.services.user_work_schedule_service import user_work_schedule_service
-from app.domain.models.user import User, UserWorkScheduleConfig
+
+import pytest
+from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.features.users.user_work_schedule_service import user_work_schedule_service
+
 
 def test_check_payroll_closure_ok(db_session_mock, mocker):
-    mocker.patch("app.repositories.payroll_repository.payroll_repository.get_by_month", return_value=None)
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
     user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
 
 def test_check_payroll_closure_closed(db_session_mock, mocker):
     closure = MagicMock()
     closure.is_closed = True
-    mocker.patch("app.repositories.payroll_repository.payroll_repository.get_by_month", return_value=closure)
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=closure)
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     with pytest.raises(HTTPException) as exc:
@@ -20,7 +23,7 @@ def test_check_payroll_closure_closed(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 def test_check_payroll_closure_year_span(db_session_mock, mocker):
-    mocker.patch("app.repositories.payroll_repository.payroll_repository.get_by_month", return_value=None)
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
     user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 11, 1), date(2027, 2, 1))
 
 def test_apply_schedule_updates_variations():
@@ -121,9 +124,9 @@ def test_get_bulk_schedule_not_found(db_session_mock):
 def test_bulk_add_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
     user = User(id=1, name="Test User")
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap")
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log")
 
     bulk_data = {
         "valid_from": date(2026, 9, 1),
@@ -170,7 +173,7 @@ def test_bulk_add_schedules_no_users(db_session_mock):
 
 def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
 
     bulk_data = {
         "valid_from": date(2026, 9, 1),
@@ -184,7 +187,7 @@ def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
 def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
     user = User(id=1, name="Test User")
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap", side_effect=HTTPException(status_code=400))
 
     bulk_data = {
@@ -200,7 +203,7 @@ def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
 
 def test_update_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log")
 
     old_cfg_update = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
     old_cfg_delete = UserWorkScheduleConfig(id=11, user_id=1, day_of_week=2, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
@@ -210,7 +213,7 @@ def test_update_bulk_schedules_success(db_session_mock, mocker):
     db_session_mock.query.return_value = query_mock
 
     user = User(id=1, name="Test User")
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap")
 
     bulk_data = {
@@ -256,7 +259,7 @@ def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
     query_mock = MagicMock()
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
 
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
@@ -277,7 +280,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
     db_session_mock.query.return_value = query_mock
 
     user = User(id=1, name="Test User")
-    mocker.patch("app.repositories.user_repository.user_repository.get", return_value=user)
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap", side_effect=HTTPException(status_code=400))
 
     start_date = date(2026, 9, 1)
@@ -295,7 +298,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
 
 def test_delete_bulk_schedules_success(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
-    mocker.patch("app.services.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log")
 
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30))
     query_mock = MagicMock()

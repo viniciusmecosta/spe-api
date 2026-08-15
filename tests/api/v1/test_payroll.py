@@ -2,16 +2,15 @@ import io
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
-from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import UserRole
+from app.features.payroll.payroll_schemas import PayrollClosureResponse
+from app.features.time_records.time_record_schemas import SuccessResponse
+from app.features.users.user_models import User
 from app.main import app
-from app.schemas.payroll import PayrollClosureResponse
-from app.schemas.time_record import SuccessResponse
 
 
 @pytest.fixture
@@ -45,7 +44,7 @@ def test_list_payroll_periods(client: TestClient, mocker: MagicMock) -> None:
         )
     ]
     mocker.patch(
-        "app.api.v1.payroll.payroll_service.list_periods",
+        "app.features.payroll.payroll_router.payroll_service.list_periods",
         return_value=expected,
     )
 
@@ -67,7 +66,7 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
         is_closed=True,
     )
     mocker.patch(
-        "app.api.v1.payroll.payroll_service.close_period",
+        "app.features.payroll.payroll_router.payroll_service.close_period",
         return_value=expected,
     )
 
@@ -79,7 +78,7 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
 def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
     expected = SuccessResponse(status="success", message="Period reopened")
     mocker.patch(
-        "app.api.v1.payroll.payroll_service.reopen_period",
+        "app.features.payroll.payroll_router.payroll_service.reopen_period",
         return_value=expected,
     )
 
@@ -92,7 +91,7 @@ def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_upload_legacy_report(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.payroll.payroll_service.upload_legacy_report")
+    mocker.patch("app.features.payroll.payroll_router.payroll_service.upload_legacy_report")
 
     test_file = io.BytesIO(b"fake pdf legacy report")
     response = client.post(

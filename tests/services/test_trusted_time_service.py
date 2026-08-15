@@ -1,10 +1,9 @@
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.services.trusted_time_service import trusted_time_service
+from app.shared.trusted_time_service import trusted_time_service
 
 
 def test_get_trusted_time_cache_hit():

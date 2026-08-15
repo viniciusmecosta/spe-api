@@ -1,0 +1,70 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import (
+    Column,
+    Date,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Time,
+)
+from sqlalchemy.orm import relationship
+
+from app.core.config import settings
+from app.database.base import Base
+from app.domain.enums import AdjustmentStatus, AdjustmentType, RecordType
+
+
+def get_local_time():
+    return datetime.now(ZoneInfo(settings.TIMEZONE))
+
+
+class AdjustmentRequest(Base):
+    __tablename__ = "adjustment_requests"
+    __table_args__ = (
+        Index('idx_adj_user_date', 'user_id', 'target_date'),
+        Index('idx_adj_status', 'status'),
+    )
+
+    USERS_ID = "users.id"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey(USERS_ID), nullable=False)
+    adjustment_type = Column(Enum(AdjustmentType), nullable=False)
+    record_type = Column(Enum(RecordType), nullable=True)
+    target_date = Column(Date, nullable=False)
+    time = Column(Time, nullable=True)
+    amount_hours = Column(Float, nullable=True)
+    reason_text = Column(String, nullable=True)
+
+    status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
+    manager_id = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    manager_comment = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    deleted_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
+    manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
+
+    @property
+    def user_name(self):
+        return self.user.name if self.user else "Desconhecido"
+
+
+class AdjustmentAttachment(Base):
+    __tablename__ = "adjustment_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    adjustment_request_id = Column(Integer, ForeignKey("adjustment_requests.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)
+    uploaded_at = Column(DateTime(timezone=True), default=get_local_time)
+
+    request = relationship("AdjustmentRequest", backref="attachments")

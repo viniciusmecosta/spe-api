@@ -1,12 +1,13 @@
-import pytest
 from datetime import datetime, date, time
-from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
+
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.services.tolerance_cron_service import ToleranceCronService
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType, RecordType
-from app.domain.models.adjustment import AdjustmentRequest
+import pytest
+from app.domain.enums import AdjustmentType, RecordType
+from app.shared.tolerance_cron_service import ToleranceCronService
+
 
 def make_query_mock(items):
     qm = MagicMock()
@@ -117,7 +118,8 @@ def test_process_unverified_entries_success(tolerance_service, db_session_mock, 
             return db_session_mock
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
-    mocker.patch("app.services.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
+
+    mocker.patch("app.shared.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
     db_session_mock.query.return_value = make_query_mock([base_record])
     mocker.patch.object(tolerance_service, "_process_entry_record")
     tolerance_service.process_unverified_entries()
@@ -130,9 +132,10 @@ def test_process_unverified_entries_sqlalchemy_error(tolerance_service, db_sessi
             return db_session_mock
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
-    mocker.patch("app.services.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
+
+    mocker.patch("app.shared.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
     db_session_mock.query.side_effect = SQLAlchemyError("DB Error")
-    mock_logger = mocker.patch("app.services.tolerance_cron_service.logger")
+    mock_logger = mocker.patch("app.shared.tolerance_cron_service.logger")
     tolerance_service.process_unverified_entries()
     mock_logger.exception.assert_called_once()
 
@@ -142,9 +145,10 @@ def test_process_unverified_entries_exception(tolerance_service, db_session_mock
             return db_session_mock
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
-    mocker.patch("app.services.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
+
+    mocker.patch("app.shared.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
     db_session_mock.query.side_effect = Exception("General Error")
-    mock_logger = mocker.patch("app.services.tolerance_cron_service.logger")
+    mock_logger = mocker.patch("app.shared.tolerance_cron_service.logger")
     tolerance_service.process_unverified_entries()
     mock_logger.exception.assert_called_once()
 
@@ -164,7 +168,8 @@ def test_process_unverified_entries_exit_record(tolerance_service, db_session_mo
             return db_session_mock
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
-    mocker.patch("app.services.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
+
+    mocker.patch("app.shared.tolerance_cron_service.get_db_session", return_value=ContextManagerMock())
     base_record.record_type = RecordType.EXIT
     base_record.is_verified = False
     db_session_mock.query.return_value = make_query_mock([base_record])

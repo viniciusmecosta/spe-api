@@ -1,4 +1,4 @@
-from app.services.biometric_service import biometric_service
+from app.features.devices.biometric_service import biometric_service
 
 
 def test_get_available_sensor_indices(db_session_mock):

@@ -1,12 +1,11 @@
-from datetime import date
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import UserRole
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -29,7 +28,7 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 
 def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
-    mock_task = mocker.patch("app.api.v1.telegram_actions.routine_orchestrator.execute_manual_backup_telegram")
+    mock_task = mocker.patch("app.features.system.system_router.routine_orchestrator.execute_manual_backup_telegram")
 
     response = client.post("/api/v1/telegram/manual-backup")
     assert response.status_code == 200
@@ -37,7 +36,7 @@ def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_trigger_manual_report_success(client: TestClient, mocker: MagicMock) -> None:
-    mock_task = mocker.patch("app.api.v1.telegram_actions.routine_orchestrator.send_manual_report_telegram")
+    mock_task = mocker.patch("app.features.system.system_router.routine_orchestrator.send_manual_report_telegram")
 
     response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-01&end_date=2026-08-05")
     assert response.status_code == 200

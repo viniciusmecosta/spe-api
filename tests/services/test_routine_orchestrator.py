@@ -2,25 +2,26 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-import pytest
-from app.core.config import settings
-from app.domain.models.enums import UserRole
-from app.domain.models.routine_log import RoutineLog
-from app.domain.models.user import User
-from app.services.routine_orchestrator import RoutineOrchestrator
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
+
+import pytest
+from app.core.config import settings
+from app.domain.enums import UserRole
+from app.features.system.routine_orchestrator import RoutineOrchestrator
+from app.features.system.system_models import RoutineLog
+from app.features.users.user_models import User
 
 
 @pytest.fixture(autouse=True)
 def mock_environment():
-    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "prod"):
+    with patch("app.features.system.routine_orchestrator.settings.ENVIRONMENT", "prod"):
         yield
 
 
 @pytest.fixture
 def mock_get_db_session(db_session_mock):
-    with patch("app.services.routine_orchestrator.get_db_session") as m:
+    with patch("app.features.system.routine_orchestrator.get_db_session") as m:
         class ContextManagerMock:
             def __enter__(self):
                 return db_session_mock
@@ -35,39 +36,39 @@ def orchestrator():
 
 @pytest.fixture
 def mock_datetime():
-    with patch("app.services.routine_orchestrator.datetime") as dt_mock:
+    with patch("app.features.system.routine_orchestrator.datetime") as dt_mock:
         dt_mock.now.return_value = datetime(2023, 10, 15, 12, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
         yield dt_mock
 
 @pytest.fixture
 def mock_backup_service():
-    with patch("app.services.routine_orchestrator.backup_service") as m:
+    with patch("app.features.system.routine_orchestrator.backup_service") as m:
         yield m
 
 @pytest.fixture
 def mock_telegram_service():
-    with patch("app.services.routine_orchestrator.telegram_service") as m:
+    with patch("app.features.system.routine_orchestrator.telegram_service") as m:
         yield m
 
 @pytest.fixture
 def mock_email_service():
-    with patch("app.services.routine_orchestrator.email_service") as m:
+    with patch("app.features.system.routine_orchestrator.email_service") as m:
         yield m
 
 @pytest.fixture
 def mock_daily_report_service():
-    with patch("app.services.routine_orchestrator.daily_report_service") as m:
+    with patch("app.features.system.routine_orchestrator.daily_report_service") as m:
         yield m
 
 @pytest.fixture
 def mock_os():
-    with patch("app.services.routine_orchestrator.os.path.exists", return_value=True) as m1, \
-         patch("app.services.routine_orchestrator.os.remove") as m2:
+    with patch("app.features.system.routine_orchestrator.os.path.exists", return_value=True) as m1, \
+            patch("app.features.system.routine_orchestrator.os.remove") as m2:
         yield m1, m2
 
 @pytest.fixture
 def mock_get_log_path():
-    with patch("app.services.routine_orchestrator.get_log_path", return_value="/tmp/test.log") as m:
+    with patch("app.features.system.routine_orchestrator.get_log_path", return_value="/tmp/test.log") as m:
         yield m
 
 
@@ -201,7 +202,7 @@ def test_generate_daily_backup_report(orchestrator, db_session_mock, mock_daily_
     assert len(att) == 2
 
 def test_generate_daily_backup_report_empty(orchestrator, db_session_mock, mock_daily_report_service, mock_get_log_path):
-    with patch("app.services.routine_orchestrator.os.path.exists", return_value=False):
+    with patch("app.features.system.routine_orchestrator.os.path.exists", return_value=False):
         mock_daily_report_service.generate_daily_report_html.return_value = ""
         html, att, p_text = orchestrator._generate_daily_backup_report(
             db_session_mock,
@@ -451,15 +452,17 @@ def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock
             orchestrator.send_manual_backup_email(db_session_mock)
 
 def test_execute_hourly_backup_telegram_dev_environment(orchestrator):
-    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "dev"):
+    with patch("app.features.system.routine_orchestrator.settings.ENVIRONMENT", "dev"):
         orchestrator.execute_hourly_backup_telegram()
 
 def test_send_managerial_report_telegram_dev_environment(orchestrator):
-    with patch("app.services.routine_orchestrator.settings.ENVIRONMENT", "dev"):
+    with patch("app.features.system.routine_orchestrator.settings.ENVIRONMENT", "dev"):
         orchestrator.send_managerial_report_telegram()
 
 def test_cleanup_backup_files_os_error(orchestrator):
-    with patch("app.services.routine_orchestrator.os.path.exists", return_value=True), patch("app.services.routine_orchestrator.os.remove", side_effect=OSError("Remove error")), patch("app.services.routine_orchestrator.logger.exception") as mock_log:
+    with patch("app.features.system.routine_orchestrator.os.path.exists", return_value=True), patch(
+            "app.features.system.routine_orchestrator.os.remove", side_effect=OSError("Remove error")), patch(
+            "app.features.system.routine_orchestrator.logger.exception") as mock_log:
         orchestrator._cleanup_backup_files("/tmp/b.db", "/tmp/b.sql", "/tmp/b.zip")
         assert mock_log.call_count == 3
 

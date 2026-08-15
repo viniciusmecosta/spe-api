@@ -3,13 +3,13 @@ from datetime import datetime
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+from fastapi import HTTPException
 from openpyxl import Workbook
 
 import pytest
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
-from app.services.excel_service import ExcelService
-from fastapi import HTTPException
+from app.domain.enums import UserRole
+from app.features.reports.excel_service import ExcelService
+from app.features.users.user_models import User
 
 
 @pytest.fixture
@@ -103,8 +103,8 @@ def test_validate_employee_report_period_january(excel_service, mock_user, monke
         excel_service._validate_employee_report_period(mock_user, 11, 2022)
 
 @patch.object(ExcelService, '_validate_employee_report_period')
-@patch('app.services.excel_service.report_service')
-@patch('app.services.excel_service.company_repository')
+@patch('app.features.reports.excel_service.report_service')
+@patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
 def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service, db_session_mock, mock_user):
     mock_exists.return_value = True
@@ -149,8 +149,9 @@ def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_servi
     assert isinstance(output, BytesIO)
     mock_validate.assert_called_once_with(mock_user, 5, 2023)
 
-@patch('app.services.excel_service.report_service')
-@patch('app.services.excel_service.company_repository')
+
+@patch('app.features.reports.excel_service.report_service')
+@patch('app.features.reports.excel_service.company_repository')
 def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock, mock_user):
     mock_company = MagicMock()
     mock_company.logo_path = None
@@ -201,7 +202,8 @@ def test_apply_key_value(excel_service):
     assert ws.cell(row=1, column=3).value == 'Value'
     excel_service._apply_key_value(ws, 2, 1, 'Key', 2, 'Value', 2, borders=False)
 
-@patch('app.services.excel_service.OpenpyxlImage')
+
+@patch('app.features.reports.excel_service.OpenpyxlImage')
 def test_insert_header(mock_image, excel_service):
     wb = Workbook()
     ws = wb.active
@@ -212,14 +214,16 @@ def test_insert_header(mock_image, excel_service):
     excel_service._insert_header(ws, mock_company, 'logo.png')
     assert ws.max_row > 1
 
-@patch('app.services.excel_service.OpenpyxlImage')
+
+@patch('app.features.reports.excel_service.OpenpyxlImage')
 def test_insert_header_no_company(mock_image, excel_service):
     wb = Workbook()
     ws = wb.active
     excel_service._insert_header(ws, None, None)
     assert ws.max_row > 1
 
-@patch('app.services.excel_service.OpenpyxlImage')
+
+@patch('app.features.reports.excel_service.OpenpyxlImage')
 def test_insert_header_image_error(mock_image, excel_service):
     mock_image.side_effect = ValueError('Invalid image')
     wb = Workbook()
@@ -315,11 +319,11 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
     assert 'Resumo' in wb.sheetnames
 import openpyxl
-from app.schemas.report import UserPayrollSummary, DailyReportItem
+from app.features.reports.report_schemas import UserPayrollSummary, DailyReportItem
 
 @patch.object(ExcelService, '_validate_employee_report_period')
-@patch('app.services.excel_service.report_service')
-@patch('app.services.excel_service.company_repository')
+@patch('app.features.reports.excel_service.report_service')
+@patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
 def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service, db_session_mock, mock_user):
     mock_exists.return_value = False
@@ -385,7 +389,7 @@ def test_format_day_groups(excel_service):
     assert excel_service._format_day_groups([]) == ""
 
 def test_build_work_schedules_section(excel_service):
-    from app.domain.models.user import UserWorkScheduleConfig
+    from app.features.users.user_models import UserWorkScheduleConfig
     from datetime import date, time
     from openpyxl import Workbook
     
@@ -431,7 +435,7 @@ def test_format_day_groups_two_days(excel_service):
 def test_build_work_schedules_section_edge_cases(excel_service):
     from datetime import date
     from openpyxl import Workbook
-    from app.domain.models.user import UserWorkScheduleConfig
+    from app.features.users.user_models import UserWorkScheduleConfig
     
     wb = Workbook()
     ws = wb.active
@@ -457,7 +461,7 @@ def test_group_schedules_by_period_start_greater_than_end(excel_service):
 
 def test_write_period_schedules_empty_entries_and_no_grouped(excel_service):
     from openpyxl import Workbook
-    from app.domain.models.user import UserWorkScheduleConfig
+    from app.features.users.user_models import UserWorkScheduleConfig
     from datetime import date
     
     wb = Workbook()
@@ -488,7 +492,7 @@ def test_time_str_to_fraction_fallback(excel_service):
 def test_build_day_row_abono_status(excel_service):
     from openpyxl import Workbook
     from datetime import datetime
-    from app.schemas.report import DailyReportItem
+    from app.features.reports.report_schemas import DailyReportItem
     
     wb = Workbook()
     ws = wb.active
@@ -521,13 +525,14 @@ def test_build_day_row_abono_status(excel_service):
     last_row = ws.max_row
     assert ws.cell(row=last_row, column=6).fill == excel_service.fill_excused
 
-@patch("app.services.excel_service.company_repository")
-@patch("app.services.excel_service.report_service")
+
+@patch("app.features.reports.excel_service.company_repository")
+@patch("app.features.reports.excel_service.report_service")
 def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service, db_session_mock):
     from datetime import datetime, date
-    from app.domain.models.time_record import TimeRecord
-    from app.domain.models.adjustment import AdjustmentRequest
-    from app.schemas.report import AdvancedUserReportResponse, UserPayrollSummary
+    from app.features.time_records.time_record_models import TimeRecord
+    from app.features.adjustments.adjustment_models import AdjustmentRequest
+    from app.features.reports.report_schemas import AdvancedUserReportResponse, UserPayrollSummary
     
     user = MagicMock(spec=User)
     user.id = 1
@@ -574,7 +579,7 @@ def test_generate_excel_report_with_records_and_adjustments(mock_report_service,
     res = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
     assert res is not None
 def test_generate_excel_report_filters_ignored_records(excel_service, db_session_mock):
-    from app.domain.models.user import User
+    from app.features.users.user_models import User
     from unittest.mock import patch, MagicMock
     
     user = MagicMock(spec=User)
@@ -602,9 +607,9 @@ def test_generate_excel_report_filters_ignored_records(excel_service, db_session
             return mock_q
             
     db_session_mock.query.side_effect = mock_query_side_effect
-    
-    with patch('app.services.excel_service.company_repository.get_current', return_value=None), \
-         patch('app.services.report_service.report_service.get_advanced_user_report', return_value=None):
+
+    with patch('app.features.reports.excel_service.company_repository.get_current', return_value=None), \
+            patch('app.features.reports.report_service.report_service.get_advanced_user_report', return_value=None):
         excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
         
     filter_args = mock_query_tr.filter.call_args[0]
@@ -619,7 +624,7 @@ def test_generate_excel_report_filters_ignored_records(excel_service, db_session
 def test_insert_header_includes_generated_at_and_metadata(excel_service, db_session_mock):
     from openpyxl import load_workbook
     from unittest.mock import patch, MagicMock
-    from app.domain.models.user import User
+    from app.features.users.user_models import User
     
     user = MagicMock(spec=User)
     user.id = 1
@@ -646,9 +651,9 @@ def test_insert_header_includes_generated_at_and_metadata(excel_service, db_sess
             return mock_q
             
     db_session_mock.query.side_effect = mock_query_side_effect
-    
-    with patch('app.services.excel_service.company_repository.get_current', return_value=None), \
-         patch('app.services.report_service.report_service.get_advanced_user_report', return_value=None):
+
+    with patch('app.features.reports.excel_service.company_repository.get_current', return_value=None), \
+            patch('app.features.reports.report_service.report_service.get_advanced_user_report', return_value=None):
         res = excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
         
     wb = load_workbook(res)

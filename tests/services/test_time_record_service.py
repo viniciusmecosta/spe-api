@@ -6,42 +6,42 @@ from fastapi import HTTPException, Request, status
 
 import pytest
 from app.core.config import settings
-from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User
-from app.schemas.time_record import TimeRecordCreateAdmin, TimeRecordDeleteAdmin, TimeRecordUpdate
-from app.services.time_record_service import time_record_service
+from app.domain.enums import RecordType, UserRole
+from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.time_records.time_record_schemas import TimeRecordCreateAdmin, TimeRecordDeleteAdmin, TimeRecordUpdate
+from app.features.time_records.time_record_service import time_record_service
+from app.features.users.user_models import User
 
 
 @pytest.fixture
 def mock_user_repo():
-    with patch("app.services.time_record_service.user_repository") as mock:
+    with patch("app.features.time_records.time_record_service.user_repository") as mock:
         yield mock
 
 @pytest.fixture
 def mock_time_record_repo():
-    with patch("app.services.time_record_service.time_record_repository") as mock:
+    with patch("app.features.time_records.time_record_service.time_record_repository") as mock:
         yield mock
 
 @pytest.fixture
 def mock_payroll_service():
-    with patch("app.services.time_record_service.payroll_service") as mock:
+    with patch("app.features.time_records.time_record_service.payroll_service") as mock:
         yield mock
 
 @pytest.fixture
 def mock_audit_service():
-    with patch("app.services.time_record_service.audit_service") as mock:
+    with patch("app.features.time_records.time_record_service.audit_service") as mock:
         yield mock
 
 @pytest.fixture
 def mock_get_client_ip():
-    with patch("app.services.time_record_service.get_client_ip") as mock:
+    with patch("app.features.time_records.time_record_service.get_client_ip") as mock:
         yield mock
 
 @pytest.fixture
 def mock_get_client_device_name():
-    with patch("app.services.time_record_service.get_client_device_name") as mock:
+    with patch("app.features.time_records.time_record_service.get_client_device_name") as mock:
         yield mock
 
 def test_validate_manual_punch_permission_user_not_found(db_session_mock, mock_user_repo):
@@ -92,7 +92,7 @@ def test_validate_manual_punch_permission_desktop_forbidden(db_session_mock, moc
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
-@patch("app.services.time_record_service.trusted_time_service.get_trusted_time")
+@patch("app.features.time_records.time_record_service.trusted_time_service.get_trusted_time")
 def test_register_entry_success(mock_get_trusted_time, mock_validate, db_session_mock, mock_payroll_service,
                                 mock_get_client_ip, mock_get_client_device_name, mock_time_record_repo):
     current_time = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -112,7 +112,7 @@ def test_register_entry_success(mock_get_trusted_time, mock_validate, db_session
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
-@patch("app.services.time_record_service.trusted_time_service.get_trusted_time")
+@patch("app.features.time_records.time_record_service.trusted_time_service.get_trusted_time")
 def test_register_entry_ntp_fallback(mock_get_trusted_time, mock_validate, db_session_mock, mock_payroll_service,
                                      mock_get_client_ip, mock_get_client_device_name, mock_time_record_repo,
                                      mock_audit_service):
@@ -135,7 +135,7 @@ def test_register_entry_ntp_fallback(mock_get_trusted_time, mock_validate, db_se
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
-@patch("app.services.time_record_service.trusted_time_service.get_trusted_time")
+@patch("app.features.time_records.time_record_service.trusted_time_service.get_trusted_time")
 def test_register_exit_success(mock_get_trusted_time, mock_validate, db_session_mock, mock_payroll_service,
                                mock_get_client_ip, mock_get_client_device_name, mock_time_record_repo):
     current_time = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -155,7 +155,7 @@ def test_register_exit_success(mock_get_trusted_time, mock_validate, db_session_
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
-@patch("app.services.time_record_service.trusted_time_service.get_trusted_time")
+@patch("app.features.time_records.time_record_service.trusted_time_service.get_trusted_time")
 def test_register_exit_ntp_fallback(mock_get_trusted_time, mock_validate, db_session_mock, mock_payroll_service,
                                     mock_get_client_ip, mock_get_client_device_name, mock_time_record_repo,
                                     mock_audit_service):
@@ -333,7 +333,7 @@ def test_delete_admin_record_no_justification(db_session_mock, mock_time_record_
     assert call_args["new_data"]["justification"] == ""
 
 
-@patch("app.services.time_record_service.get_client_device_name")
+@patch("app.features.time_records.time_record_service.get_client_device_name")
 def test_create_punch_first_record(mock_get_device, db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get_last_by_user.return_value = None
     mock_get_device.return_value = "Dev"
@@ -347,7 +347,7 @@ def test_create_punch_first_record(mock_get_device, db_session_mock, mock_time_r
                                                          platform="desktop", biometric_id=None)
 
 
-@patch("app.services.time_record_service.get_client_device_name")
+@patch("app.features.time_records.time_record_service.get_client_device_name")
 def test_create_punch_same_day_exit(mock_get_device, db_session_mock, mock_time_record_repo):
     dt_last = datetime.now(ZoneInfo(settings.TIMEZONE))
     last_record = TimeRecord(id=1, record_type=RecordType.ENTRY, record_datetime=dt_last)
@@ -361,7 +361,7 @@ def test_create_punch_same_day_exit(mock_get_device, db_session_mock, mock_time_
                                                          device_name="Dev", platform="desktop", biometric_id=123)
 
 
-@patch("app.services.time_record_service.get_client_device_name")
+@patch("app.features.time_records.time_record_service.get_client_device_name")
 def test_create_punch_different_day(mock_get_device, db_session_mock, mock_time_record_repo):
     dt_last = datetime(2023, 1, 1, tzinfo=ZoneInfo("UTC"))
     last_record = TimeRecord(id=1, record_type=RecordType.ENTRY, record_datetime=dt_last)
@@ -375,7 +375,7 @@ def test_create_punch_different_day(mock_get_device, db_session_mock, mock_time_
                                                          biometric_id=None)
 
 
-@patch("app.services.time_record_service.get_client_device_name")
+@patch("app.features.time_records.time_record_service.get_client_device_name")
 def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mock_time_record_repo):
     dt_last = datetime(2023, 1, 1, 12, 0)
     last_record = TimeRecord(id=1, record_type=RecordType.ENTRY, record_datetime=dt_last)
@@ -552,7 +552,7 @@ def test_delete_admin_record_invalidates(mock_invalidate, mock_is_first, db_sess
 
 
 def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
-    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=None)
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=None)
     user = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "invalid", user)
@@ -561,8 +561,8 @@ def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
 
 
 def test_get_receipt_data_record_not_found(db_session_mock, mocker):
-    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
-    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=None)
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=None)
     user = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
@@ -571,10 +571,10 @@ def test_get_receipt_data_record_not_found(db_session_mock, mocker):
 
 
 def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
-    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
     mock_record = TimeRecord(id=123, user_id=2, user=User(id=2, name="Other", cpf="111", pis="222"),
                              record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)), record_type=RecordType.ENTRY)
-    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
     user = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
@@ -583,12 +583,12 @@ def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
 
 
 def test_get_receipt_data_success(db_session_mock, mocker):
-    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
     user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.EMPLOYEE)
     mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
                              record_type=RecordType.ENTRY, device_name="Device 1")
-    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
-    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=None)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
     mocker.patch.object(time_record_service, "get_record_timeline", return_value=[])
 
     result = time_record_service.get_receipt_data(db_session_mock, "valid", user)
@@ -598,13 +598,14 @@ def test_get_receipt_data_success(db_session_mock, mocker):
 
 
 def test_get_receipt_pdf_success(db_session_mock, mocker):
-    mocker.patch("app.services.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
     user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.MANAGER)
     mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
                              record_type=RecordType.ENTRY, device_name="Device 1")
-    mocker.patch("app.services.time_record_service.time_record_repository.get", return_value=mock_record)
-    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=None)
-    mocker.patch("app.services.receipt_service.receipt_service.generate_pdf_receipt", return_value=b"%PDF-1.4...")
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
+    mocker.patch("app.features.time_records.receipt_service.receipt_service.generate_pdf_receipt",
+                 return_value=b"%PDF-1.4...")
 
     pdf_bytes, filename = time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
     assert pdf_bytes == b"%PDF-1.4..."
@@ -614,7 +615,7 @@ def test_get_receipt_pdf_success(db_session_mock, mocker):
 def test_trigger_auto_print_disabled(db_session_mock, mocker):
     mock_company = MagicMock()
     mock_company.auto_print_receipt = False
-    mocker.patch("app.repositories.company_repository.company_repository.get_current", return_value=mock_company)
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
     mock_bg = MagicMock()
 
     user = User(id=1, name="John", auto_print_receipt=None)

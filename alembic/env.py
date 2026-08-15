@@ -4,7 +4,15 @@ from alembic import context
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-import app.domain.models
+import app.features.adjustments.adjustment_models  # noqa: F401
+import app.features.companies.company_models  # noqa: F401
+import app.features.devices.device_models  # noqa: F401
+import app.features.holidays.holiday_models  # noqa: F401
+import app.features.payroll.payroll_models  # noqa: F401
+import app.features.printers.printer_models  # noqa: F401
+import app.features.system.system_models  # noqa: F401
+import app.features.time_records.time_record_models  # noqa: F401
+import app.features.users.user_models  # noqa: F401
 from app.core.config import settings
 from app.database.base import Base
 

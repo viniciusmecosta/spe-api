@@ -4,11 +4,11 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import pytest
-from app.api.deps import get_current_active_user
-from app.domain.models.enums import RecordType
-from app.domain.models.user import User
+from app.shared.deps import get_current_active_user
+from app.domain.enums import RecordType
+from app.features.time_records.time_record_schemas import ReceiptResponse
+from app.features.users.user_models import User
 from app.main import app
-from app.schemas.time_record import ReceiptResponse
 
 client = TestClient(app)
 
@@ -20,7 +20,7 @@ def override_dependency():
     app.dependency_overrides.clear()
 
 
-@patch("app.api.v1.time_records.time_record_service")
+@patch("app.features.time_records.time_record_router.time_record_service")
 def test_get_receipt(mock_service):
     mock_service.get_receipt_data.return_value = ReceiptResponse(
         short_id="aB3dE5",
@@ -43,7 +43,7 @@ def test_get_receipt(mock_service):
     assert response.json()["company_name"] == "Company"
 
 
-@patch("app.api.v1.time_records.time_record_service")
+@patch("app.features.time_records.time_record_router.time_record_service")
 def test_get_receipt_pdf(mock_service):
     mock_service.get_receipt_pdf.return_value = (b"%PDF-1.4...", "1.pdf")
 

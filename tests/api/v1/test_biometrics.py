@@ -1,11 +1,11 @@
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.domain.enums import UserRole
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -29,7 +29,7 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 
 def test_get_available_sensor_indices(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.biometrics.biometric_service.get_available_sensor_indices",
+        "app.features.devices.device_router.biometric_service.get_available_sensor_indices",
         return_value=[1, 2, 3, 4],
     )
 

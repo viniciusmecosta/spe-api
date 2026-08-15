@@ -1,13 +1,11 @@
-import pytest
 from datetime import date, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
 
-from app.services.anomaly_service import anomaly_service
-from app.domain.models.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
-from app.schemas.anomaly import AnomalyResponse
+import pytest
+from app.domain.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
+from app.features.timesheets.anomaly_service import anomaly_service
 
 
 class MockUser:
@@ -173,8 +171,8 @@ def test_get_expected_entry_time():
     assert entry_time_no_user is None
 
 
-@patch("app.services.anomaly_service.user_repository")
-@patch("app.services.anomaly_service.time_record_repository")
+@patch("app.features.timesheets.anomaly_service.user_repository")
+@patch("app.features.timesheets.anomaly_service.time_record_repository")
 def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_mock):
     mock_user_repo.get.return_value = MockUser(1)
     mock_tr_repo.get_by_users_and_range.return_value = [
@@ -191,8 +189,8 @@ def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_mock):
     assert "UNAPPROVED_EXTRA_TIME" in types
 
 
-@patch("app.services.anomaly_service.user_repository")
-@patch("app.services.anomaly_service.time_record_repository")
+@patch("app.features.timesheets.anomaly_service.user_repository")
+@patch("app.features.timesheets.anomaly_service.time_record_repository")
 def test_get_anomalies_no_target_users(mock_tr_repo, mock_user_repo, db_session_mock):
     mock_user_repo.get_active_employees.return_value = []
     
