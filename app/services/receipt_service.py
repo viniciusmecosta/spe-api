@@ -1,13 +1,16 @@
 import asyncio
 import io
+import logging
 import re
 
-from escpos.printer import Network, File
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import mm
 import qrcode
+from escpos.printer import Network, File
+from reportlab.lib.pagesizes import mm
+from reportlab.pdfgen import canvas
 
 from app.domain.models.printer import Printer
+
+logger = logging.getLogger(__name__)
 
 
 class ReceiptService:
@@ -20,29 +23,37 @@ class ReceiptService:
 
     @staticmethod
     def _print_escpos_receipt(printer_config: Printer, data: dict):
-        p = ReceiptService._get_escpos_printer(printer_config)
-        
         try:
-            p.set(align="center", bold=True)
-            p.text("Comprovante de Registro de Ponto do Trabalhador\n\n")
-            
-            p.set(align="left", bold=False)
-            p.text(f"Empresa: {data['company_name']}\n")
-            p.text(f"CNPJ: {data['company_cnpj']}\n")
-            p.text(f"Funcionario: {data['employee_name']}\n")
-            p.text(f"CPF: {data['employee_cpf']}\n")
-            p.text(f"PIS: {data['employee_pis']}\n")
-            p.text(f"Data: {data['record_date']} | Hora: {data['record_time']}\n")
-            p.text(f"Tipo: {data['record_type_str']} | NSR: {data['nsr']}\n")
-            p.text(f"Local: {data['device_name']}\n\n")
-            
-            p.set(align="center")
-            p.qr(data['short_id'], size=6)
-            p.text(f"\n{data['short_id']}\n\n")
-            
-            p.cut()
-        finally:
-            p.close()
+            p = ReceiptService._get_escpos_printer(printer_config)
+            try:
+                p.set(align="center", bold=True)
+                p.text("Comprovante de Registro de Ponto do Trabalhador\n\n")
+
+                p.set(align="left", bold=False)
+                p.text(f"Empresa: {data['company_name']}\n")
+                p.text(f"CNPJ: {data['company_cnpj']}\n")
+                p.text(f"Funcionario: {data['employee_name']}\n")
+                p.text(f"CPF: {data['employee_cpf']}\n")
+                p.text(f"PIS: {data['employee_pis']}\n")
+                p.text(f"Data: {data['record_date']} | Hora: {data['record_time']}\n")
+                p.text(f"Tipo: {data['record_type_str']} | NSR: {data['nsr']}\n")
+                p.text(f"Local: {data['device_name']}\n\n")
+
+                p.set(align="center")
+                p.qr(data['short_id'], size=6)
+                p.text(f"\n{data['short_id']}\n\n")
+
+                p.cut()
+            finally:
+                p.close()
+        except Exception as e:
+            logger.exception(
+                "Falha ao imprimir comprovante na impressora '%s' (%s): %s",
+                printer_config.name,
+                printer_config.address,
+                e,
+                exc_info=True,
+            )
 
     @staticmethod
     async def print_receipt_async(printer_config: Printer, data: dict):
