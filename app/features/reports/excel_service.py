@@ -15,13 +15,13 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.shared.enums import DayOfWeek, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.companies.company_repository import company_repository
+from app.features.holidays.holiday_repository import holiday_repository
+from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
-from app.features.companies.company_repository import company_repository
-from app.features.reports.report_service import report_service
-from app.features.holidays.holiday_repository import holiday_repository
+from app.shared.enums import DayOfWeek, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 
@@ -47,7 +47,7 @@ class ExcelService:
 
         self.header_font = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
         self.header_fill = PatternFill(start_color="475569", end_color="475569", fill_type="solid")
-        
+
         thin = Side(style='thin', color="CBD5E1")
         self.border_standard = Border(left=thin, right=thin, top=thin, bottom=thin)
         self.border_top_bottom = Border(top=thin, bottom=thin)
@@ -68,7 +68,7 @@ class ExcelService:
         self.align_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
         self.align_left = Alignment(horizontal='left', vertical='center', wrap_text=True)
         self.align_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
-        
+
         self.MAX_COLS = 24
         self.COL_WIDTH = 5
 
@@ -118,11 +118,11 @@ class ExcelService:
             return
         if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
             return
-            
+
         now = sys.modules['datetime'].datetime.now()
         current_month = now.month
         current_year = now.year
-        
+
         if current_month == 1:
             prev_month = 12
             prev_year = current_year - 1
@@ -131,9 +131,9 @@ class ExcelService:
             prev_year = current_year
 
         if (year == current_year and month == current_month) or \
-           (year == prev_year and month == prev_month):
+                (year == prev_year and month == prev_month):
             return
-            
+
         raise HTTPException(
             status_code=400,
             detail="Funcionários só podem gerar relatório Excel do mês atual ou do mês anterior."
@@ -143,13 +143,13 @@ class ExcelService:
                               current_user: User | None = None) -> BytesIO:
         if current_user:
             self._validate_employee_report_period(current_user, month, year)
-            
+
         query = db.query(User).options(joinedload(User.historical_schedules))
         query = report_service.apply_employee_filters(query, employee_ids)
         users = query.all()
 
         company = company_repository.get_current(db)
-        
+
         logo_path = None
         if company and company.logo_path:
             full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
@@ -202,7 +202,7 @@ class ExcelService:
         wb.properties.title = "Relatório de Ponto - Excel"
         wb.properties.subject = "Documento oficial de registro de ponto"
         wb.properties.created = now
-        
+
         self._build_summary_sheet(wb, month, year, user_reports, company, logo_path)
 
         for user, report in user_reports:
@@ -212,7 +212,7 @@ class ExcelService:
         wb.save(output)
         output.seek(0)
         return output
-        
+
     def _apply_key_value(self, ws, row, start_col, key_text, key_width, val_text, val_width, borders=False):
         key_end = start_col + key_width - 1
         ws.merge_cells(start_row=row, start_column=start_col, end_row=row, end_column=key_end)
@@ -220,7 +220,7 @@ class ExcelService:
         c_key.value = key_text
         c_key.font = self.font_key
         c_key.alignment = self.align_right
-        
+
         val_start = key_end + 1
         val_end = val_start + val_width - 1
         ws.merge_cells(start_row=row, start_column=val_start, end_row=row, end_column=val_end)
@@ -249,7 +249,7 @@ class ExcelService:
         font_large = InlineFont(sz=16, b=True, rFont=FONT_NAME, color="000000")
         font_cnpj_key = InlineFont(sz=11, b=True, rFont=FONT_NAME, color="000000")
         font_cnpj_val = InlineFont(sz=11, b=False, rFont=FONT_NAME, color="000000")
-        
+
         rt = CellRichText(
             TextBlock(font_large, f"{company_name}\n"),
             TextBlock(font_cnpj_key, "CNPJ: "),
@@ -262,25 +262,27 @@ class ExcelService:
         row_start = ws.max_row - 2
         row_mid = row_start + 1
         row_end = ws.max_row
-        
+
         ws.merge_cells(start_row=row_start, start_column=1, end_row=row_end, end_column=self.MAX_COLS)
         c1 = ws.cell(row=row_start, column=1)
         c1.value = rt
         c1.alignment = self.align_center
-        
+
         for r_idx in range(row_start, row_end + 1):
             for c_idx in range(1, self.MAX_COLS + 1):
                 ws.cell(row=r_idx, column=c_idx).border = self.border_standard
                 ws.cell(row=r_idx, column=c_idx).fill = self.fill_section_title
-                
+
         ws.row_dimensions[row_start].height = 12
         ws.row_dimensions[row_mid].height = 51
         ws.row_dimensions[row_end].height = 12
 
         ws.append([""])
         row_tel = ws.max_row
-        self._apply_key_value(ws, row_tel, start_col=1, key_text="Telefone:", key_width=4, val_text=company_phone, val_width=8, borders=True)
-        self._apply_key_value(ws, row_tel, start_col=13, key_text="Endereço:", key_width=3, val_text=company_address, val_width=9, borders=True)
+        self._apply_key_value(ws, row_tel, start_col=1, key_text="Telefone:", key_width=4, val_text=company_phone,
+                              val_width=8, borders=True)
+        self._apply_key_value(ws, row_tel, start_col=13, key_text="Endereço:", key_width=3, val_text=company_address,
+                              val_width=9, borders=True)
         ws.row_dimensions[row_tel].height = 20
 
         if logo_path:
@@ -319,28 +321,28 @@ class ExcelService:
             end_col = col + width - 1
             if width > 1:
                 ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
-            
+
             for c_idx in range(col, end_col + 1):
                 cell = ws.cell(row=row, column=c_idx)
                 if borders:
                     cell.border = self.border_standard
                 if fill:
                     cell.fill = fill
-            
+
             c = ws.cell(row=row, column=col)
             c.value = texts[i]
             if font:
                 c.font = font
             if alignment:
                 c.alignment = alignment
-            
+
             col += width
-            
+
     def _format_day_groups(self, days: list[int]) -> str:
         if not days:
             return ""
         days = sorted(set(days))
-        
+
         blocks = []
         current_block = [days[0]]
         for d in days[1:]:
@@ -350,7 +352,7 @@ class ExcelService:
                 blocks.append(current_block)
                 current_block = [d]
         blocks.append(current_block)
-        
+
         parts = []
         for block in blocks:
             if len(block) >= 3:
@@ -359,7 +361,7 @@ class ExcelService:
                 parts.append(f"{DayOfWeek(block[0]).abreviado} e {DayOfWeek(block[1]).abreviado}")
             else:
                 parts.append(DayOfWeek(block[0]).abreviado)
-        
+
         if len(parts) > 1:
             return ", ".join(parts[:-1]) + " e " + parts[-1]
         return parts[0]
@@ -377,7 +379,7 @@ class ExcelService:
         periods = []
         for i in range(len(transitions) - 1):
             p_start = transitions[i]
-            p_end = transitions[i+1] - timedelta(days=1)
+            p_end = transitions[i + 1] - timedelta(days=1)
             if p_start > p_end:
                 continue
             active_schedules = []
@@ -469,7 +471,9 @@ class ExcelService:
         merges = [14, 5, 5]
         ws_summary.append([""])
         header_row = ws_summary.max_row
-        self._merge_for_table(ws_summary, header_row, merges, ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"], self.header_font, self.align_center, fill=self.header_fill)
+        self._merge_for_table(ws_summary, header_row, merges,
+                              ["Nome do Colaborador", "Dias Trabalhados", "Horas Trabalhadas"], self.header_font,
+                              self.align_center, fill=self.header_fill)
 
         for user, report in user_reports:
             sum_data = report.summary
@@ -491,7 +495,7 @@ class ExcelService:
 
     def _build_employee_sheet(self, wb, user, report, month, year, company, logo_path, start_date, end_date):
         short_name = format_short_name(user.name)
-        
+
         ws_det = wb.create_sheet(title=short_name[:31])
         self._set_columns_width(ws_det)
 
@@ -523,26 +527,32 @@ class ExcelService:
         user_pis = user.pis or NOT_REGISTERED
         user_telefone = self._format_phone(user.phone) if hasattr(user, 'phone') and user.phone else NOT_REGISTERED
         user_endereco = user.endereco or NOT_REGISTERED
-        
+
         ws_det.append([""])
         info_row1 = ws_det.max_row
-        self._apply_key_value(ws_det, info_row1, start_col=1, key_text="Nome:", key_width=2, val_text=user.name, val_width=8, borders=True)
-        self._apply_key_value(ws_det, info_row1, start_col=11, key_text="CPF:", key_width=2, val_text=user_cpf, val_width=5, borders=True)
-        self._apply_key_value(ws_det, info_row1, start_col=18, key_text="PIS:", key_width=2, val_text=user_pis, val_width=5, borders=True)
-        
+        self._apply_key_value(ws_det, info_row1, start_col=1, key_text="Nome:", key_width=2, val_text=user.name,
+                              val_width=8, borders=True)
+        self._apply_key_value(ws_det, info_row1, start_col=11, key_text="CPF:", key_width=2, val_text=user_cpf,
+                              val_width=5, borders=True)
+        self._apply_key_value(ws_det, info_row1, start_col=18, key_text="PIS:", key_width=2, val_text=user_pis,
+                              val_width=5, borders=True)
+
         ws_det.append([""])
         info_row2 = ws_det.max_row
-        self._apply_key_value(ws_det, info_row2, start_col=1, key_text="Telefone:", key_width=3, val_text=user_telefone, val_width=7, borders=True)
-        self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3, val_text=user_endereco, val_width=11, borders=True)
+        self._apply_key_value(ws_det, info_row2, start_col=1, key_text="Telefone:", key_width=3, val_text=user_telefone,
+                              val_width=7, borders=True)
+        self._apply_key_value(ws_det, info_row2, start_col=11, key_text="Endereço:", key_width=3,
+                              val_text=user_endereco, val_width=11, borders=True)
         ws_det.append([""])
 
         merges = [2, 3, 13, 2, 2, 2]
         headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
-        
+
         ws_det.append([""])
         header_row = ws_det.max_row
         ws_det.row_dimensions[header_row].height = 30
-        self._merge_for_table(ws_det, header_row, merges, headers_det, self.header_font, self.align_center, fill=self.header_fill)
+        self._merge_for_table(ws_det, header_row, merges, headers_det, self.header_font, self.align_center,
+                              fill=self.header_fill)
 
         total_trab_bruto = 0.0
         total_extra = 0.0

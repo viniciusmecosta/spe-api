@@ -3,13 +3,13 @@ from datetime import date
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
-from app.shared.enums import AdjustmentStatus, AdjustmentType
 from app.features.adjustments.adjustment_models import (
     AdjustmentAttachment,
     AdjustmentRequest,
     get_local_time,
 )
 from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate
+from app.shared.enums import AdjustmentStatus, AdjustmentType
 
 
 class AdjustmentRepository:
@@ -29,21 +29,23 @@ class AdjustmentRepository:
         return db_obj
 
     def get(self, db: Session, id: int) -> AdjustmentRequest | None:
-        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id, AdjustmentRequest.deleted_at.is_(None)).first()
+        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id,
+                                                  AdjustmentRequest.deleted_at.is_(None)).first()
 
     def get_all_by_user(
-        self,
-        db: Session,
-        user_id: int,
-        skip: int = 0,
-        limit: int = 100,
-        month: int | None = None,
-        year: int | None = None,
-        status: str | None = None,
-        order_by: str = "created_at",
-        order_direction: str = "desc"
+            self,
+            db: Session,
+            user_id: int,
+            skip: int = 0,
+            limit: int = 100,
+            month: int | None = None,
+            year: int | None = None,
+            status: str | None = None,
+            order_by: str = "created_at",
+            order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id, AdjustmentRequest.deleted_at.is_(None))
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id,
+                                                   AdjustmentRequest.deleted_at.is_(None))
 
         if month and year:
             query = query.filter(
@@ -59,21 +61,22 @@ class AdjustmentRepository:
             else:
                 query = query.filter(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
 
-        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
+        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(
+            AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
         query = query.order_by(desc(order_column) if order_direction == "desc" else order_column)
 
         return query.offset(skip).limit(limit).all()
 
     def get_all(
-        self,
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        month: int | None = None,
-        year: int | None = None,
-        status: str | None = None,
-        order_by: str = "created_at",
-        order_direction: str = "desc"
+            self,
+            db: Session,
+            skip: int = 0,
+            limit: int = 100,
+            month: int | None = None,
+            year: int | None = None,
+            status: str | None = None,
+            order_by: str = "created_at",
+            order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
         query = db.query(AdjustmentRequest).filter(AdjustmentRequest.deleted_at.is_(None))
 
@@ -91,18 +94,21 @@ class AdjustmentRepository:
             else:
                 query = query.filter(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
 
-        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
+        order_column = AdjustmentRequest.target_date if order_by == "target_date" else func.coalesce(
+            AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
         query = query.order_by(desc(order_column) if order_direction == "desc" else order_column)
 
         return query.offset(skip).limit(limit).all()
 
     def count_pending(self, db: Session, from_date: date | None = None) -> int:
-        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING, AdjustmentRequest.deleted_at.is_(None))
+        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.status == AdjustmentStatus.PENDING,
+                                                   AdjustmentRequest.deleted_at.is_(None))
         if from_date:
             query = query.filter(AdjustmentRequest.target_date >= from_date)
         return query.count()
 
-    def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[AdjustmentRequest]:
+    def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[
+        AdjustmentRequest]:
         return db.query(AdjustmentRequest).filter(
             and_(
                 AdjustmentRequest.user_id == user_id,

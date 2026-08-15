@@ -3,9 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.features.users.user_models import User
 from app.features.holidays.holiday_schemas import HolidayCreate, HolidayResponse
 from app.features.holidays.holiday_service import holiday_service
+from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,
@@ -22,9 +22,9 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def create_holiday(
-    holiday_in: HolidayCreate,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        holiday_in: HolidayCreate,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> HolidayResponse:
     return holiday_service.create_holiday(db, holiday_in, current_user.id)
 
@@ -34,7 +34,7 @@ def create_holiday(
     dependencies=[Depends(deps.get_current_active_user)],
 )
 def read_holidays(
-    db: Annotated[Session, Depends(deps.get_db)],
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[HolidayResponse]:
     return holiday_service.get_all_holidays(db)
 
@@ -44,8 +44,8 @@ def read_holidays(
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
 def delete_holiday(
-    id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> dict[str, str]:
     return holiday_service.delete_holiday(db, id, current_user.id)

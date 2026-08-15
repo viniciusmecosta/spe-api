@@ -10,13 +10,13 @@ from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.shared.enums import UserRole
-from app.features.users.user_models import User
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_repository import payroll_repository
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import dispatch_payroll_email, email_service
+from app.features.users.user_models import User
+from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,8 @@ class PayrollService:
         )
         return closure
 
-    def reopen_period(self, db: Session, month: int, year: int, observation: str, current_user: User, background_tasks: BackgroundTasks):
+    def reopen_period(self, db: Session, month: int, year: int, observation: str, current_user: User,
+                      background_tasks: BackgroundTasks):
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

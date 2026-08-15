@@ -5,12 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.router import api_router as api_v1_router
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan
 from app.core.logger import setup_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
+from app.router import api_router as api_v1_router
 
 setup_logging()
 logger = logging.getLogger(__name__)

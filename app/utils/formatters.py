@@ -8,6 +8,7 @@ def format_short_name(full_name: str) -> str:
         return full_name
     return f"{filtered_parts[0]} {filtered_parts[1]}"
 
+
 def mask_cnpj(c: str) -> str:
     if not c or len(c) != 14:
         return c

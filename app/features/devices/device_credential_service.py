@@ -12,10 +12,10 @@ from app.features.system.audit_service import audit_service
 
 class DeviceCredentialService:
     def create(
-        self,
-        db: Session,
-        credential_in: DeviceCredentialCreate,
-        current_user_id: int,
+            self,
+            db: Session,
+            credential_in: DeviceCredentialCreate,
+            current_user_id: int,
     ) -> DeviceCredential:
         device = device_credential_repository.create(db, credential_in)
 
@@ -33,11 +33,11 @@ class DeviceCredentialService:
         return device_credential_repository.get_all(db)
 
     def update(
-        self,
-        db: Session,
-        credential_id: int,
-        credential_in: DeviceCredentialUpdate,
-        current_user_id: int,
+            self,
+            db: Session,
+            credential_id: int,
+            credential_in: DeviceCredentialUpdate,
+            current_user_id: int,
     ) -> DeviceCredential:
         device = device_credential_repository.get(db, credential_id)
         if not device:
@@ -62,10 +62,10 @@ class DeviceCredentialService:
         return updated_device
 
     def delete(
-        self,
-        db: Session,
-        credential_id: int,
-        current_user_id: int,
+            self,
+            db: Session,
+            credential_id: int,
+            current_user_id: int,
     ) -> dict[str, str]:
         device = device_credential_repository.get(db, credential_id)
         if not device:

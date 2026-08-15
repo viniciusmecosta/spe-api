@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.features.users.user_models import User
 from app.features.reports.dashboard_service import dashboard_service
 from app.features.reports.excel_service import excel_service
 from app.features.reports.report_schemas import (
@@ -17,6 +16,7 @@ from app.features.reports.report_schemas import (
     TeamHoursResponse,
 )
 from app.features.reports.report_service import report_service
+from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,

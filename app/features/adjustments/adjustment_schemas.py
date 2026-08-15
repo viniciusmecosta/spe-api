@@ -3,8 +3,8 @@ from datetime import time as dt_time
 
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
-from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.features.time_records.time_record_schemas import TimeRecordSimple
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 
 
 class AdjustmentRequestBase(BaseModel):
@@ -88,7 +88,8 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
                 "horario_batido": actual_time,
                 "horario_esperado": expected
             }
-        elif self.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED, AdjustmentType.DELETE_PUNCH]:
+        elif self.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED,
+                                      AdjustmentType.DELETE_PUNCH]:
             req_time = self.time.strftime("%H:%M") if self.time else "--:--"
             info = {
                 "horario_solicitado": req_time,

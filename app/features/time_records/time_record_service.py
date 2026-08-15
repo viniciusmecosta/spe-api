@@ -7,15 +7,11 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.shared.enums import (
-    AdjustmentStatus,
-    AdjustmentType,
-    RecordType,
-    UserRole,
-)
-from app.features.users.user_models import User
 from app.features.companies.company_repository import company_repository
+from app.features.payroll.payroll_service import payroll_service
 from app.features.printers.printer_repository import printer_repository
+from app.features.system.audit_service import audit_service
+from app.features.time_records.receipt_service import receipt_service
 from app.features.time_records.time_record_models import (
     TimeRecord,
     get_local_time,
@@ -30,10 +26,14 @@ from app.features.time_records.time_record_schemas import (
     TimeRecordDeleteAdmin,
     TimeRecordUpdate,
 )
-from app.features.payroll.payroll_service import payroll_service
-from app.features.system.audit_service import audit_service
-from app.features.time_records.receipt_service import receipt_service
+from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
+from app.shared.enums import (
+    AdjustmentStatus,
+    AdjustmentType,
+    RecordType,
+    UserRole,
+)
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import mask_cnpj, mask_cpf
@@ -139,7 +139,8 @@ class TimeRecordService:
             if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
                 self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
         if new_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), new_datetime=record.record_datetime):
+            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(),
+                                             new_datetime=record.record_datetime):
                 self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
         record.is_ignored = True
         new_record = TimeRecord(user_id=record.user_id, record_type=new_type, record_datetime=record.record_datetime,
@@ -162,7 +163,8 @@ class TimeRecordService:
                             device_name: str | None, platform: str = "WEB_ADMIN") -> TimeRecord:
         payroll_service.validate_period_open(db, obj_in.record_datetime.date())
         if obj_in.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, obj_in.user_id, obj_in.record_datetime.date(), new_datetime=obj_in.record_datetime):
+            if self._is_first_entry_affected(db, obj_in.user_id, obj_in.record_datetime.date(),
+                                             new_datetime=obj_in.record_datetime):
                 self._invalidate_extra_time_requests(db, obj_in.user_id, obj_in.record_datetime.date())
         record = time_record_repository.create(db, user_id=obj_in.user_id, record_type=obj_in.record_type,
                                                record_datetime=obj_in.record_datetime, ip_address=ip_address,
@@ -272,7 +274,8 @@ class TimeRecordService:
     def get_my_records(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
         return time_record_repository.get_all_by_user(db, user_id, skip, limit)
 
-    def list_records_for_admin(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[TimeRecord]:
+    def list_records_for_admin(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[
+        TimeRecord]:
         return time_record_repository.get_by_range(db, user_id, start_date, end_date)
 
     def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:

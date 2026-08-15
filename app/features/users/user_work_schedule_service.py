@@ -4,14 +4,14 @@ from typing import Any, Dict, List
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import and_, or_
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.shared.enums import DayOfWeek
 from app.features.payroll.payroll_repository import payroll_repository
 from app.features.system.audit_service import audit_service
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.features.users.user_repository import user_repository
+from app.shared.enums import DayOfWeek
 
 
 class UserWorkScheduleService:
@@ -52,8 +52,8 @@ class UserWorkScheduleService:
         sch.valid_until = valid_until
 
         total_seconds = (
-            self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
-            self._calculate_shift_seconds(sch.entry_2, sch.exit_2)
+                self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
+                self._calculate_shift_seconds(sch.entry_2, sch.exit_2)
         )
         sch.daily_hours = round(total_seconds / 3600, 2)
 
@@ -92,7 +92,8 @@ class UserWorkScheduleService:
                 current_month = 1
                 current_year += 1
 
-    def handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date, ignore_id: int = None):
+    def handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date,
+                                ignore_id: int = None):
         for sch in user.historical_schedules:
             if ignore_id and sch.id == ignore_id:
                 continue
@@ -191,7 +192,8 @@ class UserWorkScheduleService:
         valid_until = bulk_data.get('valid_until')
 
         if not valid_from or not valid_until:
-            raise HTTPException(status_code=400, detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            raise HTTPException(status_code=400,
+                                detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
         if (valid_until - valid_from).days > 31:
             raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
@@ -213,7 +215,7 @@ class UserWorkScheduleService:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
             self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors,
-                                                new_schedules)
+                                               new_schedules)
 
         if errors:
             raise HTTPException(status_code=400, detail=errors)
@@ -224,7 +226,8 @@ class UserWorkScheduleService:
         audit_service.log(
             db, user_id=current_user_id, action="CREATE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until),
+                      "bulk_data": jsonable_encoder(bulk_data)}
         )
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
@@ -238,12 +241,14 @@ class UserWorkScheduleService:
                 incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
         return incoming_map
 
-    def update_bulk_schedules(self, db: Session, old_valid_from: date, old_valid_until: date, bulk_data: dict, current_user_id: int):
+    def update_bulk_schedules(self, db: Session, old_valid_from: date, old_valid_until: date, bulk_data: dict,
+                              current_user_id: int):
         new_valid_from = bulk_data.get('valid_from')
         new_valid_until = bulk_data.get('valid_until')
 
         if not new_valid_from or not new_valid_until:
-            raise HTTPException(status_code=400, detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            raise HTTPException(status_code=400,
+                                detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
         if (new_valid_until - new_valid_from).days > 31:
             raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
@@ -291,7 +296,8 @@ class UserWorkScheduleService:
         for old_cfg, new_data in to_update:
             user = user_repository.get(db, old_cfg.user_id)
             try:
-                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until, ignore_id=old_cfg.id)
+                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until,
+                                             ignore_id=old_cfg.id)
             except HTTPException:
                 day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
@@ -326,7 +332,8 @@ class UserWorkScheduleService:
             db, user_id=current_user_id, action="UPDATE",
             entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
             old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
-            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until),
+                      "bulk_data": jsonable_encoder(bulk_data)}
         )
 
         return {"message": "Expedientes atualizados com sucesso."}

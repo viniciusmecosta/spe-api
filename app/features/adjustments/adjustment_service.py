@@ -8,21 +8,21 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
-from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
 from app.features.adjustments.adjustment_repository import adjustment_repository
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentWaiverCreate,
     BulkReprocessExtraTimeRequest,
 )
+from app.features.payroll.payroll_service import payroll_service
+from app.features.system.audit_service import audit_service
+from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
     get_local_time,
     time_record_repository,
 )
-from app.features.payroll.payroll_service import payroll_service
-from app.features.system.audit_service import audit_service
+from app.features.users.user_models import User
+from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.tolerance_cron_service import tolerance_cron_service
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
@@ -72,21 +72,22 @@ class AdjustmentService:
             )
 
     def get_all_enriched(
-        self, db: Session, skip: int = 0, limit: int = 100,
-        month: int | None = None, year: int | None = None,
-        status: str | None = None,
-        order_by: str = "created_at", order_direction: str = "desc"
+            self, db: Session, skip: int = 0, limit: int = 100,
+            month: int | None = None, year: int | None = None,
+            status: str | None = None,
+            order_by: str = "created_at", order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
         adjustments = adjustment_repository.get_all(db, skip, limit, month, year, status, order_by, order_direction)
         return self._enrich_adjustments_with_records(db, adjustments)
 
     def get_my_enriched(
-        self, db: Session, user_id: int, skip: int = 0, limit: int = 100,
-        month: int | None = None, year: int | None = None,
-        status: str | None = None,
-        order_by: str = "created_at", order_direction: str = "desc"
+            self, db: Session, user_id: int, skip: int = 0, limit: int = 100,
+            month: int | None = None, year: int | None = None,
+            status: str | None = None,
+            order_by: str = "created_at", order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit, month, year, status, order_by, order_direction)
+        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit, month, year, status, order_by,
+                                                            order_direction)
         return self._enrich_adjustments_with_records(db, adjustments)
 
     def create_adjustment_request(self, db: Session, user_id: int,
@@ -362,7 +363,8 @@ class AdjustmentService:
                 record.deleted_by = manager_id
                 db.commit()
 
-    def revert_adjustment_status(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus, comment: str) -> AdjustmentRequest:
+    def revert_adjustment_status(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus,
+                                 comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
             raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
@@ -374,16 +376,19 @@ class AdjustmentService:
         if old_status == new_status:
             return self._enrich_adjustments_with_records(db, [request])[0]
 
-        if old_status == AdjustmentStatus.APPROVED and new_status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+        if old_status == AdjustmentStatus.APPROVED and new_status in [AdjustmentStatus.PENDING,
+                                                                      AdjustmentStatus.REJECTED]:
             self._revert_adjustment_action(db, request, manager_id)
 
-        elif old_status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
+        elif old_status in [AdjustmentStatus.PENDING,
+                            AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
             if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME]:
                 self._execute_adjustment_action(db, request, manager_id)
 
         updated = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
 
-        actual_old, actual_new = audit_service.compute_diffs({"status": old_status.value}, {"status": updated.status.value, "comment": comment})
+        actual_old, actual_new = audit_service.compute_diffs({"status": old_status.value},
+                                                             {"status": updated.status.value, "comment": comment})
 
         audit_service.log(
             db, user_id=manager_id, action="REVERT_ADJUSTMENT",
@@ -393,7 +398,7 @@ class AdjustmentService:
         return self._enrich_adjustments_with_records(db, [updated])[0]
 
     def get_attachment_file_path(
-        self, db: Session, adjustment_id: int, current_user: User
+            self, db: Session, adjustment_id: int, current_user: User
     ) -> tuple[str, str]:
         adjustment = adjustment_repository.get(db, id=adjustment_id)
         if not adjustment:
@@ -421,10 +426,10 @@ class AdjustmentService:
         return safe_file_path, filename
 
     def reprocess_historical_extra_time(
-        self,
-        db: Session,
-        request_in: BulkReprocessExtraTimeRequest,
-        current_user: User,
+            self,
+            db: Session,
+            request_in: BulkReprocessExtraTimeRequest,
+            current_user: User,
     ) -> dict[str, str]:
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(

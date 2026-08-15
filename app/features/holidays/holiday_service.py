@@ -10,10 +10,10 @@ from app.features.system.audit_service import audit_service
 
 class HolidayService:
     def create_holiday(
-        self,
-        db: Session,
-        holiday_in: HolidayCreate,
-        current_user_id: int,
+            self,
+            db: Session,
+            holiday_in: HolidayCreate,
+            current_user_id: int,
     ) -> Holiday:
         payroll_service.validate_period_open(db, holiday_in.date)
         if holiday_repository.get_by_date(db, holiday_in.date):
@@ -37,10 +37,10 @@ class HolidayService:
         return holiday_repository.get_all(db)
 
     def delete_holiday(
-        self,
-        db: Session,
-        holiday_id: int,
-        current_user_id: int,
+            self,
+            db: Session,
+            holiday_id: int,
+            current_user_id: int,
     ) -> dict[str, str]:
         holiday = holiday_repository.get_by_id(db, holiday_id)
         if holiday:

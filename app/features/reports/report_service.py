@@ -9,11 +9,9 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.shared.enums import AdjustmentStatus, DayOfWeek, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.holidays.holiday_repository import holiday_repository
 from app.features.payroll.payroll_models import PayrollClosure
-from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DailyReportItem,
@@ -24,13 +22,15 @@ from app.features.reports.report_schemas import (
     PunchDetail,
     UserPayrollSummary,
 )
+from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
 from app.features.timesheets.anomaly_service import anomaly_service
-from app.features.holidays.holiday_repository import holiday_repository
+from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.shared import time_calculation_service as time_calc_mod
+from app.shared.enums import AdjustmentStatus, DayOfWeek, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,8 @@ class ReportService:
             punches.append(HistoryPunch(**punch_data))
         return punches
 
-    def _determine_history_status(self, has_records: bool, has_holiday: bool, is_weekend: bool, has_abono: bool, is_today: bool) -> str:
+    def _determine_history_status(self, has_records: bool, has_holiday: bool, is_weekend: bool, has_abono: bool,
+                                  is_today: bool) -> str:
         if has_records:
             return "Normal"
         if has_holiday:
@@ -518,7 +519,8 @@ class ReportService:
                 detail="O usuário não possui privilégios suficientes para acessar relatórios globais.",
             )
 
-    def check_user_report_access(self, current_user: User, user_id: int, detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
+    def check_user_report_access(self, current_user: User, user_id: int,
+                                 detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if not is_manager and not current_user.can_export_report and current_user.id != user_id:
             raise HTTPException(
@@ -527,7 +529,7 @@ class ReportService:
             )
 
     def get_advanced_user_report_or_404(
-        self, db: Session, user_id: int, month: int, year: int, current_user: User
+            self, db: Session, user_id: int, month: int, year: int, current_user: User
     ) -> AdvancedUserReportResponse:
         report = self.get_advanced_user_report(db, user_id, month, year, current_user)
         if not report:
@@ -535,7 +537,7 @@ class ReportService:
         return report
 
     def validate_excel_export_permission(
-        self, db: Session, current_user: User, month: int, year: int, now: datetime
+            self, db: Session, current_user: User, month: int, year: int, now: datetime
     ) -> None:
         is_maintainer = current_user.role == UserRole.MAINTAINER
         is_manager = current_user.role == UserRole.MANAGER

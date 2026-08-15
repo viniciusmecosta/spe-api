@@ -5,6 +5,11 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.time_records.time_record_repository import (
+    time_record_repository,
+)
+from app.features.timesheets.timesheet_schemas import AnomalyResponse
+from app.features.users.user_repository import user_repository
 from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
@@ -12,11 +17,6 @@ from app.shared.enums import (
     RecordType,
     UserRole,
 )
-from app.features.time_records.time_record_repository import (
-    time_record_repository,
-)
-from app.features.timesheets.timesheet_schemas import AnomalyResponse
-from app.features.users.user_repository import user_repository
 
 
 class AnomalyService:
@@ -50,12 +50,14 @@ class AnomalyService:
             if current_record.record_type == RecordType.ENTRY and prev_record.record_type == RecordType.ENTRY:
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
-                    type="DOUBLE_ENTRY", description="Registros duplicados: Duas entradas seguidas sem saída no intervalo."
+                    type="DOUBLE_ENTRY",
+                    description="Registros duplicados: Duas entradas seguidas sem saída no intervalo."
                 ))
             if current_record.record_type == RecordType.EXIT and prev_record.record_type == RecordType.EXIT:
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
-                    type="DOUBLE_EXIT", description="Registros duplicados: Duas saídas seguidas sem entrada no intervalo."
+                    type="DOUBLE_EXIT",
+                    description="Registros duplicados: Duas saídas seguidas sem entrada no intervalo."
                 ))
         return anomalies
 
@@ -98,11 +100,12 @@ class AnomalyService:
                                       expected_entry_time) -> list[AnomalyResponse]:
         anomalies = []
         for adj in day_adjustments:
-            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING,
+                                                                                   AdjustmentStatus.REJECTED]:
                 minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
                 time_to_show = expected_entry_time or adj.time
                 desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
-                
+
                 anomalies.append(AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
                     type="UNAPPROVED_EXTRA_TIME", description=desc
@@ -153,7 +156,7 @@ class AnomalyService:
             if rdate not in records_map[uid]:
                 records_map[uid][rdate] = []
             records_map[uid][rdate].append(record)
-            
+
         for adj in extra_time_adjustments:
             uid = adj.user_id
             rdate = adj.target_date

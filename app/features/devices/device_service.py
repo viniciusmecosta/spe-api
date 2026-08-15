@@ -3,7 +3,6 @@ import logging
 from fastapi import BackgroundTasks, Request
 from sqlalchemy.orm import Session
 
-from app.shared.enums import RecordType, UserRole
 from app.features.devices.device_repository import biometric_repository
 from app.features.devices.device_schemas import (
     BuzzerNote,
@@ -15,6 +14,7 @@ from app.features.devices.device_schemas import (
 from app.features.devices.punch_service import punch_service
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
+from app.shared.enums import RecordType, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 

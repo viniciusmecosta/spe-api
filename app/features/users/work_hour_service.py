@@ -4,11 +4,6 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.shared.enums import (
-    AdjustmentStatus,
-    AdjustmentType,
-    DayOfWeek,
-)
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_repository import holiday_repository
 from app.features.time_records.time_record_repository import (
@@ -16,6 +11,11 @@ from app.features.time_records.time_record_repository import (
 )
 from app.features.users.user_repository import user_repository
 from app.features.users.work_hour_schemas import WorkHourBalanceResponse
+from app.shared.enums import (
+    AdjustmentStatus,
+    AdjustmentType,
+    DayOfWeek,
+)
 from app.shared.time_calculation_service import time_calculation_service
 
 

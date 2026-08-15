@@ -23,15 +23,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.shared.enums import DayOfWeek, UserRole
-from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
 from app.features.companies.company_repository import company_repository
 from app.features.holidays.holiday_repository import holiday_repository
+from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
+from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
+from app.shared.enums import DayOfWeek, UserRole
 from app.shared.time_calculation_service import time_calculation_service
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -255,7 +255,7 @@ class TimesheetService:
         periods = []
         for i in range(len(transitions) - 1):
             p_start = transitions[i]
-            p_end = transitions[i+1] - timedelta(days=1)
+            p_end = transitions[i + 1] - timedelta(days=1)
             if p_start > p_end:
                 continue
             active_schedules = []
@@ -365,7 +365,7 @@ class TimesheetService:
             AdjustmentRequest.target_date <= end_date,
             AdjustmentRequest.deleted_at.is_(None)
         ).all()
-        
+
         company = company_repository.get_current(db)
 
         buffer = io.BytesIO()
@@ -475,7 +475,7 @@ class TimesheetService:
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
-              Paragraph(total_duration_str, header_style)]
+             Paragraph(total_duration_str, header_style)]
         ]
         sum_table = Table(summary_info, colWidths=[175, 360])
         sum_table.setStyle(TableStyle([
@@ -497,7 +497,8 @@ class TimesheetService:
         now, _ = trusted_time_service.get_trusted_time()
         generated_at = now.strftime("%d/%m/%Y %H:%M")
         story.append(Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style))
-        story.append(Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
+        story.append(
+            Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
         story.append(Paragraph(f"* Documento gerado em: {generated_at}", note_style))
         story.append(Spacer(1, 8))
 
@@ -523,12 +524,13 @@ class TimesheetService:
         sig_line = [
             [Paragraph("_______________________________________<br/>Assinatura do Colaborador",
                        sig_text_style),
-              Paragraph("_______________________________________<br/>Representante da Empresa", sig_text_style)]
+             Paragraph("_______________________________________<br/>Representante da Empresa", sig_text_style)]
         ]
         sig_table = Table(sig_line, colWidths=[265, 270])
         story.append(sig_table)
 
         company_name = company.name if company else "Empresa Não Cadastrada"
+
         def _add_pdf_meta(canvas, document):
             canvas.setTitle(f"{company_name} - Registro de Ponto")
             canvas.setAuthor(company_name)

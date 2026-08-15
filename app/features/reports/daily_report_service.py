@@ -3,11 +3,11 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
-from app.shared.enums import DayOfWeek, RecordType
-from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
 from app.features.reports.template_service import template_service
+from app.features.time_records.time_record_models import TimeRecord
 from app.features.timesheets.anomaly_service import anomaly_service
+from app.features.users.user_models import User
+from app.shared.enums import DayOfWeek, RecordType
 from app.utils.formatters import format_short_name
 
 logger = logging.getLogger(__name__)

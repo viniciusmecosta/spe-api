@@ -3,12 +3,12 @@ from datetime import date, datetime, time
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.shared.enums import UserRole
 from app.features.devices.device_schemas import (
     UserBiometricCreate,
     UserBiometricResponse,
     UserBiometricUpdate,
 )
+from app.shared.enums import UserRole
 
 DOB_FUTURE_ERROR = 'A data de nascimento não pode estar no futuro.'
 

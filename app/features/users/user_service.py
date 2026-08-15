@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
-from app.shared.enums import UserRole
+from app.features.system.audit_service import audit_service
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.features.users.user_schemas import UserCreate, UserUpdate
-from app.features.system.audit_service import audit_service
+from app.shared.enums import UserRole
 
 
 class UserService:
@@ -37,10 +37,12 @@ class UserService:
         if finger_id is None:
             return
         if finger_id in seen_fingers:
-            raise HTTPException(status_code=400, detail=f"O dedo com ID {finger_id} foi enviado mais de uma vez para o mesmo usuario.")
+            raise HTTPException(status_code=400,
+                                detail=f"O dedo com ID {finger_id} foi enviado mais de uma vez para o mesmo usuario.")
         seen_fingers.add(finger_id)
 
-    def _process_single_biometric(self, db: Session, user: User, bio_data: Any, seen_indices: set, seen_fingers: set, current_biometrics: dict) -> UserBiometric:
+    def _process_single_biometric(self, db: Session, user: User, bio_data: Any, seen_indices: set, seen_fingers: set,
+                                  current_biometrics: dict) -> UserBiometric:
         bio_id = self._get_bio_attr(bio_data, 'id')
         sensor_idx = self._get_bio_attr(bio_data, 'sensor_index')
         tmpl_data = self._get_bio_attr(bio_data, 'template_data')
@@ -70,7 +72,8 @@ class UserService:
         seen_fingers = set()
 
         for bio_data in biometrics_in:
-            processed_bio = self._process_single_biometric(db, user, bio_data, seen_indices, seen_fingers, current_biometrics)
+            processed_bio = self._process_single_biometric(db, user, bio_data, seen_indices, seen_fingers,
+                                                           current_biometrics)
             new_biometrics_list.append(processed_bio)
 
         user.biometrics = new_biometrics_list
@@ -235,15 +238,15 @@ class UserService:
         return user
 
     def get_multi(
-        self,
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        is_active: bool | None = None,
-        role: str | None = None,
-        search: str | None = None,
-        order_by: str = "id",
-        order_direction: str = "asc",
+            self,
+            db: Session,
+            skip: int = 0,
+            limit: int = 100,
+            is_active: bool | None = None,
+            role: str | None = None,
+            search: str | None = None,
+            order_by: str = "id",
+            order_direction: str = "asc",
     ) -> list[User]:
         return user_repository.get_multi(
             db,
@@ -283,7 +286,7 @@ class UserService:
         return user
 
     def update_user_by_admin(
-        self, db: Session, user_id: int, user_in: UserUpdate, current_user: User
+            self, db: Session, user_id: int, user_in: UserUpdate, current_user: User
     ) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:

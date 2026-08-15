@@ -24,10 +24,10 @@ anomalies_router = APIRouter(responses={**AUTH_RESPONSES})
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def get_official_timesheet_user_pdf(
-    user_id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    month: Annotated[int, Query(ge=1, le=12)],
-    year: Annotated[int, Query(ge=2000)],
+        user_id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        month: Annotated[int, Query(ge=1, le=12)],
+        year: Annotated[int, Query(ge=2000)],
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     pdf_buffer = timesheet_service.generate_user_timesheet_pdf(db, user_id, month, year)
@@ -45,10 +45,10 @@ def get_official_timesheet_user_pdf(
     responses={**BAD_REQUEST_RESPONSE},
 )
 def get_official_timesheet_all_pdf(
-    db: Annotated[Session, Depends(deps.get_db)],
-    month: Annotated[int, Query(ge=1, le=12)],
-    year: Annotated[int, Query(ge=2000)],
-    employee_ids: Annotated[list[int] | None, Query()] = None,
+        db: Annotated[Session, Depends(deps.get_db)],
+        month: Annotated[int, Query(ge=1, le=12)],
+        year: Annotated[int, Query(ge=2000)],
+        employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     timesheet_service.validate_date_not_future(month, year)
     zip_buffer = timesheet_service.generate_all_timesheets_pdf_zip(db, month, year, employee_ids)
@@ -66,9 +66,9 @@ def get_official_timesheet_all_pdf(
     dependencies=[Depends(deps.get_current_manager)],
 )
 def get_all_anomalies(
-    month: int,
-    year: int,
-    db: Annotated[Session, Depends(deps.get_db)],
+        month: int,
+        year: int,
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[AnomalyResponse]:
     return anomaly_service.get_anomalies_by_month(db, month, year)
 
@@ -78,9 +78,9 @@ def get_all_anomalies(
     dependencies=[Depends(deps.get_current_manager)],
 )
 def get_user_anomalies(
-    user_id: int,
-    month: int,
-    year: int,
-    db: Annotated[Session, Depends(deps.get_db)],
+        user_id: int,
+        month: int,
+        year: int,
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[AnomalyResponse]:
     return anomaly_service.get_anomalies_by_month(db, month, year, user_id=user_id)

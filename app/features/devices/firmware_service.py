@@ -86,7 +86,7 @@ class FirmwareService:
 
         old_data = {"file_path": firmware_old.file_path}
         new_data_raw = {"file_path": relative_file_path}
-        
+
         actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
 
         audit_service.log(

@@ -4,7 +4,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.users.user_schemas import (
     BulkWorkScheduleCreate,
@@ -17,6 +16,7 @@ from app.features.users.user_schemas import (
 from app.features.users.user_service import user_service
 from app.features.users.user_work_schedule_service import user_work_schedule_service
 from app.shared import deps
+from app.shared.enums import UserRole
 from app.shared.openapi_responses import (
     BAD_REQUEST_RESPONSE,
     CRUD_RESPONSES,
@@ -33,17 +33,17 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     responses={**FORBIDDEN_RESPONSE},
 )
 def read_users(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
-    skip: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
-    is_active: Annotated[bool | None, Query()] = None,
-    role: Annotated[UserRole | None, Query()] = None,
-    search: Annotated[str | None, Query()] = None,
-    order_by: Annotated[
-        str, Query(pattern="^(id|name|username|created_at|updated_at)$")
-    ] = "id",
-    order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+        skip: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+        is_active: Annotated[bool | None, Query()] = None,
+        role: Annotated[UserRole | None, Query()] = None,
+        search: Annotated[str | None, Query()] = None,
+        order_by: Annotated[
+            str, Query(pattern="^(id|name|username|created_at|updated_at)$")
+        ] = "id",
+        order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
 ) -> list[UserResponse]:
     role_value = role.value if role else None
     return user_service.get_multi(
@@ -64,9 +64,9 @@ def read_users(
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def create_user(
-    user_in: UserCreate,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        user_in: UserCreate,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> UserResponse:
     return user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
 
@@ -76,9 +76,9 @@ def create_user(
     responses={**BAD_REQUEST_RESPONSE},
 )
 def update_user_me(
-    user_in: UserUpdateMe,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        user_in: UserUpdateMe,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     update_data = UserUpdate(**user_in.model_dump(exclude_unset=True))
     return user_service.update_user(
@@ -91,8 +91,8 @@ def update_user_me(
 
 @router.get("/me")
 def read_user_me(
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     return user_service.get_user_me(current_user)
 
@@ -103,9 +103,9 @@ def read_user_me(
     responses={**FORBIDDEN_RESPONSE},
 )
 def get_bulk_schedules(
-    db: Annotated[Session, Depends(deps.get_db)],
-    month: Annotated[int, Query(ge=1, le=12)],
-    year: Annotated[int, Query(ge=2000, le=2100)],
+        db: Annotated[Session, Depends(deps.get_db)],
+        month: Annotated[int, Query(ge=1, le=12)],
+        year: Annotated[int, Query(ge=2000, le=2100)],
 ) -> list[BulkWorkScheduleResponse]:
     return user_work_schedule_service.get_bulk_schedules(db=db, month=month, year=year)
 
@@ -116,9 +116,9 @@ def get_bulk_schedules(
     responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def get_bulk_schedule_by_dates(
-    valid_from: date,
-    valid_until: date,
-    db: Annotated[Session, Depends(deps.get_db)],
+        valid_from: date,
+        valid_until: date,
+        db: Annotated[Session, Depends(deps.get_db)],
 ) -> BulkWorkScheduleResponse:
     return user_work_schedule_service.get_bulk_schedule(
         db=db, valid_from=valid_from, valid_until=valid_until
@@ -130,9 +130,9 @@ def get_bulk_schedule_by_dates(
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def add_bulk_schedules(
-    schedule_in: BulkWorkScheduleCreate,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        schedule_in: BulkWorkScheduleCreate,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> Any:
     return user_work_schedule_service.bulk_add_schedules(
         db=db,
@@ -146,11 +146,11 @@ def add_bulk_schedules(
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def update_bulk_schedules(
-    valid_from: date,
-    valid_until: date,
-    schedule_in: BulkWorkScheduleCreate,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        valid_from: date,
+        valid_until: date,
+        schedule_in: BulkWorkScheduleCreate,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> Any:
     return user_work_schedule_service.update_bulk_schedules(
         db=db,
@@ -166,10 +166,10 @@ def update_bulk_schedules(
     responses={**FORBIDDEN_RESPONSE},
 )
 def delete_bulk_schedules(
-    valid_from: date,
-    valid_until: date,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        valid_from: date,
+        valid_until: date,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> Any:
     return user_work_schedule_service.delete_bulk_schedules(
         db=db,
@@ -184,9 +184,9 @@ def delete_bulk_schedules(
     responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def read_user_by_id(
-    user_id: int,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        user_id: int,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     return user_service.get_user_by_id(db, user_id=user_id, current_user=current_user)
 
@@ -196,10 +196,10 @@ def read_user_by_id(
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 def update_user(
-    user_id: int,
-    user_in: UserUpdate,
-    db: Annotated[Session, Depends(deps.get_db)],
-    current_user: Annotated[User, Depends(deps.get_current_manager)],
+        user_id: int,
+        user_in: UserUpdate,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> UserResponse:
     return user_service.update_user_by_admin(
         db, user_id=user_id, user_in=user_in, current_user=current_user

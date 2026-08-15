@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.time_records.time_record_models import TimeRecord
 from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     DayOfWeek,
     RecordType,
 )
-from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.time_records.time_record_models import TimeRecord
 
 
 @dataclass
@@ -110,10 +110,10 @@ class TimeCalculationService:
         net_worked_seconds = adjusted_worked_seconds - unapproved_extra_seconds
 
         gross_worked_seconds = net_worked_seconds + unapproved_extra_seconds
-            
+
         extra_seconds = 0.0
         missing_seconds = 0.0
-        
+
         if has_schedule:
             balance = net_worked_seconds - expected_seconds
             extra_seconds = balance if balance > 0 else 0.0

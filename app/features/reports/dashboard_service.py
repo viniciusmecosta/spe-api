@@ -6,8 +6,6 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.shared.enums import RecordType, UserRole
-from app.features.users.user_models import User
 from app.features.adjustments.adjustment_repository import adjustment_repository
 from app.features.reports.report_schemas import (
     Aniversariante,
@@ -24,6 +22,8 @@ from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
 from app.features.timesheets.anomaly_service import anomaly_service
+from app.features.users.user_models import User
+from app.shared.enums import RecordType, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 

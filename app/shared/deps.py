@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_api_key_hash
 from app.database.session import SessionLocal
-from app.shared.enums import DeviceKeyType, UserRole
 from app.features.auth.auth_schemas import TokenPayload
 from app.features.devices.device_models import DeviceCredential
 from app.features.users.user_models import User
+from app.shared.enums import DeviceKeyType, UserRole
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
@@ -32,8 +32,8 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_current_user(
-    db: Annotated[Session, Depends(get_db)],
-    token: Annotated[str, Depends(reusable_oauth2)],
+        db: Annotated[Session, Depends(get_db)],
+        token: Annotated[str, Depends(reusable_oauth2)],
 ) -> User:
     try:
         payload = jwt.decode(
@@ -61,7 +61,7 @@ def get_current_user(
 
 
 def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)],
+        current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
@@ -69,7 +69,7 @@ def get_current_active_user(
 
 
 def get_current_manager(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+        current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(
@@ -80,7 +80,7 @@ def get_current_manager(
 
 
 def get_current_maintainer(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+        current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     if current_user.role != UserRole.MAINTAINER:
         raise HTTPException(
@@ -91,9 +91,9 @@ def get_current_maintainer(
 
 
 def verify_device_api_key(
-    request: Request,
-    api_key: Annotated[str | None, Security(api_key_header)],
-    db: Annotated[Session, Depends(get_db)],
+        request: Request,
+        api_key: Annotated[str | None, Security(api_key_header)],
+        db: Annotated[Session, Depends(get_db)],
 ) -> DeviceCredential:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device API Key missing")
@@ -112,9 +112,9 @@ def verify_device_api_key(
 
 
 def verify_consumer_api_key(
-    request: Request,
-    api_key: Annotated[str | None, Security(consumer_api_key_header)],
-    db: Annotated[Session, Depends(get_db)],
+        request: Request,
+        api_key: Annotated[str | None, Security(consumer_api_key_header)],
+        db: Annotated[Session, Depends(get_db)],
 ) -> DeviceCredential:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Consumer API Key missing")

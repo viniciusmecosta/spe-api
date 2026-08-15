@@ -3,12 +3,12 @@ from datetime import datetime
 from sqlalchemy import and_, desc, distinct, func, or_
 from sqlalchemy.orm import Session
 
-from app.shared.enums import RecordType
 from app.features.time_records.time_record_models import (
     TimeRecord,
     get_local_time,
 )
 from app.features.time_records.time_record_schemas import TimeRecordUpdate
+from app.shared.enums import RecordType
 
 
 class TimeRecordRepository:
@@ -57,7 +57,8 @@ class TimeRecordRepository:
             )
         ).order_by(TimeRecord.record_datetime).all()
 
-    def get_by_users_and_range(self, db: Session, user_ids: list[int], start_date: datetime, end_date: datetime) -> list[TimeRecord]:
+    def get_by_users_and_range(self, db: Session, user_ids: list[int], start_date: datetime, end_date: datetime) -> \
+    list[TimeRecord]:
         return db.query(TimeRecord).filter(
             and_(
                 TimeRecord.user_id.in_(user_ids),

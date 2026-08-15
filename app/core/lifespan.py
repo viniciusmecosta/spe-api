@@ -33,7 +33,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(routine_orchestrator.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
                       max_instances=1, coalesce=True)
 
-    scheduler.add_job(tolerance_cron_service.process_unverified_entries, trigger=trigger_5min, id="tolerance_entries_check",
+    scheduler.add_job(tolerance_cron_service.process_unverified_entries, trigger=trigger_5min,
+                      id="tolerance_entries_check",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":

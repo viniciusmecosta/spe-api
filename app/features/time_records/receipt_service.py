@@ -70,31 +70,31 @@ class ReceiptService:
         buffer = io.BytesIO()
         width = 80 * mm
         height = 31 * mm
-        
+
         c = canvas.Canvas(buffer, pagesize=(width, height))
-        
+
         c.setTitle(str(data['nsr']))
         c.setAuthor(str(val('company_name')))
         c.setSubject("Comprovante de Registro de Ponto")
         c.setCreator("Sistema de Ponto Eletrônico")
-        
+
         c.setFont("Times-Bold", 7)
         c.drawCentredString(width / 2.0, height - 3 * mm, "Comprovante de Registro de Ponto")
-        
+
         qr_size = 17 * mm
         qr_x = width - qr_size - 1 * mm
         qr_y = height - 7 * mm - qr_size
-        
+
         qr = qrcode.QRCode(box_size=3, border=0)
         qr.add_data(val('short_id'))
         qr.make(fit=True)
         img = qr.make_image(fill_color="black", back_color="white")
-        
+
         c.drawInlineImage(img, qr_x, qr_y, width=qr_size, height=qr_size)
-        
+
         c.setFont("Times-Roman", 6)
         c.drawCentredString(qr_x + qr_size / 2.0, qr_y - 2 * mm, val('short_id'))
-        
+
         c.setFont("Times-Roman", 7)
         text = c.beginText(1 * mm, height - 6.5 * mm)
         text.setLeading(7)
@@ -107,16 +107,16 @@ class ReceiptService:
         text.textLine(f"Tipo: {val('record_type_str')} | NSR: {val('nsr')}")
         y_pos = text.getY()
         c.drawText(text)
-        
+
         c.setFont("Times-Italic", 7)
         c.drawString(1 * mm, y_pos, f"Local: {val('device_name')}")
-        
+
         c.showPage()
         c.save()
-        
+
         pdf_bytes = buffer.getvalue()
         buffer.close()
-        
+
         return pdf_bytes
 
 

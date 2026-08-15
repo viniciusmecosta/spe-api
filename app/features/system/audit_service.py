@@ -23,7 +23,7 @@ class AuditService:
     def compute_diffs(self, old_data: dict, new_data: dict) -> tuple[dict, dict]:
         actual_old = {}
         actual_new = {}
-        
+
         all_keys = set(old_data.keys()).union(new_data.keys())
         for key in all_keys:
             old_val = old_data.get(key)
@@ -33,7 +33,7 @@ class AuditService:
                     actual_old[key] = old_val
                 if key in new_data:
                     actual_new[key] = new_val
-                    
+
         return actual_old, actual_new
 
     def get_logs(self, db: Session, action: str | None = None,

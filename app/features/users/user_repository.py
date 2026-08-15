@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
-from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
+from app.shared.enums import UserRole
 
 
 class UserRepository:
