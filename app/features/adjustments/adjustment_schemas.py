@@ -3,7 +3,7 @@ from datetime import time as dt_time
 
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
-from app.domain.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.features.time_records.time_record_schemas import TimeRecordSimple
 
 

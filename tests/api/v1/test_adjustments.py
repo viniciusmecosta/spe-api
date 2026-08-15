@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared import deps
-from app.domain.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,
     AdjustmentRequestResponse,

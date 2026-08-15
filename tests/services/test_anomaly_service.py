@@ -4,7 +4,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 import pytest
-from app.domain.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
+from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
 from app.features.timesheets.anomaly_service import anomaly_service
 
 

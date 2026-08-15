@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import get_db_session
-from app.domain.enums import (
+from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     DayOfWeek,

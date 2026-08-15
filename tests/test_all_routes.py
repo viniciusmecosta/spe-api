@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database.session import SessionLocal
 from app.features.users.user_models import User
-from app.domain.enums import UserRole, DeviceKeyType
+from app.shared.enums import UserRole, DeviceKeyType
 from app.features.devices.device_models import DeviceCredential
 from app.core.security import get_password_hash, get_api_key_hash
 

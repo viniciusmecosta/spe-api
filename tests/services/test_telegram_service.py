@@ -5,7 +5,7 @@ import requests
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.system.telegram_service import TelegramService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User

@@ -2,7 +2,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.security import get_api_key_hash
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.devices.device_models import (
     DeviceCredential,

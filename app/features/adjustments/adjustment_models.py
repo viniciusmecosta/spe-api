@@ -17,7 +17,7 @@ from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 
 
 def get_local_time():

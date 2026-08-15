@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import DeviceKeyType
+from app.shared.enums import DeviceKeyType
 
 
 class DevicePunchRequest(BaseModel):

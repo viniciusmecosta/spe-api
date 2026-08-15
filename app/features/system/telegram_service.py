@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.utils.formatters import format_short_name

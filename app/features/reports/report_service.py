@@ -9,7 +9,7 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.domain.enums import AdjustmentStatus, DayOfWeek, UserRole
+from app.shared.enums import AdjustmentStatus, DayOfWeek, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord

@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, HTTPException, status
 
 import pytest
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User

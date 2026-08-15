@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import and_, desc, distinct, func, or_
 from sqlalchemy.orm import Session
 
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.time_records.time_record_models import (
     TimeRecord,
     get_local_time,

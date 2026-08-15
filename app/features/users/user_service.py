@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.features.users.user_schemas import UserCreate, UserUpdate

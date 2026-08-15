@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
-from app.domain.enums import DayOfWeek, RecordType
+from app.shared.enums import DayOfWeek, RecordType
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.features.reports.template_service import template_service

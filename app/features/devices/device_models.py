@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.enums import DeviceKeyType
+from app.shared.enums import DeviceKeyType
 
 
 def get_local_time():

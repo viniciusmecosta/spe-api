@@ -6,7 +6,7 @@ from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.domain.enums import RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.features.users.user_models import User
 from app.features.adjustments.adjustment_repository import adjustment_repository
 from app.features.reports.report_schemas import (

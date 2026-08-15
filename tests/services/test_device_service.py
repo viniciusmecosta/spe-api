@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.enums import RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.features.devices.device_schemas import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
 from app.features.devices.device_service import device_service
 

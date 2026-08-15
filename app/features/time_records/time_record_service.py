@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.domain.enums import (
+from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     RecordType,

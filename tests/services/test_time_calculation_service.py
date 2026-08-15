@@ -3,7 +3,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from app.domain.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
+from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.shared.time_calculation_service import time_calculation_service, _DailyProcessState, DailyTimeResult

@@ -6,7 +6,7 @@ from fastapi import HTTPException, Request, status
 
 import pytest
 from app.core.config import settings
-from app.domain.enums import RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordCreateAdmin, TimeRecordDeleteAdmin, TimeRecordUpdate

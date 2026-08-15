@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate

@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.domain.enums import (
+from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     DayOfWeek,

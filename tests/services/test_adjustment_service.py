@@ -4,7 +4,7 @@ from io import BytesIO
 from fastapi import HTTPException, UploadFile
 
 import pytest
-from app.domain.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate, AdjustmentWaiverCreate
 from app.features.adjustments.adjustment_service import adjustment_service

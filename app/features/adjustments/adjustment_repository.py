@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
-from app.domain.enums import AdjustmentStatus, AdjustmentType
+from app.shared.enums import AdjustmentStatus, AdjustmentType
 from app.features.adjustments.adjustment_models import (
     AdjustmentAttachment,
     AdjustmentRequest,

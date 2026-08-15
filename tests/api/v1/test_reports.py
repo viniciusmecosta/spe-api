@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared import deps
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,

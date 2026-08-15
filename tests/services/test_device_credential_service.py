@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.domain.enums import DeviceKeyType
+from app.shared.enums import DeviceKeyType
 from app.features.devices.device_credential_service import device_credential_service
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate

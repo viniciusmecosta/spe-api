@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 from app.core.logger import get_log_path
 from app.database.session import get_db_session
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.reports.daily_report_service import daily_report_service
 from app.features.system.backup_service import backup_service

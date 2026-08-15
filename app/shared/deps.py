@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_api_key_hash
 from app.database.session import SessionLocal
-from app.domain.enums import DeviceKeyType, UserRole
+from app.shared.enums import DeviceKeyType, UserRole
 from app.features.auth.auth_schemas import TokenPayload
 from app.features.devices.device_models import DeviceCredential
 from app.features.users.user_models import User

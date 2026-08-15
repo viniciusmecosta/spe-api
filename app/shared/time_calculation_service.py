@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from app.domain.enums import (
+from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     DayOfWeek,

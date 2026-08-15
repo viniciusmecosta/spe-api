@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.domain.enums import DayOfWeek, UserRole
+from app.shared.enums import DayOfWeek, UserRole
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.features.companies.company_repository import company_repository

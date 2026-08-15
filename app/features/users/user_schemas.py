@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.devices.device_schemas import (
     UserBiometricCreate,
     UserBiometricResponse,

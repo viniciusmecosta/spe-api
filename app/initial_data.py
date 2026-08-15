@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.database.session import get_db_session
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 

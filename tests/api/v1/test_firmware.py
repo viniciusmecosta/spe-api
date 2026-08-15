@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared import deps
-from app.domain.enums import DeviceKeyType, UserRole
+from app.shared.enums import DeviceKeyType, UserRole
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import FirmwareListResponse, FirmwareResponse
 from app.features.users.user_models import User

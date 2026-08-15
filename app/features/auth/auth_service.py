@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.config import settings
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.auth.auth_schemas import Token
 from app.features.system.audit_service import audit_service
 from app.features.users.user_repository import user_repository

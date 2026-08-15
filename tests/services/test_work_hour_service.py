@@ -1,7 +1,7 @@
 from datetime import date
 from unittest.mock import MagicMock
 
-from app.domain.enums import AdjustmentType
+from app.shared.enums import AdjustmentType
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_models import Holiday
 from app.features.users.user_models import User, UserWorkScheduleConfig

@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
-from app.domain.enums import AdjustmentType, RecordType
+from app.shared.enums import AdjustmentType, RecordType
 from app.shared.tolerance_cron_service import ToleranceCronService
 
 

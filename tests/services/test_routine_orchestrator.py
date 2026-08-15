@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
 from app.core.config import settings
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_models import RoutineLog
 from app.features.users.user_models import User

@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.domain.enums import (
+from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     DayOfWeek,

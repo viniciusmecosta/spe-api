@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import pytest
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
 from app.features.timesheets.timesheet_service import timesheet_service

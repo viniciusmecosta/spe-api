@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook
 
 import pytest
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.reports.excel_service import ExcelService
 from app.features.users.user_models import User
 

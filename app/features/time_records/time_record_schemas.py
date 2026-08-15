@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 
 
 class SuccessResponse(BaseModel):

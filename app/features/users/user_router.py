@@ -4,7 +4,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.users.user_schemas import (
     BulkWorkScheduleCreate,

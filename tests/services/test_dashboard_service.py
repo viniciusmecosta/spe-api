@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.config import settings
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.reports.dashboard_service import dashboard_service
 from app.features.reports.report_schemas import DashboardMetricsResponse, TeamHoursResponse
 from app.features.users.user_models import User

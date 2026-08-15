@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.domain.enums import AdjustmentStatus, AdjustmentType, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.features.adjustments.adjustment_repository import adjustment_repository

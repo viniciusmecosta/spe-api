@@ -7,7 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from app.domain.enums import DayOfWeek
+from app.shared.enums import DayOfWeek
 from app.features.payroll.payroll_repository import payroll_repository
 from app.features.system.audit_service import audit_service
 from app.features.users.user_models import User, UserWorkScheduleConfig

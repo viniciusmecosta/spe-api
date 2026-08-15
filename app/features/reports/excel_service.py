@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
-from app.domain.enums import DayOfWeek, UserRole
+from app.shared.enums import DayOfWeek, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User

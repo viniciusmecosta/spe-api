@@ -3,7 +3,7 @@ import logging
 from fastapi import BackgroundTasks, Request
 from sqlalchemy.orm import Session
 
-from app.domain.enums import RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.features.devices.device_repository import biometric_repository
 from app.features.devices.device_schemas import (
     BuzzerNote,

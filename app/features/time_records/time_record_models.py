@@ -15,7 +15,7 @@ from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.shared.hashid_service import hashid_service
 
 

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared import deps
-from app.domain.enums import DeviceKeyType
+from app.shared.enums import DeviceKeyType
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import (
     BuzzerNote,

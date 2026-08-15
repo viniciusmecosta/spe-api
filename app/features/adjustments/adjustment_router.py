@@ -12,7 +12,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.domain.enums import AdjustmentStatus
+from app.shared.enums import AdjustmentStatus
 from app.features.users.user_models import User
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,

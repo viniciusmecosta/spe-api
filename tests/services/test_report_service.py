@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 import pytest
 from app.core.config import settings
-from app.domain.enums import UserRole, RecordType
+from app.shared.enums import UserRole, RecordType
 from app.features.reports.report_schemas import UserPayrollSummary
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord

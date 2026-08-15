@@ -2,7 +2,7 @@ from datetime import date, datetime
 from unittest.mock import patch
 
 import pytest
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.reports.daily_report_service import DailyReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared.deps import get_current_active_user
-from app.domain.enums import RecordType
+from app.shared.enums import RecordType
 from app.features.time_records.time_record_schemas import ReceiptResponse
 from app.features.users.user_models import User
 from app.main import app

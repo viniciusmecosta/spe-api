@@ -10,7 +10,7 @@ from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.domain.enums import UserRole
+from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_repository import payroll_repository

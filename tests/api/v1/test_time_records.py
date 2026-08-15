@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.shared import deps
-from app.domain.enums import RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordTimelineResponse
 from app.features.users.user_models import User
