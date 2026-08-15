@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.main import app
+from app.shared import deps
+from app.shared.enums import UserRole
 
 
 @pytest.fixture
@@ -29,6 +29,7 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
     mock_task = mocker.patch("app.features.system.system_router.routine_orchestrator.execute_manual_backup_telegram")
+    mocker.patch("app.features.system.system_router.audit_service.log")
 
     response = client.post("/api/v1/telegram/manual-backup")
     assert response.status_code == 200
@@ -37,6 +38,7 @@ def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
 
 def test_trigger_manual_report_success(client: TestClient, mocker: MagicMock) -> None:
     mock_task = mocker.patch("app.features.system.system_router.routine_orchestrator.send_manual_report_telegram")
+    mocker.patch("app.features.system.system_router.audit_service.log")
 
     response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-01&end_date=2026-08-05")
     assert response.status_code == 200

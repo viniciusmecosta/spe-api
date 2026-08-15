@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.auth.auth_service import auth_service
 from app.features.users.user_models import User
+from app.shared.enums import UserRole
 
 
 def test_authenticate_user_not_found(db_session_mock: MagicMock, mocker: MagicMock) -> None:
@@ -54,7 +54,7 @@ def test_authenticate_dev_bypass_success(db_session_mock: MagicMock, mocker: Mag
     mocker.patch("app.features.auth.auth_service.user_repository.get_by_username", return_value=user)
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "dev")
     mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="fake_token")
-    mocker.patch("app.features.auth.auth_service.audit_service.log_change")
+    mocker.patch("app.features.auth.auth_service.audit_service.log")
 
     token = auth_service.authenticate(db_session_mock, "dev_employee", "anypass")
     assert token.access_token == "fake_token"
@@ -72,7 +72,7 @@ def test_authenticate_success(db_session_mock: MagicMock, mocker: MagicMock) -> 
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
     mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=True)
     mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="prod_token")
-    mocker.patch("app.features.auth.auth_service.audit_service.log_change")
+    mocker.patch("app.features.auth.auth_service.audit_service.log")
 
     token = auth_service.authenticate(db_session_mock, "manager", "goodpass")
     assert token.access_token == "prod_token"

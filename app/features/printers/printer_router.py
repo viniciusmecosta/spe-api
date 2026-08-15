@@ -57,7 +57,7 @@ def create_printer(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return printer_service.create(db, obj_in=printer_in)
+    return printer_service.create(db, obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.patch(
@@ -70,7 +70,7 @@ def update_printer(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return printer_service.update(db, printer_id=printer_id, obj_in=printer_in)
+    return printer_service.update(db, printer_id=printer_id, obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.delete(
@@ -83,4 +83,4 @@ def delete_printer(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> None:
-    printer_service.delete(db, printer_id=printer_id)
+    printer_service.delete(db, printer_id=printer_id, current_user_id=current_user.id)

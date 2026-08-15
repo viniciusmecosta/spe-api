@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import UserRole
 from app.features.users.user_models import User
 from app.main import app
+from app.shared import deps
+from app.shared.enums import UserRole
 
 
 @pytest.fixture
@@ -32,6 +32,7 @@ def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) ->
         "app.features.system.system_router.routine_orchestrator.send_manual_backup_email",
         return_value=True,
     )
+    mocker.patch("app.features.system.system_router.audit_service.log")
 
     response = client.post("/api/v1/backup/trigger")
     assert response.status_code == 200

@@ -42,7 +42,7 @@ class AuthService:
             )
 
         access_token = security.create_access_token(subject=user.id, name=user.name)
-        audit_service.log_change(db, user.id, "LOGIN", new_model=user)
+        audit_service.log(db, user.id, "LOGIN", entity="USER", entity_id=user.id)
         return Token(access_token=access_token, token_type="bearer")
 
 
