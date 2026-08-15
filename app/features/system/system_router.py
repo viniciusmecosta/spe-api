@@ -19,6 +19,7 @@ from app.features.system.system_schemas import (
     RoutineLogResponse,
 )
 from app.features.system.telegram_service import telegram_service
+from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,
