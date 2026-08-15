@@ -4,9 +4,10 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from fastapi import HTTPException
+
 from app.core.config import settings
-from app.domain.models.enums import DayOfWeek
-from app.domain.models.enums import UserRole
+from app.domain.models.enums import DayOfWeek, UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.holiday_repository import holiday_repository

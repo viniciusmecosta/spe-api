@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
+from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
