@@ -93,6 +93,7 @@ def test_build_history_day(service):
     rec1 = MagicMock(spec=TimeRecord)
     rec1.record_datetime = datetime(2024, 1, 1, 8, 0)
     rec1.id = 1
+    rec1.short_id = "short1"
     rec1.record_type = RecordType.ENTRY
     rec1.ip_address = '127.0.0.1'
     rec1.device_name = 'test'
@@ -137,6 +138,7 @@ def test_build_detailed_punches(service):
     assert service._build_detailed_punches([MagicMock()], False) == []
     rec = MagicMock(spec=TimeRecord)
     rec.id = 1
+    rec.short_id = "short1"
     rec.record_datetime = datetime(2024, 1, 1, 8, 0)
     rec.record_type = RecordType.ENTRY
     rec.ip_address = '1.1.1.1'
@@ -170,6 +172,7 @@ def test_build_daily_report_item(service):
     rec1 = MagicMock(spec=TimeRecord)
     rec1.record_datetime = datetime(2024, 1, 1, 8, 0)
     rec1.id = 1
+    rec1.short_id = "short1"
     rec1.record_type = RecordType.ENTRY
     rec1.ip_address = '127.0.0.1'
     rec1.device_name = 'test'

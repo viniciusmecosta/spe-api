@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class PunchDetail(BaseModel):
     id: int
+    short_id: str
     time: str
     record_type: str
     ip_address: str | None = None
@@ -74,6 +75,7 @@ class DashboardMetricsResponse(BaseModel):
 
 class HistoryPunch(BaseModel):
     id: int
+    short_id: str
     time: str
     record_type: str
     ip_address: str | None = None
@@ -109,6 +111,7 @@ class HistoryResponse(BaseModel):
 
 class TodayPunch(BaseModel):
     id: int
+    short_id: str
     time: str
     record_type: str
 

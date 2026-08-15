@@ -71,6 +71,7 @@ class DashboardService:
         for rec in today_records:
             today_punches.append(TodayPunch(
                 id=rec.id,
+                short_id=rec.short_id,
                 time=rec.record_datetime.strftime("%H:%M"),
                 record_type=rec.record_type.value
             ))
@@ -165,6 +166,7 @@ class DashboardService:
         for rec in today_records:
             today_punches.append(TodayPunch(
                 id=rec.id,
+                short_id=rec.short_id,
                 time=rec.record_datetime.strftime("%H:%M"),
                 record_type=rec.record_type.value
             ))
