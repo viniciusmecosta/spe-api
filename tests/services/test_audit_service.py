@@ -39,13 +39,12 @@ def test_serialize_model_dict():
     }
 
 
-def test_serialize_model_cycle_detection():
-    visited = set()
-    user = User(id=1, username="test_cycle", name="Test Cycle", role=UserRole.EMPLOYEE)
-    first_pass = serialize_model(user, visited)
-    second_pass = serialize_model(user, visited)
-    assert "username" in first_pass
-    assert second_pass == {}
+def test_serialize_model_excludes_password_hash():
+    user = User(id=1, username="test", password_hash="secret_hash", name="Test")
+    res = serialize_model(user)
+    assert "password_hash" not in res
+    assert res["username"] == "test"
+    assert res["name"] == "Test"
 
 
 def test_serialize_model_column_types():
@@ -63,6 +62,7 @@ def test_serialize_model_column_types():
             DummyCol("bytes_col"),
             DummyCol("bytearray_col"),
             DummyCol("str_col"),
+            DummyCol("password_hash"),
         ]
 
     class DummyModel:
@@ -75,6 +75,7 @@ def test_serialize_model_column_types():
         bytes_col = b"raw_data"
         bytearray_col = bytearray(b"byte_data")
         str_col = "sample"
+        password_hash = "secret"
 
     res = serialize_model(DummyModel())
     assert res["dt_col"] == "2026-05-01T10:00:00"
@@ -85,9 +86,10 @@ def test_serialize_model_column_types():
     assert res["bytes_col"] == "<binary>"
     assert res["bytearray_col"] == "<binary>"
     assert res["str_col"] == "sample"
+    assert "password_hash" not in res
 
 
-def test_serialize_model_relationships():
+def test_serialize_model_ignores_relationships():
     class DummyRel:
         def __init__(self, key):
             self.key = key
@@ -98,44 +100,32 @@ def test_serialize_model_relationships():
 
     rel_single = DummyRel("company")
     rel_list = DummyRel("holidays")
-    rel_empty = DummyRel("empty_rel")
-    rel_none = DummyRel("none_rel")
 
     class ParentModel:
         __table__ = MagicMock(columns=[])
-        __mapper__ = DummyMapper([rel_single, rel_list, rel_empty, rel_none])
+        __mapper__ = DummyMapper([rel_single, rel_list])
 
         def __init__(self):
             self.company = Holiday(id=1, name="Parent Comp", date=date(2026, 1, 1))
             self.holidays = [
                 Holiday(id=2, name="Holiday 1", date=date(2026, 1, 2)),
-                Holiday(id=3, name="Holiday 2", date=date(2026, 1, 3)),
-                None,
             ]
-            self.empty_rel = []
-            self.none_rel = None
 
     parent = ParentModel()
     res = serialize_model(parent)
-    assert "company" in res
-    assert res["company"]["name"] == "Parent Comp"
-    assert "holidays" in res
-    assert len(res["holidays"]) == 2
-    assert res["holidays"][0]["name"] == "Holiday 1"
-    assert res["holidays"][1]["name"] == "Holiday 2"
-    assert "empty_rel" not in res
-    assert "none_rel" not in res
+    assert "company" not in res
+    assert "holidays" not in res
 
 
 def test_log(db_session_mock, mocker):
     mock_create = mocker.patch("app.features.system.audit_service.audit_repository.create")
     mock_create.return_value = "mock_audit_log"
     result = audit_service.log(
-        db=db_session_mock,
-        action="UPDATE",
+        db_session_mock,
+        42,
+        "UPDATE",
         entity="User",
         entity_id=1,
-        user_id=42,
         old_data={"name": "Old"},
         new_data={"name": "New"}
     )

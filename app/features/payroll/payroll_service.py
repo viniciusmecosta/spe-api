@@ -203,7 +203,11 @@ class PayrollService:
         closure_id = existing.id
         payroll_repository.delete(db, month, year, current_user.id, observation)
 
-        audit_service.log_change(db, current_user.id, "REOPEN", old_model=existing)
+        audit_service.log_change(
+            db, current_user.id, "REOPEN",
+            entity="PAYROLL_CLOSURE", entity_id=closure_id,
+            old_data={"is_closed": True}, new_data={"is_closed": False}
+        )
 
         maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
                                             User.email.isnot(None)).all()

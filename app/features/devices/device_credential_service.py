@@ -7,7 +7,7 @@ from app.features.devices.device_schemas import (
     DeviceCredentialCreate,
     DeviceCredentialUpdate,
 )
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 
 
 class DeviceCredentialService:
@@ -38,8 +38,9 @@ class DeviceCredentialService:
                 detail="Credencial não encontrada.",
             )
 
+        old_data = serialize_model(device)
         updated_device = device_credential_repository.update(db, device, credential_in)
-        audit_service.log_change(db, current_user_id, "UPDATE", old_model=device, new_model=updated_device)
+        audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=updated_device)
         return updated_device
 
     def delete(

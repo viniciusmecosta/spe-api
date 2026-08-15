@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException, UploadFile
 
 import pytest
-import app.features.printers.printer_models
 from app.features.companies.company_models import Company
 from app.features.companies.company_schemas import CompanyCreate, CompanyUpdate
 from app.features.companies.company_service import company_service
@@ -64,10 +63,11 @@ def test_update_company_success(mocker, db_session_mock):
     
     obj_in = CompanyUpdate(name="New")
     result = company_service.update_company(db_session_mock, obj_in, 100)
-    
+
+    from unittest import mock
     assert result == updated
     mock_audit.assert_called_once_with(
-        db_session_mock, 100, "UPDATE", old_model=existing, new_model=updated
+        db_session_mock, 100, "UPDATE", old_model=mock.ANY, new_model=updated
     )
 
 def test_upload_logo_not_found(mocker, db_session_mock):

@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, HTTPException, status
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User
+from app.shared.enums import UserRole
 
 
 @pytest.fixture
@@ -326,7 +326,9 @@ def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_
     assert result["status"] == "success"
     mock_repo.delete.assert_called_once_with(db_session_mock, 4, 2024, mock_user_maintainer.id, "Obs")
     mock_audit.log_change.assert_called_once_with(
-        db_session_mock, mock_user_maintainer.id, "REOPEN", old_model=mock_closure
+        db_session_mock, mock_user_maintainer.id, "REOPEN",
+        entity="PAYROLL_CLOSURE", entity_id=mock_closure.id,
+        old_data={"is_closed": True}, new_data={"is_closed": False}
     )
     mock_background_tasks.add_task.assert_called_once_with(
         mock_dispatch, "Reabertura", mock_user_maintainer.name, 4, 2024, ["main@test.com"]

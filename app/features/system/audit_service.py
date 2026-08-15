@@ -9,25 +9,29 @@ from app.features.system.system_repository import audit_repository
 from app.features.system.system_schemas import AuditLogCreate
 
 
-def serialize_model(model: Any, visited: set[int] | None = None) -> dict[str, Any]:
+def serialize_model(model: Any) -> dict[str, Any]:
     if model is None:
         return {}
     if isinstance(model, dict):
         return {
-            k: (v.isoformat() if isinstance(v, (datetime, date, time)) else v.value if isinstance(v, Enum) else float(v) if isinstance(v, Decimal) else v)
+            k: (
+                v.isoformat()
+                if isinstance(v, (datetime, date, time))
+                else v.value
+                if isinstance(v, Enum)
+                else float(v)
+                if isinstance(v, Decimal)
+                else v
+            )
             for k, v in model.items()
+            if k != "password_hash"
         }
-    if visited is None:
-        visited = set()
-
-    obj_id = id(model)
-    if obj_id in visited:
-        return {}
-    visited.add(obj_id)
 
     result: dict[str, Any] = {}
     if hasattr(model, "__table__"):
         for column in model.__table__.columns:
+            if column.name == "password_hash":
+                continue
             val = getattr(model, column.name, None)
             if isinstance(val, (datetime, date, time)):
                 result[column.name] = val.isoformat()
@@ -39,33 +43,34 @@ def serialize_model(model: Any, visited: set[int] | None = None) -> dict[str, An
                 result[column.name] = "<binary>"
             else:
                 result[column.name] = val
-
-    if hasattr(model, "__mapper__"):
-        for rel in model.__mapper__.relationships:
-            if rel.key in model.__dict__:
-                rel_val = getattr(model, rel.key, None)
-                if rel_val is None:
-                    continue
-                if isinstance(rel_val, (list, set, tuple)):
-                    serialized_items = [
-                        serialize_model(item, visited)
-                        for item in rel_val
-                        if item is not None
-                    ]
-                    serialized_items = [i for i in serialized_items if i]
-                    if serialized_items:
-                        result[rel.key] = serialized_items
-                else:
-                    serialized_obj = serialize_model(rel_val, visited)
-                    if serialized_obj:
-                        result[rel.key] = serialized_obj
+    elif hasattr(model, "__dict__"):
+        for key, value in model.__dict__.items():
+            if not key.startswith("_") and key != "password_hash":
+                if isinstance(value, (datetime, date, time)):
+                    result[key] = value.isoformat()
+                elif isinstance(value, Enum):
+                    result[key] = value.value
+                elif isinstance(value, Decimal):
+                    result[key] = float(value)
+                elif isinstance(value, (bytes, bytearray)):
+                    result[key] = "<binary>"
+                elif isinstance(value, (str, int, float, bool)) or value is None:
+                    result[key] = value
     return result
 
 
 class AuditService:
-    def log(self, db: Session, *, action: str, entity: str, entity_id: int,
-            user_id: int | None = None,
-            old_data: dict | None = None, new_data: dict | None = None):
+    def log(
+            self,
+            db: Session,
+            user_id: int | None,
+            action: str,
+            *,
+            entity: str,
+            entity_id: int,
+            old_data: dict | None = None,
+            new_data: dict | None = None,
+    ):
         obj_in = AuditLogCreate(
             user_id=user_id,
             action=action,
@@ -89,8 +94,21 @@ class AuditService:
         old_data: dict | None = None,
         new_data: dict | None = None,
     ):
-        raw_old = serialize_model(old_model) if old_model is not None else (old_data or None)
-        raw_new = serialize_model(new_model) if new_model is not None else (new_data or None)
+        raw_old = serialize_model(old_model) if old_model is not None else {}
+        if old_data:
+            if not raw_old:
+                raw_old = old_data.copy()
+            else:
+                raw_old.update(old_data)
+        raw_old = raw_old or None
+
+        raw_new = serialize_model(new_model) if new_model is not None else {}
+        if new_data:
+            if not raw_new:
+                raw_new = new_data.copy()
+            else:
+                raw_new.update(new_data)
+        raw_new = raw_new or None
 
         if entity is None:
             if new_model is not None and hasattr(new_model, "__tablename__"):

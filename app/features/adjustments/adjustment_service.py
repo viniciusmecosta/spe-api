@@ -15,7 +15,7 @@ from app.features.adjustments.adjustment_schemas import (
     BulkReprocessExtraTimeRequest,
 )
 from app.features.payroll.payroll_service import payroll_service
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
     get_local_time,
@@ -134,9 +134,10 @@ class AdjustmentService:
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, admin_id)
 
+        old_data = serialize_model(request)
         adjustment_repository.soft_delete(db, adjustment_id, admin_id)
         audit_service.log_change(
-            db, admin_id, "DELETE_ADJUSTMENT", old_model=request, new_data={"reason": reason}
+            db, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
 
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
@@ -154,9 +155,10 @@ class AdjustmentService:
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, manager_id)
 
+        old_data = serialize_model(request)
         adjustment_repository.soft_delete(db, adjustment_id, manager_id)
         audit_service.log_change(
-            db, manager_id, "DELETE_ADJUSTMENT", old_model=request, new_data={"reason": reason}
+            db, manager_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
 
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
@@ -225,10 +227,11 @@ class AdjustmentService:
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             self._execute_adjustment_action(db, request, manager_id)
 
+        old_data = serialize_model(request)
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
         audit_service.log_change(
             db, manager_id, "APPROVE_ADJUSTMENT",
-            old_model=request, new_model=updated,
+            old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
@@ -267,16 +270,43 @@ class AdjustmentService:
                 record_datetime=target_dt, ip_address="ADJUSTMENT_APPROVED"
             )
 
-    def reject_adjustment(self, db: Session, request_id: int, manager_id: int, comment: str) -> AdjustmentRequest:
+    def cancel_adjustment(self, db: Session, request_id: int, user_id: int) -> AdjustmentRequest:
+        request = adjustment_repository.get(db, request_id)
+        if not request:
+            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
+
+        is_owner = request.user_id == user_id
+        if not is_owner:
+            raise HTTPException(status_code=403, detail="Acesso negado.")
+
+        if request.status != AdjustmentStatus.PENDING:
+            raise HTTPException(status_code=400, detail="Apenas solicitações pendentes podem ser canceladas.")
+
+        payroll_service.validate_period_open(db, request.target_date)
+
+        old_data = serialize_model(request)
+        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.CANCELED, user_id)
+        audit_service.log_change(
+            db, user_id, "CANCEL_ADJUSTMENT",
+            old_model=old_data, new_model=updated
+        )
+        return self._enrich_adjustments_with_records(db, [updated])[0]
+
+    def reject_adjustment(self, db: Session, request_id: int, manager_id: int,
+                          comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
             raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
+        if request.status == AdjustmentStatus.APPROVED:
+            self._revert_adjustment_action(db, request, manager_id)
+
+        old_data = serialize_model(request)
         updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
         audit_service.log_change(
             db, manager_id, "REJECT_ADJUSTMENT",
-            old_model=request, new_model=updated,
+            old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
@@ -345,10 +375,11 @@ class AdjustmentService:
             if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME]:
                 self._execute_adjustment_action(db, request, manager_id)
 
+        old_data = serialize_model(request)
         updated = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
         audit_service.log_change(
             db, manager_id, "REVERT_ADJUSTMENT",
-            old_model=request, new_model=updated,
+            old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]

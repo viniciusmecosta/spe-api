@@ -3,11 +3,11 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
 from app.features.users.user_service import user_service
+from app.shared.enums import UserRole
 
 
 def test_get_bio_attr():
@@ -145,19 +145,19 @@ def test_update_user_not_found(db_session_mock, mocker):
         user_service.update_user(db_session_mock, 1, user_in, 99)
     assert exc.value.status_code == 404
 
-def test_capture_user_state():
+
+def test_serialize_user_state():
     from datetime import date
+    from app.features.system.audit_service import serialize_model
     user = User(
         id=1, username="test", is_active=True, data_nascimento=date(2000, 1, 1),
         is_exempt_from_rules=False, is_tolerance_exempt=True
     )
-    state = user_service._capture_user_state(user)
+    state = serialize_model(user)
     assert state["is_active"] is True
     assert state["data_nascimento"] == "2000-01-01"
     assert state["is_exempt_from_rules"] is False
     assert state["is_tolerance_exempt"] is True
-    assert "is_exempt_from_rules" in user_service._get_tracked_fields()
-    assert "is_tolerance_exempt" in user_service._get_tracked_fields()
 
 def test_update_user_ok(db_session_mock, mocker):
     user = User(id=1, name="Old", is_active=True)

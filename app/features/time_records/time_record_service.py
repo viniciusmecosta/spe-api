@@ -10,7 +10,7 @@ from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_repository import company_repository
 from app.features.payroll.payroll_service import payroll_service
 from app.features.printers.printer_repository import printer_repository
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.receipt_service import receipt_service
 from app.features.time_records.time_record_models import (
     TimeRecord,
@@ -142,6 +142,7 @@ class TimeRecordService:
             if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(),
                                              new_datetime=record.record_datetime):
                 self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+        old_data = serialize_model(record)
         record.is_ignored = True
         new_record = TimeRecord(user_id=record.user_id, record_type=new_type, record_datetime=record.record_datetime,
                                 ip_address=record.ip_address, device_name=record.device_name, platform=record.platform,
@@ -154,7 +155,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(new_record)
-        audit_service.log_change(db, current_user.id, "TOGGLE_RECORD", old_model=record, new_model=new_record)
+        audit_service.log_change(db, current_user.id, "TOGGLE_RECORD", old_model=old_data, new_model=new_record)
         return new_record
 
     def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int, ip_address: str,
@@ -204,6 +205,7 @@ class TimeRecordService:
         new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
         self._handle_admin_update_invalidations(db, record, obj_in, old_date, new_date, new_record_type)
 
+        old_data = serialize_model(record)
         record.is_ignored = True
         new_record = TimeRecord(user_id=record.user_id, record_type=new_record_type,
                                 record_datetime=new_record_datetime, ip_address=ip_address,
@@ -215,7 +217,7 @@ class TimeRecordService:
         db.add(record)
         db.commit()
         db.refresh(new_record)
-        audit_service.log_change(db, manager_id, "UPDATE_RECORD_ADMIN", old_model=record, new_model=new_record)
+        audit_service.log_change(db, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data, new_model=new_record)
         return new_record
 
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
@@ -227,8 +229,10 @@ class TimeRecordService:
             if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
                 self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
+        old_data = serialize_model(record)
         time_record_repository.delete(db, record_id, manager_id)
-        audit_service.log_change(db, manager_id, "DELETE_RECORD_ADMIN", old_model=record, new_data={"justification": justification_val})
+        audit_service.log_change(db, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+                                 new_data={"justification": justification_val})
 
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
                      biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:

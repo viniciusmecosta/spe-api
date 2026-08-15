@@ -13,7 +13,7 @@ from app.features.companies.company_schemas import (
     CompanyResponse,
     CompanyUpdate,
 )
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 
 
 class CompanyService:
@@ -48,8 +48,9 @@ class CompanyService:
                 detail="Nenhuma empresa cadastrada para atualizar."
             )
 
+        old_data = serialize_model(existing)
         company = company_repository.update(db, existing, obj_in)
-        audit_service.log_change(db, current_user_id, "UPDATE", old_model=existing, new_model=company)
+        audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=company)
         return company
 
     def upload_logo(self, db: Session, file: UploadFile, current_user_id: int) -> Company:
