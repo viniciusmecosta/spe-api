@@ -1,10 +1,11 @@
 from datetime import date
 from unittest.mock import patch
 
-from app.services.routine_log_service import routine_log_service
+from app.features.system.routine_log_service import routine_log_service
+
 
 def test_get_logs(db_session_mock):
-    with patch("app.services.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
+    with patch("app.features.system.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
         mock_get_logs.return_value = ["log1", "log2"]
         start_date = date(2023, 1, 1)
         end_date = date(2023, 1, 2)
@@ -33,7 +34,7 @@ def test_get_logs(db_session_mock):
         )
 
 def test_get_logs_defaults(db_session_mock):
-    with patch("app.services.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
+    with patch("app.features.system.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
         mock_get_logs.return_value = []
         
         result = routine_log_service.get_logs(db=db_session_mock)

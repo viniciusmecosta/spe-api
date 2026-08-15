@@ -1,13 +1,13 @@
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.shared.enums import UserRole
+from app.features.reports.report_schemas import ManagerDashboardResponse, TeamHoursResponse
+from app.features.users.user_models import User
 from app.main import app
-from app.schemas.report import ManagerDashboardResponse, TeamHoursResponse
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def test_get_manager_dashboard(client: TestClient, mocker: MagicMock) -> None:
         ),
     )
     mocker.patch(
-        "app.api.v1.dashboard.dashboard_service.get_manager_dashboard",
+        "app.features.reports.report_router.dashboard_service.get_manager_dashboard",
         return_value=expected,
     )
 

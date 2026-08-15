@@ -1,13 +1,13 @@
 from datetime import date
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.holiday import Holiday
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.shared.enums import UserRole
+from app.features.holidays.holiday_models import Holiday
+from app.features.users.user_models import User
 from app.main import app
 
 
@@ -33,7 +33,7 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 def test_create_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
     expected = Holiday(id=1, name="Tiradentes", date=date(2026, 4, 21))
     mocker.patch(
-        "app.api.v1.holidays.holiday_service.create_holiday",
+        "app.features.holidays.holiday_router.holiday_service.create_holiday",
         return_value=expected,
     )
 
@@ -45,7 +45,7 @@ def test_create_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
 def test_read_holidays_endpoint(client: TestClient, mocker: MagicMock) -> None:
     expected = [Holiday(id=1, name="Tiradentes", date=date(2026, 4, 21))]
     mocker.patch(
-        "app.api.v1.holidays.holiday_service.get_all_holidays",
+        "app.features.holidays.holiday_router.holiday_service.get_all_holidays",
         return_value=expected,
     )
 
@@ -56,7 +56,7 @@ def test_read_holidays_endpoint(client: TestClient, mocker: MagicMock) -> None:
 
 def test_delete_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.holidays.holiday_service.delete_holiday",
+        "app.features.holidays.holiday_router.holiday_service.delete_holiday",
         return_value={"status": "success"},
     )
 

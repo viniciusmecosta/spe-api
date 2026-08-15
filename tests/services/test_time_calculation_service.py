@@ -1,12 +1,13 @@
-import pytest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
-from app.domain.models.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.adjustment import AdjustmentRequest
-from app.services.time_calculation_service import time_calculation_service, _DailyProcessState, PeriodTimeResult, DailyTimeResult
+import pytest
+from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
+from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.time_records.time_record_models import TimeRecord
+from app.shared.time_calculation_service import time_calculation_service, _DailyProcessState, DailyTimeResult
+
 
 @pytest.fixture
 def record_factory():

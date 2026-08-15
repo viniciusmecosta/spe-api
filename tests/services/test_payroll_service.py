@@ -1,13 +1,14 @@
-import pytest
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, patch, mock_open
+from zoneinfo import ZoneInfo
+
 from fastapi import BackgroundTasks, HTTPException, status
 
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
-from app.domain.models.payroll import PayrollClosure
-from app.services.payroll_service import payroll_service
+import pytest
+from app.shared.enums import UserRole
+from app.features.payroll.payroll_models import PayrollClosure
+from app.features.payroll.payroll_service import payroll_service
+from app.features.users.user_models import User
 
 
 @pytest.fixture
@@ -137,8 +138,8 @@ def test_build_period_response_with_closure_no_name():
     assert response["closed_by_name"] is None
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_list_periods_past_year(mock_datetime, db_session_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -151,8 +152,8 @@ def test_list_periods_past_year(mock_datetime, db_session_mock):
     assert result[-1]["month"] == 1
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_list_periods_current_year(mock_datetime, db_session_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -173,8 +174,8 @@ def test_list_periods_current_year(mock_datetime, db_session_mock):
     assert result[3]["month"] == 2
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_list_periods_future_year(mock_datetime, db_session_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -185,8 +186,8 @@ def test_list_periods_future_year(mock_datetime, db_session_mock):
     assert len(result) == 0
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_list_periods_multiple_closures(mock_datetime, db_session_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -223,8 +224,8 @@ def test_close_period_forbidden(db_session_mock, mock_user_employee, mock_backgr
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_close_period_current_month(mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -234,8 +235,8 @@ def test_close_period_current_month(mock_datetime, db_session_mock, mock_user_ma
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
 def test_close_period_future_month(mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -245,9 +246,9 @@ def test_close_period_future_month(mock_datetime, db_session_mock, mock_user_man
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_close_period_already_closed(mock_repo, mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -259,12 +260,12 @@ def test_close_period_already_closed(mock_repo, mock_datetime, db_session_mock, 
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@patch("app.services.payroll_service.settings.TIMEZONE", "UTC")
-@patch("app.services.payroll_service.datetime")
-@patch("app.services.payroll_service.dispatch_closure_email_background")
-@patch("app.services.payroll_service.audit_service")
-@patch("app.services.payroll_service.payroll_repository")
-@patch("app.services.payroll_service.excel_service")
+@patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
+@patch("app.features.payroll.payroll_service.datetime")
+@patch("app.features.payroll.payroll_service.dispatch_closure_email_background")
+@patch("app.features.payroll.payroll_service.audit_service")
+@patch("app.features.payroll.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.excel_service")
 def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
@@ -301,7 +302,7 @@ def test_reopen_period_forbidden(db_session_mock, mock_user_manager, mock_backgr
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_reopen_period_not_found(mock_repo, db_session_mock, mock_user_maintainer, mock_background_tasks):
     mock_repo.get_by_month.return_value = None
     
@@ -310,9 +311,9 @@ def test_reopen_period_not_found(mock_repo, db_session_mock, mock_user_maintaine
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
-@patch("app.services.payroll_service.dispatch_payroll_email")
-@patch("app.services.payroll_service.audit_service")
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.audit_service")
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_mock, mock_user_maintainer, mock_background_tasks):
     mock_closure = MagicMock(id=99)
     mock_repo.get_by_month.return_value = mock_closure
@@ -353,7 +354,7 @@ def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_validate_period_open_closed(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = MagicMock()
     target_date = date(2024, 4, 15)
@@ -362,40 +363,41 @@ def test_validate_period_open_closed(mock_repo, db_session_mock):
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_validate_period_open_success(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = None
     
     payroll_service.validate_period_open(db_session_mock, date(2024, 4, 15))
 
 
-@patch("app.services.payroll_service.email_service.send_payroll_email")
+@patch("app.features.payroll.payroll_service.email_service.send_payroll_email")
 @patch("os.path.exists", return_value=True)
 def test_dispatch_closure_email_background_with_attachment(mock_exists, mock_send):
-    from app.services.payroll_service import dispatch_closure_email_background
+    from app.features.payroll.payroll_service import dispatch_closure_email_background
     with patch("builtins.open", mock_open(read_data=b"dummycontent")):
         dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
     mock_send.assert_called_once()
 
 
-@patch("app.services.payroll_service.email_service.send_payroll_email")
+@patch("app.features.payroll.payroll_service.email_service.send_payroll_email")
 @patch("os.path.exists", return_value=False)
 def test_dispatch_closure_email_background_no_attachment(mock_exists, mock_send):
-    from app.services.payroll_service import dispatch_closure_email_background
+    from app.features.payroll.payroll_service import dispatch_closure_email_background
     dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
     mock_send.assert_called_once()
 
 
-@patch("app.services.payroll_service.email_service.send_payroll_email", side_effect=Exception("Email error"))
-@patch("app.services.payroll_service.logger.exception")
+@patch("app.features.payroll.payroll_service.email_service.send_payroll_email", side_effect=Exception("Email error"))
+@patch("app.features.payroll.payroll_service.logger.exception")
 def test_dispatch_closure_email_background_error(mock_log, mock_send):
-    from app.services.payroll_service import dispatch_closure_email_background
+    from app.features.payroll.payroll_service import dispatch_closure_email_background
     dispatch_closure_email_background(4, 2024, "User", "reports/file.xlsx", ["admin@test.com"])
     mock_log.assert_called_once()
 
 
-@patch("app.services.payroll_service.excel_service.generate_excel_report", side_effect=Exception("Excel generation error"))
-@patch("app.services.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.excel_service.generate_excel_report",
+       side_effect=Exception("Excel generation error"))
+@patch("app.features.payroll.payroll_service.payroll_repository")
 def test_close_period_excel_error(mock_repo, mock_gen, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_repo.get_by_month.return_value = None
     with pytest.raises(HTTPException) as exc:

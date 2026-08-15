@@ -1,14 +1,14 @@
 from datetime import date
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.shared.enums import UserRole
+from app.features.users.user_models import User
+from app.features.users.user_schemas import BulkWorkScheduleResponse
 from app.main import app
-from app.schemas.work_schedule import BulkWorkScheduleResponse
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 
 
 def test_read_users(client: TestClient, mock_manager_user: User, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.users.user_service.get_multi", return_value=[mock_manager_user])
+    mocker.patch("app.features.users.user_router.user_service.get_multi", return_value=[mock_manager_user])
 
     response = client.get("/api/v1/users/?skip=0&limit=10")
     assert response.status_code == 200
@@ -56,7 +56,7 @@ def test_read_users(client: TestClient, mock_manager_user: User, mocker: MagicMo
 
 
 def test_create_user(client: TestClient, mock_employee_user: User, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.users.user_service.create_user", return_value=mock_employee_user)
+    mocker.patch("app.features.users.user_router.user_service.create_user", return_value=mock_employee_user)
 
     response = client.post(
         "/api/v1/users/",
@@ -77,7 +77,7 @@ def test_read_user_me(client: TestClient, mock_manager_user: User, mocker: Magic
         "can_manual_punch_desktop": True,
         "can_manual_punch_mobile": True,
     }
-    mocker.patch("app.api.v1.users.user_service.get_user_me", return_value=expected_data)
+    mocker.patch("app.features.users.user_router.user_service.get_user_me", return_value=expected_data)
 
     response = client.get("/api/v1/users/me")
     assert response.status_code == 200
@@ -85,7 +85,7 @@ def test_read_user_me(client: TestClient, mock_manager_user: User, mocker: Magic
 
 
 def test_update_user_me(client: TestClient, mock_manager_user: User, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.users.user_service.update_user", return_value=mock_manager_user)
+    mocker.patch("app.features.users.user_router.user_service.update_user", return_value=mock_manager_user)
 
     response = client.put(
         "/api/v1/users/me",
@@ -96,7 +96,7 @@ def test_update_user_me(client: TestClient, mock_manager_user: User, mocker: Mag
 
 
 def test_read_user_by_id(client: TestClient, mock_employee_user: User, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.users.user_service.get_user_by_id", return_value=mock_employee_user)
+    mocker.patch("app.features.users.user_router.user_service.get_user_by_id", return_value=mock_employee_user)
 
     response = client.get("/api/v1/users/2")
     assert response.status_code == 200
@@ -104,7 +104,7 @@ def test_read_user_by_id(client: TestClient, mock_employee_user: User, mocker: M
 
 
 def test_update_user(client: TestClient, mock_employee_user: User, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.users.user_service.update_user_by_admin", return_value=mock_employee_user)
+    mocker.patch("app.features.users.user_router.user_service.update_user_by_admin", return_value=mock_employee_user)
 
     response = client.put(
         "/api/v1/users/2",
@@ -123,7 +123,7 @@ def test_get_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
         )
     ]
     mocker.patch(
-        "app.api.v1.users.user_work_schedule_service.get_bulk_schedules",
+        "app.features.users.user_router.user_work_schedule_service.get_bulk_schedules",
         return_value=expected,
     )
 
@@ -139,7 +139,7 @@ def test_get_bulk_schedule_by_dates(client: TestClient, mocker: MagicMock) -> No
         users=[],
     )
     mocker.patch(
-        "app.api.v1.users.user_work_schedule_service.get_bulk_schedule",
+        "app.features.users.user_router.user_work_schedule_service.get_bulk_schedule",
         return_value=expected,
     )
 
@@ -150,7 +150,7 @@ def test_get_bulk_schedule_by_dates(client: TestClient, mocker: MagicMock) -> No
 
 def test_add_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.users.user_work_schedule_service.bulk_add_schedules",
+        "app.features.users.user_router.user_work_schedule_service.bulk_add_schedules",
         return_value={"status": "success"},
     )
 
@@ -167,7 +167,7 @@ def test_add_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
 
 def test_delete_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.api.v1.users.user_work_schedule_service.delete_bulk_schedules",
+        "app.features.users.user_router.user_work_schedule_service.delete_bulk_schedules",
         return_value={"status": "success"},
     )
 

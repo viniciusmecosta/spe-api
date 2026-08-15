@@ -12,8 +12,6 @@ from app.utils.formatters import format_short_name
 logger = logging.getLogger(__name__)
 
 
-
-
 def _extract_user_name(request: Request) -> str:
     name = ""
     try:
@@ -24,7 +22,7 @@ def _extract_user_name(request: Request) -> str:
             name = payload.get("name", "")
     except Exception:
         pass
-    
+
     if not name:
         name = getattr(request.state, "attempted_user", "")
 

@@ -1,15 +1,15 @@
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import RecordType, UserRole
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User
+import pytest
+from app.shared import deps
+from app.shared.enums import RecordType, UserRole
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.time_records.time_record_schemas import TimeRecordTimelineResponse
+from app.features.users.user_models import User
 from app.main import app
-from app.schemas.time_record import TimeRecordResponse, TimeRecordTimelineResponse
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_register_entry(client: TestClient, mocker: MagicMock) -> None:
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.register_entry",
+        "app.features.time_records.time_record_router.time_record_service.register_entry",
         return_value=mock_record,
     )
 
@@ -61,7 +61,7 @@ def test_register_exit(client: TestClient, mocker: MagicMock) -> None:
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.register_exit",
+        "app.features.time_records.time_record_router.time_record_service.register_exit",
         return_value=mock_record,
     )
 
@@ -80,7 +80,7 @@ def test_toggle_record_type(client: TestClient, mocker: MagicMock) -> None:
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.toggle_record_type",
+        "app.features.time_records.time_record_router.time_record_service.toggle_record_type",
         return_value=mock_record,
     )
 
@@ -99,7 +99,7 @@ def test_read_my_records(client: TestClient, mocker: MagicMock) -> None:
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.get_my_records",
+        "app.features.time_records.time_record_router.time_record_service.get_my_records",
         return_value=[mock_record],
     )
 
@@ -118,7 +118,7 @@ def test_list_records_for_admin(client: TestClient, mocker: MagicMock) -> None:
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.list_records_for_admin",
+        "app.features.time_records.time_record_router.time_record_service.list_records_for_admin",
         return_value=[mock_record],
     )
 
@@ -137,7 +137,7 @@ def test_create_time_record_admin(client: TestClient, mocker: MagicMock) -> None
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.create_admin_record",
+        "app.features.time_records.time_record_router.time_record_service.create_admin_record",
         return_value=mock_record,
     )
 
@@ -158,7 +158,7 @@ def test_update_time_record_admin(client: TestClient, mocker: MagicMock) -> None
         created_at=now,
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.update_admin_record",
+        "app.features.time_records.time_record_router.time_record_service.update_admin_record",
         return_value=mock_record,
     )
 
@@ -170,7 +170,7 @@ def test_update_time_record_admin(client: TestClient, mocker: MagicMock) -> None
 
 
 def test_delete_time_record_admin(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.time_records.time_record_service.delete_admin_record")
+    mocker.patch("app.features.time_records.time_record_router.time_record_service.delete_admin_record")
 
     response = client.request(
         "DELETE",
@@ -190,9 +190,10 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
         record_datetime=now,
         created_at=now,
         is_ignored=False,
+        short_id="test_id"
     )
     mocker.patch(
-        "app.api.v1.time_records.time_record_service.get_record_timeline",
+        "app.features.time_records.time_record_router.time_record_service.get_record_timeline",
         return_value=[timeline_item],
     )
 
@@ -202,7 +203,7 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
 
 
 def test_trigger_tolerance_cron(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.api.v1.time_records.tolerance_cron_service.process_unverified_entries")
+    mocker.patch("app.features.time_records.time_record_router.tolerance_cron_service.process_unverified_entries")
 
     response = client.post("/api/v1/time-records/admin/tolerance/process")
     assert response.status_code == 200

@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.domain.models.enums import RecordType, UserRole
-from app.schemas.device import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
-from app.services.device_service import device_service
+from app.shared.enums import RecordType, UserRole
+from app.features.devices.device_schemas import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
+from app.features.devices.device_service import device_service
 
 
 def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMock) -> None:
@@ -15,7 +15,7 @@ def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMo
     mock_record.record_type = RecordType.ENTRY
 
     mocker.patch(
-        "app.services.device_service.punch_service.process_biometric_punch",
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
         return_value=(True, "Sucesso", mock_record),
     )
 
@@ -45,7 +45,7 @@ def test_process_punch_success_exit_no_user_name(db_session_mock: MagicMock, moc
     mock_record.record_type = RecordType.EXIT
 
     mocker.patch(
-        "app.services.device_service.punch_service.process_biometric_punch",
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
         return_value=(True, "Sucesso", mock_record),
     )
 
@@ -65,7 +65,7 @@ def test_process_punch_success_exit_no_user_name(db_session_mock: MagicMock, moc
 
 def test_process_punch_failure(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.services.device_service.punch_service.process_biometric_punch",
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
         return_value=(False, "Biometria desconhecida", None),
     )
 
@@ -84,7 +84,7 @@ def test_process_punch_failure(db_session_mock: MagicMock, mocker: MagicMock) ->
 
 def test_process_punch_failure_empty_message(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.services.device_service.punch_service.process_biometric_punch",
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
         return_value=(False, None, None),
     )
 
@@ -102,7 +102,7 @@ def test_process_punch_failure_empty_message(db_session_mock: MagicMock, mocker:
 
 def test_process_punch_exception(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.services.device_service.punch_service.process_biometric_punch",
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
         side_effect=Exception("Database crash"),
     )
 
@@ -123,7 +123,7 @@ def test_get_device_time(mocker: MagicMock) -> None:
     fixed_time = datetime(2026, 8, 14, 12, 0, 0, tzinfo=tz)
 
     mocker.patch(
-        "app.services.device_service.trusted_time_service.get_trusted_time",
+        "app.features.devices.device_service.trusted_time_service.get_trusted_time",
         return_value=(fixed_time, True),
     )
 
@@ -136,10 +136,10 @@ def test_get_device_time(mocker: MagicMock) -> None:
 
 def test_verify_manager_access_no_managers(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[],
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -155,14 +155,14 @@ def test_verify_manager_access_no_managers(db_session_mock: MagicMock, mocker: M
 
 def test_verify_manager_access_biometric_not_found(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[MagicMock()],
     )
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=None,
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -183,14 +183,14 @@ def test_verify_manager_access_authorized_manager(db_session_mock: MagicMock, mo
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[mock_bio],
     )
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -211,14 +211,14 @@ def test_verify_manager_access_authorized_maintainer(db_session_mock: MagicMock,
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[mock_bio],
     )
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -239,14 +239,14 @@ def test_verify_manager_access_denied_role(db_session_mock: MagicMock, mocker: M
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[MagicMock()],
     )
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -267,14 +267,14 @@ def test_verify_manager_access_denied_inactive(db_session_mock: MagicMock, mocke
     mock_bio.user.is_active = False
 
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_manager_with_biometric",
+        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[MagicMock()],
     )
     mocker.patch(
-        "app.services.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.services.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,

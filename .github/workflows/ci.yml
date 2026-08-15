@@ -59,4 +59,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest tests/services/ -q --tb=short --cov=app/services/ --cov-report=xml
+          python -m pytest tests/ -q --tb=short --cov=app/features/ --cov=app/shared/ --cov-report=xml

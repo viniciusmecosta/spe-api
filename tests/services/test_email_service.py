@@ -1,36 +1,32 @@
-import os
 import smtplib
 from io import BytesIO
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import mock_open, patch
 
 import pytest
-
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
-from app.services.email_service import EmailService, dispatch_payroll_email, email_service
+from app.features.system.email_service import EmailService, dispatch_payroll_email, email_service
 
 
 @pytest.fixture(autouse=True)
 def mock_settings():
-    with patch("app.services.email_service.settings.SMTP_HOST", "smtp.test.com"), \
-         patch("app.services.email_service.settings.SMTP_PORT", 587), \
-         patch("app.services.email_service.settings.SMTP_USER", "user@test.com"), \
-         patch("app.services.email_service.settings.SMTP_PASSWORD", "pass"), \
-         patch("app.services.email_service.settings.ENVIRONMENT", "prod"), \
-         patch("app.services.email_service.settings.TIMEZONE", "UTC"), \
-         patch("app.services.email_service.settings.EMAIL_FROM", "test@test.com"):
+    with patch("app.features.system.email_service.settings.SMTP_HOST", "smtp.test.com"), \
+            patch("app.features.system.email_service.settings.SMTP_PORT", 587), \
+            patch("app.features.system.email_service.settings.SMTP_USER", "user@test.com"), \
+            patch("app.features.system.email_service.settings.SMTP_PASSWORD", "pass"), \
+            patch("app.features.system.email_service.settings.ENVIRONMENT", "prod"), \
+            patch("app.features.system.email_service.settings.TIMEZONE", "UTC"), \
+            patch("app.features.system.email_service.settings.EMAIL_FROM", "test@test.com"):
         yield
 
 
 @pytest.fixture
 def mock_template_service():
-    with patch("app.services.email_service.template_service") as mock:
+    with patch("app.features.system.email_service.template_service") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_smtp():
-    with patch("app.services.email_service.smtplib.SMTP") as mock:
+    with patch("app.features.system.email_service.smtplib.SMTP") as mock:
         yield mock
 
 
@@ -42,7 +38,7 @@ def local_mock_get_db_session(db_session_mock):
 
 
 def test_send_payroll_email_no_smtp():
-    with patch("app.services.email_service.settings.SMTP_HOST", None):
+    with patch("app.features.system.email_service.settings.SMTP_HOST", None):
         service = EmailService()
         service.send_payroll_email("action", "user", 1, 2023, None, ["test@test.com"])
 
@@ -63,7 +59,7 @@ def test_send_payroll_email_success(mock_smtp, mock_template_service):
 
 
 def test_send_payroll_email_dev_env(mock_smtp, mock_template_service):
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"):
         mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
         service = EmailService()
         service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
@@ -87,7 +83,7 @@ def test_send_payroll_email_generic_exception(mock_smtp, mock_template_service):
 
 
 def test_send_email_no_smtp():
-    with patch("app.services.email_service.settings.SMTP_HOST", None):
+    with patch("app.features.system.email_service.settings.SMTP_HOST", None):
         service = EmailService()
         assert service.send_email(["t@t.com"], [], "html", "period") is False
 
@@ -98,7 +94,7 @@ def test_send_email_no_to_emails():
 
 
 def test_send_email_no_port():
-    with patch("app.services.email_service.settings.SMTP_PORT", None):
+    with patch("app.features.system.email_service.settings.SMTP_PORT", None):
         service = EmailService()
         assert service.send_email(["t@t.com"], [], "html", "period") is False
 
@@ -124,42 +120,42 @@ def test_get_sender_address_prod():
 
 
 def test_get_sender_address_no_from():
-    with patch("app.services.email_service.settings.EMAIL_FROM", None):
+    with patch("app.features.system.email_service.settings.EMAIL_FROM", None):
         service = EmailService()
         assert service._get_sender_address() == "user@test.com"
 
 
 def test_get_sender_address_no_from_no_user():
-    with patch("app.services.email_service.settings.EMAIL_FROM", None), \
-         patch("app.services.email_service.settings.SMTP_USER", None):
+    with patch("app.features.system.email_service.settings.EMAIL_FROM", None), \
+            patch("app.features.system.email_service.settings.SMTP_USER", None):
         service = EmailService()
         assert service._get_sender_address() == ""
 
 
 def test_get_sender_address_dev_full():
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"), \
-         patch("app.services.email_service.settings.EMAIL_FROM", "Test Name <test@test.com>"):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"), \
+            patch("app.features.system.email_service.settings.EMAIL_FROM", "Test Name <test@test.com>"):
         service = EmailService()
         assert service._get_sender_address() == "DEVELOPMENT Test Name <test@test.com>"
 
 
 def test_get_sender_address_dev_only_addr():
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"), \
-         patch("app.services.email_service.settings.EMAIL_FROM", "test@test.com"):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"), \
+            patch("app.features.system.email_service.settings.EMAIL_FROM", "test@test.com"):
         service = EmailService()
         assert service._get_sender_address() == "DEVELOPMENT <test@test.com>"
 
 
 def test_get_sender_address_dev_no_addr():
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"), \
-         patch("app.services.email_service.settings.EMAIL_FROM", "invalid"):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"), \
+            patch("app.features.system.email_service.settings.EMAIL_FROM", "invalid"):
         service = EmailService()
         assert service._get_sender_address() == "DEVELOPMENT <invalid>"
 
 def test_get_sender_address_dev_empty_email_from():
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"), \
-         patch("app.services.email_service.settings.EMAIL_FROM", ""), \
-         patch("app.services.email_service.settings.SMTP_USER", ""):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"), \
+            patch("app.features.system.email_service.settings.EMAIL_FROM", ""), \
+            patch("app.features.system.email_service.settings.SMTP_USER", ""):
         service = EmailService()
         assert service._get_sender_address() == "DEVELOPMENT <>"
 
@@ -175,7 +171,7 @@ def test_build_payroll_message_with_attachment():
 
 
 def test_build_backup_message_dev(mock_template_service):
-    with patch("app.services.email_service.settings.ENVIRONMENT", "dev"):
+    with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"):
         service = EmailService()
         msg = service._build_backup_message(["a@a.com"], [], "html", "period")
         assert "Backup SPE DEV" in msg["Subject"]

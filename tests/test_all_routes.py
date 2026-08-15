@@ -1,7 +1,5 @@
 import os
-import random
 import re
-import string
 import sys
 import warnings
 
@@ -12,9 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database.session import SessionLocal
-from app.domain.models.user import User
-from app.domain.models.enums import UserRole, DeviceKeyType
-from app.domain.models.device import DeviceCredential
+from app.features.users.user_models import User
+from app.shared.enums import UserRole, DeviceKeyType
+from app.features.devices.device_models import DeviceCredential
 from app.core.security import get_password_hash, get_api_key_hash
 
 def setup_test_data(db):

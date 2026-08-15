@@ -1,24 +1,26 @@
-import pytest
+from datetime import date, datetime
 from unittest.mock import patch, MagicMock, mock_open
-from datetime import date, datetime, time
+
 import requests
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.services.telegram_service import TelegramService
-from app.domain.models.enums import RecordType
-from app.domain.models.time_record import TimeRecord
-from app.domain.models.user import User
+import pytest
+from app.shared.enums import RecordType
+from app.features.system.telegram_service import TelegramService
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.users.user_models import User
+
 
 @pytest.fixture
 def service():
-    with patch("app.services.telegram_service.settings") as mock_settings:
+    with patch("app.features.system.telegram_service.settings") as mock_settings:
         mock_settings.TELEGRAM_BOT_TOKEN = "test_token"
         mock_settings.TELEGRAM_CHAT_ID = "test_chat_id"
         mock_settings.TELEGRAM_MAX_MESSAGE_LENGTH = 4096
         yield TelegramService()
 
 def test_init_no_token():
-    with patch("app.services.telegram_service.settings") as mock_settings:
+    with patch("app.features.system.telegram_service.settings") as mock_settings:
         mock_settings.TELEGRAM_BOT_TOKEN = ""
         mock_settings.TELEGRAM_CHAT_ID = ""
         service = TelegramService()
@@ -152,7 +154,7 @@ def test_generate_report_text_sqlalchemy_error(service, db_session_mock):
     assert result == "Erro interno ao gerar relatório gerencial."
 
 def test_generate_report_text_exceed_max_length(service, db_session_mock):
-    with patch("app.services.telegram_service.settings") as mock_settings:
+    with patch("app.features.system.telegram_service.settings") as mock_settings:
         mock_settings.TELEGRAM_MAX_MESSAGE_LENGTH = 5
         
         mock_query = MagicMock()

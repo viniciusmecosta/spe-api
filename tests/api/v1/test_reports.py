@@ -2,14 +2,12 @@ import io
 from datetime import date
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.api import deps
-from app.domain.models.enums import UserRole
-from app.domain.models.user import User
-from app.main import app
-from app.schemas.report import (
+import pytest
+from app.shared import deps
+from app.shared.enums import UserRole
+from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
     HistoryResponse,
@@ -17,6 +15,8 @@ from app.schemas.report import (
     TeamHoursResponse,
     UserPayrollSummary,
 )
+from app.features.users.user_models import User
+from app.main import app
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def test_get_dashboard(client: TestClient, mocker: MagicMock) -> None:
         employees_present_today=8,
         date=date(2026, 8, 14),
     )
-    mocker.patch("app.api.v1.reports.dashboard_service.get_dashboard_metrics", return_value=expected)
+    mocker.patch("app.features.reports.report_router.dashboard_service.get_dashboard_metrics", return_value=expected)
 
     response = client.get("/api/v1/reports/dashboard")
     assert response.status_code == 200
@@ -62,7 +62,7 @@ def test_get_my_dashboard(client: TestClient, mocker: MagicMock) -> None:
         server_time_unix=1234567890,
         server_time_formatted="14/08/2026 10:00",
     )
-    mocker.patch("app.api.v1.reports.dashboard_service.get_my_dashboard", return_value=expected)
+    mocker.patch("app.features.reports.report_router.dashboard_service.get_my_dashboard", return_value=expected)
 
     response = client.get("/api/v1/reports/my/dashboard")
     assert response.status_code == 200
@@ -76,7 +76,7 @@ def test_get_my_history(client: TestClient, mocker: MagicMock) -> None:
         total_worked_time="00:00",
         days=[],
     )
-    mocker.patch("app.api.v1.reports.report_service.get_history_report", return_value=expected)
+    mocker.patch("app.features.reports.report_router.report_service.get_history_report", return_value=expected)
 
     response = client.get("/api/v1/reports/history/me?month=8&year=2026")
     assert response.status_code == 200
@@ -90,7 +90,7 @@ def test_get_user_history(client: TestClient, mocker: MagicMock) -> None:
         total_worked_time="00:00",
         days=[],
     )
-    mocker.patch("app.api.v1.reports.report_service.get_history_report", return_value=expected)
+    mocker.patch("app.features.reports.report_router.report_service.get_history_report", return_value=expected)
 
     response = client.get("/api/v1/reports/history/user/2?month=8&year=2026")
     assert response.status_code == 200
@@ -105,7 +105,7 @@ def test_get_team_hours(client: TestClient, mocker: MagicMock) -> None:
         team_formatted_time="160:00",
         employees=[],
     )
-    mocker.patch("app.api.v1.reports.dashboard_service.get_team_worked_hours", return_value=expected)
+    mocker.patch("app.features.reports.report_router.dashboard_service.get_team_worked_hours", return_value=expected)
 
     response = client.get("/api/v1/reports/team-hours?month=8&year=2026")
     assert response.status_code == 200
@@ -114,8 +114,8 @@ def test_get_team_hours(client: TestClient, mocker: MagicMock) -> None:
 
 def test_export_monthly_report_excel(client: TestClient, mocker: MagicMock) -> None:
     fake_stream = io.BytesIO(b"fake excel content")
-    mocker.patch("app.api.v1.reports.report_service.validate_excel_export_permission")
-    mocker.patch("app.api.v1.reports.excel_service.generate_excel_report", return_value=fake_stream)
+    mocker.patch("app.features.reports.report_router.report_service.validate_excel_export_permission")
+    mocker.patch("app.features.reports.report_router.excel_service.generate_excel_report", return_value=fake_stream)
 
     response = client.get("/api/v1/reports/export/excel?month=8&year=2026")
     assert response.status_code == 200
@@ -135,7 +135,7 @@ def test_get_user_detailed_report(client: TestClient, mocker: MagicMock) -> None
         ),
         daily_details=[],
     )
-    mocker.patch("app.api.v1.reports.report_service.get_advanced_user_report", return_value=expected)
+    mocker.patch("app.features.reports.report_router.report_service.get_advanced_user_report", return_value=expected)
 
     response = client.get("/api/v1/reports/user/1?month=8&year=2026")
     assert response.status_code == 200

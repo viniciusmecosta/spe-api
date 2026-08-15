@@ -1,14 +1,13 @@
-import pytest
 from datetime import date, datetime
-from sqlalchemy.orm import Session
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import pytest
 from app.core.config import settings
-from app.domain.models.enums import RecordType
-from app.domain.models.user import User
-from app.schemas.report import DashboardMetricsResponse, TeamHoursResponse
-from app.services.dashboard_service import dashboard_service
+from app.shared.enums import RecordType
+from app.features.reports.dashboard_service import dashboard_service
+from app.features.reports.report_schemas import DashboardMetricsResponse, TeamHoursResponse
+from app.features.users.user_models import User
 
 
 @pytest.fixture
@@ -29,9 +28,9 @@ def mock_db_query(db_session_mock):
     }
 
 
-@patch("app.services.dashboard_service.time_record_repository.count_unique_users_in_range")
-@patch("app.services.dashboard_service.adjustment_repository.count_pending")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.time_record_repository.count_unique_users_in_range")
+@patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_users, db_session_mock, mock_db_query):
     mock_db_query["filter"].count.return_value = 5
     mock_count_pending.return_value = 3
@@ -51,11 +50,11 @@ def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_use
     assert response.employees_present_today == 2
 
 
-@patch("app.services.dashboard_service.anomaly_service.get_anomalies")
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.date")
-@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.date")
+@patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                        mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
@@ -111,11 +110,11 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, moc
     assert response.aniversariantes_do_mes[1].dia == 20
 
 
-@patch("app.services.dashboard_service.anomaly_service.get_anomalies")
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.date")
-@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.date")
+@patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                                  mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
@@ -143,10 +142,10 @@ def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted
     assert len(response.aniversariantes_do_mes) == 0
 
 
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.date")
-@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.date")
+@patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                          db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
@@ -167,11 +166,11 @@ def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, m
     assert len(response.month_anomalies) == 0
 
 
-@patch("app.services.dashboard_service.anomaly_service.get_anomalies")
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.date")
-@patch("app.services.dashboard_service.trusted_time_service.get_trusted_time")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.date")
+@patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                             mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
@@ -198,7 +197,7 @@ def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time
     assert response.next_punch_type == "EXIT"
 
 
-@patch("app.services.dashboard_service.report_service.get_advanced_user_report")
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report")
 def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
     current_user = User(id=1, name="Admin")
 
@@ -233,7 +232,7 @@ def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
     assert response.employees[0].formatted_time == "2h"
 
 
-@patch("app.services.dashboard_service.report_service.get_advanced_user_report")
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report")
 def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_db_query):
     current_user = User(id=1, name="Admin")
 
@@ -252,12 +251,12 @@ def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_
     assert len(response.employees) == 0
 
 
-@patch("app.services.dashboard_service.time_record_repository.count_records_in_range")
-@patch("app.services.dashboard_service.adjustment_repository.count_pending")
-@patch("app.services.dashboard_service.anomaly_service.get_anomalies_by_month")
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.dashboard_service.get_team_worked_hours")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.time_record_repository.count_records_in_range")
+@patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -289,12 +288,12 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
     assert response.today_total_punches == 12
 
 
-@patch("app.services.dashboard_service.time_record_repository.count_records_in_range")
-@patch("app.services.dashboard_service.adjustment_repository.count_pending")
-@patch("app.services.dashboard_service.anomaly_service.get_anomalies_by_month")
-@patch("app.services.dashboard_service.time_record_repository.get_by_range")
-@patch("app.services.dashboard_service.dashboard_service.get_team_worked_hours")
-@patch("app.services.dashboard_service.datetime")
+@patch("app.features.reports.dashboard_service.time_record_repository.count_records_in_range")
+@patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
+@patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch("app.features.reports.dashboard_service.datetime")
 def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))

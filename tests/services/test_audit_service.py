@@ -1,9 +1,11 @@
 from datetime import date
-from app.services.audit_service import audit_service
-from app.schemas.audit import AuditLogCreate
+
+from app.features.system.audit_service import audit_service
+from app.features.system.system_schemas import AuditLogCreate
+
 
 def test_log(db_session_mock, mocker):
-    mock_create = mocker.patch("app.services.audit_service.audit_repository.create")
+    mock_create = mocker.patch("app.features.system.audit_service.audit_repository.create")
     mock_create.return_value = "mock_audit_log"
     result = audit_service.log(
         db=db_session_mock,
@@ -40,7 +42,7 @@ def test_compute_diffs_identical():
     assert actual_new == {}
 
 def test_get_logs(db_session_mock, mocker):
-    mock_get_logs = mocker.patch("app.services.audit_service.audit_repository.get_logs")
+    mock_get_logs = mocker.patch("app.features.system.audit_service.audit_repository.get_logs")
     mock_get_logs.return_value = ["log1", "log2"]
     start = date(2023, 1, 1)
     end = date(2023, 12, 31)

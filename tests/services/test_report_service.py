@@ -1,15 +1,18 @@
-import pytest
-from datetime import date, datetime, timedelta
-from unittest.mock import MagicMock, patch
-from fastapi import HTTPException
-from zoneinfo import ZoneInfo
 from collections import defaultdict
+from datetime import date, datetime
+from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
+
+from fastapi import HTTPException
+
+import pytest
 from app.core.config import settings
-from app.domain.models.enums import UserRole, RecordType
-from app.domain.models.user import User
-from app.domain.models.time_record import TimeRecord
-from app.services.report_service import ReportService
-from app.schemas.report import HistoryResponse, AdvancedUserReportResponse, MonthlyReportResponse, UserPayrollSummary, AdvancedUserReportResponse
+from app.shared.enums import UserRole, RecordType
+from app.features.reports.report_schemas import UserPayrollSummary
+from app.features.reports.report_service import ReportService
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.users.user_models import User
+
 
 @pytest.fixture
 def service():
@@ -17,27 +20,27 @@ def service():
 
 @pytest.fixture
 def mock_repo_user():
-    with patch('app.services.report_service.user_repository') as mock:
+    with patch('app.features.reports.report_service.user_repository') as mock:
         yield mock
 
 @pytest.fixture
 def mock_repo_time_record():
-    with patch('app.services.report_service.time_record_repository') as mock:
+    with patch('app.features.reports.report_service.time_record_repository') as mock:
         yield mock
 
 @pytest.fixture
 def mock_repo_holiday():
-    with patch('app.services.report_service.holiday_repository') as mock:
+    with patch('app.features.reports.report_service.holiday_repository') as mock:
         yield mock
 
 @pytest.fixture
 def mock_anomaly_service():
-    with patch('app.services.report_service.anomaly_service') as mock:
+    with patch('app.features.reports.report_service.anomaly_service') as mock:
         yield mock
 
 @pytest.fixture
 def mock_time_calc_service():
-    with patch('app.services.time_calculation_service.time_calculation_service') as mock:
+    with patch('app.shared.time_calculation_service.time_calculation_service') as mock:
         yield mock
 
 @pytest.fixture
@@ -344,7 +347,7 @@ def test_get_monthly_summary_no_minutes(service, mock_db):
 def test_locale_error():
     import locale
     import importlib
-    import app.services.report_service as rs
+    import app.features.reports.report_service as rs
     with patch('locale.setlocale', side_effect=locale.Error):
         importlib.reload(rs)
     importlib.reload(rs)
@@ -404,8 +407,8 @@ def test_get_advanced_user_report_with_prefetched_data(service, mock_db, mock_re
     records = [MagicMock(spec=TimeRecord)]
     adjustments = [MagicMock()]
     holidays = [MagicMock()]
-    
-    with patch("app.services.time_calculation_service.time_calculation_service.calculate_period_time") as mock_calc:
+
+    with patch("app.shared.time_calculation_service.time_calculation_service.calculate_period_time") as mock_calc:
         res_calc = MagicMock()
         res_calc.total_net_worked_seconds = 0
         res_calc.total_expected_seconds = 0
@@ -425,7 +428,7 @@ def test_get_advanced_user_report_with_prefetched_data(service, mock_db, mock_re
         assert rep is not None
 
 def test_get_monthly_summary_with_records_and_adjustments(service, mock_db, mock_repo_holiday):
-    from app.domain.models.adjustment import AdjustmentRequest
+    from app.features.adjustments.adjustment_models import AdjustmentRequest
     
     user = MagicMock(spec=User)
     user.id = 1
