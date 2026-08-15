@@ -7,7 +7,7 @@ from app.features.devices.device_schemas import (
     DeviceCredentialCreate,
     DeviceCredentialUpdate,
 )
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 
 
 class DeviceCredentialService:
@@ -18,15 +18,7 @@ class DeviceCredentialService:
             current_user_id: int,
     ) -> DeviceCredential:
         device = device_credential_repository.create(db, credential_in)
-
-        audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="CREATE",
-            entity="DEVICE_CREDENTIAL",
-            entity_id=device.id,
-            new_data={"name": device.name, "key_type": device.key_type.value},
-        )
+        audit_service.log_change(db, current_user_id, "CREATE", new_model=device)
         return device
 
     def get_all(self, db: Session) -> list[DeviceCredential]:
@@ -46,19 +38,9 @@ class DeviceCredentialService:
                 detail="Credencial não encontrada.",
             )
 
-        old_data = {"name": device.name, "is_active": device.is_active}
-
+        old_data = serialize_model(device)
         updated_device = device_credential_repository.update(db, device, credential_in)
-
-        audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="UPDATE",
-            entity="DEVICE_CREDENTIAL",
-            entity_id=updated_device.id,
-            old_data=old_data,
-            new_data={"name": updated_device.name, "is_active": updated_device.is_active},
-        )
+        audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=updated_device)
         return updated_device
 
     def delete(
@@ -74,18 +56,8 @@ class DeviceCredentialService:
                 detail="Credencial não encontrada.",
             )
 
-        old_data = {"name": device.name}
-
         device_credential_repository.delete(db, credential_id)
-
-        audit_service.log(
-            db,
-            user_id=current_user_id,
-            action="DELETE",
-            entity="DEVICE_CREDENTIAL",
-            entity_id=credential_id,
-            old_data=old_data,
-        )
+        audit_service.log_change(db, current_user_id, "DELETE", old_model=device)
         return {"status": "success"}
 
 

@@ -3,11 +3,11 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
 from app.features.users.user_service import user_service
+from app.shared.enums import UserRole
 
 
 def test_get_bio_attr():
@@ -114,7 +114,7 @@ def test_create_user(db_session_mock, mocker):
     mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
     mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     class DummyCreate:
         pass
@@ -145,19 +145,19 @@ def test_update_user_not_found(db_session_mock, mocker):
         user_service.update_user(db_session_mock, 1, user_in, 99)
     assert exc.value.status_code == 404
 
-def test_capture_user_state():
+
+def test_serialize_user_state():
     from datetime import date
+    from app.features.system.audit_service import serialize_model
     user = User(
         id=1, username="test", is_active=True, data_nascimento=date(2000, 1, 1),
         is_exempt_from_rules=False, is_tolerance_exempt=True
     )
-    state = user_service._capture_user_state(user)
+    state = serialize_model(user)
     assert state["is_active"] is True
     assert state["data_nascimento"] == "2000-01-01"
     assert state["is_exempt_from_rules"] is False
     assert state["is_tolerance_exempt"] is True
-    assert "is_exempt_from_rules" in user_service._get_tracked_fields()
-    assert "is_tolerance_exempt" in user_service._get_tracked_fields()
 
 def test_update_user_ok(db_session_mock, mocker):
     user = User(id=1, name="Old", is_active=True)
@@ -165,9 +165,7 @@ def test_update_user_ok(db_session_mock, mocker):
     mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
     mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
-                 return_value=({"name": "Old"}, {"name": "New"}))
-    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     user_in = UserUpdate(name="New", password="123456")
     user_in.biometrics = []
@@ -176,7 +174,7 @@ def test_update_user_ok(db_session_mock, mocker):
     assert res.name == "New"
     assert res.password_hash == "hash"
     mock_log.assert_called_once()
-    assert mock_log.call_args[1]["new_data"] == {"name": "New", "password_changed": True}
+    assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
 
 def test_disable_user_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
@@ -187,7 +185,7 @@ def test_disable_user_not_found(db_session_mock, mocker):
 def test_disable_user_ok(db_session_mock, mocker):
     user = User(id=1, is_active=True)
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     res = user_service.disable_user(db_session_mock, 1, 99)
     assert res.is_active is False

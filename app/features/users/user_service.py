@@ -1,4 +1,3 @@
-import datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -7,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
-from app.features.system.audit_service import audit_service
+from app.features.system.audit_service import audit_service, serialize_model
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.features.users.user_schemas import UserCreate, UserUpdate
@@ -142,35 +141,8 @@ class UserService:
         db.commit()
         db.refresh(db_user)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="CREATE",
-            entity="USER", entity_id=db_user.id,
-            new_data={
-                "username": db_user.username,
-                "role": db_user.role,
-                "name": db_user.name
-            }
-        )
+        audit_service.log_change(db, current_user_id, "CREATE", new_model=db_user)
         return db_user
-
-    def _get_tracked_fields(self) -> list[str]:
-        return [
-            "username", "role", "name", "is_active", "email", "cpf",
-            "pis", "endereco", "data_nascimento", "can_manual_punch_desktop",
-            "can_manual_punch_mobile", "can_export_report",
-            "is_exempt_from_rules", "is_tolerance_exempt"
-        ]
-
-    def _capture_user_state(self, user: User) -> dict[str, Any]:
-        state = {}
-        for field in self._get_tracked_fields():
-            if hasattr(user, field):
-                val = getattr(user, field)
-                if isinstance(val, (datetime.date, datetime.datetime)):
-                    state[field] = val.isoformat()
-                else:
-                    state[field] = val
-        return state
 
     def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
@@ -191,7 +163,7 @@ class UserService:
         if update_data.get("name"):
             update_data["name"] = self._format_name(update_data["name"])
 
-        old_data = self._capture_user_state(user)
+        old_data = serialize_model(user)
 
         for field, value in update_data.items():
             if hasattr(user, field):
@@ -204,17 +176,10 @@ class UserService:
         db.commit()
         db.refresh(user)
 
-        new_data_raw = self._capture_user_state(user)
-
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        if password_changed:
-            actual_new["password_changed"] = True
-
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE",
-            entity="USER", entity_id=user.id,
-            old_data=actual_old, new_data=actual_new
+        audit_service.log_change(
+            db, current_user_id, "UPDATE",
+            old_model=old_data, new_model=user,
+            new_data={"password_changed": True} if password_changed else None
         )
         return user
 
@@ -223,17 +188,16 @@ class UserService:
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        old_data = {"is_active": user.is_active}
-
         user.is_active = False
         db.add(user)
         db.commit()
         db.refresh(user)
 
-        audit_service.log(
-            db, user_id=current_user_id, action="DISABLE",
+        audit_service.log_change(
+            db, current_user_id, "DISABLE",
             entity="USER", entity_id=user.id,
-            old_data=old_data, new_data={"is_active": False}
+            old_data={"is_active": True},
+            new_data={"is_active": False}
         )
         return user
 

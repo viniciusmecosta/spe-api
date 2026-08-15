@@ -139,7 +139,7 @@ def test_verify_manager_access_no_managers(db_session_mock: MagicMock, mocker: M
         "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
         return_value=[],
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -162,7 +162,7 @@ def test_verify_manager_access_biometric_not_found(db_session_mock: MagicMock, m
         "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=None,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -190,7 +190,7 @@ def test_verify_manager_access_authorized_manager(db_session_mock: MagicMock, mo
         "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -218,7 +218,7 @@ def test_verify_manager_access_authorized_maintainer(db_session_mock: MagicMock,
         "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -246,7 +246,7 @@ def test_verify_manager_access_denied_role(db_session_mock: MagicMock, mocker: M
         "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,
@@ -274,7 +274,7 @@ def test_verify_manager_access_denied_inactive(db_session_mock: MagicMock, mocke
         "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
 
     result = device_service.verify_manager_access(
         db=db_session_mock,

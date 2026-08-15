@@ -19,6 +19,7 @@ from app.features.system.system_schemas import (
     RoutineLogResponse,
 )
 from app.features.system.telegram_service import telegram_service
+from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,
@@ -33,7 +34,6 @@ routine_logs_router = APIRouter(responses={**AUTH_RESPONSES})
 telegram_actions_router = APIRouter(responses={**AUTH_RESPONSES})
 
 
-# --- Audit Logs endpoints ---
 @audit_router.get(
     "/",
     dependencies=[Depends(deps.get_current_manager)],
@@ -58,7 +58,6 @@ def read_audit_logs(
     )
 
 
-# --- Backup endpoints ---
 @backup_router.post(
     "/trigger",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -66,6 +65,7 @@ def read_audit_logs(
 )
 def trigger_manual_backup(
         db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     sent = routine_orchestrator.send_manual_backup_email(db)
     if not sent:
@@ -73,10 +73,10 @@ def trigger_manual_backup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Falha ao gerar ou enviar o backup.",
         )
+    audit_service.log(db, current_user.id, "MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}
 
 
-# --- Routine Logs endpoints ---
 @routine_logs_router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -103,15 +103,17 @@ def read_routine_logs(
     )
 
 
-# --- Telegram Actions endpoints ---
 @telegram_actions_router.post(
     "/manual-backup",
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 def trigger_manual_backup_telegram(
         background_tasks: BackgroundTasks,
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     background_tasks.add_task(routine_orchestrator.execute_manual_backup_telegram)
+    audit_service.log(db, current_user.id, "MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
     return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
 
 
@@ -124,9 +126,14 @@ def trigger_manual_report_telegram(
         background_tasks: BackgroundTasks,
         start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
         end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     telegram_service.validate_manual_report_dates(start_date, end_date)
     background_tasks.add_task(routine_orchestrator.send_manual_report_telegram, start_date, end_date)
+    audit_service.log(db, current_user.id, "MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
+                      new_data={"start_date": str(start_date), "end_date": str(end_date)})
     return {
         "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
     }
+

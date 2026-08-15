@@ -59,12 +59,7 @@ class FirmwareService:
             shutil.copyfileobj(file.file, buffer)
 
         firmware = firmware_repository.create(db, version=version, file_path=relative_file_path)
-
-        audit_service.log(
-            db, user_id=current_user_id, action="UPLOAD", entity="FIRMWARE", entity_id=firmware.id,
-            new_data={"version": version, "file_path": relative_file_path}
-        )
-
+        audit_service.log_change(db, current_user_id, "UPLOAD", new_model=firmware)
         return firmware
 
     def update_firmware_file(self, db: Session, version: str, file: UploadFile, current_user_id: int) -> Firmware:
@@ -83,17 +78,7 @@ class FirmwareService:
             shutil.copyfileobj(file.file, buffer)
 
         firmware = firmware_repository.create(db, version=version, file_path=relative_file_path)
-
-        old_data = {"file_path": firmware_old.file_path}
-        new_data_raw = {"file_path": relative_file_path}
-
-        actual_old, actual_new = audit_service.compute_diffs(old_data, new_data_raw)
-
-        audit_service.log(
-            db, user_id=current_user_id, action="UPDATE", entity="FIRMWARE", entity_id=firmware.id,
-            old_data=actual_old, new_data=actual_new
-        )
-
+        audit_service.log_change(db, current_user_id, "UPDATE", old_model=firmware_old, new_model=firmware)
         return firmware
 
     def get_latest_firmware(self, db: Session) -> Firmware:

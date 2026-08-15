@@ -173,10 +173,7 @@ class PayrollService:
         db.commit()
         db.refresh(closure)
 
-        audit_service.log(
-            db, user_id=current_user.id, action="CLOSE", entity="PAYROLL", entity_id=closure.id,
-            new_data={"month": month, "year": year}
-        )
+        audit_service.log_change(db, current_user.id, "CLOSE", new_model=closure)
 
         maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
                                             User.email.isnot(None)).all()
@@ -206,9 +203,10 @@ class PayrollService:
         closure_id = existing.id
         payroll_repository.delete(db, month, year, current_user.id, observation)
 
-        audit_service.log(
-            db, user_id=current_user.id, action="REOPEN", entity="PAYROLL", entity_id=closure_id,
-            old_data={"month": month, "year": year}
+        audit_service.log_change(
+            db, current_user.id, "REOPEN",
+            entity="PAYROLL_CLOSURE", entity_id=closure_id,
+            old_data={"is_closed": True}, new_data={"is_closed": False}
         )
 
         maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,

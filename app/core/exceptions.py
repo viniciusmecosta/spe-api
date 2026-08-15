@@ -103,11 +103,11 @@ def setup_exception_handlers(app: FastAPI):
             for err in exc.errors()
         ]
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
-                "type": _get_error_type(status.HTTP_422_UNPROCESSABLE_ENTITY),
-                "title": _get_error_title(status.HTTP_422_UNPROCESSABLE_ENTITY),
-                "status": status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "type": _get_error_type(status.HTTP_422_UNPROCESSABLE_CONTENT),
+                "title": _get_error_title(status.HTTP_422_UNPROCESSABLE_CONTENT),
+                "status": status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "detail": "Os dados fornecidos na requisição são inválidos ou estão incompletos.",
                 "instance": request.url.path,
                 "invalid_params": invalid_params

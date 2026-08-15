@@ -104,9 +104,10 @@ class DeviceService:
         managers_with_bio = biometric_repository.get_manager_with_biometric(db)
 
         if not managers_with_bio:
-            audit_service.log(
+            audit_service.log_change(
                 db,
-                action="VERIFY_MANAGER",
+                None,
+                "VERIFY_MANAGER",
                 entity="DEVICE",
                 entity_id=device_id,
                 new_data={"sensor_index": sensor_index, "status": "allowed", "reason": "no_managers"},
@@ -118,9 +119,10 @@ class DeviceService:
 
         biometric = biometric_repository.get_by_sensor_index(db, sensor_index)
         if not biometric:
-            audit_service.log(
+            audit_service.log_change(
                 db,
-                action="VERIFY_MANAGER",
+                None,
+                "VERIFY_MANAGER",
                 entity="DEVICE",
                 entity_id=device_id,
                 new_data={"sensor_index": sensor_index, "status": "denied", "reason": "biometric_not_found"},
@@ -131,10 +133,10 @@ class DeviceService:
             )
 
         if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
-            audit_service.log(
+            audit_service.log_change(
                 db,
-                user_id=biometric.user.id,
-                action="VERIFY_MANAGER",
+                biometric.user.id,
+                "VERIFY_MANAGER",
                 entity="DEVICE",
                 entity_id=device_id,
                 new_data={"sensor_index": sensor_index, "status": "allowed"},
@@ -144,10 +146,10 @@ class DeviceService:
                 message="Acesso autorizado.",
             )
 
-        audit_service.log(
+        audit_service.log_change(
             db,
-            user_id=biometric.user.id,
-            action="VERIFY_MANAGER",
+            biometric.user.id,
+            "VERIFY_MANAGER",
             entity="DEVICE",
             entity_id=device_id,
             new_data={"sensor_index": sensor_index, "status": "denied", "reason": "insufficient_permissions"},

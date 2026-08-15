@@ -1,10 +1,3 @@
-"""feature tolerance adjustments and work schedules
-
-Revision ID: 037
-Revises: 036
-Create Date: 2026-07-21 11:10:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.engine.reflection import Inspector

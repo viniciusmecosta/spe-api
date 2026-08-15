@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.auth.auth_service import auth_service
 from app.features.users.user_models import User
+from app.shared.enums import UserRole
 
 
 def test_authenticate_user_not_found(db_session_mock: MagicMock, mocker: MagicMock) -> None:

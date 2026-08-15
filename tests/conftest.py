@@ -1,8 +1,18 @@
-import pytest
-from unittest.mock import MagicMock
-from sqlalchemy.orm import Session
 from datetime import datetime
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
+import pytest
+from sqlalchemy.orm import Session
+
+import app.features.adjustments.adjustment_models
+import app.features.companies.company_models
+import app.features.devices.device_models
+import app.features.holidays.holiday_models
+import app.features.payroll.payroll_models
+import app.features.printers.printer_models
+import app.features.system.system_models
+import app.features.time_records.time_record_models
+import app.features.users.user_models
 from app.core.config import settings
 
 @pytest.fixture

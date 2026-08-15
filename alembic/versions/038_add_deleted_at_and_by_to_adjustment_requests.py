@@ -1,10 +1,3 @@
-"""add deleted_at and deleted_by to adjustment_requests
-
-Revision ID: 038
-Revises: 037
-Create Date: 2026-07-22 19:40:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 

@@ -56,7 +56,7 @@ def test_create_manager_waiver(db_session_mock, mocker):
                  return_value=AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1)))
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1)])
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     obj_in = AdjustmentWaiverCreate(user_id=1, target_date=date(2023, 10, 1), amount_hours=8.0, reason_text="teste")
     res = adjustment_service.create_manager_waiver(db_session_mock, obj_in, 99)
@@ -68,7 +68,7 @@ def test_admin_delete_adjustment(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     adjustment_service.admin_delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
 
@@ -87,7 +87,7 @@ def test_approve_adjustment(db_session_mock, mocker):
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
                  return_value=({"status": "PENDING"}, {"status": "APPROVED"}))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
     
@@ -110,7 +110,7 @@ def test_reject_adjustment(db_session_mock, mocker):
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.REJECTED))
     mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
                  return_value=({"status": "PENDING"}, {"status": "REJECTED"}))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.REJECTED)])
     
@@ -149,7 +149,7 @@ def test_revert_adjustment_status(db_session_mock, mocker):
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.PENDING))
     mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
                  return_value=({"status": "APPROVED"}, {"status": "PENDING"}))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.PENDING)])
     
@@ -188,7 +188,7 @@ def test_delete_adjustment_success(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
 
@@ -198,11 +198,11 @@ def test_delete_extra_time_adjustment_success(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
-    mock_audit_log = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_audit_log = mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa exclusao hora extra")
     mock_audit_log.assert_called_once()
-    assert mock_audit_log.call_args[1]["action"] == "DELETE_ADJUSTMENT"
+    assert mock_audit_log.call_args[0][2] == "DELETE_ADJUSTMENT"
     assert mock_audit_log.call_args[1]["new_data"] == {"reason": "Justificativa exclusao hora extra"}
 
 def test_delete_waiver_adjustment_success(db_session_mock, mocker):
@@ -211,12 +211,11 @@ def test_delete_waiver_adjustment_success(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
-    mock_audit_log = mocker.patch("app.features.system.audit_service.audit_service.log")
+    mock_audit_log = mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa exclusao abono")
     mock_audit_log.assert_called_once()
-    assert mock_audit_log.call_args[1]["action"] == "DELETE_ADJUSTMENT"
-    assert mock_audit_log.call_args[1]["new_data"] == {"reason": "Justificativa exclusao abono"}
+    assert mock_audit_log.call_args[0][2] == "DELETE_ADJUSTMENT"
     assert mock_audit_log.call_args[1]["new_data"] == {"reason": "Justificativa exclusao abono"}
 
 def test_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
@@ -297,7 +296,7 @@ def test_upload_attachment_success(db_session_mock, mocker):
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.create_attachment",
                  return_value="Attachment")
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     
     res = adjustment_service.upload_attachment(db_session_mock, 1, file, 1)
     assert res == "Attachment"
@@ -352,7 +351,7 @@ def test_revert_adjustment_status_approve(db_session_mock, mocker):
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.compute_diffs",
                  return_value=({"status": "PENDING"}, {"status": "APPROVED"}))
-    mocker.patch("app.features.system.audit_service.audit_service.log")
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
     
