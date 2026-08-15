@@ -36,6 +36,7 @@ from app.features.time_records.receipt_service import receipt_service
 from app.features.users.user_repository import user_repository
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
+from app.utils.formatters import mask_cnpj, mask_cpf
 
 
 class TimeRecordService:
@@ -361,16 +362,6 @@ class TimeRecordService:
         record_type_str = "Entrada" if record.record_type.name == "ENTRY" else "Saída"
         date_str = record.record_datetime.strftime("%d/%m/%Y")
         time_str = record.record_datetime.strftime("%H:%M:%S")
-
-        def mask_cnpj(c: str) -> str:
-            if not c or len(c) != 14:
-                return c
-            return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
-
-        def mask_cpf(c: str) -> str:
-            if not c or len(c) != 11:
-                return c
-            return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
 
         data = {
             "company_name": company.name if company else "N/A",
