@@ -1,57 +1,50 @@
-from typing import Any
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from typing import Annotated
 
 from app.api import deps
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+)
 from app.domain.models.user import User
-from app.repositories.holiday_repository import holiday_repository
 from app.schemas.holiday import HolidayCreate, HolidayResponse
-from app.services.audit_service import audit_service
-from app.services.payroll_service import payroll_service
+from app.services.holiday_service import holiday_service
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
-@router.post("/", response_model=HolidayResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
+)
 def create_holiday(
         holiday_in: HolidayCreate,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    payroll_service.validate_period_open(db, holiday_in.date)
-    if holiday_repository.get_by_date(db, holiday_in.date):
-        raise HTTPException(status_code=400, detail="Já existe um feriado cadastrado para esta data.")
-        
-    holiday = holiday_repository.create(db, holiday_in)
-    audit_service.log(
-        db, user_id=current_user.id, action="CREATE", entity="HOLIDAY", entity_id=holiday.id,
-        new_data={"date": str(holiday.date), "name": holiday.name}
-    )
-    return holiday
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+) -> HolidayResponse:
+    return holiday_service.create_holiday(db, holiday_in, current_user.id)
 
 
-@router.get("/", response_model=list[HolidayResponse])
+@router.get(
+    "/",
+    dependencies=[Depends(deps.get_current_active_user)],
+)
 def read_holidays(
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_active_user)
-) -> Any:
-    return holiday_repository.get_all(db)
+        db: Annotated[Session, Depends(deps.get_db)],
+) -> list[HolidayResponse]:
+    return holiday_service.get_all_holidays(db)
 
 
-@router.delete("/{id}", response_model=dict)
+@router.delete(
+    "/{id}",
+    responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
+)
 def delete_holiday(
         id: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_manager)
-) -> Any:
-    holiday = holiday_repository.get_by_id(db, id)
-    if holiday:
-        payroll_service.validate_period_open(db, holiday.date)
-        old_data = {"date": str(holiday.date), "name": holiday.name}
-        holiday_repository.delete(db, id)
-        audit_service.log(
-            db, user_id=current_user.id, action="DELETE", entity="HOLIDAY", entity_id=id,
-            old_data=old_data
-        )
-    return {"status": "success"}
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+) -> dict[str, str]:
+    return holiday_service.delete_holiday(db, id, current_user.id)

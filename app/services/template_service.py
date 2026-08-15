@@ -1,8 +1,8 @@
 
 
 class TemplateService:
-    @staticmethod
-    def _generate_punches_html(user_activity: dict[str, list[dict[str, str]]]) -> str:
+    @classmethod
+    def _generate_punches_html(cls, user_activity: dict[str, list[dict[str, str]]]) -> str:
         html = """
             <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px; color: #333; margin-bottom: 25px;">
                 <thead>
@@ -32,8 +32,8 @@ class TemplateService:
         html += "</tbody></table>"
         return html
 
-    @staticmethod
-    def _generate_anomalies_html(anomalies: list[str]) -> str:
+    @classmethod
+    def _generate_anomalies_html(cls, anomalies: list[str]) -> str:
         if not anomalies:
             return ""
         html = """
@@ -46,8 +46,8 @@ class TemplateService:
         html += "</ul></div>"
         return html
 
-    @staticmethod
-    def get_daily_report_html(day_name: str, formatted_date: str, records_present: bool,
+    @classmethod
+    def get_daily_report_html(cls, day_name: str, formatted_date: str, records_present: bool,
                               user_activity: dict[str, list[dict[str, str]]], anomalies: list[str]) -> str:
         html = '''
         <div style="margin-bottom: 20px;">
@@ -56,9 +56,9 @@ class TemplateService:
         if not records_present:
             html += "<p style='font-size: 14px; color: #666; text-align: center; padding: 20px; background: #f9f9f9; border-radius: 4px;'><em>Sem registros de ponto neste dia.</em></p></div>"
         else:
-            html += TemplateService._generate_punches_html(user_activity)
+            html += cls._generate_punches_html(user_activity)
 
-        html += TemplateService._generate_anomalies_html(anomalies)
+        html += cls._generate_anomalies_html(anomalies)
 
         html += "</div>"
         return html

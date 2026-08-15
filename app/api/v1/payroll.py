@@ -1,6 +1,11 @@
-from typing import Any
+from typing import Annotated
 
 from app.api import deps
+from app.api.openapi_responses import (
+    AUTH_RESPONSES,
+    BAD_REQUEST_RESPONSE,
+    CRUD_RESPONSES,
+)
 from app.domain.models.user import User
 from app.schemas.payroll import (
     PayrollClosureCreate,
@@ -12,43 +17,57 @@ from app.services.payroll_service import payroll_service
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
-router = APIRouter()
+router = APIRouter(responses={**AUTH_RESPONSES})
 
 
-@router.get("/", response_model=list[PayrollClosureResponse])
+@router.get(
+    "/",
+    dependencies=[Depends(deps.get_current_maintainer)],
+)
 def list_payroll_periods(
         year: int,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_maintainer)
-) -> Any:
+        db: Annotated[Session, Depends(deps.get_db)],
+) -> list[PayrollClosureResponse]:
     return payroll_service.list_periods(db, year)
 
 
-@router.post("/close", response_model=PayrollClosureResponse)
+@router.post(
+    "/close",
+    responses={**BAD_REQUEST_RESPONSE},
+)
 def close_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_maintainer)
-) -> Any:
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+) -> PayrollClosureResponse:
     return payroll_service.close_period(db, period.month, period.year, current_user, background_tasks)
 
 
-@router.post("/reopen", response_model=SuccessResponse)
+@router.post(
+    "/reopen",
+    responses={**BAD_REQUEST_RESPONSE},
+)
 def reopen_payroll_period(
         period: PayrollReopenCreate,
         background_tasks: BackgroundTasks,
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_maintainer)
-) -> Any:
-    return payroll_service.reopen_period(db, period.month, period.year, period.observation, current_user, background_tasks)
+        db: Annotated[Session, Depends(deps.get_db)],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+) -> SuccessResponse:
+    return payroll_service.reopen_period(
+        db, period.month, period.year, period.observation, current_user, background_tasks
+    )
 
-@router.post("/{closure_id}/legacy-report", response_model=SuccessResponse)
+
+@router.post(
+    "/{closure_id}/legacy-report",
+    dependencies=[Depends(deps.get_current_maintainer)],
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
+)
 def upload_legacy_report(
         closure_id: int,
-        file: UploadFile = File(...),
-        db: Session = Depends(deps.get_db),
-        current_user: User = Depends(deps.get_current_maintainer)
-) -> Any:
+        file: Annotated[UploadFile, File(...)],
+        db: Annotated[Session, Depends(deps.get_db)],
+) -> SuccessResponse:
     payroll_service.upload_legacy_report(db, closure_id, file.filename, file.file.read())
-    return {"status": "success", "message": "Documento legado anexado com sucesso."}
+    return SuccessResponse(status="success", message="Documento legado anexado com sucesso.")

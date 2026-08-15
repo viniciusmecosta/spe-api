@@ -5,14 +5,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
-from fastapi import HTTPException, UploadFile
-from sqlalchemy.exc import SQLAlchemyError
-
 from app.core.config import settings
 from app.database.session import engine, get_db_session
 from app.domain.models.routine_log import RoutineLog
-from app.repositories.time_record_repository import time_record_repository
 from app.services.backup_service import backup_service
+from fastapi import HTTPException, UploadFile
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -116,56 +114,5 @@ class SyncService:
         finally:
             if os.path.exists(backup_path):
                 os.remove(backup_path)
-
-    def check_and_sync_all(self):
-        if settings.OPERATION_MODE != "EXPORTADOR":
-            return
-
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-
-        try:
-            with get_db_session() as db_read:
-                current_hour_start = now.replace(minute=0, second=0, microsecond=0)
-                exists = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "SYNC_TIME_RECORDS",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.execution_time >= current_hour_start
-                ).first()
-
-                if exists:
-                    return
-
-                records = time_record_repository.get_unsynced(db_read)
-                if not records:
-                    log_entry = RoutineLog(
-                        routine_type="SYNC_TIME_RECORDS",
-                        status="SUCCESS"
-                    )
-                    db_read.add(log_entry)
-                    return
-
-                records_data = [{"id": r.id, "user_id": r.user_id, "timestamp": r.record_datetime.isoformat()} for r in
-                                records]
-        except SQLAlchemyError:
-            return
-
-        try:
-            for rec in records_data:
-                payload = {"user_id": rec["user_id"], "timestamp": rec["timestamp"]}
-                res = requests.post(f"{settings.CONSUMER_SERVER_URL}/sync", json=payload, timeout=10)
-                if res.status_code == 200:
-                    with get_db_session() as db_mark:
-                        time_record_repository.mark_as_synced(db_mark, rec["id"])
-
-            with get_db_session() as db_write:
-                log_entry = RoutineLog(
-                    routine_type="SYNC_TIME_RECORDS",
-                    status="SUCCESS"
-                )
-                db_write.add(log_entry)
-        except (requests.RequestException, SQLAlchemyError) as e:
-            logger.exception(f'Sincronização - "Registros de ponto" Error: {e}')
-
 
 sync_service = SyncService()

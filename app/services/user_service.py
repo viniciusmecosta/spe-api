@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
 from app.domain.models.biometric import UserBiometric
+from app.domain.models.enums import UserRole
 from app.domain.models.user import User
 from app.repositories.user_repository import user_repository
 from app.schemas.user import UserCreate, UserUpdate
@@ -231,5 +232,71 @@ class UserService:
             old_data=old_data, new_data={"is_active": False}
         )
         return user
+
+    def get_multi(
+        self,
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+        is_active: bool | None = None,
+        role: str | None = None,
+        search: str | None = None,
+        order_by: str = "id",
+        order_direction: str = "asc",
+    ) -> list[User]:
+        return user_repository.get_multi(
+            db,
+            skip=skip,
+            limit=limit,
+            is_active=is_active,
+            role=role,
+            search=search,
+            order_by=order_by,
+            order_direction=order_direction,
+        )
+
+    def get_user_me(self, current_user: User) -> dict[str, Any]:
+        can_punch_desktop = False
+        can_punch_mobile = False
+
+        if current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+            can_punch_desktop = True
+            can_punch_mobile = True
+        else:
+            can_punch_desktop = current_user.can_manual_punch_desktop
+            can_punch_mobile = current_user.can_manual_punch_mobile
+
+        from fastapi.encoders import jsonable_encoder
+
+        user_data = jsonable_encoder(current_user)
+        user_data["can_manual_punch_desktop"] = can_punch_desktop
+        user_data["can_manual_punch_mobile"] = can_punch_mobile
+        return user_data
+
+    def get_user_by_id(self, db: Session, user_id: int, current_user: User) -> User:
+        user = user_repository.get(db, user_id=user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
+            raise HTTPException(status_code=400, detail="Privilégios insuficientes")
+
+        return user
+
+    def update_user_by_admin(
+        self, db: Session, user_id: int, user_in: UserUpdate, current_user: User
+    ) -> User:
+        user = user_repository.get(db, user_id=user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
+            raise HTTPException(
+                status_code=403,
+                detail="Privilégios insuficientes para alterar este usuário",
+            )
+
+        return self.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)
+
 
 user_service = UserService()

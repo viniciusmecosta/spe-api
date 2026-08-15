@@ -1,16 +1,20 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from typing import Annotated
 
 from app.api import deps
-from app.domain.models.device import DeviceCredential
+from app.api.openapi_responses import BAD_REQUEST_RESPONSE, UNAUTHORIZED_RESPONSE
 from app.services.sync_service import sync_service
+from fastapi import APIRouter, Depends, File, UploadFile
 
 router = APIRouter()
 
 
-@router.post("/database", response_model=dict)
+@router.post(
+    "/database",
+    dependencies=[Depends(deps.verify_consumer_api_key)],
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE},
+)
 def sync_database(
-        file: UploadFile = File(...),
-        consumer: DeviceCredential = Depends(deps.verify_consumer_api_key)
-):
+        file: Annotated[UploadFile, File(...)],
+) -> dict[str, str]:
     sync_service.receive_database(file)
     return {"status": "success"}

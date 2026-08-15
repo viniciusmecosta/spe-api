@@ -136,8 +136,9 @@ def test_create_user(db_session_mock, mocker):
 
 def test_update_user_not_found(db_session_mock, mocker):
     mocker.patch("app.repositories.user_repository.user_repository.get", return_value=None)
+    user_in = MagicMock()
     with pytest.raises(HTTPException) as exc:
-        user_service.update_user(db_session_mock, 1, MagicMock(), 99)
+        user_service.update_user(db_session_mock, 1, user_in, 99)
     assert exc.value.status_code == 404
 
 def test_capture_user_state():

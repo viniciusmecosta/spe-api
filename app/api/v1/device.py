@@ -1,219 +1,51 @@
+from typing import Annotated
+
 from app.api import deps
+from app.api.openapi_responses import UNAUTHORIZED_RESPONSE
 from app.core.security import get_client_ip
 from app.domain.models.device import DeviceCredential
-from app.domain.models.enums import RecordType, UserRole
-from app.repositories.biometric_repository import biometric_repository
 from app.schemas.device import (
-    BiometricSyncAck,
-    BiometricSyncData,
-    BuzzerNote,
-    DeviceActions,
     DevicePunchRequest,
-    EnrollResultPayload,
     FeedbackPayload,
     ManagerVerifyRequest,
     ManagerVerifyResponse,
     TimeResponsePayload,
 )
-from app.services.audit_service import audit_service
-from app.services.biometric_service import biometric_service
-from app.services.punch_service import punch_service
-from app.services.time_record_service import time_record_service
-from app.utils.formatters import format_short_name
+from app.services.device_service import device_service
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-router = APIRouter()
+router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
-@router.post("/punch", response_model=FeedbackPayload)
+@router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
 def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    try:
-        ip_address = get_client_ip(request)
-        success, message, record = punch_service.process_biometric_punch(db, payload.sensor_index, ip_address,
-                                                                         request=request)
-
-        if success and record:
-            if record.user.name:
-                request.state.attempted_user = record.user.name
-            user_short_name = format_short_name(record.user.name) if record.user.name else "Usuario"
-            time_formatted = record.record_datetime.strftime('%H:%M')
-            type_label = "Entrada" if record.record_type == RecordType.ENTRY else "Saida"
-
-            return FeedbackPayload(
-                line1=user_short_name[:16],
-                line2=time_formatted,
-                line3=type_label,
-                led="green",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=1500, duration_ms=150),
-                        BuzzerNote(frequency=0, duration_ms=50),
-                        BuzzerNote(frequency=2000, duration_ms=300)
-                    ]
-                )
-            )
-        else:
-            return FeedbackPayload(
-                line1="Erro",
-                line2=message[:16],
-                line3="",
-                led="red",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=250, duration_ms=300),
-                        BuzzerNote(frequency=0, duration_ms=80),
-                        BuzzerNote(frequency=250, duration_ms=600)
-                    ]
-                )
-            )
-    except Exception:
-        return FeedbackPayload(
-            line1="Erro Interno",
-            line2="Contate Admin",
-            line3="",
-            led="red",
-            actions=DeviceActions(
-                buzzer_melody=[
-                    BuzzerNote(frequency=250, duration_ms=300),
-                    BuzzerNote(frequency=0, duration_ms=80),
-                    BuzzerNote(frequency=250, duration_ms=600)
-                ]
-            )
-        )
-
-
-@router.post("/enroll", response_model=FeedbackPayload)
-def enroll_device_biometric(
-        payload: EnrollResultPayload,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    try:
-        success, msg = biometric_service.save_enrolled_biometric(db, payload)
-
-        if success:
-            return FeedbackPayload(
-                line1="Cadastro OK",
-                line2=f"ID: {payload.sensor_index}",
-                line3="",
-                led="green",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=2000, duration_ms=100),
-                        BuzzerNote(frequency=0, duration_ms=50),
-                        BuzzerNote(frequency=2500, duration_ms=400)
-                    ]
-                )
-            )
-        else:
-            return FeedbackPayload(
-                line1="Erro Cadastro",
-                line2=msg[:16],
-                line3="",
-                led="red",
-                actions=DeviceActions(
-                    buzzer_melody=[
-                        BuzzerNote(frequency=150, duration_ms=300),
-                        BuzzerNote(frequency=0, duration_ms=80),
-                        BuzzerNote(frequency=150, duration_ms=600)
-                    ]
-                )
-            )
-    except Exception:
-        return FeedbackPayload(
-            line1="Erro Interno",
-            line2="Contate Admin",
-            line3="",
-            led="red",
-            actions=DeviceActions(
-                buzzer_melody=[
-                    BuzzerNote(frequency=150, duration_ms=300),
-                    BuzzerNote(frequency=0, duration_ms=80),
-                    BuzzerNote(frequency=150, duration_ms=600)
-                ]
-            )
-        )
-
-
-@router.get("/sync", response_model=list[BiometricSyncData])
-def sync_device_data(
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    return biometric_service.get_all_for_sync(db)
-
-
-@router.post("/sync/ack", status_code=200)
-def sync_device_ack(
-        payload: BiometricSyncAck,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    biometric_service.process_sync_ack(db, payload)
-    return {"status": "success"}
-
-
-@router.get("/time", response_model=TimeResponsePayload)
-def get_device_time(
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    trusted_now, _ = time_record_service._get_trusted_time()
-    return TimeResponsePayload(
-        unix=int(trusted_now.timestamp()),
-        formatted=trusted_now.strftime("%d/%m/%Y %H:%M:%S")
+        db: Annotated[Session, Depends(deps.get_db)],
+) -> FeedbackPayload:
+    ip_address = get_client_ip(request)
+    return device_service.process_punch(
+        db=db,
+        sensor_index=payload.sensor_index,
+        ip_address=ip_address,
+        request=request,
     )
 
 
-@router.post("/verify-manager", response_model=ManagerVerifyResponse)
+@router.get("/time", dependencies=[Depends(deps.verify_device_api_key)])
+def get_device_time() -> TimeResponsePayload:
+    return device_service.get_device_time()
+
+
+@router.post("/verify-manager")
 def verify_manager_access(
         payload: ManagerVerifyRequest,
-        db: Session = Depends(deps.get_db),
-        device: DeviceCredential = Depends(deps.verify_device_api_key)
-):
-    managers_with_bio = biometric_repository.get_manager_with_biometric(db)
-
-    if not managers_with_bio:
-        audit_service.log(
-            db, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
-            new_data={"sensor_index": payload.sensor_index, "status": "allowed", "reason": "no_managers"}
-        )
-        return ManagerVerifyResponse(
-            is_allowed=True,
-            message="Nenhum gestor cadastrado. Acesso liberado."
-        )
-
-    biometric = biometric_repository.get_by_sensor_index(db, payload.sensor_index)
-    if not biometric:
-        audit_service.log(
-            db, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
-            new_data={"sensor_index": payload.sensor_index, "status": "denied", "reason": "biometric_not_found"}
-        )
-        return ManagerVerifyResponse(
-            is_allowed=False,
-            message="Biometria não encontrada."
-        )
-
-    if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
-        audit_service.log(
-            db, user_id=biometric.user.id, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
-            new_data={"sensor_index": payload.sensor_index, "status": "allowed"}
-        )
-        return ManagerVerifyResponse(
-            is_allowed=True,
-            message="Acesso autorizado."
-        )
-
-    audit_service.log(
-        db, user_id=biometric.user.id, action="VERIFY_MANAGER", entity="DEVICE", entity_id=device.id,
-        new_data={"sensor_index": payload.sensor_index, "status": "denied", "reason": "insufficient_permissions"}
-    )
-    return ManagerVerifyResponse(
-        is_allowed=False,
-        message="Acesso negado."
+        db: Annotated[Session, Depends(deps.get_db)],
+        device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
+) -> ManagerVerifyResponse:
+    return device_service.verify_manager_access(
+        db=db,
+        sensor_index=payload.sensor_index,
+        device_id=device.id,
     )

@@ -1,5 +1,3 @@
-from fastapi import APIRouter
-
 from app.api.v1 import (
     adjustments,
     anomalies,
@@ -23,12 +21,13 @@ from app.api.v1 import (
     users,
 )
 from app.core.config import settings
+from fastapi import APIRouter
 
 api_router = APIRouter()
 
 
 @api_router.get("/health", tags=["Health"])
-def health_check():
+def health_check() -> dict[str, str]:
     return {"status": "ok", "app": "SPE", "version": settings.APP_VERSION}
 
 

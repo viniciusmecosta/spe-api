@@ -1,15 +1,7 @@
 from datetime import datetime
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.models.enums import DeviceKeyType
-
-
-class DevicePunchResponse(BaseModel):
-    message: str | None = None
-    led: str
-    data: Any | None = None
+from pydantic import BaseModel, ConfigDict
 
 
 class DevicePunchRequest(BaseModel):
@@ -33,36 +25,9 @@ class FeedbackPayload(BaseModel):
     actions: DeviceActions
 
 
-class EnrollStartPayload(BaseModel):
-    user_id: int
-    user_name: str
-
-
-class EnrollResultPayload(BaseModel):
-    user_id: int
-    sensor_index: int
-    success: bool
-    template_data: str | None = None
-    error: str | None = None
-    finger_id: int | None = Field(None, ge=0, le=9)
-
-
 class TimeResponsePayload(BaseModel):
     unix: int
     formatted: str
-
-
-class BiometricSyncData(BaseModel):
-    biometric_id: int
-    template_data: str
-    user_id: int
-
-
-class BiometricSyncAck(BaseModel):
-    biometric_id: int
-    sensor_index: int
-    success: bool
-    error: str | None = None
 
 
 class DeviceCredentialCreate(BaseModel):

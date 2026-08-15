@@ -4,10 +4,10 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import Session, joinedload
+from fastapi import HTTPException
 
 from app.core.config import settings
-from app.domain.models.enums import UserRole
+from app.domain.models.enums import DayOfWeek, UserRole
 from app.domain.models.time_record import TimeRecord
 from app.domain.models.user import User
 from app.repositories.holiday_repository import holiday_repository
@@ -24,8 +24,7 @@ from app.schemas.report import (
     UserPayrollSummary,
 )
 from app.services.anomaly_service import anomaly_service
-from app.domain.models.enums import DayOfWeek
-from app.schemas.time_record import TimeRecordResponse
+from sqlalchemy.orm import Session, joinedload
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +37,13 @@ except locale.Error:
 
 
 class ReportService:
-    def _get_month_range(self, month: int, year: int):
+    def get_month_range(self, month: int, year: int) -> tuple[date, date]:
         start_date = date(year, month, 1)
         _, last_day = monthrange(year, month)
         end_date = date(year, month, last_day)
         return start_date, end_date
+
+    _get_month_range = get_month_range
 
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
@@ -50,12 +51,14 @@ class ReportService:
         minutes = total_minutes % 60
         return f"{hours:02d}:{minutes:02d}"
 
-    def _apply_employee_filters(self, query, employee_ids: list[int] | None = None):
+    def apply_employee_filters(self, query, employee_ids: list[int] | None = None):
         query = query.filter(User.role == UserRole.EMPLOYEE)
         query = query.filter(User.is_exempt_from_rules.is_(False))
         if employee_ids:
             query = query.filter(User.id.in_(employee_ids))
         return query
+
+    _apply_employee_filters = apply_employee_filters
 
     def _build_history_punches(self, day_records, is_manager) -> list:
         punches = []
@@ -506,6 +509,86 @@ class ReportService:
                 payroll_data.append(report.summary)
 
         return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
+
+    def check_report_permission(self, current_user: User) -> None:
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        if not is_manager and not current_user.can_export_report:
+            raise HTTPException(
+                status_code=403,
+                detail="O usuário não possui privilégios suficientes para acessar relatórios globais.",
+            )
+
+    def check_user_report_access(self, current_user: User, user_id: int, detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        if not is_manager and not current_user.can_export_report and current_user.id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail=detail,
+            )
+
+    def get_advanced_user_report_or_404(
+        self, db: Session, user_id: int, month: int, year: int, current_user: User
+    ) -> AdvancedUserReportResponse:
+        report = self.get_advanced_user_report(db, user_id, month, year, current_user)
+        if not report:
+            raise HTTPException(status_code=404, detail="User not found or data missing")
+        return report
+
+    def validate_excel_export_permission(
+        self, db: Session, current_user: User, month: int, year: int, now: datetime
+    ) -> None:
+        is_maintainer = current_user.role == UserRole.MAINTAINER
+        is_manager = current_user.role == UserRole.MANAGER
+
+        if is_maintainer:
+            return
+
+        if is_manager:
+            from sqlalchemy import extract
+            from app.domain.models.adjustment import AdjustmentRequest
+            from app.domain.models.enums import AdjustmentStatus
+
+            pending_adjustments = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+                extract("month", AdjustmentRequest.target_date) == month,
+                extract("year", AdjustmentRequest.target_date) == year,
+            ).first()
+
+            if pending_adjustments:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Não é possível gerar o relatório pois existem ajustes pendentes neste mês.",
+                )
+            return
+
+        if not current_user.can_export_report:
+            raise HTTPException(
+                status_code=403, detail="Você não tem permissão para gerar relatórios."
+            )
+
+        prev_month = now.month - 1 if now.month > 1 else 12
+        prev_year = now.year if now.month > 1 else now.year - 1
+
+        if month != prev_month or year != prev_year:
+            raise HTTPException(
+                status_code=400,
+                detail="Funcionários só podem gerar o relatório referente ao mês anterior.",
+            )
+
+        from app.domain.models.payroll import PayrollClosure
+
+        payroll_closed = db.query(PayrollClosure).filter(
+            PayrollClosure.month == month,
+            PayrollClosure.year == year,
+            PayrollClosure.is_closed == True,
+            PayrollClosure.deleted_at.is_(None),
+        ).first()
+
+        if not payroll_closed:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível gerar o relatório pois a folha deste mês ainda não está fechada.",
+            )
 
 
 report_service = ReportService()

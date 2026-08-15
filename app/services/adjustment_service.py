@@ -8,18 +8,24 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.domain.models.adjustment import AdjustmentRequest
-from app.domain.models.enums import AdjustmentStatus, AdjustmentType
+from app.domain.models.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.domain.models.time_record import TimeRecord
+from app.domain.models.user import User
 from app.repositories.adjustment_repository import adjustment_repository
 from app.repositories.time_record_repository import (
     get_local_time,
     time_record_repository,
 )
-from app.schemas.adjustment import AdjustmentRequestCreate, AdjustmentWaiverCreate
+from app.schemas.adjustment import (
+    AdjustmentRequestCreate,
+    AdjustmentWaiverCreate,
+    BulkReprocessExtraTimeRequest,
+)
 from app.services.audit_service import audit_service
 from app.services.payroll_service import payroll_service
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
+
 
 class AdjustmentService:
 
@@ -379,5 +385,78 @@ class AdjustmentService:
             old_data=actual_old, new_data=actual_new
         )
         return self._enrich_adjustments_with_records(db, [updated])[0]
+
+    def get_attachment_file_path(
+        self, db: Session, adjustment_id: int, current_user: User
+    ) -> tuple[str, str]:
+        adjustment = adjustment_repository.get(db, id=adjustment_id)
+        if not adjustment:
+            raise HTTPException(status_code=404, detail="Ajuste não encontrado")
+
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        if adjustment.user_id != current_user.id and not is_manager:
+            raise HTTPException(status_code=403, detail="Sem permissão para acessar este arquivo")
+
+        if not adjustment.attachments:
+            raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
+
+        attachment = adjustment.attachments[-1]
+        filename = os.path.basename(attachment.file_path)
+        safe_file_path = os.path.join(settings.UPLOAD_DIR, filename)
+
+        if not os.path.exists(safe_file_path):
+            if os.path.exists(attachment.file_path):
+                safe_file_path = attachment.file_path
+            else:
+                raise HTTPException(
+                    status_code=404, detail="Arquivo físico não encontrado no servidor"
+                )
+
+        return safe_file_path, filename
+
+    def reprocess_historical_extra_time(
+        self,
+        db: Session,
+        request_in: BulkReprocessExtraTimeRequest,
+        current_user: User,
+    ) -> dict[str, str]:
+        if current_user.role != UserRole.MAINTAINER:
+            raise HTTPException(
+                status_code=403,
+                detail="Apenas MAINTAINER pode executar o reprocessamento em lote",
+            )
+
+        curr = request_in.start_date.replace(day=1)
+        while curr <= request_in.end_date:
+            payroll_service.validate_period_open(db, curr)
+            if curr.month == 12:
+                curr = curr.replace(year=curr.year + 1, month=1)
+            else:
+                curr = curr.replace(month=curr.month + 1)
+
+        from app.services.tolerance_cron_service import tolerance_cron_service
+
+        tolerance_cron_service.reprocess_historical_entries(
+            db=db,
+            start_date=request_in.start_date,
+            end_date=request_in.end_date,
+            user_ids=request_in.user_ids,
+        )
+
+        audit_service.log(
+            db,
+            user_id=current_user.id,
+            action="REPROCESS",
+            entity="EXTRA_TIME",
+            entity_id=0,
+            new_data={
+                "start_date": str(request_in.start_date),
+                "end_date": str(request_in.end_date),
+                "user_ids": request_in.user_ids,
+            },
+        )
+
+        return {"status": "success", "message": "Reprocessamento concluído"}
+
 
 adjustment_service = AdjustmentService()

@@ -1,13 +1,13 @@
 import os
 import re
 from io import BytesIO
+
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.domain.models.enums import DayOfWeek
@@ -16,6 +16,7 @@ from app.repositories.company_repository import company_repository
 from app.services.report_service import report_service
 from app.services.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
+from sqlalchemy.orm import Session, joinedload
 
 FONT_NAME = "Times New Roman"
 TIME_FORMAT = "[h]:mm"
@@ -140,7 +141,7 @@ class ExcelService:
             self._validate_employee_report_period(current_user, month, year)
             
         query = db.query(User).options(joinedload(User.historical_schedules))
-        query = report_service._apply_employee_filters(query, employee_ids)
+        query = report_service.apply_employee_filters(query, employee_ids)
         users = query.all()
 
         company = company_repository.get_current(db)
@@ -152,7 +153,7 @@ class ExcelService:
                 logo_path = full_logo_path
 
         user_ids = [u.id for u in users]
-        start_date, end_date = report_service._get_month_range(month, year)
+        start_date, end_date = report_service.get_month_range(month, year)
         from zoneinfo import ZoneInfo
         from datetime import datetime
         tz = ZoneInfo(settings.TIMEZONE)
@@ -365,7 +366,7 @@ class ExcelService:
         return parts[0]
 
     def _get_schedule_transitions(self, user, start_date, end_date):
-        from datetime import date, timedelta
+        from datetime import timedelta
         transitions = {start_date, end_date + timedelta(days=1)}
         for sch in user.historical_schedules:
             if sch.valid_from and start_date <= sch.valid_from <= end_date:
@@ -375,7 +376,7 @@ class ExcelService:
         return sorted(transitions)
 
     def _group_schedules_by_period(self, user, transitions):
-        from datetime import date, timedelta
+        from datetime import timedelta
         periods = []
         for i in range(len(transitions) - 1):
             p_start = transitions[i]

@@ -247,6 +247,14 @@ class TimeRecordService:
                                                biometric_id=biometric_id)
         return record
 
+    def get_my_records(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
+        return time_record_repository.get_all_by_user(db, user_id, skip, limit)
+
+    def list_records_for_admin(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[TimeRecord]:
+        return time_record_repository.get_by_range(db, user_id, start_date, end_date)
+
     def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
         return time_record_repository.get_timeline(db, record_id)
+
+
 time_record_service = TimeRecordService()

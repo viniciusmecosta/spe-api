@@ -1,14 +1,13 @@
-import os
 import sqlite3
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+import requests
+from app.domain.models.routine_log import RoutineLog
+from app.services.sync_service import sync_service
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
-import requests
-from datetime import datetime
 
-from app.services.sync_service import sync_service
-from app.domain.models.routine_log import RoutineLog
 
 @pytest.fixture
 def sync_get_db_session(mocker, db_session_mock):
@@ -212,113 +211,3 @@ def test_send_database_db_error_on_write(mocker, db_session_mock, sync_get_db_se
     sync_get_db_session.return_value = ContextManagerMockErr2()
     sync_service.send_database_to_consumer()
 
-def test_check_and_sync_all_wrong_mode(mocker):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "CONSUMIDOR")
-    result = sync_service.check_and_sync_all()
-    assert result is None
-
-def test_check_and_sync_all_already_exists(mocker, db_session_mock, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    db_session_mock.query.return_value.items = [RoutineLog()]
-    result = sync_service.check_and_sync_all()
-    assert result is None
-
-def test_check_and_sync_all_db_error_on_read(mocker, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    class ExceptionContextManager:
-        def __enter__(self):
-            raise SQLAlchemyError("DB Error")
-        def __exit__(self, *args):
-            pass
-    sync_get_db_session.return_value = ExceptionContextManager()
-    result = sync_service.check_and_sync_all()
-    assert result is None
-
-def test_check_and_sync_all_no_records(mocker, db_session_mock, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    db_session_mock.query.return_value.items = []
-    
-    mock_repo = MagicMock()
-    mock_repo.get_unsynced.return_value = []
-    mocker.patch("app.services.sync_service.time_record_repository", mock_repo)
-    
-    result = sync_service.check_and_sync_all()
-    assert result is None
-    assert db_session_mock.add.called
-
-def test_check_and_sync_all_with_records_success(mocker, db_session_mock, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    db_session_mock.query.return_value.items = []
-    
-    mock_record = MagicMock()
-    mock_record.id = 1
-    mock_record.user_id = 1
-    mock_record.record_datetime.isoformat.return_value = "2023-01-01T00:00:00"
-    
-    mock_repo = MagicMock()
-    mock_repo.get_unsynced.return_value = [mock_record]
-    mocker.patch("app.services.sync_service.time_record_repository", mock_repo)
-    
-    mocker.patch("app.services.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
-    
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mocker.patch("requests.post", return_value=mock_response)
-    
-    sync_service.check_and_sync_all()
-    assert db_session_mock.add.called
-    assert mock_repo.mark_as_synced.called
-
-def test_check_and_sync_all_request_exception(mocker, db_session_mock, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    db_session_mock.query.return_value.items = []
-    
-    mock_record = MagicMock()
-    mock_record.id = 1
-    mock_record.user_id = 1
-    mock_record.record_datetime.isoformat.return_value = "2023-01-01T00:00:00"
-    
-    mock_repo = MagicMock()
-    mock_repo.get_unsynced.return_value = [mock_record]
-    mocker.patch("app.services.sync_service.time_record_repository", mock_repo)
-    
-    mocker.patch("app.services.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
-    
-    mocker.patch("requests.post", side_effect=requests.RequestException("Req error"))
-    
-    sync_service.check_and_sync_all()
-
-def test_check_and_sync_all_sync_db_error(mocker, db_session_mock, sync_get_db_session):
-    mocker.patch("app.services.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
-    db_session_mock.query.return_value.items = []
-    
-    mock_record = MagicMock()
-    mock_record.id = 1
-    mock_record.user_id = 1
-    mock_record.record_datetime.isoformat.return_value = "2023-01-01T00:00:00"
-    
-    mock_repo = MagicMock()
-    mock_repo.get_unsynced.return_value = [mock_record]
-    mocker.patch("app.services.sync_service.time_record_repository", mock_repo)
-    
-    mocker.patch("app.services.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
-    
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mocker.patch("requests.post", return_value=mock_response)
-    
-    class ContextManagerMockErrSync:
-        def __init__(self):
-            self.call_count = 0
-        def __enter__(self):
-            self.call_count += 1
-            if self.call_count == 2:
-                raise SQLAlchemyError("DB Error on mark_as_synced")
-            return db_session_mock
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
-            
-    sync_get_db_session.side_effect = None
-    sync_get_db_session.return_value = ContextManagerMockErrSync()
-    
-    sync_service.check_and_sync_all()

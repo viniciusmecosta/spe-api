@@ -356,9 +356,9 @@ def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
 @patch("app.services.payroll_service.payroll_repository")
 def test_validate_period_open_closed(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = MagicMock()
-    
+    target_date = date(2024, 4, 15)
     with pytest.raises(HTTPException) as exc:
-        payroll_service.validate_period_open(db_session_mock, date(2024, 4, 15))
+        payroll_service.validate_period_open(db_session_mock, target_date)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
