@@ -37,7 +37,7 @@ class PrinterService:
     def delete(self, db: Session, printer_id: int, current_user_id: int) -> None:
         printer = self.get_by_id(db, printer_id)
         audit_service.log_change(db, current_user_id, "DELETE", old_model=printer)
-        printer_repository.delete(db, db_obj=printer)
+        printer_repository.delete(db, printer_id=printer_id)
 
 
 printer_service = PrinterService()

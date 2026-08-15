@@ -69,4 +69,5 @@ def test_printer_service_delete(mocker):
     mocker.patch("app.features.printers.printer_service.audit_service.log_change")
 
     printer_service.delete(mock_db, 1, current_user_id=1)
-    mock_delete.assert_called_once_with(mock_db, db_obj=mock_printer)
+    mock_delete.assert_called_once_with(mock_db, printer_id=1)
+
