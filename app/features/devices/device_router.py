@@ -51,7 +51,6 @@ biometrics_router = APIRouter(responses={**AUTH_RESPONSES})
 sync_router = APIRouter()
 
 
-# --- Device endpoints ---
 @router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
 def register_device_punch(
         payload: DevicePunchRequest,
@@ -87,7 +86,6 @@ def verify_manager_access(
     )
 
 
-# --- Device Credentials endpoints ---
 @device_credentials_router.post(
     "/",
     status_code=status.HTTP_201_CREATED,
@@ -135,7 +133,6 @@ def delete_credential(
     return device_credential_service.delete(db, id, current_user.id)
 
 
-# --- Firmware endpoints ---
 @firmware_router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -202,7 +199,6 @@ def download_firmware(
     )
 
 
-# --- Biometrics endpoints ---
 @biometrics_router.get(
     "/available-sensor-indices",
     dependencies=[Depends(deps.get_current_manager)],
@@ -213,7 +209,6 @@ def get_available_sensor_indices(
     return biometric_service.get_available_sensor_indices(db)
 
 
-# --- Sync endpoints ---
 @sync_router.post(
     "/database",
     dependencies=[Depends(deps.verify_consumer_api_key)],

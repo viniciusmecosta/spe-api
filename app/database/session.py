@@ -33,7 +33,6 @@ from sqlalchemy.orm import Session
 
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
-    """Provide a transactional scope around a series of operations."""
     session = SessionLocal()
     try:
         yield session

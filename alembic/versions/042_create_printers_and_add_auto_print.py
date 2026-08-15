@@ -1,10 +1,3 @@
-"""Create printers and add auto print settings
-
-Revision ID: 042
-Revises: 041
-Create Date: 2026-08-10 13:58:00.000000
-
-"""
 from alembic import op
 import sqlalchemy as sa
 

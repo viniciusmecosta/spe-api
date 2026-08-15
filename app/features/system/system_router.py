@@ -33,7 +33,6 @@ routine_logs_router = APIRouter(responses={**AUTH_RESPONSES})
 telegram_actions_router = APIRouter(responses={**AUTH_RESPONSES})
 
 
-# --- Audit Logs endpoints ---
 @audit_router.get(
     "/",
     dependencies=[Depends(deps.get_current_manager)],
@@ -58,7 +57,6 @@ def read_audit_logs(
     )
 
 
-# --- Backup endpoints ---
 @backup_router.post(
     "/trigger",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -76,7 +74,6 @@ def trigger_manual_backup(
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}
 
 
-# --- Routine Logs endpoints ---
 @routine_logs_router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -103,7 +100,6 @@ def read_routine_logs(
     )
 
 
-# --- Telegram Actions endpoints ---
 @telegram_actions_router.post(
     "/manual-backup",
     dependencies=[Depends(deps.get_current_maintainer)],
