@@ -13,6 +13,36 @@ from app.shared.enums import UserRole
 
 def test_serialize_model_none():
     assert serialize_model(None) == {}
+    assert serialize_model(12345) == {}
+
+
+def test_serialize_regular_model():
+    class CustomObj:
+        def __init__(self):
+            self.name = "Custom"
+            self.value = 100
+            self.password_hash = "secret"
+            self._private = "ignore"
+
+    obj = CustomObj()
+    res = serialize_model(obj)
+    assert res == {"name": "Custom", "value": 100}
+
+
+def test_prepare_raw_data_with_both_model_and_data(db_session_mock, mocker):
+    mock_create = mocker.patch("app.features.system.audit_service.audit_repository.create")
+    holiday = Holiday(id=5, name="Natal", date=date(2026, 12, 25))
+    audit_service.log_change(
+        db_session_mock,
+        user_id=2,
+        action="UPDATE_HOLIDAY",
+        new_model=holiday,
+        new_data={"extra_field": "extra_val"}
+    )
+    mock_create.assert_called_once()
+    args, _ = mock_create.call_args
+    assert args[1].new_data["name"] == "Natal"
+    assert args[1].new_data["extra_field"] == "extra_val"
 
 
 def test_serialize_model_dict():
@@ -366,4 +396,3 @@ def test_audit_repository_get_manual_changes():
         limit=100
     )
     assert res_desc == ["manual_log"]
-
