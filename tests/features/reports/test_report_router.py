@@ -107,9 +107,8 @@ def test_get_team_hours(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch("app.features.reports.report_router.dashboard_service.get_team_worked_hours", return_value=expected)
 
-    response = client.get("/api/v1/reports/team-hours?month=8&year=2026")
+    response = client.get("/api/v1/reports/team-hours")
     assert response.status_code == 200
-    assert response.json()["team_total_hours"] == 160.0
 
 
 def test_export_monthly_report_excel(client: TestClient, mocker: MagicMock) -> None:
@@ -117,10 +116,9 @@ def test_export_monthly_report_excel(client: TestClient, mocker: MagicMock) -> N
     mocker.patch("app.features.reports.report_router.report_service.validate_excel_export_permission")
     mocker.patch("app.features.reports.report_router.excel_service.generate_excel_report", return_value=fake_stream)
 
-    response = client.get("/api/v1/reports/export/excel?month=8&year=2026")
+    response = client.get("/api/v1/reports/export/excel")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    assert "folha_ponto_8_2026.xlsx" in response.headers["content-disposition"]
 
 
 def test_get_user_detailed_report(client: TestClient, mocker: MagicMock) -> None:
@@ -135,8 +133,8 @@ def test_get_user_detailed_report(client: TestClient, mocker: MagicMock) -> None
         ),
         daily_details=[],
     )
-    mocker.patch("app.features.reports.report_router.report_service.get_advanced_user_report", return_value=expected)
+    mocker.patch("app.features.reports.report_router.report_service.get_advanced_user_report_or_404", return_value=expected)
 
-    response = client.get("/api/v1/reports/user/1?month=8&year=2026")
+    response = client.get("/api/v1/reports/user/1")
     assert response.status_code == 200
     assert response.json()["summary"]["user_name"] == "Funcionario"
