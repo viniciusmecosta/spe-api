@@ -44,6 +44,76 @@ def mock_get_client_device_name():
     with patch("app.features.time_records.time_record_service.get_client_device_name") as mock:
         yield mock
 
+
+def test_get_my_records_and_list_records_for_admin(db_session_mock, mock_time_record_repo):
+    mock_time_record_repo.get_all_by_user.return_value = ["rec1"]
+    mock_time_record_repo.get_by_range.return_value = ["rec2"]
+    
+    assert time_record_service.get_my_records(db_session_mock, 1) == ["rec1"]
+    assert time_record_service.list_records_for_admin(db_session_mock, 1, datetime(2026, 1, 1), datetime(2026, 1, 31)) == ["rec2"]
+
+
+def test_trigger_auto_print_enabled(db_session_mock, mocker):
+    mock_company = MagicMock()
+    mock_company.auto_print_receipt = True
+    mock_company.default_printer_id = 10
+    mock_company.name = "Comp"
+    mock_company.cnpj = "123"
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
+    
+    mock_printer = MagicMock()
+    mock_printer.status = True
+    mocker.patch("app.features.printers.printer_repository.printer_repository.get_by_id", return_value=mock_printer)
+
+    mock_bg = MagicMock()
+    user = User(id=1, name="John", cpf="111", pis="222", auto_print_receipt=True)
+    record = TimeRecord(id=1, user=user, record_datetime=datetime(2026, 1, 1, 12, 0, 0), device_name="Dev")
+    
+    time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
+    mock_bg.add_task.assert_called_once()
+
+
+def test_get_receipt_data_with_timeline(db_session_mock, mocker):
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
+    user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.EMPLOYEE)
+    mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
+                             record_type=RecordType.ENTRY, device_name="Device 1")
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
+    
+    timeline_mock = MagicMock()
+    timeline_mock.action = "EDIT"
+    timeline_mock.timestamp = datetime(2026, 1, 1)
+    timeline_mock.user = user
+    timeline_mock.old_data = {}
+    timeline_mock.new_data = {}
+    mocker.patch.object(time_record_service, "get_record_timeline", return_value=[timeline_mock])
+
+    result = time_record_service.get_receipt_data(db_session_mock, "valid", user)
+    assert len(result.timeline) == 1
+    assert result.timeline[0].action == "EDIT"
+
+
+def test_get_receipt_pdf_errors(db_session_mock, mocker):
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=None)
+    user = User(id=1, role=UserRole.EMPLOYEE)
+    with pytest.raises(HTTPException) as exc1:
+        time_record_service.get_receipt_pdf(db_session_mock, "invalid", user)
+    assert exc1.value.status_code == 404
+
+    mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=None)
+    with pytest.raises(HTTPException) as exc2:
+        time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
+    assert exc2.value.status_code == 404
+
+    mock_record = TimeRecord(id=123, user_id=2, record_type=RecordType.ENTRY)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
+    with pytest.raises(HTTPException) as exc3:
+        time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
+    assert exc3.value.status_code == 403
+
+
 def test_validate_manual_punch_permission_user_not_found(db_session_mock, mock_user_repo):
     mock_user_repo.get.return_value = None
     request = MagicMock(spec=Request)
