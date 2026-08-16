@@ -165,6 +165,23 @@ def test_add_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
     assert response.status_code == 200
 
 
+def test_update_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
+    mocker.patch(
+        "app.features.users.user_router.user_work_schedule_service.update_bulk_schedules",
+        return_value={"status": "success"},
+    )
+
+    response = client.put(
+        "/api/v1/users/bulk-schedules/2026-08-01/2026-08-31",
+        json={
+            "valid_from": "2026-08-01",
+            "valid_until": "2026-08-31",
+            "users": [],
+        },
+    )
+    assert response.status_code == 200
+
+
 def test_delete_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
         "app.features.users.user_router.user_work_schedule_service.delete_bulk_schedules",
