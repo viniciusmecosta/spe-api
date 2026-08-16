@@ -21,12 +21,14 @@ def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMo
 
     request = MagicMock()
     request.state = MagicMock()
+    bg_mock = MagicMock()
 
     result = device_service.process_punch(
         db=db_session_mock,
         sensor_index=1,
         ip_address="192.168.1.100",
         request=request,
+        background_tasks=bg_mock,
     )
 
     assert isinstance(result, FeedbackPayload)
