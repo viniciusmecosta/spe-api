@@ -13,6 +13,13 @@ from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
+if not settings.SECRET_KEY:
+    settings.SECRET_KEY = "test-secret-key-for-jwt-signing-spe-app"
+if not settings.FIRST_SUPERUSER:
+    settings.FIRST_SUPERUSER = "admin"
+if not settings.FIRST_SUPERUSER_PASSWORD:
+    settings.FIRST_SUPERUSER_PASSWORD = "adminpassword"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_app_database():
