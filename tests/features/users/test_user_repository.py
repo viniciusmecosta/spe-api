@@ -1,9 +1,8 @@
-from unittest.mock import MagicMock
 import pytest
-from app.features.users.user_repository import user_repository, UserRepository
-from app.features.users.user_models import User
-from app.features.users.user_schemas import UserUpdate
 from app.features.devices.device_models import UserBiometric
+from app.features.users.user_models import User
+from app.features.users.user_repository import UserRepository
+from app.features.users.user_schemas import UserUpdate
 from app.shared.enums import UserRole
 
 
@@ -61,7 +60,8 @@ def test_user_repository_methods(db_session, normal_user):
         ]})
 
     with pytest.raises(ValueError, match="Index ja cadastrada"):
-        repo.update(db_session, normal_user, {"biometrics": [{"id": None, "sensor_index": 888, "template_data": "d", "finger_id": 1}]})
+        repo.update(db_session, normal_user,
+                    {"biometrics": [{"id": None, "sensor_index": 888, "template_data": "d", "finger_id": 1}]})
 
     users_desc = repo.get_multi(
         db_session,

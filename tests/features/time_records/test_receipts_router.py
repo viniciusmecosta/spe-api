@@ -4,11 +4,11 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared.deps import get_current_active_user
-from app.shared.enums import RecordType
 from app.features.time_records.time_record_schemas import ReceiptResponse
 from app.features.users.user_models import User
 from app.main import app
+from app.shared.deps import get_current_active_user
+from app.shared.enums import RecordType
 
 client = TestClient(app)
 
@@ -52,4 +52,3 @@ def test_get_receipt_pdf(mock_service):
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["content-disposition"] == 'attachment; filename="1.pdf"'
     assert response.content.startswith(b"%PDF-")
-

@@ -12,7 +12,8 @@ def test_device_credential_repository(db_session):
 
     created = repo.create(
         db_session,
-        DeviceCredentialCreate(name="DevRepo Key", key_type=DeviceKeyType.DEVICE, api_key="secretkey123", is_active=True)
+        DeviceCredentialCreate(name="DevRepo Key", key_type=DeviceKeyType.DEVICE, api_key="secretkey123",
+                               is_active=True)
     )
     assert created.id is not None
 

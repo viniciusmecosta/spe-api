@@ -17,11 +17,13 @@ def _setup_query_mock(db_session_mock, return_value=None, side_effect=None):
         query_mock.filter.return_value.first.return_value = return_value
     db_session_mock.query = MagicMock(return_value=query_mock)
 
+
 def test_process_biometric_punch_not_found(db_session_mock):
     _setup_query_mock(db_session_mock, return_value=None)
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1)
     assert not success
     assert msg == "Nao Cadastrado"
+
 
 def test_process_biometric_punch_blocked(db_session_mock):
     bio = UserBiometric(id=1, user=User(id=1, is_active=False))
@@ -30,6 +32,7 @@ def test_process_biometric_punch_blocked(db_session_mock):
     assert not success
     assert msg == "Bloqueado"
 
+
 def test_process_biometric_punch_success_ntp(db_session_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
     _setup_query_mock(db_session_mock, return_value=bio)
@@ -37,11 +40,12 @@ def test_process_biometric_punch_success_ntp(db_session_mock, mocker):
                  return_value=(datetime(2023, 10, 1), True))
     mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
                  return_value=TimeRecord(id=1))
-    
+
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1, "127.0.0.1")
     assert success
     assert msg == "Ponto Registrado"
     assert rec.id == 1
+
 
 def test_process_biometric_punch_success_no_ntp_with_request(db_session_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
@@ -51,12 +55,13 @@ def test_process_biometric_punch_success_no_ntp_with_request(db_session_mock, mo
     mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
                  return_value=TimeRecord(id=1))
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
-    
+
     req = MagicMock()
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1, request=req)
     assert success
     assert req.state.ntp_error is True
     assert rec.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
+
 
 def test_process_biometric_punch_success_no_ntp_no_request(db_session_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
@@ -66,16 +71,18 @@ def test_process_biometric_punch_success_no_ntp_no_request(db_session_mock, mock
     mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
                  return_value=TimeRecord(id=1))
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
-    
+
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1)
     assert success
     assert rec.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
+
 
 def test_process_biometric_punch_sqlalchemy_exception(db_session_mock, mocker):
     _setup_query_mock(db_session_mock, side_effect=SQLAlchemyError("DB Error"))
     success, msg, rec = punch_service.process_biometric_punch(db_session_mock, 1)
     assert not success
     assert msg == "Erro Interno"
+
 
 def test_process_biometric_punch_value_error(db_session_mock, mocker):
     _setup_query_mock(db_session_mock, side_effect=ValueError("Value Error"))

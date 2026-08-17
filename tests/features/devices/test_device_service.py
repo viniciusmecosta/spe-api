@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.shared.enums import RecordType, UserRole
 from app.features.devices.device_schemas import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
 from app.features.devices.device_service import device_service
+from app.shared.enums import RecordType, UserRole
 
 
 def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMock) -> None:

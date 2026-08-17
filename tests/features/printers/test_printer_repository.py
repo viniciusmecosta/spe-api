@@ -1,4 +1,4 @@
-from app.features.printers.printer_repository import printer_repository, PrinterRepository
+from app.features.printers.printer_repository import PrinterRepository
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 
 

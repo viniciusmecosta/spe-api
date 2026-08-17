@@ -6,12 +6,12 @@ from fastapi import HTTPException, Request, status
 
 import pytest
 from app.core.config import settings
-from app.shared.enums import RecordType, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordCreateAdmin, TimeRecordDeleteAdmin, TimeRecordUpdate
 from app.features.time_records.time_record_service import time_record_service
 from app.features.users.user_models import User
+from app.shared.enums import RecordType, UserRole
 
 
 @pytest.fixture
@@ -19,25 +19,30 @@ def mock_user_repo():
     with patch("app.features.time_records.time_record_service.user_repository") as mock:
         yield mock
 
+
 @pytest.fixture
 def mock_time_record_repo():
     with patch("app.features.time_records.time_record_service.time_record_repository") as mock:
         yield mock
+
 
 @pytest.fixture
 def mock_payroll_service():
     with patch("app.features.time_records.time_record_service.payroll_service") as mock:
         yield mock
 
+
 @pytest.fixture
 def mock_audit_service():
     with patch("app.features.time_records.time_record_service.audit_service") as mock:
         yield mock
 
+
 @pytest.fixture
 def mock_get_client_ip():
     with patch("app.features.time_records.time_record_service.get_client_ip") as mock:
         yield mock
+
 
 @pytest.fixture
 def mock_get_client_device_name():
@@ -48,9 +53,10 @@ def mock_get_client_device_name():
 def test_get_my_records_and_list_records_for_admin(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get_all_by_user.return_value = ["rec1"]
     mock_time_record_repo.get_by_range.return_value = ["rec2"]
-    
+
     assert time_record_service.get_my_records(db_session_mock, 1) == ["rec1"]
-    assert time_record_service.list_records_for_admin(db_session_mock, 1, datetime(2026, 1, 1), datetime(2026, 1, 31)) == ["rec2"]
+    assert time_record_service.list_records_for_admin(db_session_mock, 1, datetime(2026, 1, 1),
+                                                      datetime(2026, 1, 31)) == ["rec2"]
 
 
 def test_trigger_auto_print_enabled(db_session_mock, mocker):
@@ -60,7 +66,7 @@ def test_trigger_auto_print_enabled(db_session_mock, mocker):
     mock_company.name = "Comp"
     mock_company.cnpj = "123"
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
-    
+
     mock_printer = MagicMock()
     mock_printer.status = True
     mocker.patch("app.features.printers.printer_repository.printer_repository.get_by_id", return_value=mock_printer)
@@ -68,7 +74,7 @@ def test_trigger_auto_print_enabled(db_session_mock, mocker):
     mock_bg = MagicMock()
     user = User(id=1, name="John", cpf="111", pis="222", auto_print_receipt=True)
     record = TimeRecord(id=1, user=user, record_datetime=datetime(2026, 1, 1, 12, 0, 0), device_name="Dev")
-    
+
     time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
     mock_bg.add_task.assert_called_once()
 
@@ -80,7 +86,7 @@ def test_get_receipt_data_with_timeline(db_session_mock, mocker):
                              record_type=RecordType.ENTRY, device_name="Device 1")
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
-    
+
     timeline_mock = MagicMock()
     timeline_mock.action = "EDIT"
     timeline_mock.timestamp = datetime(2026, 1, 1)
@@ -122,11 +128,13 @@ def test_validate_manual_punch_permission_user_not_found(db_session_mock, mock_u
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Usuário não encontrado."
 
+
 def test_validate_manual_punch_permission_manager(db_session_mock, mock_user_repo):
     user = User(id=1, role=UserRole.MANAGER)
     mock_user_repo.get.return_value = user
     request = MagicMock(spec=Request)
     time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
+
 
 def test_validate_manual_punch_permission_mobile_allowed(db_session_mock, mock_user_repo):
     user = User(id=1, role=UserRole.EMPLOYEE, can_manual_punch_mobile=True)
@@ -134,6 +142,7 @@ def test_validate_manual_punch_permission_mobile_allowed(db_session_mock, mock_u
     request = MagicMock(spec=Request)
     request.headers.get.return_value = "mobile"
     time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
+
 
 def test_validate_manual_punch_permission_mobile_forbidden(db_session_mock, mock_user_repo):
     user = User(id=1, role=UserRole.EMPLOYEE, can_manual_punch_mobile=False)
@@ -144,12 +153,14 @@ def test_validate_manual_punch_permission_mobile_forbidden(db_session_mock, mock
         time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
 
+
 def test_validate_manual_punch_permission_desktop_allowed(db_session_mock, mock_user_repo):
     user = User(id=1, role=UserRole.EMPLOYEE, can_manual_punch_desktop=True)
     mock_user_repo.get.return_value = user
     request = MagicMock(spec=Request)
     request.headers.get.return_value = "desktop"
     time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
+
 
 def test_validate_manual_punch_permission_desktop_forbidden(db_session_mock, mock_user_repo):
     user = User(id=1, role=UserRole.EMPLOYEE, can_manual_punch_desktop=False)
@@ -246,6 +257,7 @@ def test_register_exit_ntp_fallback(mock_get_trusted_time, mock_validate, db_ses
     db_session_mock.refresh.assert_called_once_with(record)
     mock_audit_service.log_change.assert_called_once()
 
+
 def test_toggle_record_type_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
     user = User(id=1, role=UserRole.EMPLOYEE)
@@ -253,6 +265,7 @@ def test_toggle_record_type_not_found(db_session_mock, mock_time_record_repo):
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
     assert exc_info.value.detail == "Registro de ponto não encontrado."
+
 
 def test_toggle_record_type_forbidden(db_session_mock, mock_time_record_repo):
     record = TimeRecord(id=1, user_id=2)
@@ -262,6 +275,7 @@ def test_toggle_record_type_forbidden(db_session_mock, mock_time_record_repo):
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert exc_info.value.detail == "Acesso negado."
+
 
 def test_toggle_record_type_success(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -281,7 +295,9 @@ def test_toggle_record_type_success(db_session_mock, mock_time_record_repo, mock
     db_session_mock.refresh.assert_called_once_with(result)
     mock_audit_service.log_change.assert_called_once()
 
-def test_toggle_record_type_success_employee(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
+
+def test_toggle_record_type_success_employee(db_session_mock, mock_time_record_repo, mock_payroll_service,
+                                             mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     record = TimeRecord(id=1, user_id=1, record_type=RecordType.EXIT, record_datetime=dt, original_record_id=5)
     mock_time_record_repo.get.return_value = record
@@ -291,6 +307,7 @@ def test_toggle_record_type_success_employee(db_session_mock, mock_time_record_r
     assert record.is_ignored is True
     assert result.original_record_id == 5
     assert result.is_verified is False
+
 
 def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -312,7 +329,9 @@ def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_payrol
     db_session_mock.refresh.assert_called_once_with(record)
     mock_audit_service.log_change.assert_called_once()
 
-def test_create_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
+
+def test_create_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service,
+                                       mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     obj_in = TimeRecordCreateAdmin(user_id=1, record_type=RecordType.ENTRY, record_datetime=dt, edit_justification="")
     record = TimeRecord(id=1, user_id=1)
@@ -323,6 +342,7 @@ def test_create_admin_record_no_device(db_session_mock, mock_time_record_repo, m
                                                          record_datetime=dt, ip_address="127.0.0.1", device_name="",
                                                          platform="WEB_ADMIN")
 
+
 def test_update_admin_record_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
     obj_in = TimeRecordUpdate(edit_justification="missing")
@@ -330,6 +350,7 @@ def test_update_admin_record_not_found(db_session_mock, mock_time_record_repo):
         time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Registro não encontrado."
+
 
 def test_update_admin_record_no_changes(db_session_mock, mock_time_record_repo, mock_payroll_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -339,7 +360,9 @@ def test_update_admin_record_no_changes(db_session_mock, mock_time_record_repo, 
     result = time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert result == record
 
-def test_update_admin_record_with_changes(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
+
+def test_update_admin_record_with_changes(db_session_mock, mock_time_record_repo, mock_payroll_service,
+                                          mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     dt_new = datetime.now(ZoneInfo(settings.TIMEZONE))
     record = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY, record_datetime=dt, edit_justification=None,
@@ -364,13 +387,16 @@ def test_update_admin_record_with_changes(db_session_mock, mock_time_record_repo
     db_session_mock.refresh.assert_called_once_with(result)
     mock_audit_service.log_change.assert_called_once()
 
-def test_update_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
+
+def test_update_admin_record_no_device(db_session_mock, mock_time_record_repo, mock_payroll_service,
+                                       mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     record = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY, record_datetime=dt)
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordUpdate(record_type=RecordType.EXIT, edit_justification="")
     result = time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert result.device_name == ""
+
 
 def test_delete_admin_record_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
@@ -379,6 +405,7 @@ def test_delete_admin_record_not_found(db_session_mock, mock_time_record_repo):
         time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Registro não encontrado."
+
 
 def test_delete_admin_record_success(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -390,7 +417,9 @@ def test_delete_admin_record_success(db_session_mock, mock_time_record_repo, moc
     mock_time_record_repo.delete.assert_called_once_with(db_session_mock, 1, 2)
     mock_audit_service.log_change.assert_called_once()
 
-def test_delete_admin_record_no_justification(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
+
+def test_delete_admin_record_no_justification(db_session_mock, mock_time_record_repo, mock_payroll_service,
+                                              mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
     record = TimeRecord(id=1, record_type=RecordType.ENTRY, record_datetime=dt)
     mock_time_record_repo.get.return_value = record
@@ -455,6 +484,7 @@ def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mock_tim
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
                                                          device_name=mock_get_device.return_value, platform="desktop",
                                                          biometric_id=None)
+
 
 def test_get_record_timeline(db_session_mock, mock_time_record_repo):
     records = [TimeRecord(id=1), TimeRecord(id=2)]

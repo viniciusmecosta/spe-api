@@ -3,9 +3,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared.deps import get_current_manager
 from app.features.users.user_models import User
 from app.main import app
+from app.shared.deps import get_current_manager
 
 client = TestClient(app)
 

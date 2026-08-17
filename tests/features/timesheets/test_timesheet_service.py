@@ -6,11 +6,11 @@ from fastapi import HTTPException
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import pytest
-from app.shared.enums import UserRole
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
 from app.features.timesheets.timesheet_service import timesheet_service
 from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.shared.enums import UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
 
 
@@ -19,26 +19,31 @@ def test_format_duration():
     assert timesheet_service._format_duration(3660) == '01:01'
     assert timesheet_service._format_duration(0) == '00:00'
 
+
 def test_format_cnpj():
     assert timesheet_service._format_cnpj('') == '-'
     assert timesheet_service._format_cnpj('12345678901234') == '12.345.678/9012-34'
     assert timesheet_service._format_cnpj('1234') == '1234'
+
 
 def test_format_cpf():
     assert timesheet_service._format_cpf(None) == '-'
     assert timesheet_service._format_cpf('12345678901') == '123.456.789-01'
     assert timesheet_service._format_cpf('123') == '123'
 
+
 def test_format_pis():
     assert timesheet_service._format_pis('') == '-'
     assert timesheet_service._format_pis('12345678901') == '123.45678.90-1'
     assert timesheet_service._format_pis('123') == '123'
+
 
 def test_format_phone():
     assert timesheet_service._format_phone('') == '-'
     assert timesheet_service._format_phone('11987654321') == '(11) 98765-4321'
     assert timesheet_service._format_phone('1187654321') == '(11) 8765-4321'
     assert timesheet_service._format_phone('123') == '123'
+
 
 def test_build_daily_records_table():
     mock_daily_1 = MagicMock(spec=DailyTimeResult)
@@ -66,14 +71,17 @@ def test_build_daily_records_table():
     t_style = []
     styles = getSampleStyleSheet()
     table_text_style = styles['Normal']
-    t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday], data_table, t_style, table_text_style)
+    t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
+                                                     data_table, t_style, table_text_style)
     assert t is not None
+
 
 def test_generate_user_timesheet_pdf_not_found(db_session_mock, mocker):
     mocker.patch('app.features.users.user_repository.user_repository.get', return_value=None)
     with pytest.raises(HTTPException) as excinfo:
         timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert excinfo.value.status_code == 404
+
 
 def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
@@ -119,12 +127,14 @@ def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
+
 def test_generate_all_timesheets_pdf_zip_not_found(db_session_mock, mocker):
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value.filter.return_value.all.return_value = []
     with pytest.raises(HTTPException) as excinfo:
         timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, [1])
     assert excinfo.value.status_code == 404
+
 
 def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
@@ -140,6 +150,7 @@ def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
+
 def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
@@ -153,6 +164,7 @@ def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker)
     buffer = timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
     assert isinstance(buffer, io.BytesIO)
 
+
 def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     from reportlab.platypus import Flowable
     class DummyLogo(Flowable):
@@ -160,8 +172,10 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
             super().__init__()
             self.width = 50
             self.height = 50
+
         def wrap(self, availWidth, availHeight):
             return self.width, self.height
+
         def draw(self):
             pass
 
@@ -210,6 +224,7 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
+
 def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
@@ -254,6 +269,7 @@ def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker
     buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
+
 
 def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
@@ -300,7 +316,10 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
     buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
+
+
 from reportlab.platypus import Paragraph, Table
+
 
 def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
@@ -370,12 +389,14 @@ def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     bg_style = [cmd for cmd in daily_table._bkgrndcmds if cmd[0] == 'BACKGROUND']
     assert len(bg_style) > 0, 'Deveria ter comando de Background color no header e finais de semana'
 
+
 def test_format_day_groups():
     assert timesheet_service._format_day_groups([]) == ""
     assert timesheet_service._format_day_groups([0]) == "Segunda"
     assert timesheet_service._format_day_groups([0, 1]) == "Segunda e Terça"
     assert timesheet_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
     assert timesheet_service._format_day_groups([0, 1, 3, 4, 6]) == "Segunda e Terça, Quinta e Sexta e Domingo"
+
 
 def test_get_schedule_transitions_and_grouping():
     user = MagicMock(spec=User)
@@ -387,8 +408,11 @@ def test_get_schedule_transitions_and_grouping():
     assert date(2023, 10, 10) in transitions
     assert date(2023, 10, 21) in transitions
 
-    periods = timesheet_service._group_schedules_by_period(user, [date(2023, 10, 1), date(2023, 10, 10), date(2023, 10, 5), date(2023, 10, 31)])
+    periods = timesheet_service._group_schedules_by_period(user,
+                                                           [date(2023, 10, 1), date(2023, 10, 10), date(2023, 10, 5),
+                                                            date(2023, 10, 31)])
     assert len(periods) > 0
+
 
 def test_build_work_schedules_section_empty_periods(mocker):
     story = []
@@ -400,20 +424,24 @@ def test_build_work_schedules_section_empty_periods(mocker):
     sch.valid_until = date(2023, 10, 31)
     user.historical_schedules = [sch]
     mocker.patch.object(timesheet_service, '_group_schedules_by_period', return_value=[])
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+                                                    style_header)
     assert len(story) == 0
+
 
 def test_build_work_schedules_section_branches():
     story = []
     style_heading = ParagraphStyle('H', fontSize=10)
     style_header = ParagraphStyle('T', fontSize=10)
 
-    timesheet_service._build_work_schedules_section(story, None, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    timesheet_service._build_work_schedules_section(story, None, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+                                                    style_header)
     assert len(story) == 0
 
     user = MagicMock(spec=User)
     user.historical_schedules = []
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+                                                    style_header)
     assert len(story) == 0
 
     sch_empty = MagicMock(spec=UserWorkScheduleConfig)
@@ -424,7 +452,8 @@ def test_build_work_schedules_section_branches():
     sch_empty.entry_2 = None
     sch_empty.exit_2 = None
     user.historical_schedules = [sch_empty]
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+                                                    style_header)
     assert any(isinstance(item, Table) for item in story)
 
     story.clear()
@@ -447,8 +476,10 @@ def test_build_work_schedules_section_branches():
     sch_active2.exit_2 = None
 
     user.historical_schedules = [sch_active, sch_active2]
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading, style_header)
+    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+                                                    style_header)
     assert any(isinstance(item, Table) for item in story)
+
 
 def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
@@ -506,6 +537,7 @@ def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
 
+
 def test_draw_company_header_and_notes(mocker):
     from app.features.companies.company_models import Company
     mock_company = MagicMock(spec=Company)
@@ -522,7 +554,7 @@ def test_draw_company_header_and_notes(mocker):
     header_style = ParagraphStyle('Header', parent=styles['Normal'])
 
     timesheet_service._draw_company_header(story, mock_company, title_style, section_heading_style, header_style)
-    
+
     found_table = False
     for item in story:
         if isinstance(item, Table):

@@ -1,4 +1,5 @@
 from datetime import date
+
 from app.features.system.system_models import get_local_time_naive
 from app.features.system.system_repository import AuditRepository, RoutineLogRepository
 from app.features.system.system_schemas import AuditLogCreate
@@ -25,13 +26,15 @@ def test_audit_repository(db_session, normal_user):
     )
     assert created.id is not None
 
-    logs = repo.get_logs(db_session, action="CREATE", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), order_by="asc")
+    logs = repo.get_logs(db_session, action="CREATE", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),
+                         order_by="asc")
     assert len(logs) >= 1
 
     logs_desc = repo.get_logs(db_session, order_by="desc")
     assert isinstance(logs_desc, list)
 
-    manual = repo.get_manual_changes(db_session, start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), order_by="asc")
+    manual = repo.get_manual_changes(db_session, start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),
+                                     order_by="asc")
     assert len(manual) >= 1
 
     manual_desc = repo.get_manual_changes(db_session, order_by="desc")

@@ -1,7 +1,8 @@
-from datetime import date, time
-from app.features.adjustments.adjustment_repository import adjustment_repository, AdjustmentRepository
+from datetime import date
+
+from app.features.adjustments.adjustment_repository import AdjustmentRepository
 from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate
-from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.enums import AdjustmentStatus, AdjustmentType
 
 
 def test_adjustment_repository_all_methods(db_session, normal_user):
@@ -64,7 +65,8 @@ def test_adjustment_repository_all_methods(db_session, normal_user):
     pending_count = repo.count_pending(db_session, from_date=date(2026, 1, 1))
     assert pending_count >= 1
 
-    updated = repo.update_status(db_session, created, AdjustmentStatus.APPROVED, manager_id=normal_user.id, comment="Approved")
+    updated = repo.update_status(db_session, created, AdjustmentStatus.APPROVED, manager_id=normal_user.id,
+                                 comment="Approved")
     assert updated.status == AdjustmentStatus.APPROVED
 
     approved = repo.get_approved_by_range(db_session, normal_user.id, date(2026, 8, 1), date(2026, 8, 31))

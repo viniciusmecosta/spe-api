@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import UserRole
 from app.features.payroll.payroll_schemas import PayrollClosureResponse
 from app.features.time_records.time_record_schemas import SuccessResponse
 from app.features.users.user_models import User
 from app.main import app
+from app.shared import deps
+from app.shared.enums import UserRole
 
 
 @pytest.fixture

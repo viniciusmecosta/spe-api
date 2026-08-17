@@ -1,5 +1,6 @@
 from datetime import date
-from app.features.holidays.holiday_repository import holiday_repository, HolidayRepository
+
+from app.features.holidays.holiday_repository import HolidayRepository
 from app.features.holidays.holiday_schemas import HolidayCreate
 
 

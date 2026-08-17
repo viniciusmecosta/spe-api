@@ -1,10 +1,10 @@
 from datetime import date, timedelta
-import pytest
+
 from pydantic import ValidationError
 
+import pytest
 from app.features.users.user_schemas import (
     UserBase,
-    UserCreate,
     UserUpdate,
     UserUpdateMe,
     validate_cpf_logic,

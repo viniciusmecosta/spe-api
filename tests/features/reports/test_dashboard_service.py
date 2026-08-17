@@ -4,10 +4,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from app.core.config import settings
-from app.shared.enums import RecordType
 from app.features.reports.dashboard_service import dashboard_service
 from app.features.reports.report_schemas import DashboardMetricsResponse, TeamHoursResponse
 from app.features.users.user_models import User
+from app.shared.enums import RecordType
 
 
 @pytest.fixture
@@ -260,7 +260,8 @@ def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
+def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
+                                          mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     mock_datetime.now.return_value = fixed_now
@@ -278,7 +279,8 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
     mock_anomalies.return_value = [MagicMock()]
     mock_pending.return_value = 4
     mock_count_punches.return_value = 12
-    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h", employees=[])
+    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h",
+                                                     employees=[])
 
     response = dashboard_service.get_manager_dashboard(db_session_mock, user)
 
@@ -298,7 +300,8 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies, mock_pending, mock_count_punches, db_session_mock):
+def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
+                                             mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     mock_datetime.now.return_value = fixed_now
@@ -310,7 +313,8 @@ def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, moc
     mock_anomalies.return_value = []
     mock_pending.return_value = 0
     mock_count_punches.return_value = 0
-    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h", employees=[])
+    mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h",
+                                                     employees=[])
 
     response = dashboard_service.get_manager_dashboard(db_session_mock, user)
 

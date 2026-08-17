@@ -1,14 +1,13 @@
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
+
 from fastapi import Request
 
 from app.core.security import (
     _resolve_device_name_from_ip,
     create_access_token,
-    get_api_key_hash,
     get_client_device_name,
     get_client_ip,
-    get_password_hash,
     verify_password,
 )
 

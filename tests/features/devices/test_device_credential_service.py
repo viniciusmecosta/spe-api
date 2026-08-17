@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 import pytest
-from app.shared.enums import DeviceKeyType
 from app.features.devices.device_credential_service import device_credential_service
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate
+from app.shared.enums import DeviceKeyType
 
 
 def test_create_device_credential(db_session_mock: MagicMock, mocker: MagicMock) -> None:

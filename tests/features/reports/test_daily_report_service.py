@@ -2,10 +2,10 @@ from datetime import date, datetime
 from unittest.mock import patch
 
 import pytest
-from app.shared.enums import RecordType
 from app.features.reports.daily_report_service import DailyReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
+from app.shared.enums import RecordType
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def service():
 @patch("app.features.reports.daily_report_service.template_service")
 def test_generate_daily_report_html_with_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
     target_date = date(2026, 7, 24)
-    
+
     user = User(id=1, name="John Doe")
     record1 = TimeRecord(
         id=1,
@@ -33,20 +33,20 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
         record_datetime=datetime(2026, 7, 24, 18, 0, 0),
         is_ignored=False
     )
-    
+
     class QueryMock:
         def __init__(self, items):
             self.items = items
-            
+
         def join(self, *args, **kwargs):
             return self
-            
+
         def filter(self, *args, **kwargs):
             return self
-            
+
         def order_by(self, *args, **kwargs):
             return self
-            
+
         def all(self):
             return self.items
 
@@ -78,20 +78,20 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
 @patch("app.features.reports.daily_report_service.template_service")
 def test_generate_daily_report_html_no_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
     target_date = date(2026, 7, 24)
-    
+
     class QueryMock:
         def __init__(self, items):
             self.items = items
-            
+
         def join(self, *args, **kwargs):
             return self
-            
+
         def filter(self, *args, **kwargs):
             return self
-            
+
         def order_by(self, *args, **kwargs):
             return self
-            
+
         def all(self):
             return self.items
 

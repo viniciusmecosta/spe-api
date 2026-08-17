@@ -152,6 +152,7 @@ def test_get_sender_address_dev_no_addr():
         service = EmailService()
         assert service._get_sender_address() == "DEVELOPMENT <invalid>"
 
+
 def test_get_sender_address_dev_empty_email_from():
     with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"), \
             patch("app.features.system.email_service.settings.EMAIL_FROM", ""), \
@@ -205,4 +206,3 @@ def test_dispatch_payroll_email_exception():
         mock_send.side_effect = Exception("Err")
         dispatch_payroll_email("Fechamento", "User", 1, 2023, ["test@test.com"])
         mock_send.assert_called_once()
-

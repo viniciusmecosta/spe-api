@@ -1,6 +1,7 @@
+from unittest.mock import MagicMock
+
 import pytest
 from app.database.session import get_db_session, set_sqlite_pragma
-from unittest.mock import MagicMock
 
 
 def test_get_db_session_exception():

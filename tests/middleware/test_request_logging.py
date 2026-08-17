@@ -1,10 +1,9 @@
 from unittest.mock import MagicMock
-import pytest
+
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
-from app.core.config import settings
 from app.core.security import create_access_token
 from app.middleware.request_logging import RequestLoggingMiddleware, _extract_user_name
 

@@ -1,4 +1,4 @@
-from app.shared.enums import DayOfWeek, UserRole, RecordType, AdjustmentType, AdjustmentStatus, DeviceKeyType
+from app.shared.enums import DayOfWeek
 
 
 def test_day_of_week_sigla_and_props():

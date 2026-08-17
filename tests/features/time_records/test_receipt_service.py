@@ -52,7 +52,8 @@ def test_print_escpos_receipt_success(mock_printer, receipt_data):
 
 
 def test_print_escpos_receipt_exception(mock_printer, receipt_data):
-    with patch('app.features.time_records.receipt_service.ReceiptService._get_escpos_printer', side_effect=Exception("Connection refused")):
+    with patch('app.features.time_records.receipt_service.ReceiptService._get_escpos_printer',
+               side_effect=Exception("Connection refused")):
         ReceiptService._print_escpos_receipt(mock_printer, receipt_data)
 
 

@@ -1,7 +1,5 @@
 import logging
 import os
-import shutil
-import tempfile
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -10,7 +8,6 @@ from app.core.config import settings
 from app.core.logger import (
     CleanFormatter,
     DailyRotatingFileHandler,
-    get_log_path,
     setup_logging,
 )
 

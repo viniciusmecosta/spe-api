@@ -1,8 +1,9 @@
 import runpy
 from unittest.mock import MagicMock, patch
-import pytest
+
 from sqlalchemy.exc import SQLAlchemyError
 
+import pytest
 from app.initial_data import init_db, main
 
 

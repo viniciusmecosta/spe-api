@@ -1,24 +1,16 @@
 from datetime import datetime
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
-import pytest
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import app.features.adjustments.adjustment_models
-import app.features.companies.company_models
-import app.features.devices.device_models
-import app.features.holidays.holiday_models
-import app.features.payroll.payroll_models
-import app.features.printers.printer_models
-import app.features.system.system_models
-import app.features.time_records.time_record_models
-import app.features.users.user_models
-from app.database.base import Base
+import pytest
 from app.core.config import settings
-from app.features.users.user_models import User
+from app.database.base import Base
 from app.features.companies.company_models import Company
+from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
 
@@ -84,6 +76,7 @@ def mock_get_db_session(mocker, db_session_mock):
     class ContextManagerMock:
         def __enter__(self):
             return db_session_mock
+
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
 

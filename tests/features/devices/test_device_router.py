@@ -3,8 +3,6 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import DeviceKeyType
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import (
     BuzzerNote,
@@ -14,6 +12,8 @@ from app.features.devices.device_schemas import (
     TimeResponsePayload,
 )
 from app.main import app
+from app.shared import deps
+from app.shared.enums import DeviceKeyType
 
 
 @pytest.fixture

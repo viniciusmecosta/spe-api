@@ -1,5 +1,6 @@
-import pytest
 from pydantic import ValidationError
+
+import pytest
 from app.features.companies.company_schemas import CompanyCreate, CompanyUpdate, validate_cnpj_logic
 
 

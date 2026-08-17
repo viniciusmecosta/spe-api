@@ -1,8 +1,11 @@
 from unittest.mock import MagicMock, patch
-import pytest
+
 import jwt
 from fastapi import HTTPException
 
+import pytest
+from app.core.security import get_api_key_hash
+from app.features.devices.device_models import DeviceCredential
 from app.shared.deps import (
     get_db,
     get_current_user,
@@ -13,8 +16,6 @@ from app.shared.deps import (
     verify_consumer_api_key,
 )
 from app.shared.enums import UserRole, DeviceKeyType
-from app.features.devices.device_models import DeviceCredential
-from app.core.security import get_api_key_hash
 
 
 def test_get_db():

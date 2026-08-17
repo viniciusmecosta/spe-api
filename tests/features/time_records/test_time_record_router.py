@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import RecordType, UserRole
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordTimelineResponse
 from app.features.users.user_models import User
 from app.main import app
+from app.shared import deps
+from app.shared.enums import RecordType, UserRole
 
 
 @pytest.fixture
@@ -122,7 +122,8 @@ def test_list_records_for_admin(client: TestClient, mocker: MagicMock) -> None:
         return_value=[mock_record],
     )
 
-    response = client.get("/api/v1/time-records/admin/list?user_id=1&start_date=2026-08-01T00:00:00&end_date=2026-08-31T23:59:59")
+    response = client.get(
+        "/api/v1/time-records/admin/list?user_id=1&start_date=2026-08-01T00:00:00&end_date=2026-08-31T23:59:59")
     assert response.status_code == 200
     assert len(response.json()) == 1
 
@@ -143,7 +144,8 @@ def test_create_time_record_admin(client: TestClient, mocker: MagicMock) -> None
 
     response = client.post(
         "/api/v1/time-records/admin",
-        json={"user_id": 1, "record_type": "ENTRY", "record_datetime": "2026-08-14T08:00:00", "edit_justification": "Admin insert"},
+        json={"user_id": 1, "record_type": "ENTRY", "record_datetime": "2026-08-14T08:00:00",
+              "edit_justification": "Admin insert"},
     )
     assert response.status_code == 201
 

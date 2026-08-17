@@ -1,16 +1,16 @@
 from datetime import date, datetime, time
 from io import BytesIO
-from unittest.mock import MagicMock
 
 from fastapi import HTTPException, UploadFile
 
 import pytest
-from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
 from app.features.adjustments.adjustment_models import AdjustmentAttachment, AdjustmentRequest
-from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate, AdjustmentWaiverCreate, BulkReprocessExtraTimeRequest
+from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate, AdjustmentWaiverCreate, \
+    BulkReprocessExtraTimeRequest
 from app.features.adjustments.adjustment_service import adjustment_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
 
 
 def test_execute_and_revert_action_no_time(db_session_mock):
@@ -128,10 +128,12 @@ def test_enrich_adjustments_with_records(db_session_mock):
     assert len(res[0].time_records) == 1
     assert len(res[1].time_records) == 0
 
+
 def test_validate_waiver_limit_ok(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get_waivers_by_user_and_date",
                  return_value=[AdjustmentRequest(amount_hours=2.0)])
     adjustment_service._validate_waiver_limit(db_session_mock, 1, date(2023, 10, 1), 5.0)
+
 
 def test_validate_waiver_limit_exceeded(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get_waivers_by_user_and_date",
@@ -141,6 +143,7 @@ def test_validate_waiver_limit_exceeded(db_session_mock, mocker):
         adjustment_service._validate_waiver_limit(db_session_mock, 1, target_date, 5.0)
     assert exc.value.status_code == 400
 
+
 def test_create_adjustment_request(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._validate_waiver_limit")
@@ -149,9 +152,11 @@ def test_create_adjustment_request(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[AdjustmentRequest(id=1)])
 
-    obj_in = AdjustmentRequestCreate(adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1), amount_hours=2.0, reason_text="teste")
+    obj_in = AdjustmentRequestCreate(adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1),
+                                     amount_hours=2.0, reason_text="teste")
     res = adjustment_service.create_adjustment_request(db_session_mock, 1, obj_in)
     assert res.id == 1
+
 
 def test_create_manager_waiver(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
@@ -167,8 +172,10 @@ def test_create_manager_waiver(db_session_mock, mocker):
     res = adjustment_service.create_manager_waiver(db_session_mock, obj_in, 99)
     assert res.id == 1
 
+
 def test_admin_delete_adjustment(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
@@ -177,14 +184,17 @@ def test_admin_delete_adjustment(db_session_mock, mocker):
 
     adjustment_service.admin_delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
 
+
 def test_delete_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     with pytest.raises(HTTPException) as exc:
         adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 404
 
+
 def test_approve_adjustment(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH, status=AdjustmentStatus.PENDING)
+    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
+                                status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._execute_adjustment_action")
@@ -199,13 +209,16 @@ def test_approve_adjustment(db_session_mock, mocker):
     res = adjustment_service.approve_adjustment(db_session_mock, 1, 99)
     assert res.status == AdjustmentStatus.APPROVED
 
+
 def test_approve_adjustment_waiver_no_attachment(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.WAIVER, attachments=[])
+    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.WAIVER,
+                                attachments=[])
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     with pytest.raises(HTTPException) as exc:
         adjustment_service.approve_adjustment(db_session_mock, 1, 99)
     assert exc.value.status_code == 400
+
 
 def test_reject_adjustment(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
@@ -222,19 +235,25 @@ def test_reject_adjustment(db_session_mock, mocker):
     res = adjustment_service.reject_adjustment(db_session_mock, 1, 99, "comentario")
     assert res.status == AdjustmentStatus.REJECTED
 
-    request_approved = AdjustmentRequest(id=2, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED, adjustment_type=AdjustmentType.WAIVER)
-    mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request_approved)
+    request_approved = AdjustmentRequest(id=2, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
+                                         adjustment_type=AdjustmentType.WAIVER)
+    mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get",
+                 return_value=request_approved)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
     res_approved = adjustment_service.reject_adjustment(db_session_mock, 2, 99, None)
     assert res_approved.status == AdjustmentStatus.REJECTED
 
+
 def test_execute_adjustment_action_create(db_session_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0), adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
+    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+                                adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
     mocker.patch("app.features.time_records.time_record_repository.time_record_repository.create")
     adjustment_service._execute_adjustment_action(db_session_mock, request, 99)
 
+
 def test_execute_adjustment_action_delete(db_session_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0), adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
+    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+                                adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     db_session_mock.query.return_value.items = [record]
     mocker.patch("app.features.time_records.time_record_repository.get_local_time")
@@ -242,8 +261,10 @@ def test_execute_adjustment_action_delete(db_session_mock, mocker):
     adjustment_service._execute_adjustment_action(db_session_mock, request, 99)
     assert record.is_ignored is True
 
+
 def test_revert_adjustment_action(db_session_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0), adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
+    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+                                adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     db_session_mock.query.return_value.items = [record]
     mocker.patch("app.features.time_records.time_record_repository.get_local_time")
@@ -251,8 +272,10 @@ def test_revert_adjustment_action(db_session_mock, mocker):
     adjustment_service._revert_adjustment_action(db_session_mock, request, 99)
     assert record.is_ignored is True
 
+
 def test_revert_adjustment_status(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED, adjustment_type=AdjustmentType.FORGOT_PUNCH)
+    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
+                                adjustment_type=AdjustmentType.FORGOT_PUNCH)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
@@ -267,18 +290,22 @@ def test_revert_adjustment_status(db_session_mock, mocker):
     res = adjustment_service.revert_adjustment_status(db_session_mock, 1, 99, AdjustmentStatus.PENDING, "motivo")
     assert res.status == AdjustmentStatus.PENDING
 
+
 def test_enrich_adjustments_with_records_empty(db_session_mock):
     res = adjustment_service._enrich_adjustments_with_records(db_session_mock, [])
     assert res == []
 
+
 def test_validate_waiver_limit_no_amount(db_session_mock):
     adjustment_service._validate_waiver_limit(db_session_mock, 1, date(2023, 10, 1), None)
+
 
 def test_get_all_enriched(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get_all", return_value=[])
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  return_value=[])
     assert adjustment_service.get_all_enriched(db_session_mock) == []
+
 
 def test_get_my_enriched(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get_all_by_user",
@@ -287,14 +314,17 @@ def test_get_my_enriched(db_session_mock, mocker):
                  return_value=[])
     assert adjustment_service.get_my_enriched(db_session_mock, 1) == []
 
+
 def test_admin_delete_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     with pytest.raises(HTTPException) as exc:
         adjustment_service.admin_delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 404
 
+
 def test_delete_adjustment_success(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
@@ -303,8 +333,10 @@ def test_delete_adjustment_success(db_session_mock, mocker):
 
     adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
 
+
 def test_delete_extra_time_adjustment_success(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
@@ -316,8 +348,10 @@ def test_delete_extra_time_adjustment_success(db_session_mock, mocker):
     assert mock_audit_log.call_args[0][2] == "DELETE_ADJUSTMENT"
     assert mock_audit_log.call_args[1]["new_data"] == {"reason": "Justificativa exclusao hora extra"}
 
+
 def test_delete_waiver_adjustment_success(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._revert_adjustment_action")
@@ -329,8 +363,10 @@ def test_delete_waiver_adjustment_success(db_session_mock, mocker):
     assert mock_audit_log.call_args[0][2] == "DELETE_ADJUSTMENT"
     assert mock_audit_log.call_args[1]["new_data"] == {"reason": "Justificativa exclusao abono"}
 
+
 def test_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.PUNCH_NOT_COUNTED, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.PUNCH_NOT_COUNTED, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mock_soft_delete = mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
@@ -341,8 +377,10 @@ def test_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
     assert "WAIVER" in exc.value.detail
     mock_soft_delete.assert_not_called()
 
+
 def test_admin_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.FORGOT_PUNCH, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED)
+    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.FORGOT_PUNCH, target_date=date(2023, 10, 1),
+                                status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mock_soft_delete = mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
@@ -353,12 +391,14 @@ def test_admin_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
     assert "WAIVER" in exc.value.detail
     mock_soft_delete.assert_not_called()
 
+
 def test_upload_attachment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
     with pytest.raises(HTTPException) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 404
+
 
 def test_upload_attachment_forbidden(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=2)
@@ -367,6 +407,7 @@ def test_upload_attachment_forbidden(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 403
+
 
 def test_upload_attachment_invalid_name(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
@@ -377,6 +418,7 @@ def test_upload_attachment_invalid_name(db_session_mock, mocker):
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
+
 def test_upload_attachment_invalid_ext(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
@@ -386,6 +428,7 @@ def test_upload_attachment_invalid_ext(db_session_mock, mocker):
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
+
 def test_upload_attachment_invalid_content(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
@@ -394,6 +437,7 @@ def test_upload_attachment_invalid_content(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
+
 
 def test_upload_attachment_success(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
@@ -412,11 +456,13 @@ def test_upload_attachment_success(db_session_mock, mocker):
     res = adjustment_service.upload_attachment(db_session_mock, 1, file, 1)
     assert res == "Attachment"
 
+
 def test_approve_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     with pytest.raises(HTTPException) as exc:
         adjustment_service.approve_adjustment(db_session_mock, 1, 99)
     assert exc.value.status_code == 404
+
 
 def test_reject_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
@@ -424,12 +470,15 @@ def test_reject_adjustment_not_found(db_session_mock, mocker):
         adjustment_service.reject_adjustment(db_session_mock, 1, 99, "comentario")
     assert exc.value.status_code == 404
 
+
 def test_revert_adjustment_action_waiver(db_session_mock):
     request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.WAIVER)
     adjustment_service._revert_adjustment_action(db_session_mock, request, 99)
 
+
 def test_revert_adjustment_action_delete_punch(db_session_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0), adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
+    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+                                adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     db_session_mock.query.return_value.items = [record]
 
@@ -437,11 +486,13 @@ def test_revert_adjustment_action_delete_punch(db_session_mock, mocker):
     assert record.is_ignored is False
     assert record.deleted_at is None
 
+
 def test_revert_adjustment_status_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     with pytest.raises(HTTPException) as exc:
         adjustment_service.revert_adjustment_status(db_session_mock, 1, 99, AdjustmentStatus.PENDING, "motivo")
     assert exc.value.status_code == 404
+
 
 def test_revert_adjustment_status_same(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
@@ -453,8 +504,10 @@ def test_revert_adjustment_status_same(db_session_mock, mocker):
     res = adjustment_service.revert_adjustment_status(db_session_mock, 1, 99, AdjustmentStatus.PENDING, "motivo")
     assert res.status == AdjustmentStatus.PENDING
 
+
 def test_revert_adjustment_status_approve(db_session_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING, adjustment_type=AdjustmentType.FORGOT_PUNCH)
+    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING,
+                                adjustment_type=AdjustmentType.FORGOT_PUNCH)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._execute_adjustment_action")

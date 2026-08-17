@@ -85,6 +85,7 @@ def test_get_bio_attr():
 
     class Obj:
         id = 2
+
     assert user_service._get_bio_attr(Obj(), "id") == 2
     assert user_service._get_bio_attr(Obj(), "none") is None
 
@@ -142,13 +143,17 @@ def test_process_single_biometric(db_session_mock, mocker):
     existing = UserBiometric(id=10)
     current = {10: existing}
 
-    res = user_service._process_single_biometric(db_session_mock, user, {"id": 10, "sensor_index": 2, "template_data": "data", "finger_id": 3}, seen_idx, seen_fgr, current)
+    res = user_service._process_single_biometric(db_session_mock, user,
+                                                 {"id": 10, "sensor_index": 2, "template_data": "data", "finger_id": 3},
+                                                 seen_idx, seen_fgr, current)
     assert res == existing
     assert res.sensor_index == 2
     assert res.template_data == "data"
     assert res.finger_id == 3
 
-    res2 = user_service._process_single_biometric(db_session_mock, user, {"id": 11, "sensor_index": 5, "template_data": "data2", "finger_id": 4}, seen_idx, seen_fgr, current)
+    res2 = user_service._process_single_biometric(db_session_mock, user,
+                                                  {"id": 11, "sensor_index": 5, "template_data": "data2",
+                                                   "finger_id": 4}, seen_idx, seen_fgr, current)
     assert res2.sensor_index == 5
     assert res2.template_data == "data2"
     assert res2.finger_id == 4
@@ -212,6 +217,7 @@ def test_create_user(db_session_mock, mocker):
 
     class DummyCreate:
         pass
+
     user_in = DummyCreate()
     user_in.name = "Test"
     user_in.username = "test"

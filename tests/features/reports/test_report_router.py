@@ -5,8 +5,6 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
-from app.shared import deps
-from app.shared.enums import UserRole
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
@@ -17,6 +15,8 @@ from app.features.reports.report_schemas import (
 )
 from app.features.users.user_models import User
 from app.main import app
+from app.shared import deps
+from app.shared.enums import UserRole
 
 
 @pytest.fixture
@@ -133,7 +133,8 @@ def test_get_user_detailed_report(client: TestClient, mocker: MagicMock) -> None
         ),
         daily_details=[],
     )
-    mocker.patch("app.features.reports.report_router.report_service.get_advanced_user_report_or_404", return_value=expected)
+    mocker.patch("app.features.reports.report_router.report_service.get_advanced_user_report_or_404",
+                 return_value=expected)
 
     response = client.get("/api/v1/reports/user/1")
     assert response.status_code == 200

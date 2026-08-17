@@ -1,4 +1,4 @@
-from app.features.payroll.payroll_repository import payroll_repository, PayrollRepository
+from app.features.payroll.payroll_repository import PayrollRepository
 
 
 def test_payroll_repository(db_session, normal_user):

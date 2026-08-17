@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from app.features.time_records.time_record_repository import time_record_repository, TimeRecordRepository
+
+from app.features.time_records.time_record_repository import TimeRecordRepository
 from app.features.time_records.time_record_schemas import TimeRecordUpdate
 from app.shared.enums import RecordType
 
@@ -31,7 +32,8 @@ def test_time_record_repository(db_session, normal_user):
     assert repo.count_unique_users_in_range(db_session, now, now) >= 1
     assert repo.count_records_in_range(db_session, now, now) >= 1
 
-    updated = repo.update(db_session, r1, TimeRecordUpdate(record_type=RecordType.EXIT, edit_justification="Test update"))
+    updated = repo.update(db_session, r1,
+                          TimeRecordUpdate(record_type=RecordType.EXIT, edit_justification="Test update"))
     assert updated.record_type == RecordType.EXIT
 
     tl = repo.get_timeline(db_session, r1.id)

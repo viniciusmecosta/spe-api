@@ -1,31 +1,23 @@
 import importlib
 import locale
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 from unittest.mock import MagicMock, patch
-from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-import pytest
 
-from app.core.config import settings
+import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
-    DailyReportItem,
-    HistoryDay,
-    HistoryPunch,
-    HistoryResponse,
-    MonthlyReportResponse,
-    PunchDetail,
     UserPayrollSummary,
 )
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
-from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, RecordType, UserRole
+from app.shared.enums import RecordType, UserRole
 from app.shared.time_calculation_service import (
     DailyTimeResult,
     PeriodTimeResult,
@@ -463,7 +455,8 @@ def test_get_advanced_user_report_success(service, mock_db, mock_repo_user, mock
     mock_repo_user.get.return_value = user
 
     daily_results = defaultdict(lambda: _create_daily_time_result(net_worked_seconds=28800.0, extra_seconds=3600.0))
-    daily_results[date(2024, 1, 3)] = _create_daily_time_result(net_worked_seconds=0.0, extra_seconds=0.0, missing_seconds=28800.0)
+    daily_results[date(2024, 1, 3)] = _create_daily_time_result(net_worked_seconds=0.0, extra_seconds=0.0,
+                                                                missing_seconds=28800.0)
 
     period_calc = PeriodTimeResult(
         total_net_worked_seconds=72000.0,
@@ -507,10 +500,13 @@ def test_get_monthly_summary(service, mock_db, mock_repo_holiday, mock_time_calc
     class MockQueryRouter:
         def __init__(self, items):
             self.items = items
+
         def options(self, *args, **kwargs):
             return self
+
         def filter(self, *args, **kwargs):
             return self
+
         def all(self):
             return self.items
 
