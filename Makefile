@@ -36,7 +36,7 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 test:
-	PYTHONPATH=. pytest
+	poetry run pytest
 
 lint:
 	mypy app
