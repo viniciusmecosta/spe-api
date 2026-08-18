@@ -278,16 +278,20 @@ class TimeRecordService:
             printer = printer_repository.get_by_id(db, company.default_printer_id)
             if printer and printer.status:
                 short_id = hashid_service.encode(record.id)
+                record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
                 data = {
                     "company_name": company.name,
-                    "company_cnpj": company.cnpj,
+                    "company_address": company.address or "N/A",
+                    "company_cnpj": mask_cnpj(company.cnpj or "") if company.cnpj else "N/A",
                     "employee_name": record.user.name,
-                    "employee_cpf": record.user.cpf,
-                    "employee_pis": record.user.pis,
-                    "record_datetime": record.record_datetime.strftime("%d/%m/%Y %H:%M:%S"),
+                    "employee_cpf": mask_cpf(record.user.cpf or ""),
+                    "employee_pis": record.user.pis or "N/A",
+                    "record_date": record.record_datetime.strftime("%d/%m/%Y"),
+                    "record_time": record.record_datetime.strftime("%H:%M"),
+                    "record_type_str": record_type_str,
                     "device_name": record.device_name or "Desconhecido",
                     "nsr": record.id,
-                    "short_id": short_id
+                    "short_id": short_id.upper(),
                 }
                 background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
@@ -323,9 +327,10 @@ class TimeRecordService:
             short_id=short_id,
             record_id=record.id,
             company_name=company.name if company else "N/A",
-            company_cnpj=company.cnpj if company else "N/A",
+            company_cnpj=mask_cnpj(company.cnpj or "") if (company and company.cnpj) else "N/A",
+            company_address=company.address if company else "N/A",
             employee_name=record.user.name,
-            employee_cpf=record.user.cpf,
+            employee_cpf=mask_cpf(record.user.cpf or ""),
             employee_pis=record.user.pis,
             record_datetime=record.record_datetime,
             device_name=record.device_name or "Desconhecido",
@@ -347,12 +352,13 @@ class TimeRecordService:
 
         company = company_repository.get_current(db)
 
-        record_type_str = "Entrada" if record.record_type.name == "ENTRY" else "Saída"
+        record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
         date_str = record.record_datetime.strftime("%d/%m/%Y")
-        time_str = record.record_datetime.strftime("%H:%M:%S")
+        time_str = record.record_datetime.strftime("%H:%M")
 
         data = {
             "company_name": company.name if company else "N/A",
+            "company_address": company.address if company else "N/A",
             "company_cnpj": mask_cnpj(company.cnpj or "") if company else "N/A",
             "employee_name": record.user.name,
             "employee_cpf": mask_cpf(record.user.cpf or ""),

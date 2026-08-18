@@ -27,21 +27,21 @@ class ReceiptService:
             p = ReceiptService._get_escpos_printer(printer_config)
             try:
                 p.set(align="center", bold=True)
-                p.text("Comprovante de Registro de Ponto do Trabalhador\n\n")
+                p.text("COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR\n\n")
 
                 p.set(align="left", bold=False)
-                p.text(f"Empresa: {data['company_name']}\n")
-                p.text(f"CNPJ: {data['company_cnpj']}\n")
-                p.text(f"Funcionario: {data['employee_name']}\n")
-                p.text(f"CPF: {data['employee_cpf']}\n")
-                p.text(f"PIS: {data['employee_pis']}\n")
-                p.text(f"Data: {data['record_date']} | Hora: {data['record_time']}\n")
-                p.text(f"Tipo: {data['record_type_str']} | NSR: {data['nsr']}\n")
-                p.text(f"Local: {data['device_name']}\n\n")
+                p.text(f"EMPRESA: {data['company_name']}\n".upper())
+                p.text(f"ENDEREÇO: {data.get('company_address', 'N/A')}\n".upper())
+                p.text(f"CNPJ: {data['company_cnpj']}\n".upper())
+                p.text(f"NOME: {data['employee_name']}\n".upper())
+                p.text(f"CPF: {data['employee_cpf']} | PIS: {data['employee_pis']}\n".upper())
+                p.text(f"DATA: {data['record_date']} | HORA: {data['record_time']}\n".upper())
+                p.text(f"TIPO: {data['record_type_str']} | NSR: {data['nsr']}\n".upper())
+                p.text(f"LOCAL: {data['device_name']}\n\n".upper())
 
                 p.set(align="center")
-                p.qr(data['short_id'], size=6)
-                p.text(f"\n{data['short_id']}\n\n")
+                p.qr(str(data['short_id']).upper(), size=6)
+                p.text(f"\n{str(data['short_id']).upper()}\n\n")
 
                 p.cut()
             finally:
@@ -65,25 +65,25 @@ class ReceiptService:
             v = data.get(k)
             if not v or v == "N/A" or str(v).strip() == "":
                 return "N/A"
-            return str(v)
+            return str(v).upper()
 
         buffer = io.BytesIO()
         width = 80 * mm
-        height = 31 * mm
+        height = 24 * mm
 
         c = canvas.Canvas(buffer, pagesize=(width, height))
 
         c.setTitle(str(data['nsr']))
         c.setAuthor(str(val('company_name')))
-        c.setSubject("Comprovante de Registro de Ponto")
-        c.setCreator("Sistema de Ponto Eletrônico")
+        c.setSubject("COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR")
+        c.setCreator("SISTEMA DE PONTO ELETRÔNICO")
 
-        c.setFont("Times-Bold", 7)
-        c.drawCentredString(width / 2.0, height - 3 * mm, "Comprovante de Registro de Ponto")
+        c.setFont("Courier-Bold", 6.5)
+        c.drawCentredString(width / 2.0, height - 2.5 * mm, "COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR")
 
-        qr_size = 17 * mm
+        qr_size = 14 * mm
         qr_x = width - qr_size - 1 * mm
-        qr_y = height - 7 * mm - qr_size
+        qr_y = height - 5 * mm - qr_size
 
         qr = qrcode.QRCode(box_size=3, border=0)
         qr.add_data(val('short_id'))
@@ -92,24 +92,24 @@ class ReceiptService:
 
         c.drawInlineImage(img, qr_x, qr_y, width=qr_size, height=qr_size)
 
-        c.setFont("Times-Roman", 6)
+        c.setFont("Courier-Bold", 6)
         c.drawCentredString(qr_x + qr_size / 2.0, qr_y - 2 * mm, val('short_id'))
 
-        c.setFont("Times-Roman", 7)
-        text = c.beginText(1 * mm, height - 6.5 * mm)
-        text.setLeading(7)
-        text.textLine(f"Emp: {val('company_name')}")
+        c.setFont("Courier", 6)
+        text = c.beginText(1 * mm, height - 5 * mm)
+        text.setLeading(5.8)
+        text.textLine(f"EMP: {val('company_name')}")
+        text.textLine(f"END: {val('company_address')}")
         text.textLine(f"CNPJ: {val('company_cnpj')}")
-        text.textLine(f"Func: {val('employee_name')}")
-        text.textLine(f"CPF: {val('employee_cpf')}")
-        text.textLine(f"PIS: {val('employee_pis')}")
-        text.textLine(f"Data: {val('record_date')} | Hora: {val('record_time')}")
-        text.textLine(f"Tipo: {val('record_type_str')} | NSR: {val('nsr')}")
+        text.textLine(f"NOME: {val('employee_name')}")
+        text.textLine(f"CPF: {val('employee_cpf')} | PIS: {val('employee_pis')}")
+        text.textLine(f"DATA: {val('record_date')} | HORA: {val('record_time')}")
+        text.textLine(f"TIPO: {val('record_type_str')} | NSR: {val('nsr')}")
         y_pos = text.getY()
         c.drawText(text)
 
-        c.setFont("Times-Italic", 7)
-        c.drawString(1 * mm, y_pos, f"Local: {val('device_name')}")
+        c.setFont("Courier", 6)
+        c.drawString(1 * mm, y_pos, f"LOCAL: {val('device_name')}")
 
         c.showPage()
         c.save()

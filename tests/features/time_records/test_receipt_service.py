@@ -15,6 +15,7 @@ def mock_printer():
 def receipt_data():
     return {
         "company_name": "Test Company",
+        "company_address": "Rua Teste, 123",
         "company_cnpj": "12.345.678/0001-99",
         "employee_name": "John Doe",
         "employee_cpf": "123.456.789-00",
