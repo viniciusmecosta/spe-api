@@ -19,3 +19,20 @@ def mask_cpf(c: str) -> str:
     if not c or len(c) != 11:
         return c
     return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
+
+
+def format_name(name: str | None) -> str | None:
+    if not name:
+        return name
+    words = name.strip().split()
+    if not words:
+        return name
+    lowercase_words = {"de", "da", "do", "das", "dos", "e"}
+    formatted_words = []
+    for i, word in enumerate(words):
+        word_lower = word.lower()
+        if i > 0 and word_lower in lowercase_words:
+            formatted_words.append(word_lower)
+        else:
+            formatted_words.append(word.capitalize())
+    return " ".join(formatted_words)

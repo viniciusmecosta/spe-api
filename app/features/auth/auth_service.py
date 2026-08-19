@@ -22,7 +22,7 @@ class AuthService:
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
+                detail="Usuário ou senha incorretos.",
             )
 
         is_dev = settings.ENVIRONMENT.lower() == "dev"
@@ -32,13 +32,13 @@ class AuthService:
             if not security.verify_password(password, user.password_hash):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect username or password",
+                    detail="Usuário ou senha incorretos.",
                 )
 
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user",
+                detail="Usuário inativo.",
             )
 
         access_token = security.create_access_token(subject=user.id, name=user.name)

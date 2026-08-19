@@ -76,6 +76,7 @@ class ReceiptResponse(BaseModel):
     record_id: int
     company_name: str
     company_cnpj: str
+    company_address: str | None = None
     employee_name: str
     employee_cpf: str | None = None
     employee_pis: str | None = None

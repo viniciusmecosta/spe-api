@@ -535,7 +535,7 @@ class ReportService:
     ) -> AdvancedUserReportResponse:
         report = self.get_advanced_user_report(db, user_id, month, year, current_user)
         if not report:
-            raise HTTPException(status_code=404, detail="User not found or data missing")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado ou dados incompletos.")
         return report
 
     def validate_excel_export_permission(

@@ -64,7 +64,8 @@ def test_trigger_auto_print_enabled(db_session_mock, mocker):
     mock_company.auto_print_receipt = True
     mock_company.default_printer_id = 10
     mock_company.name = "Comp"
-    mock_company.cnpj = "123"
+    mock_company.cnpj = "12345678000199"
+    mock_company.address = "Rua Teste, 100"
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
 
     mock_printer = MagicMock()
@@ -72,8 +73,8 @@ def test_trigger_auto_print_enabled(db_session_mock, mocker):
     mocker.patch("app.features.printers.printer_repository.printer_repository.get_by_id", return_value=mock_printer)
 
     mock_bg = MagicMock()
-    user = User(id=1, name="John", cpf="111", pis="222", auto_print_receipt=True)
-    record = TimeRecord(id=1, user=user, record_datetime=datetime(2026, 1, 1, 12, 0, 0), device_name="Dev")
+    user = User(id=1, name="John", cpf="12345678900", pis="222", auto_print_receipt=True)
+    record = TimeRecord(id=1, user=user, record_type=RecordType.ENTRY, record_datetime=datetime(2026, 1, 1, 12, 0, 0), device_name="Dev")
 
     time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
     mock_bg.add_task.assert_called_once()
@@ -655,7 +656,7 @@ def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "invalid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Invalid receipt ID"
+    assert exc_info.value.detail == "ID do comprovante inválido."
 
 
 def test_get_receipt_data_record_not_found(db_session_mock, mocker):
@@ -665,7 +666,7 @@ def test_get_receipt_data_record_not_found(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Record not found"
+    assert exc_info.value.detail == "Registro de ponto não encontrado."
 
 
 def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
@@ -677,7 +678,7 @@ def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Not allowed to view this receipt"
+    assert exc_info.value.detail == "Acesso negado ao comprovante."
 
 
 def test_get_receipt_data_success(db_session_mock, mocker):
@@ -700,14 +701,24 @@ def test_get_receipt_pdf_success(db_session_mock, mocker):
     user = User(id=1, name="John", cpf="12345678900", pis="12345", role=UserRole.MANAGER)
     mock_record = TimeRecord(id=123, user_id=1, user=user, record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)),
                              record_type=RecordType.ENTRY, device_name="Device 1")
+    mock_company = MagicMock()
+    mock_company.name = "Empresa Teste"
+    mock_company.cnpj = "12345678000199"
+    mock_company.address = "Av. Brasil, 500"
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
-    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
-    mocker.patch("app.features.time_records.receipt_service.receipt_service.generate_pdf_receipt",
-                 return_value=b"%PDF-1.4...")
+    mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
+    mock_gen = mocker.patch("app.features.time_records.receipt_service.receipt_service.generate_pdf_receipt",
+                            return_value=b"%PDF-1.4...")
 
     pdf_bytes, filename = time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
     assert pdf_bytes == b"%PDF-1.4..."
     assert filename == "123.pdf"
+    mock_gen.assert_called_once()
+    passed_data = mock_gen.call_args[0][0]
+    assert passed_data["company_address"] == "Av. Brasil, 500"
+    assert passed_data["company_cnpj"] == "12.345.678/0001-99"
+    assert passed_data["employee_cpf"] == "123.456.789-00"
+    assert len(passed_data["record_time"]) == 5
 
 
 def test_trigger_auto_print_disabled(db_session_mock, mocker):

@@ -14,7 +14,7 @@ def test_authenticate_user_not_found(db_session_mock: MagicMock, mocker: MagicMo
     with pytest.raises(HTTPException) as exc_info:
         auth_service.authenticate(db_session_mock, "unknown", "pass123")
     assert exc_info.value.status_code == 401
-    assert "Incorrect username or password" in exc_info.value.detail
+    assert "Usuário ou senha incorretos." in exc_info.value.detail
 
 
 def test_authenticate_password_mismatch(db_session_mock: MagicMock, mocker: MagicMock) -> None:
@@ -42,7 +42,7 @@ def test_authenticate_inactive_user(db_session_mock: MagicMock, mocker: MagicMoc
     with pytest.raises(HTTPException) as exc_info:
         auth_service.authenticate(db_session_mock, "admin", "correctpass")
     assert exc_info.value.status_code == 400
-    assert "Inactive user" in exc_info.value.detail
+    assert "Usuário inativo." in exc_info.value.detail
 
 
 def test_authenticate_dev_bypass_success(db_session_mock: MagicMock, mocker: MagicMock) -> None:
