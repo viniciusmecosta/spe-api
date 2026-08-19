@@ -10,7 +10,7 @@ class HashidService:
 
     def encode(self, number: int) -> str:
         if number < 0:
-            raise ValueError("Number to encode must be positive")
+            raise ValueError("O número a ser codificado deve ser positivo.")
         return self._hashids.encode(number)
 
     def decode(self, hash_str: str) -> int | None:

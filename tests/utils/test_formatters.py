@@ -1,4 +1,4 @@
-from app.utils.formatters import format_short_name, mask_cnpj, mask_cpf
+from app.utils.formatters import format_name, format_short_name, mask_cnpj, mask_cpf
 
 
 def test_format_short_name_no_preposition():
@@ -46,3 +46,13 @@ def test_mask_cpf():
     assert mask_cpf("") == ""
     assert mask_cpf(None) is None
     assert mask_cpf("123") == "123"
+
+
+def test_format_name():
+    assert format_name("vinicius da costa") == "Vinicius da Costa"
+    assert format_name("ze do carmo") == "Ze do Carmo"
+    assert format_name("MARIA DAS GRACAS") == "Maria das Gracas"
+    assert format_name("ana de almeida") == "Ana de Almeida"
+    assert format_name("") == ""
+    assert format_name("   ") == "   "
+    assert format_name(None) is None

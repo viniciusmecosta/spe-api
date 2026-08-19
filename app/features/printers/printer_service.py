@@ -6,7 +6,7 @@ from app.features.printers.printer_repository import printer_repository
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 from app.features.system.audit_service import audit_service, serialize_model
 
-PRINTER_NOT_FOUND_MSG = "Printer not found"
+PRINTER_NOT_FOUND_MSG = "Impressora não encontrada."
 
 
 class PrinterService:

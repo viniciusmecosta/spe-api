@@ -180,7 +180,7 @@ class AdjustmentService:
         if file_ext not in allowed_extensions:
             raise HTTPException(
                 status_code=400,
-                detail="Tipo de arquivo não permitido. Use apenas PDF, JPG ou PNG."
+                detail="Formato inválido. Permitido apenas PDF, JPG ou PNG."
             )
 
         header = file.file.read(10)
@@ -389,11 +389,11 @@ class AdjustmentService:
     ) -> tuple[str, str]:
         adjustment = adjustment_repository.get(db, id=adjustment_id)
         if not adjustment:
-            raise HTTPException(status_code=404, detail="Ajuste não encontrado")
+            raise HTTPException(status_code=404, detail="Ajuste não encontrado.")
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if adjustment.user_id != current_user.id and not is_manager:
-            raise HTTPException(status_code=403, detail="Sem permissão para acessar este arquivo")
+            raise HTTPException(status_code=403, detail="Acesso negado ao anexo.")
 
         if not adjustment.attachments:
             raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
@@ -421,7 +421,7 @@ class AdjustmentService:
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=403,
-                detail="Apenas MAINTAINER pode executar o reprocessamento em lote",
+                detail="Acesso negado. Requer privilégios de Mantenedor.",
             )
 
         curr = request_in.start_date.replace(day=1)
@@ -452,7 +452,7 @@ class AdjustmentService:
             },
         )
 
-        return {"status": "success", "message": "Reprocessamento concluído"}
+        return {"status": "success", "message": "Reprocessamento concluído com sucesso."}
 
 
 adjustment_service = AdjustmentService()

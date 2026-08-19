@@ -100,7 +100,7 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
 def test_reprocess_historical_extra_time(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch(
         "app.features.adjustments.adjustment_router.adjustment_service.reprocess_historical_extra_time",
-        return_value={"status": "success", "message": "Reprocessamento concluído"},
+        return_value={"status": "success", "message": "Reprocessamento concluído com sucesso."},
     )
 
     response = client.post(

@@ -125,7 +125,7 @@ class PayrollService:
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: Usuário não tem permissão para fechar a folha de ponto."
+                detail="Acesso negado: Sem permissão para fechar a folha."
             )
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -190,7 +190,7 @@ class PayrollService:
         if current_user.role != UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: Apenas mantenedores podem reabrir folhas de ponto."
+                detail="Acesso negado: Apenas mantenedores reabrem folhas."
             )
 
         existing = payroll_repository.get_by_month(db, month, year)
@@ -224,7 +224,7 @@ class PayrollService:
         if closure:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ação bloqueada: A folha de ponto referente a {target_date.month:02d}/{target_date.year} está FECHADA."
+                detail=f"A folha de ponto {target_date.month:02d}/{target_date.year} já está fechada."
             )
 
     def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes):

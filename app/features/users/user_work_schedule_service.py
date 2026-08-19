@@ -106,7 +106,7 @@ class UserWorkScheduleService:
             if sch.valid_from <= new_end and sch_end >= valid_from:
                 raise HTTPException(
                     status_code=400,
-                    detail="Já existe um expediente vigente para esse dia informado. Edite o expediente existente para alterá-lo em vez de criar um novo por cima."
+                    detail="Já existe um expediente neste dia. Edite-o em vez de criar um novo."
                 )
 
     @staticmethod

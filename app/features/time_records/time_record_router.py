@@ -146,7 +146,7 @@ def delete_time_record_admin(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:
     time_record_service.delete_admin_record(db, record_id, request_body, current_user.id)
-    return SuccessResponse(status="success", message="Record deleted")
+    return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 
 @router.get(

@@ -656,7 +656,7 @@ def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "invalid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Invalid receipt ID"
+    assert exc_info.value.detail == "ID do comprovante inválido."
 
 
 def test_get_receipt_data_record_not_found(db_session_mock, mocker):
@@ -666,7 +666,7 @@ def test_get_receipt_data_record_not_found(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Record not found"
+    assert exc_info.value.detail == "Registro de ponto não encontrado."
 
 
 def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
@@ -678,7 +678,7 @@ def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
     with pytest.raises(HTTPException) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Not allowed to view this receipt"
+    assert exc_info.value.detail == "Acesso negado ao comprovante."
 
 
 def test_get_receipt_data_success(db_session_mock, mocker):

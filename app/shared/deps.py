@@ -43,20 +43,20 @@ def get_current_user(
     except (jwt.PyJWTError, ValidationError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Não foi possível validar as credenciais.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not token_data.sub:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token subject",
+            detail="Token inválido.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     return user
 
 
@@ -64,7 +64,7 @@ def get_current_active_user(
         current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise HTTPException(status_code=400, detail="Usuário inativo.")
     return current_user
 
 
@@ -74,7 +74,7 @@ def get_current_manager(
     if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user does not have enough privileges (Manager or Maintainer required)"
+            detail="Acesso negado. Requer privilégios de Gerente ou Mantenedor."
         )
     return current_user
 
@@ -85,7 +85,7 @@ def get_current_maintainer(
     if current_user.role != UserRole.MAINTAINER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user does not have enough privileges (Maintainer required)"
+            detail="Acesso negado. Requer privilégios de Mantenedor."
         )
     return current_user
 
@@ -96,7 +96,7 @@ def verify_device_api_key(
         db: Annotated[Session, Depends(get_db)],
 ) -> DeviceCredential:
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Device API Key missing")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de API do dispositivo ausente.")
 
     hashed_key = get_api_key_hash(api_key)
     device = db.query(DeviceCredential).filter(
@@ -105,7 +105,8 @@ def verify_device_api_key(
     ).first()
 
     if not device or not device.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive Device API Key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Chave de API do dispositivo inválida ou inativa.")
 
     request.state.device_name = device.name
     return device
@@ -117,7 +118,7 @@ def verify_consumer_api_key(
         db: Annotated[Session, Depends(get_db)],
 ) -> DeviceCredential:
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Consumer API Key missing")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de API de integração ausente.")
 
     hashed_key = get_api_key_hash(api_key)
     consumer = db.query(DeviceCredential).filter(
@@ -126,7 +127,8 @@ def verify_consumer_api_key(
     ).first()
 
     if not consumer or not consumer.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or inactive Consumer API Key")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Chave de API de integração inválida ou inativa.")
 
     request.state.device_name = consumer.name
     return consumer

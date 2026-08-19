@@ -11,6 +11,7 @@ from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.shared.enums import UserRole
+from app.utils.formatters import format_name
 
 
 class UserService:
@@ -23,21 +24,22 @@ class UserService:
         if sensor_idx is None:
             return
         if sensor_idx in seen_indices:
-            raise HTTPException(status_code=400, detail=f"Index {sensor_idx} enviado duplicado na mesma requisicao.")
+            raise HTTPException(status_code=400, detail=f"Índice biométrico {sensor_idx} enviado em duplicidade.")
         seen_indices.add(sensor_idx)
 
         query = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx)
         if getattr(user, 'id', None):
             query = query.filter(UserBiometric.user_id != user.id)
         if query.first():
-            raise HTTPException(status_code=400, detail=f"Index {sensor_idx} ja cadastrado para outro usuario")
+            raise HTTPException(status_code=400,
+                                detail=f"Índice biométrico {sensor_idx} já cadastrado em outro usuário.")
 
     def _validate_finger_id(self, finger_id: int, seen_fingers: set):
         if finger_id is None:
             return
         if finger_id in seen_fingers:
             raise HTTPException(status_code=400,
-                                detail=f"O dedo com ID {finger_id} foi enviado mais de uma vez para o mesmo usuario.")
+                                detail=f"Biometria {finger_id} enviada em duplicidade.")
         seen_fingers.add(finger_id)
 
     def _process_single_biometric(self, db: Session, user: User, bio_data: Any, seen_indices: set, seen_fingers: set,
@@ -81,7 +83,7 @@ class UserService:
         username = getattr(user_in, 'username', None)
         if username and (not user or username != user.username):
             if user_repository.get_by_username(db, username=username):
-                raise HTTPException(status_code=400, detail="Um usuário com este nome de usuário já existe.")
+                raise HTTPException(status_code=400, detail="Nome de usuário já em uso.")
 
         email = getattr(user_in, 'email', None)
         if email and (not user or email != user.email):
@@ -93,21 +95,7 @@ class UserService:
             if db.query(User).filter(User.cpf == cpf).first():
                 raise HTTPException(status_code=400, detail="CPF já está em uso.")
 
-    def _format_name(self, name: str) -> str:
-        if not name:
-            return name
-        words = name.strip().split()
-        if not words:
-            return name
-
-        formatted_words = [words[0].capitalize()]
-        for word in words[1:]:
-            if len(word) > 3:
-                formatted_words.append(word.capitalize())
-            else:
-                formatted_words.append(word.lower())
-
-        return " ".join(formatted_words)
+    _format_name = staticmethod(format_name)
 
     def create_user(self, db: Session, user_in: UserCreate, current_user_id: int) -> User:
         self._validate_unique_fields(db, user_in)
@@ -147,7 +135,7 @@ class UserService:
     def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         self._validate_unique_fields(db, user_in, user)
 
@@ -186,7 +174,7 @@ class UserService:
     def disable_user(self, db: Session, user_id: int, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         user.is_active = False
         db.add(user)
@@ -242,10 +230,10 @@ class UserService:
     def get_user_by_id(self, db: Session, user_id: int, current_user: User) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-            raise HTTPException(status_code=400, detail="Privilégios insuficientes")
+            raise HTTPException(status_code=400, detail="Privilégios insuficientes.")
 
         return user
 
@@ -254,12 +242,12 @@ class UserService:
     ) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
 
         if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
             raise HTTPException(
                 status_code=403,
-                detail="Privilégios insuficientes para alterar este usuário",
+                detail="Privilégios insuficientes para edição.",
             )
 
         return self.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)

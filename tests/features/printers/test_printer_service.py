@@ -25,7 +25,7 @@ def test_printer_service_get_by_id_not_found(mocker):
     with pytest.raises(HTTPException) as exc_info:
         printer_service.get_by_id(mock_db, 999)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Printer not found"
+    assert exc_info.value.detail == "Impressora não encontrada."
 
 
 def test_printer_service_get_all(mocker):

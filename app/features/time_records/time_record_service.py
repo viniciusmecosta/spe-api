@@ -84,7 +84,7 @@ class TimeRecordService:
         if can_punch:
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Registro manual não autorizado para este dispositivo. Utilize a biometria ou solicite liberação ao gestor.")
+                            detail="Registro manual não autorizado. Utilize a biometria.")
 
     def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
         self._validate_manual_punch_permission(db, user_id, request)
@@ -298,14 +298,14 @@ class TimeRecordService:
     def get_receipt_data(self, db: Session, short_id: str, current_user: User):
         record_id = hashid_service.decode(short_id)
         if not record_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ID do comprovante inválido.")
 
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro de ponto não encontrado.")
 
         if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this receipt")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao comprovante.")
 
         company = company_repository.get_current(db)
         timeline = self.get_record_timeline(db, record.id)
@@ -341,14 +341,14 @@ class TimeRecordService:
     def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> tuple[bytes, str]:
         record_id = hashid_service.decode(short_id)
         if not record_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid receipt ID")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ID do comprovante inválido.")
 
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Registro de ponto não encontrado.")
 
         if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to view this receipt")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso negado ao comprovante.")
 
         company = company_repository.get_current(db)
 
