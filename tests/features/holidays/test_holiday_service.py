@@ -1,9 +1,8 @@
 from datetime import date
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
-
 import pytest
+from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
 from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_schemas import HolidayCreate
 from app.features.holidays.holiday_service import holiday_service
@@ -32,7 +31,7 @@ def test_create_holiday_duplicate_date(db_session_mock: MagicMock, mocker: Magic
     )
 
     payload = HolidayCreate(name="Outro Feriado", date=date(2026, 1, 1))
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(HolidayAlreadyExistsError) as exc_info:
         holiday_service.create_holiday(db_session_mock, payload, current_user_id=1)
     assert exc_info.value.status_code == 400
     assert "Já existe um feriado" in exc_info.value.detail

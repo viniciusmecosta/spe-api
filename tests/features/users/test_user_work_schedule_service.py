@@ -1,9 +1,13 @@
 from datetime import date, time
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
-
 import pytest
+from app.features.users.user_exceptions import (
+    BulkScheduleNotFoundError,
+    BulkScheduleValidationError,
+    ScheduleOverlapError,
+    SchedulePayrollClosedError,
+)
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.features.users.user_work_schedule_service import user_work_schedule_service
 
@@ -19,7 +23,7 @@ def test_check_payroll_closure_closed(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=closure)
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(SchedulePayrollClosedError) as exc:
         user_work_schedule_service.check_payroll_closure(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 400
 
@@ -82,7 +86,7 @@ def test_handle_schedule_overlap():
     user_work_schedule_service.handle_schedule_overlap(user, 1, date(2026, 10, 1), date(2026, 10, 31))
 
     overlap_date = date(2026, 9, 15)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ScheduleOverlapError) as exc:
         user_work_schedule_service.handle_schedule_overlap(user, 1, overlap_date, None)
     assert exc.value.status_code == 400
 
@@ -126,7 +130,7 @@ def test_get_bulk_schedule_not_found(db_session_mock):
 
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleNotFoundError) as exc:
         user_work_schedule_service.get_bulk_schedule(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 404
 
@@ -158,7 +162,7 @@ def test_bulk_add_schedules_success(db_session_mock, mocker):
 
 def test_bulk_add_schedules_missing_dates(db_session_mock):
     bulk_data = {}
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -169,7 +173,7 @@ def test_bulk_add_schedules_exceeds_duration(db_session_mock):
         "valid_until": date(2026, 11, 30),
         "users": []
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -180,7 +184,7 @@ def test_bulk_add_schedules_no_users(db_session_mock):
         "valid_until": date(2026, 9, 30),
         "users": []
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -194,7 +198,7 @@ def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
         "valid_until": date(2026, 9, 30),
         "users": [{"user_id": 999, "schedules": []}]
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -204,7 +208,7 @@ def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
     user = User(id=1, name="Test User")
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap",
-                        side_effect=HTTPException(status_code=400))
+                        side_effect=ScheduleOverlapError())
 
     bulk_data = {
         "valid_from": date(2026, 9, 1),
@@ -213,7 +217,7 @@ def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
             {"user_id": 1, "schedules": [{"day_of_week": 0}]}
         ]
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -259,7 +263,7 @@ def test_update_bulk_schedules_invalid_dates(db_session_mock):
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     empty_data = {}
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, empty_data, 99)
     assert exc.value.status_code == 400
 
@@ -272,7 +276,7 @@ def test_update_bulk_schedules_exceeds_duration(db_session_mock):
         "valid_until": date(2026, 11, 30),
         "users": []
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -291,7 +295,7 @@ def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
         "valid_until": date(2026, 9, 30),
         "users": [{"user_id": 999, "schedules": [{"day_of_week": 0}]}]
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -307,7 +311,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
     user = User(id=1, name="Test User")
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap",
-                        side_effect=HTTPException(status_code=400))
+                        side_effect=ScheduleOverlapError())
 
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
@@ -318,7 +322,7 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
             {"user_id": 1, "schedules": [{"day_of_week": 1}, {"day_of_week": 2}]}
         ]
     }
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleValidationError) as exc:
         user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
@@ -346,6 +350,6 @@ def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
 
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BulkScheduleNotFoundError) as exc:
         user_work_schedule_service.delete_bulk_schedules(db_session_mock, start_date, end_date, 99)
     assert exc.value.status_code == 404

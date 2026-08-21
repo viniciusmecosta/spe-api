@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -13,6 +12,12 @@ from app.database.session import get_db_session
 from app.features.reports.daily_report_service import daily_report_service
 from app.features.system.backup_service import backup_service
 from app.features.system.email_service import email_service
+from app.features.system.system_exceptions import (
+    BackupGenerationFailedError,
+    EmailNotConfiguredError,
+    NoMaintainersWithEmailError,
+    SMTPConnectionFailedError,
+)
 from app.features.system.system_models import RoutineLog
 from app.features.system.telegram_service import telegram_service
 from app.features.users.user_models import User
@@ -366,8 +371,7 @@ class RoutineOrchestrator:
 
     def send_manual_backup_email(self, db) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
-            raise HTTPException(status_code=400,
-                                detail="Serviço de email não configurado. Verifique as variáveis de ambiente (SMTP).")
+            raise EmailNotConfiguredError()
 
         try:
             session = db if db else get_db_session().__enter__()
@@ -376,7 +380,7 @@ class RoutineOrchestrator:
             to_emails = [m.email for m in maintainers if m.email]
 
             if not to_emails:
-                raise HTTPException(status_code=400, detail="Nenhum mantenedor com e-mail cadastrado.")
+                raise NoMaintainersWithEmailError()
 
             tz = ZoneInfo(settings.TIMEZONE)
             now = datetime.now(tz)
@@ -393,8 +397,7 @@ class RoutineOrchestrator:
         backup_path, sql_path, zip_path = self._generate_backup_files_zip()
         if not backup_path:
             logger.exception('Backup - "Email manual" Error')
-            raise HTTPException(status_code=400,
-                                detail="Falha ao gerar a cópia de segurança do banco de dados local.")
+            raise BackupGenerationFailedError()
 
         attachments = [(zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME)]
 
@@ -411,7 +414,7 @@ class RoutineOrchestrator:
             return True
         else:
             logger.exception('Backup - "Email manual" Error')
-            raise HTTPException(status_code=400, detail="Falha na conexão SMTP ao tentar enviar o email.")
+            raise SMTPConnectionFailedError()
 
 
 routine_orchestrator = RoutineOrchestrator()

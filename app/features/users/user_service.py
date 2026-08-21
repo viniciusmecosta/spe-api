@@ -1,9 +1,14 @@
 from typing import Any
 
-from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import (
+    BiometricValidationError,
+    InsufficientPrivilegesError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+)
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
 from app.features.system.audit_service import audit_service, serialize_model
@@ -24,22 +29,20 @@ class UserService:
         if sensor_idx is None:
             return
         if sensor_idx in seen_indices:
-            raise HTTPException(status_code=400, detail=f"Índice biométrico {sensor_idx} enviado em duplicidade.")
+            raise BiometricValidationError(f"Índice biométrico {sensor_idx} enviado em duplicidade.")
         seen_indices.add(sensor_idx)
 
         query = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx)
         if getattr(user, 'id', None):
             query = query.filter(UserBiometric.user_id != user.id)
         if query.first():
-            raise HTTPException(status_code=400,
-                                detail=f"Índice biométrico {sensor_idx} já cadastrado em outro usuário.")
+            raise BiometricValidationError(f"Índice biométrico {sensor_idx} já cadastrado em outro usuário.")
 
     def _validate_finger_id(self, finger_id: int, seen_fingers: set):
         if finger_id is None:
             return
         if finger_id in seen_fingers:
-            raise HTTPException(status_code=400,
-                                detail=f"Biometria {finger_id} enviada em duplicidade.")
+            raise BiometricValidationError(f"Biometria {finger_id} enviada em duplicidade.")
         seen_fingers.add(finger_id)
 
     def _process_single_biometric(self, db: Session, user: User, bio_data: Any, seen_indices: set, seen_fingers: set,
@@ -83,17 +86,17 @@ class UserService:
         username = getattr(user_in, 'username', None)
         if username and (not user or username != user.username):
             if user_repository.get_by_username(db, username=username):
-                raise HTTPException(status_code=400, detail="Nome de usuário já em uso.")
+                raise UserAlreadyExistsError("Nome de usuário já em uso.")
 
         email = getattr(user_in, 'email', None)
         if email and (not user or email != user.email):
             if db.query(User).filter(User.email == email).first():
-                raise HTTPException(status_code=400, detail="E-mail já está em uso.")
+                raise UserAlreadyExistsError("E-mail já está em uso.")
 
         cpf = getattr(user_in, 'cpf', None)
         if cpf and (not user or cpf != user.cpf):
             if db.query(User).filter(User.cpf == cpf).first():
-                raise HTTPException(status_code=400, detail="CPF já está em uso.")
+                raise UserAlreadyExistsError("CPF já está em uso.")
 
     _format_name = staticmethod(format_name)
 
@@ -135,7 +138,7 @@ class UserService:
     def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise UserNotFoundError()
 
         self._validate_unique_fields(db, user_in, user)
 
@@ -174,7 +177,7 @@ class UserService:
     def disable_user(self, db: Session, user_id: int, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise UserNotFoundError()
 
         user.is_active = False
         db.add(user)
@@ -230,10 +233,10 @@ class UserService:
     def get_user_by_id(self, db: Session, user_id: int, current_user: User) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise UserNotFoundError()
 
         if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-            raise HTTPException(status_code=400, detail="Privilégios insuficientes.")
+            raise InsufficientPrivilegesError("Privilégios insuficientes.", status_code=400)
 
         return user
 
@@ -242,13 +245,10 @@ class UserService:
     ) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise UserNotFoundError()
 
         if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
-            raise HTTPException(
-                status_code=403,
-                detail="Privilégios insuficientes para edição.",
-            )
+            raise InsufficientPrivilegesError("Privilégios insuficientes para edição.")
 
         return self.update_user(db, user_id=user_id, user_in=user_in, current_user_id=current_user.id)
 

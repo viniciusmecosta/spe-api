@@ -2,10 +2,16 @@ import os
 import shutil
 import uuid
 
-from fastapi import HTTPException, UploadFile, status
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.features.companies.company_exceptions import (
+    CompanyAlreadyExistsError,
+    CompanyNotFoundError,
+    InvalidLogoFormatError,
+    LogoSaveError,
+)
 from app.features.companies.company_models import Company
 from app.features.companies.company_repository import company_repository
 from app.features.companies.company_schemas import (
@@ -32,10 +38,7 @@ class CompanyService:
     def create_company(self, db: Session, obj_in: CompanyCreate, current_user_id: int) -> Company:
         existing = company_repository.get_current(db)
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Empresa já cadastrada. Utilize a atualização."
-            )
+            raise CompanyAlreadyExistsError()
         company = company_repository.create(db, obj_in)
         audit_service.log_change(db, current_user_id, "CREATE", new_model=company)
         return company
@@ -43,10 +46,7 @@ class CompanyService:
     def update_company(self, db: Session, obj_in: CompanyUpdate, current_user_id: int) -> Company:
         existing = company_repository.get_current(db)
         if not existing:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Nenhuma empresa cadastrada para atualizar."
-            )
+            raise CompanyNotFoundError("Nenhuma empresa cadastrada para atualizar.")
 
         old_data = serialize_model(existing)
         company = company_repository.update(db, existing, obj_in)
@@ -56,17 +56,11 @@ class CompanyService:
     def upload_logo(self, db: Session, file: UploadFile, current_user_id: int) -> Company:
         existing = company_repository.get_current(db)
         if not existing:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Nenhuma empresa cadastrada para associar o logotipo."
-            )
+            raise CompanyNotFoundError("Nenhuma empresa cadastrada para associar o logotipo.")
 
         ext = os.path.splitext(file.filename or "")[1].lower()
         if ext not in [".png", ".jpg", ".jpeg"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Formato de arquivo inválido. Apenas PNG, JPG ou JPEG são aceitos."
-            )
+            raise InvalidLogoFormatError()
 
         filename = f"logo_{uuid.uuid4().hex}{ext}"
         full_file_path = os.path.join(settings.UPLOAD_DIR, filename)
@@ -75,10 +69,7 @@ class CompanyService:
             with open(full_file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
         except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Erro ao salvar o arquivo: {e}"
-            )
+            raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
 
         if existing.logo_path:
             old_full_path = os.path.join(settings.UPLOAD_DIR, existing.logo_path)

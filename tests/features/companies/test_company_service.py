@@ -1,8 +1,14 @@
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 
 import pytest
+from app.features.companies.company_exceptions import (
+    CompanyAlreadyExistsError,
+    CompanyNotFoundError,
+    InvalidLogoFormatError,
+    LogoSaveError,
+)
 from app.features.companies.company_models import Company
 from app.features.companies.company_schemas import CompanyCreate, CompanyUpdate
 from app.features.companies.company_service import company_service
@@ -26,7 +32,7 @@ def test_create_company_already_exists(mocker, db_session_mock):
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=mock_company)
     obj_in = CompanyCreate(name="Test 2", cnpj="11222333000181", address="Addr", phone="123")
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(CompanyAlreadyExistsError) as exc_info:
         company_service.create_company(db_session_mock, obj_in, 1)
 
     assert exc_info.value.status_code == 400
@@ -51,7 +57,7 @@ def test_update_company_not_found(mocker, db_session_mock):
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
     obj_in = CompanyUpdate(name="Up")
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(CompanyNotFoundError) as exc_info:
         company_service.update_company(db_session_mock, obj_in, 1)
 
     assert exc_info.value.status_code == 404
@@ -80,7 +86,7 @@ def test_upload_logo_not_found(mocker, db_session_mock):
     mocker.patch("app.features.companies.company_repository.company_repository.get_current", return_value=None)
     file_mock = MagicMock(spec=UploadFile)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(CompanyNotFoundError) as exc_info:
         company_service.upload_logo(db_session_mock, file_mock, 1)
 
     assert exc_info.value.status_code == 404
@@ -93,7 +99,7 @@ def test_upload_logo_invalid_ext(mocker, db_session_mock):
     file_mock = MagicMock(spec=UploadFile)
     file_mock.filename = "image.gif"
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidLogoFormatError) as exc_info:
         company_service.upload_logo(db_session_mock, file_mock, 1)
 
     assert exc_info.value.status_code == 400
@@ -135,7 +141,7 @@ def test_upload_logo_exception_on_save(mocker, db_session_mock):
 
     mocker.patch("builtins.open", side_effect=Exception("Test Exception"))
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(LogoSaveError) as exc_info:
         company_service.upload_logo(db_session_mock, file_mock, 1)
 
     assert exc_info.value.status_code == 400

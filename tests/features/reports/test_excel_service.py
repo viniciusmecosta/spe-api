@@ -3,11 +3,11 @@ from datetime import datetime
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-from fastapi import HTTPException
 from openpyxl import Workbook
 
 import pytest
 from app.features.reports.excel_service import ExcelService
+from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
@@ -88,7 +88,7 @@ def test_validate_employee_report_period(excel_service, mock_user, monkeypatch):
     monkeypatch.setitem(sys.modules, 'datetime', MockDatetimeMay)
     excel_service._validate_employee_report_period(mock_user, 5, 2023)
     excel_service._validate_employee_report_period(mock_user, 4, 2023)
-    with pytest.raises(HTTPException):
+    with pytest.raises(EmployeeInvalidReportPeriodError):
         excel_service._validate_employee_report_period(mock_user, 3, 2023)
 
 
@@ -108,7 +108,7 @@ def test_validate_employee_report_period_january(excel_service, mock_user, monke
     monkeypatch.setitem(sys.modules, 'datetime', MockDatetimeJan)
     excel_service._validate_employee_report_period(mock_user, 1, 2023)
     excel_service._validate_employee_report_period(mock_user, 12, 2022)
-    with pytest.raises(HTTPException):
+    with pytest.raises(EmployeeInvalidReportPeriodError):
         excel_service._validate_employee_report_period(mock_user, 11, 2022)
 
 

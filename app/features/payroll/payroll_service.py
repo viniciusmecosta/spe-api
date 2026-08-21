@@ -6,10 +6,19 @@ from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.features.payroll.payroll_exceptions import (
+    PayrollAlreadyClosedError,
+    PayrollClosureNotFoundError,
+    PayrollInvalidPeriodError,
+    PayrollNotClosedError,
+    PayrollPeriodClosedError,
+    PayrollPermissionError,
+    PayrollReportGenerationError,
+)
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_repository import payroll_repository
 from app.features.reports.excel_service import excel_service
@@ -123,10 +132,7 @@ class PayrollService:
 
     def close_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: Sem permissão para fechar a folha."
-            )
+            raise PayrollPermissionError("Acesso negado: Sem permissão para fechar a folha.")
 
         tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
@@ -135,16 +141,14 @@ class PayrollService:
         current_month_start = date(today.year, today.month, 1)
 
         if request_date >= current_month_start:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
+            raise PayrollInvalidPeriodError(
+                f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
         existing = payroll_repository.get_by_month(db, month, year)
         if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A folha de ponto referente a {month:02d}/{year} já está fechada."
+            raise PayrollAlreadyClosedError(
+                f"A folha de ponto referente a {month:02d}/{year} já está fechada."
             )
 
         try:
@@ -161,10 +165,7 @@ class PayrollService:
                 f.write(attachment.getvalue())
         except Exception as e:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Falha ao gerar o relatório Excel: {str(e)}"
-            )
+            raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
 
         db.commit()
 
@@ -188,16 +189,12 @@ class PayrollService:
     def reopen_period(self, db: Session, month: int, year: int, observation: str, current_user: User,
                       background_tasks: BackgroundTasks):
         if current_user.role != UserRole.MAINTAINER:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: Apenas mantenedores reabrem folhas."
-            )
+            raise PayrollPermissionError("Acesso negado: Apenas mantenedores reabrem folhas.")
 
         existing = payroll_repository.get_by_month(db, month, year)
         if not existing:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"A folha de ponto referente a {month:02d}/{year} não está fechada."
+            raise PayrollNotClosedError(
+                f"A folha de ponto referente a {month:02d}/{year} não está fechada."
             )
 
         closure_id = existing.id
@@ -222,15 +219,14 @@ class PayrollService:
     def validate_period_open(self, db: Session, target_date: date):
         closure = payroll_repository.get_by_month(db, target_date.month, target_date.year)
         if closure:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"A folha de ponto {target_date.month:02d}/{target_date.year} já está fechada."
+            raise PayrollPeriodClosedError(
+                f"A folha de ponto {target_date.month:02d}/{target_date.year} já está fechada."
             )
 
     def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes):
         closure = db.query(PayrollClosure).get(closure_id)
         if not closure:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fechamento não encontrado.")
+            raise PayrollClosureNotFoundError("Fechamento não encontrado.")
 
         legacy_dir = os.path.join(settings.UPLOAD_DIR, "reports", "legacy")
         os.makedirs(legacy_dir, exist_ok=True)

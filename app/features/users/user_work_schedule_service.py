@@ -2,13 +2,18 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, List
 
-from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.features.payroll.payroll_repository import payroll_repository
 from app.features.system.audit_service import audit_service
+from app.features.users.user_exceptions import (
+    BulkScheduleNotFoundError,
+    BulkScheduleValidationError,
+    ScheduleOverlapError,
+    SchedulePayrollClosedError,
+)
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.features.users.user_repository import user_repository
 from app.shared.enums import DayOfWeek
@@ -83,9 +88,8 @@ class UserWorkScheduleService:
         while (current_year < end_year) or (current_year == end_year and current_month <= end_month):
             closure = payroll_repository.get_by_month(db, current_month, current_year)
             if closure and closure.is_closed:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
+                raise SchedulePayrollClosedError(
+                    f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
                 )
             current_month += 1
             if current_month > 12:
@@ -104,10 +108,7 @@ class UserWorkScheduleService:
             new_end = valid_until if valid_until else date.max
 
             if sch.valid_from <= new_end and sch_end >= valid_from:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Já existe um expediente neste dia. Edite-o em vez de criar um novo."
-                )
+                raise ScheduleOverlapError()
 
     @staticmethod
     def _extract_schedule_item(cfg: UserWorkScheduleConfig) -> dict:
@@ -161,7 +162,7 @@ class UserWorkScheduleService:
         ).all()
 
         if not configs:
-            raise HTTPException(status_code=404, detail="Expediente em massa não encontrado para esse período.")
+            raise BulkScheduleNotFoundError("Expediente em massa não encontrado para esse período.")
 
         users_dict = defaultdict(list)
         for cfg in configs:
@@ -179,7 +180,7 @@ class UserWorkScheduleService:
             day_name = DayOfWeek(day_of_week).nome
             try:
                 self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
-            except HTTPException:
+            except (ScheduleOverlapError, Exception):
                 errors.append(
                     f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
                 continue
@@ -192,16 +193,15 @@ class UserWorkScheduleService:
         valid_until = bulk_data.get('valid_until')
 
         if not valid_from or not valid_until:
-            raise HTTPException(status_code=400,
-                                detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
         if (valid_until - valid_from).days > 31:
-            raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
+            raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
         users_input = bulk_data.get('users', [])
 
         if not users_input:
-            raise HTTPException(status_code=400, detail="Nenhum usuário informado.")
+            raise BulkScheduleValidationError("Nenhum usuário informado.")
 
         errors = []
         new_schedules = []
@@ -218,7 +218,7 @@ class UserWorkScheduleService:
                                                new_schedules)
 
         if errors:
-            raise HTTPException(status_code=400, detail=errors)
+            raise BulkScheduleValidationError(errors)
 
         for sch in new_schedules:
             db.add(sch)
@@ -247,11 +247,10 @@ class UserWorkScheduleService:
         new_valid_until = bulk_data.get('valid_until')
 
         if not new_valid_from or not new_valid_until:
-            raise HTTPException(status_code=400,
-                                detail="Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+            raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
         if (new_valid_until - new_valid_from).days > 31:
-            raise HTTPException(status_code=400, detail="A duração do expediente não pode ser superior a 1 mês.")
+            raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
         self.check_payroll_closure(db, old_valid_from, old_valid_until)
         self.check_payroll_closure(db, new_valid_from, new_valid_until)
@@ -272,7 +271,7 @@ class UserWorkScheduleService:
         self._map_bulk_updates(db, existing_map, incoming_map, to_delete, to_update, to_create, errors)
 
         if errors:
-            raise HTTPException(status_code=400, detail=errors)
+            raise BulkScheduleValidationError(errors)
 
         return self._apply_bulk_updates_db(db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
                                            old_valid_from, old_valid_until, bulk_data, current_user_id)
@@ -298,14 +297,14 @@ class UserWorkScheduleService:
             try:
                 self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until,
                                              ignore_id=old_cfg.id)
-            except HTTPException:
+            except (ScheduleOverlapError, Exception):
                 day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
 
         for user, new_data in to_create:
             try:
                 self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until)
-            except HTTPException:
+            except (ScheduleOverlapError, Exception):
                 day_name = DayOfWeek(new_data.get('day_of_week')).nome
                 errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
 
@@ -314,7 +313,7 @@ class UserWorkScheduleService:
         self._validate_bulk_overlap(db, to_update, to_create, new_valid_from, new_valid_until, errors)
 
         if errors:
-            raise HTTPException(status_code=400, detail=errors)
+            raise BulkScheduleValidationError(errors)
 
         for cfg in to_delete:
             db.delete(cfg)
@@ -347,7 +346,7 @@ class UserWorkScheduleService:
         ).all()
 
         if not configs:
-            raise HTTPException(status_code=404, detail="Expediente em massa não encontrado.")
+            raise BulkScheduleNotFoundError("Expediente em massa não encontrado.")
 
         count = len(configs)
         for cfg in configs:

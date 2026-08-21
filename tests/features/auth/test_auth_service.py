@@ -1,8 +1,7 @@
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
-
 import pytest
+from app.features.auth.auth_exceptions import InactiveUserError, InvalidCredentialsError
 from app.features.auth.auth_service import auth_service
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -11,7 +10,7 @@ from app.shared.enums import UserRole
 def test_authenticate_user_not_found(db_session_mock: MagicMock, mocker: MagicMock) -> None:
     mocker.patch("app.features.auth.auth_service.user_repository.get_by_username", return_value=None)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidCredentialsError) as exc_info:
         auth_service.authenticate(db_session_mock, "unknown", "pass123")
     assert exc_info.value.status_code == 401
     assert "Usuário ou senha incorretos." in exc_info.value.detail
@@ -25,7 +24,7 @@ def test_authenticate_password_mismatch(db_session_mock: MagicMock, mocker: Magi
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
     mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=False)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidCredentialsError) as exc_info:
         auth_service.authenticate(db_session_mock, "admin", "wrongpass")
     assert exc_info.value.status_code == 401
 
@@ -39,7 +38,7 @@ def test_authenticate_inactive_user(db_session_mock: MagicMock, mocker: MagicMoc
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
     mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=True)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InactiveUserError) as exc_info:
         auth_service.authenticate(db_session_mock, "admin", "correctpass")
     assert exc_info.value.status_code == 400
     assert "Usuário inativo." in exc_info.value.detail

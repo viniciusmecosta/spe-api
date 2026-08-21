@@ -1,8 +1,12 @@
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
-
 import pytest
+from app.core.exceptions import (
+    BiometricValidationError,
+    InsufficientPrivilegesError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+)
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
@@ -31,7 +35,7 @@ def test_get_user_me():
 def test_get_user_by_id_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
     current_mgr = User(id=1, role=UserRole.MANAGER)
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(UserNotFoundError) as exc1:
         user_service.get_user_by_id(db_session_mock, 999, current_mgr)
     assert exc1.value.status_code == 404
 
@@ -40,7 +44,7 @@ def test_get_user_by_id_forbidden_employee(db_session_mock, mocker):
     target_user = User(id=2, role=UserRole.EMPLOYEE)
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=target_user)
     current_emp = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(InsufficientPrivilegesError) as exc2:
         user_service.get_user_by_id(db_session_mock, 2, current_emp)
     assert exc2.value.status_code == 400
 
@@ -56,7 +60,7 @@ def test_update_user_by_admin_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     up = UserUpdate()
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(UserNotFoundError) as exc1:
         user_service.update_user_by_admin(db_session_mock, 999, up, current_mgr)
     assert exc1.value.status_code == 404
 
@@ -66,7 +70,7 @@ def test_update_user_by_admin_forbidden_maintainer(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=maint_user)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     up = UserUpdate()
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(InsufficientPrivilegesError) as exc2:
         user_service.update_user_by_admin(db_session_mock, 2, up, current_mgr)
     assert exc2.value.status_code == 403
 
@@ -100,7 +104,7 @@ def test_validate_sensor_index_none(db_session_mock):
 def test_validate_sensor_index_duplicate_request(db_session_mock):
     user = User(id=1)
     seen = {1}
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BiometricValidationError) as exc:
         user_service._validate_sensor_index(db_session_mock, user, 1, seen)
     assert exc.value.status_code == 400
 
@@ -109,7 +113,7 @@ def test_validate_sensor_index_already_used_db(db_session_mock):
     user = User(id=1)
     seen = set()
     db_session_mock.query.return_value.first = MagicMock(return_value=True)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BiometricValidationError) as exc:
         user_service._validate_sensor_index(db_session_mock, user, 2, seen)
     assert exc.value.status_code == 400
 
@@ -128,7 +132,7 @@ def test_validate_finger_id_valid():
 
 def test_validate_finger_id_duplicate():
     seen = {1}
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(BiometricValidationError) as exc:
         user_service._validate_finger_id(1, seen)
     assert exc.value.status_code == 400
 
@@ -181,7 +185,7 @@ def test_validate_unique_fields_dup_user(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=True)
     user_in = MagicMock()
     user_in.username = "test"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UserAlreadyExistsError) as exc:
         user_service._validate_unique_fields(db_session_mock, user_in)
     assert exc.value.status_code == 400
 
@@ -192,7 +196,7 @@ def test_validate_unique_fields_dup_email(db_session_mock, mocker):
     user_in = MagicMock()
     user_in.username = "test"
     user_in.email = "test@test.com"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UserAlreadyExistsError) as exc:
         user_service._validate_unique_fields(db_session_mock, user_in)
     assert exc.value.status_code == 400
 
@@ -204,7 +208,7 @@ def test_validate_unique_fields_dup_cpf(db_session_mock, mocker):
     user_in.username = "test"
     user_in.email = "test@test.com"
     user_in.cpf = "123"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UserAlreadyExistsError) as exc:
         user_service._validate_unique_fields(db_session_mock, user_in)
     assert exc.value.status_code == 400
 
@@ -242,7 +246,7 @@ def test_create_user(db_session_mock, mocker):
 def test_update_user_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
     user_in = MagicMock()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UserNotFoundError) as exc:
         user_service.update_user(db_session_mock, 1, user_in, 99)
     assert exc.value.status_code == 404
 
@@ -281,7 +285,7 @@ def test_update_user_ok(db_session_mock, mocker):
 
 def test_disable_user_not_found(db_session_mock, mocker):
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UserNotFoundError) as exc:
         user_service.disable_user(db_session_mock, 1, 99)
     assert exc.value.status_code == 404
 

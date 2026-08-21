@@ -5,11 +5,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.database.session import engine, get_db_session
+from app.features.devices.device_exceptions import (
+    SyncConsumerOnlyError,
+    SyncDatabaseCorruptedError,
+    SyncDatabaseReceiveError,
+)
 from app.features.system.backup_service import backup_service
 from app.features.system.system_models import RoutineLog
 
@@ -30,7 +35,7 @@ class SyncService:
 
     def receive_database(self, file: UploadFile):
         if settings.OPERATION_MODE != "CONSUMIDOR":
-            raise HTTPException(status_code=403, detail="Apenas o Consumidor pode receber o banco de dados.")
+            raise SyncConsumerOnlyError()
 
         temp_path = "spe_temp.db"
         db_path = "spe.db"
@@ -43,7 +48,7 @@ class SyncService:
 
             if not self._check_sqlite_integrity(temp_path):
                 os.remove(temp_path)
-                raise HTTPException(status_code=400, detail="Arquivo de banco de dados corrompido ou invalido.")
+                raise SyncDatabaseCorruptedError()
 
             engine.dispose()
             os.replace(temp_path, db_path)
@@ -57,7 +62,7 @@ class SyncService:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             logger.exception(f'Sincronização - "Receber banco de dados" Error: {e}')
-            raise HTTPException(status_code=400, detail=str(e))
+            raise SyncDatabaseReceiveError(str(e))
 
         return True
 

@@ -1,6 +1,6 @@
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
 from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_repository import holiday_repository
 from app.features.holidays.holiday_schemas import HolidayCreate
@@ -17,10 +17,7 @@ class HolidayService:
     ) -> Holiday:
         payroll_service.validate_period_open(db, holiday_in.date)
         if holiday_repository.get_by_date(db, holiday_in.date):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Já existe um feriado cadastrado para esta data.",
-            )
+            raise HolidayAlreadyExistsError()
 
         holiday = holiday_repository.create(db, holiday_in)
         audit_service.log_change(db, current_user_id, "CREATE", new_model=holiday)

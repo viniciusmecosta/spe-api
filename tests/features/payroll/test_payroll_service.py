@@ -2,9 +2,18 @@ from datetime import date, datetime
 from unittest.mock import MagicMock, patch, mock_open
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import BackgroundTasks, status
 
 import pytest
+from app.features.payroll.payroll_exceptions import (
+    PayrollAlreadyClosedError,
+    PayrollClosureNotFoundError,
+    PayrollInvalidPeriodError,
+    PayrollNotClosedError,
+    PayrollPeriodClosedError,
+    PayrollPermissionError,
+    PayrollReportGenerationError,
+)
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User
@@ -219,7 +228,7 @@ def test_list_periods_multiple_closures(mock_datetime, db_session_mock):
 
 
 def test_close_period_forbidden(db_session_mock, mock_user_employee, mock_background_tasks):
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollPermissionError) as exc:
         payroll_service.close_period(db_session_mock, 1, 2024, mock_user_employee, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
@@ -230,7 +239,7 @@ def test_close_period_current_month(mock_datetime, db_session_mock, mock_user_ma
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollInvalidPeriodError) as exc:
         payroll_service.close_period(db_session_mock, 5, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -241,7 +250,7 @@ def test_close_period_future_month(mock_datetime, db_session_mock, mock_user_man
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollInvalidPeriodError) as exc:
         payroll_service.close_period(db_session_mock, 6, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -256,7 +265,7 @@ def test_close_period_already_closed(mock_repo, mock_datetime, db_session_mock, 
 
     mock_repo.get_by_month.return_value = MagicMock()
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollAlreadyClosedError) as exc:
         payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -298,7 +307,7 @@ def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, 
 
 
 def test_reopen_period_forbidden(db_session_mock, mock_user_manager, mock_background_tasks):
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollPermissionError) as exc:
         payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
@@ -307,7 +316,7 @@ def test_reopen_period_forbidden(db_session_mock, mock_user_manager, mock_backgr
 def test_reopen_period_not_found(mock_repo, db_session_mock, mock_user_maintainer, mock_background_tasks):
     mock_repo.get_by_month.return_value = None
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollNotClosedError) as exc:
         payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
@@ -352,7 +361,7 @@ def test_upload_legacy_report_success(db_session_mock, mock_user_maintainer):
 
 def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
     db_session_mock.query.return_value.get = MagicMock(return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollClosureNotFoundError) as exc:
         payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data")
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
@@ -361,7 +370,7 @@ def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
 def test_validate_period_open_closed(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = MagicMock()
     target_date = date(2024, 4, 15)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollPeriodClosedError) as exc:
         payroll_service.validate_period_open(db_session_mock, target_date)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
@@ -403,7 +412,7 @@ def test_dispatch_closure_email_background_error(mock_log, mock_send):
 @patch("app.features.payroll.payroll_service.payroll_repository")
 def test_close_period_excel_error(mock_repo, mock_gen, db_session_mock, mock_user_manager, mock_background_tasks):
     mock_repo.get_by_month.return_value = None
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(PayrollReportGenerationError) as exc:
         payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
     assert "Excel generation error" in exc.value.detail

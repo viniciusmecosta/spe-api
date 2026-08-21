@@ -2,11 +2,19 @@ from datetime import datetime, timedelta, date
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request, status
 
 import pytest
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.time_records.time_record_exceptions import (
+    InvalidReceiptIdError,
+    ManualPunchUnauthorizedError,
+    ReceiptAccessDeniedError,
+    TimeRecordAccessDeniedError,
+    TimeRecordNotFoundError,
+    TimeRecordUserNotFoundError,
+)
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordCreateAdmin, TimeRecordDeleteAdmin, TimeRecordUpdate
 from app.features.time_records.time_record_service import time_record_service
@@ -104,19 +112,19 @@ def test_get_receipt_data_with_timeline(db_session_mock, mocker):
 def test_get_receipt_pdf_errors(db_session_mock, mocker):
     mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=None)
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(InvalidReceiptIdError) as exc1:
         time_record_service.get_receipt_pdf(db_session_mock, "invalid", user)
     assert exc1.value.status_code == 404
 
     mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(TimeRecordNotFoundError) as exc2:
         time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
     assert exc2.value.status_code == 404
 
     mock_record = TimeRecord(id=123, user_id=2, record_type=RecordType.ENTRY)
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
-    with pytest.raises(HTTPException) as exc3:
+    with pytest.raises(ReceiptAccessDeniedError) as exc3:
         time_record_service.get_receipt_pdf(db_session_mock, "valid", user)
     assert exc3.value.status_code == 403
 
@@ -124,7 +132,7 @@ def test_get_receipt_pdf_errors(db_session_mock, mocker):
 def test_validate_manual_punch_permission_user_not_found(db_session_mock, mock_user_repo):
     mock_user_repo.get.return_value = None
     request = MagicMock(spec=Request)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordUserNotFoundError) as exc_info:
         time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Usuário não encontrado."
@@ -150,7 +158,7 @@ def test_validate_manual_punch_permission_mobile_forbidden(db_session_mock, mock
     mock_user_repo.get.return_value = user
     request = MagicMock(spec=Request)
     request.headers.get.return_value = "mobile"
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ManualPunchUnauthorizedError) as exc_info:
         time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
 
@@ -168,7 +176,7 @@ def test_validate_manual_punch_permission_desktop_forbidden(db_session_mock, moc
     mock_user_repo.get.return_value = user
     request = MagicMock(spec=Request)
     request.headers.get.return_value = "desktop"
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ManualPunchUnauthorizedError) as exc_info:
         time_record_service._validate_manual_punch_permission(db_session_mock, 1, request)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
 
@@ -262,7 +270,7 @@ def test_register_exit_ntp_fallback(mock_get_trusted_time, mock_validate, db_ses
 def test_toggle_record_type_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
     assert exc_info.value.detail == "Registro de ponto não encontrado."
@@ -272,7 +280,7 @@ def test_toggle_record_type_forbidden(db_session_mock, mock_time_record_repo):
     record = TimeRecord(id=1, user_id=2)
     mock_time_record_repo.get.return_value = record
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordAccessDeniedError) as exc_info:
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert exc_info.value.detail == "Acesso negado."
@@ -347,7 +355,7 @@ def test_create_admin_record_no_device(db_session_mock, mock_time_record_repo, m
 def test_update_admin_record_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
     obj_in = TimeRecordUpdate(edit_justification="missing")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Registro não encontrado."
@@ -402,7 +410,7 @@ def test_update_admin_record_no_device(db_session_mock, mock_time_record_repo, m
 def test_delete_admin_record_not_found(db_session_mock, mock_time_record_repo):
     mock_time_record_repo.get.return_value = None
     obj_in = TimeRecordDeleteAdmin(edit_justification="Err")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Registro não encontrado."
@@ -653,7 +661,7 @@ def test_delete_admin_record_invalidates(mock_invalidate, mock_is_first, db_sess
 def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
     mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=None)
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidReceiptIdError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "invalid", user)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "ID do comprovante inválido."
@@ -663,7 +671,7 @@ def test_get_receipt_data_record_not_found(db_session_mock, mocker):
     mocker.patch("app.shared.hashid_service.hashid_service.decode", return_value=123)
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=None)
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Registro de ponto não encontrado."
@@ -675,7 +683,7 @@ def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
                              record_datetime=datetime.now(ZoneInfo(settings.TIMEZONE)), record_type=RecordType.ENTRY)
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_record)
     user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(ReceiptAccessDeniedError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Acesso negado ao comprovante."

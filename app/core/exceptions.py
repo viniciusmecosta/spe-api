@@ -10,6 +10,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
+class DomainException(Exception):
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        self.detail = detail
+        self.status_code = status_code
+        super().__init__(self.detail)
+
+
 def _translate_pydantic_msg(msg: str) -> str:
     translations = {
         "field required": "Campo obrigatório",
@@ -124,6 +131,20 @@ def setup_exception_handlers(app: FastAPI):
                 "title": "Erro no Banco de Dados",
                 "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "detail": "Ocorreu um erro interno ao processar a operação no banco de dados.",
+                "instance": request.url.path
+            }
+        )
+
+    @app.exception_handler(DomainException)
+    async def domain_exception_handler(request: Request, exc: DomainException):
+        logger.warning(f"Domain error {exc.status_code} na rota {request.url.path}: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "type": _get_error_type(exc.status_code),
+                "title": _get_error_title(exc.status_code),
+                "status": exc.status_code,
+                "detail": exc.detail,
                 "instance": request.url.path
             }
         )

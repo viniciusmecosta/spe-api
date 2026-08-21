@@ -1,6 +1,6 @@
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_repository import device_credential_repository
 from app.features.devices.device_schemas import (
@@ -33,10 +33,7 @@ class DeviceCredentialService:
     ) -> DeviceCredential:
         device = device_credential_repository.get(db, credential_id)
         if not device:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Credencial não encontrada.",
-            )
+            raise DeviceCredentialNotFoundError()
 
         old_data = serialize_model(device)
         updated_device = device_credential_repository.update(db, device, credential_in)
@@ -51,10 +48,7 @@ class DeviceCredentialService:
     ) -> dict[str, str]:
         device = device_credential_repository.get(db, credential_id)
         if not device:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Credencial não encontrada.",
-            )
+            raise DeviceCredentialNotFoundError()
 
         device_credential_repository.delete(db, credential_id)
         audit_service.log_change(db, current_user_id, "DELETE", old_model=device)

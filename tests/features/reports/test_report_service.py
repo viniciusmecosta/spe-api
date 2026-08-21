@@ -4,12 +4,20 @@ from collections import defaultdict
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
-from fastapi import HTTPException
-
 import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
+from app.features.reports.report_exceptions import (
+    EmployeePreviousMonthOnlyError,
+    PayrollNotClosedForReportError,
+    PendingAdjustmentsExistError,
+    ReportAccessDeniedError,
+    ReportExportPermissionError,
+    ReportGlobalPermissionError,
+    ReportNotFoundOrIncompleteError,
+    ReportUserNotFoundError,
+)
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     UserPayrollSummary,
@@ -362,7 +370,7 @@ def test_build_daily_report_item(service):
 def test_get_history_report_user_not_found(service, mock_db, mock_repo_user):
     mock_repo_user.get.return_value = None
     curr_user = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportUserNotFoundError) as exc:
         service.get_history_report(mock_db, user_id=999, month=1, year=2024, current_user=curr_user)
     assert exc.value.status_code == 404
 
@@ -580,7 +588,7 @@ def test_check_report_permission(service):
 
 def test_check_report_permission_forbidden(service):
     emp_forbidden = User(id=4, role=UserRole.EMPLOYEE, can_export_report=False)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportGlobalPermissionError) as exc:
         service.check_report_permission(emp_forbidden)
     assert exc.value.status_code == 403
 
@@ -601,7 +609,7 @@ def test_check_user_report_access(service):
 
 def test_check_user_report_access_forbidden(service):
     emp_forbidden = User(id=5, role=UserRole.EMPLOYEE, can_export_report=False)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(ReportAccessDeniedError) as exc:
         service.check_user_report_access(emp_forbidden, user_id=99, detail="Acesso bloqueado.")
     assert exc.value.status_code == 403
     assert exc.value.detail == "Acesso bloqueado."
@@ -615,7 +623,7 @@ def test_get_advanced_user_report_or_404_success(service, mock_db):
 
 def test_get_advanced_user_report_or_404_not_found(service, mock_db):
     with patch.object(service, "get_advanced_user_report", return_value=None):
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(ReportNotFoundOrIncompleteError) as exc:
             service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, MagicMock())
         assert exc.value.status_code == 404
 
@@ -631,7 +639,7 @@ def test_validate_excel_export_permission_manager_pending_adjustments(service, m
     mgr.role = UserRole.MANAGER
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = [AdjustmentRequest()]
-    with pytest.raises(HTTPException) as exc_mgr:
+    with pytest.raises(PendingAdjustmentsExistError) as exc_mgr:
         service.validate_excel_export_permission(mock_db, mgr, 1, 2024, datetime(2024, 2, 1))
     assert exc_mgr.value.status_code == 400
 
@@ -648,7 +656,7 @@ def test_validate_excel_export_permission_employee_no_export_perm(service, mock_
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = False
-    with pytest.raises(HTTPException) as exc_emp1:
+    with pytest.raises(ReportExportPermissionError) as exc_emp1:
         service.validate_excel_export_permission(mock_db, emp, 1, 2024, datetime(2024, 2, 1))
     assert exc_emp1.value.status_code == 403
 
@@ -658,7 +666,7 @@ def test_validate_excel_export_permission_employee_wrong_month(service, mock_db)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = True
     now = datetime(2024, 5, 1)
-    with pytest.raises(HTTPException) as exc_emp2:
+    with pytest.raises(EmployeePreviousMonthOnlyError) as exc_emp2:
         service.validate_excel_export_permission(mock_db, emp, 1, 2024, now)
     assert exc_emp2.value.status_code == 400
 
@@ -670,7 +678,7 @@ def test_validate_excel_export_permission_employee_unclosed_payroll(service, moc
     now = datetime(2024, 5, 1)
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = []
-    with pytest.raises(HTTPException) as exc_emp3:
+    with pytest.raises(PayrollNotClosedForReportError) as exc_emp3:
         service.validate_excel_export_permission(mock_db, emp, 4, 2024, now)
     assert exc_emp3.value.status_code == 400
 

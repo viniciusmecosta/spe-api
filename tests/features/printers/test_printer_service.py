@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 import pytest
+from app.features.printers.printer_exceptions import PrinterNotFoundError
 from app.features.printers.printer_models import Printer
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 from app.features.printers.printer_service import printer_service
@@ -22,7 +22,7 @@ def test_printer_service_get_by_id_not_found(mocker):
     mock_db = MagicMock(spec=Session)
     mocker.patch("app.features.printers.printer_service.printer_repository.get_by_id", return_value=None)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(PrinterNotFoundError) as exc_info:
         printer_service.get_by_id(mock_db, 999)
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Impressora não encontrada."

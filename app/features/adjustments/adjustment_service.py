@@ -3,10 +3,23 @@ import shutil
 import uuid
 from datetime import date, datetime
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.features.adjustments.adjustment_exceptions import (
+    AdjustmentAttachmentNotFoundError,
+    AdjustmentInvalidStatusError,
+    AdjustmentNotFoundError,
+    AdjustmentPermissionError,
+    AttachmentFileNotFoundError,
+    CorruptedAttachmentError,
+    InvalidAdjustmentFilenameError,
+    InvalidAdjustmentTypeError,
+    InvalidAttachmentFormatError,
+    WaiverAttachmentRequiredError,
+    WaiverLimitExceededError,
+)
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.adjustments.adjustment_repository import adjustment_repository
 from app.features.adjustments.adjustment_schemas import (
@@ -66,9 +79,8 @@ class AdjustmentService:
 
         if existing_hours + amount_hours > 10.0:
             remaining = max(0.0, 10.0 - existing_hours)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Limite máximo de 10 horas de abono por dia excedido. Horas disponíveis para esta data: {remaining}h."
+            raise WaiverLimitExceededError(
+                f"Limite máximo de 10 horas de abono por dia excedido. Horas disponíveis para esta data: {remaining}h."
             )
 
     def get_all_enriched(
@@ -122,13 +134,12 @@ class AdjustmentService:
     def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Abono não encontrado.")
+            raise AdjustmentNotFoundError("Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
-            raise HTTPException(
-                status_code=400,
-                detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
+            raise InvalidAdjustmentTypeError(
+                "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
             )
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -143,13 +154,12 @@ class AdjustmentService:
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Abono não encontrado.")
+            raise AdjustmentNotFoundError("Abono não encontrado.")
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
-            raise HTTPException(
-                status_code=400,
-                detail="Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
+            raise InvalidAdjustmentTypeError(
+                "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
             )
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -164,23 +174,22 @@ class AdjustmentService:
     def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail="Solicitação de abono não encontrada.")
+            raise AdjustmentNotFoundError("Solicitação de abono não encontrada.")
 
         if request.user_id != user_id:
-            raise HTTPException(status_code=403, detail="Acesso negado.")
+            raise AdjustmentPermissionError("Acesso negado.")
 
         payroll_service.validate_period_open(db, request.target_date)
 
         filename = (file.filename or "").lower()
         if "." not in filename:
-            raise HTTPException(status_code=400, detail="Nome de arquivo inválido.")
+            raise InvalidAdjustmentFilenameError("Nome de arquivo inválido.")
 
         file_ext = filename.split(".")[-1]
         allowed_extensions = {"pdf", "jpg", "jpeg", "png"}
         if file_ext not in allowed_extensions:
-            raise HTTPException(
-                status_code=400,
-                detail="Formato inválido. Permitido apenas PDF, JPG ou PNG."
+            raise InvalidAttachmentFormatError(
+                "Formato inválido. Permitido apenas PDF, JPG ou PNG."
             )
 
         header = file.file.read(10)
@@ -195,9 +204,8 @@ class AdjustmentService:
             is_valid = True
 
         if not is_valid:
-            raise HTTPException(
-                status_code=400,
-                detail="O conteúdo do arquivo não corresponde à extensão ou está corrompido."
+            raise CorruptedAttachmentError(
+                "O conteúdo do arquivo não corresponde à extensão ou está corrompido."
             )
 
         safe_filename = f"{uuid.uuid4()}.{file_ext}"
@@ -218,12 +226,12 @@ class AdjustmentService:
                            comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
-                raise HTTPException(status_code=400, detail="Para aprovar um abono, é obrigatório haver anexo.")
+                raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             self._execute_adjustment_action(db, request, manager_id)
 
@@ -273,14 +281,14 @@ class AdjustmentService:
     def cancel_adjustment(self, db: Session, request_id: int, user_id: int) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
 
         is_owner = request.user_id == user_id
         if not is_owner:
-            raise HTTPException(status_code=403, detail="Acesso negado.")
+            raise AdjustmentPermissionError("Acesso negado.")
 
         if request.status != AdjustmentStatus.PENDING:
-            raise HTTPException(status_code=400, detail="Apenas solicitações pendentes podem ser canceladas.")
+            raise AdjustmentInvalidStatusError("Apenas solicitações pendentes podem ser canceladas.")
 
         payroll_service.validate_period_open(db, request.target_date)
 
@@ -296,7 +304,7 @@ class AdjustmentService:
                           comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -357,7 +365,7 @@ class AdjustmentService:
                                  comment: str) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise HTTPException(status_code=404, detail=NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
 
         payroll_service.validate_period_open(db, request.target_date)
 
@@ -389,14 +397,14 @@ class AdjustmentService:
     ) -> tuple[str, str]:
         adjustment = adjustment_repository.get(db, id=adjustment_id)
         if not adjustment:
-            raise HTTPException(status_code=404, detail="Ajuste não encontrado.")
+            raise AdjustmentNotFoundError("Ajuste não encontrado.")
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if adjustment.user_id != current_user.id and not is_manager:
-            raise HTTPException(status_code=403, detail="Acesso negado ao anexo.")
+            raise AdjustmentPermissionError("Acesso negado ao anexo.")
 
         if not adjustment.attachments:
-            raise HTTPException(status_code=404, detail="Nenhum anexo associado a este ajuste")
+            raise AdjustmentAttachmentNotFoundError("Nenhum anexo associado a este ajuste")
 
         attachment = adjustment.attachments[-1]
         filename = os.path.basename(attachment.file_path)
@@ -406,8 +414,8 @@ class AdjustmentService:
             if os.path.exists(attachment.file_path):
                 safe_file_path = attachment.file_path
             else:
-                raise HTTPException(
-                    status_code=404, detail="Arquivo físico não encontrado no servidor"
+                raise AttachmentFileNotFoundError(
+                    "Arquivo físico não encontrado no servidor"
                 )
 
         return safe_file_path, filename
@@ -419,9 +427,8 @@ class AdjustmentService:
             current_user: User,
     ) -> dict[str, str]:
         if current_user.role != UserRole.MAINTAINER:
-            raise HTTPException(
-                status_code=403,
-                detail="Acesso negado. Requer privilégios de Mantenedor.",
+            raise AdjustmentPermissionError(
+                "Acesso negado. Requer privilégios de Mantenedor.",
             )
 
         curr = request_in.start_date.replace(day=1)

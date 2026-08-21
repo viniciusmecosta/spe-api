@@ -4,7 +4,6 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from sqlalchemy import extract
 from sqlalchemy.orm import Session, joinedload
 
@@ -12,6 +11,16 @@ from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_repository import holiday_repository
 from app.features.payroll.payroll_models import PayrollClosure
+from app.features.reports.report_exceptions import (
+    EmployeePreviousMonthOnlyError,
+    PayrollNotClosedForReportError,
+    PendingAdjustmentsExistError,
+    ReportAccessDeniedError,
+    ReportExportPermissionError,
+    ReportGlobalPermissionError,
+    ReportNotFoundOrIncompleteError,
+    ReportUserNotFoundError,
+)
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DailyReportItem,
@@ -303,7 +312,7 @@ class ReportService:
 
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise ReportUserNotFoundError()
 
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
@@ -516,26 +525,20 @@ class ReportService:
     def check_report_permission(self, current_user: User) -> None:
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if not is_manager and not current_user.can_export_report:
-            raise HTTPException(
-                status_code=403,
-                detail="O usuário não possui privilégios suficientes para acessar relatórios globais.",
-            )
+            raise ReportGlobalPermissionError()
 
     def check_user_report_access(self, current_user: User, user_id: int,
                                  detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if not is_manager and not current_user.can_export_report and current_user.id != user_id:
-            raise HTTPException(
-                status_code=403,
-                detail=detail,
-            )
+            raise ReportAccessDeniedError(detail=detail)
 
     def get_advanced_user_report_or_404(
             self, db: Session, user_id: int, month: int, year: int, current_user: User
     ) -> AdvancedUserReportResponse:
         report = self.get_advanced_user_report(db, user_id, month, year, current_user)
         if not report:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado ou dados incompletos.")
+            raise ReportNotFoundOrIncompleteError()
         return report
 
     def validate_excel_export_permission(
@@ -555,25 +558,17 @@ class ReportService:
             ).first()
 
             if pending_adjustments:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Não é possível gerar o relatório pois existem ajustes pendentes neste mês.",
-                )
+                raise PendingAdjustmentsExistError()
             return
 
         if not current_user.can_export_report:
-            raise HTTPException(
-                status_code=403, detail="Você não tem permissão para gerar relatórios."
-            )
+            raise ReportExportPermissionError()
 
         prev_month = now.month - 1 if now.month > 1 else 12
         prev_year = now.year if now.month > 1 else now.year - 1
 
         if month != prev_month or year != prev_year:
-            raise HTTPException(
-                status_code=400,
-                detail="Funcionários só podem gerar o relatório referente ao mês anterior.",
-            )
+            raise EmployeePreviousMonthOnlyError()
 
         payroll_closed = db.query(PayrollClosure).filter(
             PayrollClosure.month == month,
@@ -583,10 +578,7 @@ class ReportService:
         ).first()
 
         if not payroll_closed:
-            raise HTTPException(
-                status_code=400,
-                detail="Não é possível gerar o relatório pois a folha deste mês ainda não está fechada.",
-            )
+            raise PayrollNotClosedForReportError()
 
 
 report_service = ReportService()

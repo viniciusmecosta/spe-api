@@ -2,12 +2,17 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
 from app.core.config import settings
 from app.features.system.routine_orchestrator import RoutineOrchestrator
+from app.features.system.system_exceptions import (
+    BackupGenerationFailedError,
+    EmailNotConfiguredError,
+    NoMaintainersWithEmailError,
+    SMTPConnectionFailedError,
+)
 from app.features.system.system_models import RoutineLog
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -553,7 +558,7 @@ def test_send_manual_report_telegram_db_error_on_write(orchestrator, mock_dateti
 
 def test_send_manual_backup_email_no_smtp(orchestrator):
     with patch.object(settings, 'SMTP_HOST', None):
-        with pytest.raises(HTTPException):
+        with pytest.raises(EmailNotConfiguredError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -561,7 +566,7 @@ def test_send_manual_backup_email_no_maintainers(orchestrator, db_session_mock, 
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
         db_session_mock.query.return_value.items = []
-        with pytest.raises(HTTPException):
+        with pytest.raises(NoMaintainersWithEmailError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -572,7 +577,7 @@ def test_send_manual_backup_email_backup_fails(orchestrator, db_session_mock, mo
         db_session_mock.query.return_value.items = [
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
         mock_backup_service.create_safe_backup.return_value = None
-        with pytest.raises(HTTPException):
+        with pytest.raises(BackupGenerationFailedError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -599,7 +604,7 @@ def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = False
-        with pytest.raises(HTTPException):
+        with pytest.raises(SMTPConnectionFailedError):
             orchestrator.send_manual_backup_email(db_session_mock)
 
 
