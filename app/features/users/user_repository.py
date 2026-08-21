@@ -1,5 +1,5 @@
-from sqlalchemy import asc, desc, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc, exists, or_
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_password_hash
 from app.features.devices.device_models import UserBiometric
@@ -13,7 +13,15 @@ class UserRepository:
         return db.query(User).filter(User.username == username).first()
 
     def get(self, db: Session, user_id: int) -> User | None:
-        return db.query(User).filter(User.id == user_id).first()
+        return (
+            db.query(User)
+            .options(
+                selectinload(User.current_schedules_rel),
+                selectinload(User.biometrics),
+            )
+            .filter(User.id == user_id)
+            .first()
+        )
 
     def get_multi(
             self,
@@ -26,7 +34,10 @@ class UserRepository:
             order_by: str = "id",
             order_direction: str = "asc"
     ) -> list[User]:
-        query = db.query(User)
+        query = db.query(User).options(
+            selectinload(User.current_schedules_rel),
+            selectinload(User.biometrics),
+        )
         if is_active is not None:
             query = query.filter(User.is_active == is_active)
         if role is not None:
@@ -52,9 +63,12 @@ class UserRepository:
             if sensor_idx in seen_indices:
                 raise ValueError(f"O index {sensor_idx} duplicado na mesma requisicao.")
             seen_indices.add(sensor_idx)
-            existing_bio = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx,
-                                                          UserBiometric.user_id != user_id).first()
-            if existing_bio:
+            if db.query(
+                exists().where(
+                    UserBiometric.sensor_index == sensor_idx,
+                    UserBiometric.user_id != user_id,
+                )
+            ).scalar():
                 raise ValueError("Index ja cadastrada para outro usuario")
 
     def _update_biometrics(self, db: Session, db_obj: User, biometrics_in: list):

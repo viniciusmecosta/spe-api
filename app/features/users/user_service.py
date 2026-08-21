@@ -1,9 +1,10 @@
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import (
+from app.features.users.user_exceptions import (
     BiometricValidationError,
     InsufficientPrivilegesError,
     UserAlreadyExistsError,
@@ -35,7 +36,7 @@ class UserService:
         query = db.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_idx)
         if getattr(user, 'id', None):
             query = query.filter(UserBiometric.user_id != user.id)
-        if query.first():
+        if db.query(query.exists()).scalar():
             raise BiometricValidationError(f"Índice biométrico {sensor_idx} já cadastrado em outro usuário.")
 
     def _validate_finger_id(self, finger_id: int, seen_fingers: set):
@@ -85,17 +86,17 @@ class UserService:
     def _validate_unique_fields(self, db: Session, user_in: Any, user: User | None = None):
         username = getattr(user_in, 'username', None)
         if username and (not user or username != user.username):
-            if user_repository.get_by_username(db, username=username):
+            if db.query(exists().where(User.username == username)).scalar():
                 raise UserAlreadyExistsError("Nome de usuário já em uso.")
 
         email = getattr(user_in, 'email', None)
         if email and (not user or email != user.email):
-            if db.query(User).filter(User.email == email).first():
+            if db.query(exists().where(User.email == email)).scalar():
                 raise UserAlreadyExistsError("E-mail já está em uso.")
 
         cpf = getattr(user_in, 'cpf', None)
         if cpf and (not user or cpf != user.cpf):
-            if db.query(User).filter(User.cpf == cpf).first():
+            if db.query(exists().where(User.cpf == cpf)).scalar():
                 raise UserAlreadyExistsError("CPF já está em uso.")
 
     _format_name = staticmethod(format_name)

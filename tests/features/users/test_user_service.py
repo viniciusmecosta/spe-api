@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
-from app.core.exceptions import (
+from app.features.users.user_exceptions import (
     BiometricValidationError,
     InsufficientPrivilegesError,
     UserAlreadyExistsError,
@@ -112,7 +112,7 @@ def test_validate_sensor_index_duplicate_request(db_session_mock):
 def test_validate_sensor_index_already_used_db(db_session_mock):
     user = User(id=1)
     seen = set()
-    db_session_mock.query.return_value.first = MagicMock(return_value=True)
+    db_session_mock.query.return_value.scalar = MagicMock(return_value=True)
     with pytest.raises(BiometricValidationError) as exc:
         user_service._validate_sensor_index(db_session_mock, user, 2, seen)
     assert exc.value.status_code == 400
@@ -171,9 +171,8 @@ def test_sync_biometrics(db_session_mock, mocker):
     assert len(user.biometrics) == 1
 
 
-def test_validate_unique_fields_ok(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
-    db_session_mock.query.return_value.first = MagicMock(return_value=None)
+def test_validate_unique_fields_ok(db_session_mock):
+    db_session_mock.query.return_value.scalar = MagicMock(return_value=False)
     user_in = MagicMock()
     user_in.username = "test"
     user_in.email = "test@test.com"
@@ -181,8 +180,8 @@ def test_validate_unique_fields_ok(db_session_mock, mocker):
     user_service._validate_unique_fields(db_session_mock, user_in)
 
 
-def test_validate_unique_fields_dup_user(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=True)
+def test_validate_unique_fields_dup_user(db_session_mock):
+    db_session_mock.query.return_value.scalar = MagicMock(return_value=True)
     user_in = MagicMock()
     user_in.username = "test"
     with pytest.raises(UserAlreadyExistsError) as exc:
@@ -190,9 +189,8 @@ def test_validate_unique_fields_dup_user(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 
-def test_validate_unique_fields_dup_email(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
-    db_session_mock.query.return_value.first = MagicMock(return_value=True)
+def test_validate_unique_fields_dup_email(db_session_mock):
+    db_session_mock.query.return_value.scalar = MagicMock(side_effect=[False, True])
     user_in = MagicMock()
     user_in.username = "test"
     user_in.email = "test@test.com"
@@ -201,9 +199,8 @@ def test_validate_unique_fields_dup_email(db_session_mock, mocker):
     assert exc.value.status_code == 400
 
 
-def test_validate_unique_fields_dup_cpf(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None)
-    db_session_mock.query.return_value.first = MagicMock(side_effect=[None, True])
+def test_validate_unique_fields_dup_cpf(db_session_mock):
+    db_session_mock.query.return_value.scalar = MagicMock(side_effect=[False, False, True])
     user_in = MagicMock()
     user_in.username = "test"
     user_in.email = "test@test.com"
