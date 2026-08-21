@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import UploadFile
+from sqlalchemy import exists
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -78,12 +79,12 @@ class SyncService:
         try:
             with get_db_session() as db_read:
                 current_hour_start = now.replace(minute=0, second=0, microsecond=0)
-                exists = db_read.query(RoutineLog).filter(
+                exists_log = db_read.query(exists().where(
                     RoutineLog.routine_type == "REMOTE_SYNC_DATABASE",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.execution_time >= current_hour_start
-                ).first()
-                if exists:
+                )).scalar()
+                if exists_log:
                     return
         except SQLAlchemyError:
             return

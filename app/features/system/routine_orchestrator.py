@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc
+from sqlalchemy import desc, exists
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -65,12 +65,12 @@ class RoutineOrchestrator:
             with get_db_session() as db_read:
                 current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)
 
-                exists = db_read.query(RoutineLog).filter(
+                exists_log = db_read.query(exists().where(
                     RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.execution_time >= current_hour_start_local
-                ).first()
-                if exists:
+                )).scalar()
+                if exists_log:
                     return
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao verificar backup horário Telegram: {e}")
@@ -119,11 +119,11 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(RoutineLog).filter(
+                ran_today = db_read.query(exists().where(
                     RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.target_date == yesterday
-                ).first()
+                )).scalar()
 
                 if ran_today:
                     return
@@ -201,11 +201,11 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(RoutineLog).filter(
+                ran_today = db_read.query(exists().where(
                     RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.target_date == yesterday
-                ).first()
+                )).scalar()
 
                 if ran_today:
                     return
@@ -270,11 +270,11 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(RoutineLog).filter(
+                ran_today = db_read.query(exists().where(
                     RoutineLog.routine_type == "CLEANUP_ROUTINE_LOGS",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.target_date == today
-                ).first()
+                )).scalar()
 
                 if ran_today:
                     return

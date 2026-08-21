@@ -4,7 +4,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import extract
+from sqlalchemy import exists, extract
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
@@ -551,11 +551,11 @@ class ReportService:
             return
 
         if is_manager:
-            pending_adjustments = db.query(AdjustmentRequest).filter(
+            pending_adjustments = db.query(exists().where(
                 AdjustmentRequest.status == AdjustmentStatus.PENDING,
                 extract("month", AdjustmentRequest.target_date) == month,
                 extract("year", AdjustmentRequest.target_date) == year,
-            ).first()
+            )).scalar()
 
             if pending_adjustments:
                 raise PendingAdjustmentsExistError()
@@ -570,12 +570,12 @@ class ReportService:
         if month != prev_month or year != prev_year:
             raise EmployeePreviousMonthOnlyError()
 
-        payroll_closed = db.query(PayrollClosure).filter(
+        payroll_closed = db.query(exists().where(
             PayrollClosure.month == month,
             PayrollClosure.year == year,
             PayrollClosure.is_closed == True,
             PayrollClosure.deleted_at.is_(None),
-        ).first()
+        )).scalar()
 
         if not payroll_closed:
             raise PayrollNotClosedForReportError()

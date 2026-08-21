@@ -1,7 +1,7 @@
 from datetime import date
 
 from sqlalchemy import and_, desc, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.features.adjustments.adjustment_models import (
     AdjustmentAttachment,
@@ -29,8 +29,12 @@ class AdjustmentRepository:
         return db_obj
 
     def get(self, db: Session, id: int) -> AdjustmentRequest | None:
-        return db.query(AdjustmentRequest).filter(AdjustmentRequest.id == id,
-                                                  AdjustmentRequest.deleted_at.is_(None)).first()
+        return db.query(AdjustmentRequest).options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        ).filter(AdjustmentRequest.id == id,
+                 AdjustmentRequest.deleted_at.is_(None)).first()
 
     def get_all_by_user(
             self,
@@ -44,8 +48,12 @@ class AdjustmentRepository:
             order_by: str = "created_at",
             order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id,
-                                                   AdjustmentRequest.deleted_at.is_(None))
+        query = db.query(AdjustmentRequest).options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        ).filter(AdjustmentRequest.user_id == user_id,
+                 AdjustmentRequest.deleted_at.is_(None))
 
         if month and year:
             query = query.filter(
@@ -78,7 +86,11 @@ class AdjustmentRepository:
             order_by: str = "created_at",
             order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        query = db.query(AdjustmentRequest).filter(AdjustmentRequest.deleted_at.is_(None))
+        query = db.query(AdjustmentRequest).options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        ).filter(AdjustmentRequest.deleted_at.is_(None))
 
         if month and year:
             query = query.filter(
@@ -109,7 +121,11 @@ class AdjustmentRepository:
 
     def get_approved_by_range(self, db: Session, user_id: int, start_date: date, end_date: date) -> list[
         AdjustmentRequest]:
-        return db.query(AdjustmentRequest).filter(
+        return db.query(AdjustmentRequest).options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        ).filter(
             and_(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.status == AdjustmentStatus.APPROVED,
@@ -120,7 +136,11 @@ class AdjustmentRepository:
         ).all()
 
     def get_waivers_by_user_and_date(self, db: Session, user_id: int, target_date: date) -> list[AdjustmentRequest]:
-        return db.query(AdjustmentRequest).filter(
+        return db.query(AdjustmentRequest).options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        ).filter(
             and_(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date == target_date,

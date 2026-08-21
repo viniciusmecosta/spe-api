@@ -184,6 +184,11 @@ def test_send_managerial_report_telegram_success_with_previous(orchestrator, moc
                         return None
                     return RoutineLog(target_date=datetime(2023, 10, 13).date())
 
+                def scalar(self):
+                    if self.n == 1:
+                        return False
+                    return True
+
             return MockQuery(db_session_mock.query.call_count)
 
         db_session_mock.query.side_effect = side_effect_query
@@ -211,6 +216,9 @@ def test_send_managerial_report_telegram_send_fails(orchestrator, mock_datetime,
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
             return MockQuery(db_session_mock.query.call_count)
 
         db_session_mock.query.side_effect = side_effect_query
@@ -237,6 +245,9 @@ def test_send_managerial_report_telegram_db_error_on_write(orchestrator, mock_da
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
             return MockQuery(db_session_mock.query.call_count)
 
@@ -300,6 +311,9 @@ def test_run_daily_backup_routine_email_no_maintainers(orchestrator, mock_dateti
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
                 def all(self):
                     return []
 
@@ -335,6 +349,11 @@ def test_run_daily_backup_routine_email_backup_fails(orchestrator, mock_datetime
                         return None
                     return RoutineLog(target_date=datetime(2023, 10, 13).date())
 
+                def scalar(self):
+                    if self.n == 1:
+                        return False
+                    return True
+
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
 
@@ -362,6 +381,9 @@ def test_run_daily_backup_routine_email_success(orchestrator, mock_datetime, moc
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
@@ -394,6 +416,9 @@ def test_run_daily_backup_routine_email_send_fails(orchestrator, mock_datetime, 
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
 
@@ -423,6 +448,9 @@ def test_run_daily_backup_routine_email_db_error_on_write(orchestrator, mock_dat
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
@@ -460,6 +488,9 @@ def test_clean_old_logs_success(orchestrator, mock_datetime, mock_get_db_session
             def first(self):
                 return None
 
+            def scalar(self):
+                return False
+
             def delete(self):
                 return 5
 
@@ -483,6 +514,9 @@ def test_clean_old_logs_db_error_on_write(orchestrator, mock_datetime, mock_get_
 
             def first(self):
                 return None
+
+            def scalar(self):
+                return False
 
             def delete(self):
                 return 5
