@@ -139,7 +139,7 @@ class UserService:
     def update_user(self, db: Session, user_id: int, user_in: UserUpdate, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise UserNotFoundError()
+            raise UserNotFoundError(user_id=user_id)
 
         self._validate_unique_fields(db, user_in, user)
 
@@ -178,7 +178,7 @@ class UserService:
     def disable_user(self, db: Session, user_id: int, current_user_id: int) -> User:
         user = user_repository.get(db, user_id)
         if not user:
-            raise UserNotFoundError()
+            raise UserNotFoundError(user_id=user_id)
 
         user.is_active = False
         db.add(user)
@@ -234,7 +234,7 @@ class UserService:
     def get_user_by_id(self, db: Session, user_id: int, current_user: User) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise UserNotFoundError()
+            raise UserNotFoundError(user_id=user_id)
 
         if user.id != current_user.id and current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise InsufficientPrivilegesError("Privilégios insuficientes.", status_code=400)
@@ -246,7 +246,7 @@ class UserService:
     ) -> User:
         user = user_repository.get(db, user_id=user_id)
         if not user:
-            raise UserNotFoundError()
+            raise UserNotFoundError(user_id=user_id)
 
         if current_user.role == UserRole.MANAGER and user.role == UserRole.MAINTAINER:
             raise InsufficientPrivilegesError("Privilégios insuficientes para edição.")

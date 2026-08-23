@@ -14,7 +14,9 @@ class FutureTimesheetNotAllowedError(DomainException):
 
 
 class TimesheetUserNotFoundError(DomainException):
-    def __init__(self, detail: str = "Usuário não encontrado."):
+    def __init__(self, user_id: int | str | None = None, detail: str | None = None):
+        if detail is None:
+            detail = f"Usuário de ID {user_id} não encontrado." if user_id is not None else "Usuário não encontrado."
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
 
 

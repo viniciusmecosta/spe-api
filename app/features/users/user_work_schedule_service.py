@@ -162,7 +162,7 @@ class UserWorkScheduleService:
         ).all()
 
         if not configs:
-            raise BulkScheduleNotFoundError("Expediente em massa não encontrado para esse período.")
+            raise BulkScheduleNotFoundError(valid_from=valid_from, valid_until=valid_until)
 
         users_dict = defaultdict(list)
         for cfg in configs:
@@ -346,7 +346,7 @@ class UserWorkScheduleService:
         ).all()
 
         if not configs:
-            raise BulkScheduleNotFoundError("Expediente em massa não encontrado.")
+            raise BulkScheduleNotFoundError(valid_from=valid_from, valid_until=valid_until)
 
         count = len(configs)
         for cfg in configs:

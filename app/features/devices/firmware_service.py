@@ -73,7 +73,7 @@ class FirmwareService:
 
         firmware_old = firmware_repository.get_by_version(db, version)
         if not firmware_old:
-            raise FirmwareNotFoundError()
+            raise FirmwareNotFoundError(version=version)
 
         timestamp = int(time.time())
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
@@ -98,12 +98,12 @@ class FirmwareService:
     def get_firmware_file(self, db: Session, version: str) -> str:
         firmware = firmware_repository.get_by_version(db, version)
         if not firmware:
-            raise FirmwareNotFoundError()
+            raise FirmwareNotFoundError(version=version)
 
         absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(
             firmware.file_path) else firmware.file_path
         if not os.path.exists(absolute_file_path):
-            raise FirmwareFileNotFoundError()
+            raise FirmwareFileNotFoundError(version=version)
 
         return absolute_file_path
 

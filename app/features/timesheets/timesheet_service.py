@@ -346,7 +346,7 @@ class TimesheetService:
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
         user = user_repository.get(db, user_id)
         if not user:
-            raise TimesheetUserNotFoundError()
+            raise TimesheetUserNotFoundError(user_id=user_id)
 
         tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()

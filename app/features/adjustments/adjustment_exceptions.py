@@ -9,17 +9,21 @@ class WaiverLimitExceededError(DomainException):
 
 
 class AdjustmentNotFoundError(DomainException):
-    def __init__(self, detail: str = "Solicitação não encontrada."):
+    def __init__(self, adjustment_id: int | str | None = None, detail: str | None = None):
+        if detail is None:
+            detail = f"Solicitação de ajuste (ID {adjustment_id}) não encontrada." if adjustment_id is not None else "Solicitação de ajuste não encontrada."
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
 
 
 class InvalidAdjustmentTypeError(DomainException):
-    def __init__(self, detail: str = "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."):
+    def __init__(self, adjustment_type: str | None = None, detail: str | None = None):
+        if detail is None:
+            detail = f"Não é possível excluir um ajuste do tipo '{adjustment_type}'. Apenas EXTRA_TIME e WAIVER são permitidos." if adjustment_type else "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 class AdjustmentPermissionError(DomainException):
-    def __init__(self, detail: str = "Acesso negado.", status_code: int = status.HTTP_403_FORBIDDEN):
+    def __init__(self, detail: str = "Acesso negado. Apenas o proprietário ou um gestor podem modificar este ajuste.", status_code: int = status.HTTP_403_FORBIDDEN):
         super().__init__(detail=detail, status_code=status_code)
 
 
@@ -44,7 +48,9 @@ class WaiverAttachmentRequiredError(DomainException):
 
 
 class AdjustmentInvalidStatusError(DomainException):
-    def __init__(self, detail: str = "Apenas solicitações pendentes podem ser canceladas."):
+    def __init__(self, current_status: str | None = None, detail: str | None = None):
+        if detail is None:
+            detail = f"Ação não permitida para o ajuste com status '{current_status}'. Apenas solicitações PENDING podem ser alteradas." if current_status else "Apenas solicitações pendentes podem ser canceladas."
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
 
 

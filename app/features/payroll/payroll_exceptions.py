@@ -4,7 +4,7 @@ from app.core.exceptions import DomainException
 
 
 class PayrollPermissionError(DomainException):
-    def __init__(self, detail: str = "Acesso negado: Sem permissão para fechar a folha."):
+    def __init__(self, detail: str = "Acesso negado: Sem permissão para realizar operações na folha de pagamento."):
         super().__init__(detail=detail, status_code=status.HTTP_403_FORBIDDEN)
 
 
@@ -34,5 +34,7 @@ class PayrollPeriodClosedError(DomainException):
 
 
 class PayrollClosureNotFoundError(DomainException):
-    def __init__(self, detail: str = "Fechamento não encontrado."):
+    def __init__(self, period: str | None = None, detail: str | None = None):
+        if detail is None:
+            detail = f"Fechamento de folha para o período '{period}' não encontrado." if period else "Fechamento não encontrado."
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)

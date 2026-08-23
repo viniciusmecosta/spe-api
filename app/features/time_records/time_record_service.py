@@ -134,11 +134,11 @@ class TimeRecordService:
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise TimeRecordNotFoundError("Registro de ponto não encontrado.")
+            raise TimeRecordNotFoundError(record_id=record_id)
         is_owner = record.user_id == current_user.id
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if not is_owner and (not is_manager):
-            raise TimeRecordAccessDeniedError("Acesso negado.")
+            raise TimeRecordAccessDeniedError()
         payroll_service.validate_period_open(db, record.record_datetime.date())
         previous_type = record.record_type
         new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
@@ -200,7 +200,7 @@ class TimeRecordService:
                             platform: str | None = None) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise TimeRecordNotFoundError("Registro não encontrado.")
+            raise TimeRecordNotFoundError(record_id=record_id)
         payroll_service.validate_period_open(db, record.record_datetime.date())
         if obj_in.record_datetime:
             payroll_service.validate_period_open(db, obj_in.record_datetime.date())
@@ -230,7 +230,7 @@ class TimeRecordService:
     def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise TimeRecordNotFoundError("Registro não encontrado.")
+            raise TimeRecordNotFoundError(record_id=record_id)
         payroll_service.validate_period_open(db, record.record_datetime.date())
         if record.record_type == RecordType.ENTRY:
             if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
@@ -305,11 +305,11 @@ class TimeRecordService:
     def get_receipt_data(self, db: Session, short_id: str, current_user: User):
         record_id = hashid_service.decode(short_id)
         if not record_id:
-            raise InvalidReceiptIdError()
+            raise InvalidReceiptIdError(receipt_id=short_id)
 
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise TimeRecordNotFoundError("Registro de ponto não encontrado.")
+            raise TimeRecordNotFoundError(record_id=record_id)
 
         if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
             raise ReceiptAccessDeniedError()
@@ -348,11 +348,11 @@ class TimeRecordService:
     def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> tuple[bytes, str]:
         record_id = hashid_service.decode(short_id)
         if not record_id:
-            raise InvalidReceiptIdError()
+            raise InvalidReceiptIdError(receipt_id=short_id)
 
         record = time_record_repository.get(db, record_id)
         if not record:
-            raise TimeRecordNotFoundError("Registro de ponto não encontrado.")
+            raise TimeRecordNotFoundError(record_id=record_id)
 
         if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
             raise ReceiptAccessDeniedError()

@@ -226,7 +226,7 @@ class PayrollService:
     def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes):
         closure = db.query(PayrollClosure).get(closure_id)
         if not closure:
-            raise PayrollClosureNotFoundError("Fechamento não encontrado.")
+            raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
         legacy_dir = os.path.join(settings.UPLOAD_DIR, "reports", "legacy")
         os.makedirs(legacy_dir, exist_ok=True)

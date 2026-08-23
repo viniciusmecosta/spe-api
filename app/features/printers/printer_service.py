@@ -13,7 +13,7 @@ class PrinterService:
     def get_by_id(self, db: Session, printer_id: int) -> Printer:
         printer = printer_repository.get_by_id(db, printer_id=printer_id)
         if not printer:
-            raise PrinterNotFoundError(PRINTER_NOT_FOUND_MSG)
+            raise PrinterNotFoundError(printer_id=printer_id)
         return printer
 
     def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[Printer]:

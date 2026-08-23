@@ -131,7 +131,7 @@ def test_update_firmware_file_not_found(mock_repo, firmware_service, db_session_
     with pytest.raises(FirmwareNotFoundError) as exc:
         firmware_service.update_firmware_file(db_session_mock, "v1.0.0", mock_upload_file, 1)
     assert exc.value.status_code == 404
-    assert "Firmware não encontrado" in exc.value.detail
+    assert "Firmware versão 'v1.0.0' não encontrado." in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")
@@ -186,7 +186,7 @@ def test_get_firmware_file_not_found_db(mock_repo, firmware_service, db_session_
     with pytest.raises(FirmwareNotFoundError) as exc:
         firmware_service.get_firmware_file(db_session_mock, "v1.0.0")
     assert exc.value.status_code == 404
-    assert "Firmware não encontrado" in exc.value.detail
+    assert "Firmware versão 'v1.0.0' não encontrado." in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")
@@ -196,7 +196,7 @@ def test_get_firmware_file_not_found_fs(mock_exists, mock_repo, firmware_service
     with pytest.raises(FirmwareFileNotFoundError) as exc:
         firmware_service.get_firmware_file(db_session_mock, "v1.0.0")
     assert exc.value.status_code == 404
-    assert "Arquivo do firmware não encontrado no servidor" in exc.value.detail
+    assert "Arquivo do firmware 'v1.0.0' não encontrado no servidor" in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")

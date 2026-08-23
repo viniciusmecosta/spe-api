@@ -273,7 +273,7 @@ def test_toggle_record_type_not_found(db_session_mock, mock_time_record_repo):
     with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
-    assert exc_info.value.detail == "Registro de ponto não encontrado."
+    assert "Registro de ponto (ID 1) não encontrado." in exc_info.value.detail
 
 
 def test_toggle_record_type_forbidden(db_session_mock, mock_time_record_repo):
@@ -283,7 +283,7 @@ def test_toggle_record_type_forbidden(db_session_mock, mock_time_record_repo):
     with pytest.raises(TimeRecordAccessDeniedError) as exc_info:
         time_record_service.toggle_record_type(db_session_mock, 1, user)
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
-    assert exc_info.value.detail == "Acesso negado."
+    assert "Acesso negado" in exc_info.value.detail
 
 
 def test_toggle_record_type_success(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
@@ -358,7 +358,7 @@ def test_update_admin_record_not_found(db_session_mock, mock_time_record_repo):
     with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Registro não encontrado."
+    assert "Registro de ponto (ID 1) não encontrado." in exc_info.value.detail
 
 
 def test_update_admin_record_no_changes(db_session_mock, mock_time_record_repo, mock_payroll_service):
@@ -413,7 +413,7 @@ def test_delete_admin_record_not_found(db_session_mock, mock_time_record_repo):
     with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.delete_admin_record(db_session_mock, 1, obj_in, 2)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Registro não encontrado."
+    assert "Registro de ponto (ID 1) não encontrado." in exc_info.value.detail
 
 
 def test_delete_admin_record_success(db_session_mock, mock_time_record_repo, mock_payroll_service, mock_audit_service):
@@ -664,7 +664,7 @@ def test_get_receipt_data_invalid_hashid(db_session_mock, mocker):
     with pytest.raises(InvalidReceiptIdError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "invalid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "ID do comprovante inválido."
+    assert "invalid" in exc_info.value.detail
 
 
 def test_get_receipt_data_record_not_found(db_session_mock, mocker):
@@ -674,7 +674,7 @@ def test_get_receipt_data_record_not_found(db_session_mock, mocker):
     with pytest.raises(TimeRecordNotFoundError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Registro de ponto não encontrado."
+    assert "Registro de ponto (ID 123) não encontrado." in exc_info.value.detail
 
 
 def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
@@ -686,7 +686,7 @@ def test_get_receipt_data_forbidden_employee(db_session_mock, mocker):
     with pytest.raises(ReceiptAccessDeniedError) as exc_info:
         time_record_service.get_receipt_data(db_session_mock, "valid", user)
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == "Acesso negado ao comprovante."
+    assert "Acesso negado" in exc_info.value.detail
 
 
 def test_get_receipt_data_success(db_session_mock, mocker):

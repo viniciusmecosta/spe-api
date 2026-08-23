@@ -134,7 +134,7 @@ class ExcelService:
                 (year == prev_year and month == prev_month):
             return
 
-        raise EmployeeInvalidReportPeriodError()
+        raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: list[int] | None = None,
                               current_user: User | None = None) -> BytesIO:

@@ -33,7 +33,7 @@ class DeviceCredentialService:
     ) -> DeviceCredential:
         device = device_credential_repository.get(db, credential_id)
         if not device:
-            raise DeviceCredentialNotFoundError()
+            raise DeviceCredentialNotFoundError(credential_id=credential_id)
 
         old_data = serialize_model(device)
         updated_device = device_credential_repository.update(db, device, credential_in)
@@ -48,7 +48,7 @@ class DeviceCredentialService:
     ) -> dict[str, str]:
         device = device_credential_repository.get(db, credential_id)
         if not device:
-            raise DeviceCredentialNotFoundError()
+            raise DeviceCredentialNotFoundError(credential_id=credential_id)
 
         device_credential_repository.delete(db, credential_id)
         audit_service.log_change(db, current_user_id, "DELETE", old_model=device)

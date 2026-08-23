@@ -134,13 +134,11 @@ class AdjustmentService:
     def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
-            raise AdjustmentNotFoundError("Abono não encontrado.")
+            raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
-            raise InvalidAdjustmentTypeError(
-                "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
-            )
+            raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, admin_id)
@@ -154,13 +152,11 @@ class AdjustmentService:
     def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
         request = adjustment_repository.get(db, adjustment_id)
         if not request:
-            raise AdjustmentNotFoundError("Abono não encontrado.")
+            raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
-            raise InvalidAdjustmentTypeError(
-                "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
-            )
+            raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
             self._revert_adjustment_action(db, request, manager_id)
@@ -226,7 +222,7 @@ class AdjustmentService:
                            comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(adjustment_id=request_id)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
@@ -263,15 +259,6 @@ class AdjustmentService:
                 record.is_ignored = True
                 record.deleted_at = get_local_time()
                 record.deleted_by = manager_id
-
-                db.query(AdjustmentRequest).filter(
-                    AdjustmentRequest.user_id == request.user_id,
-                    AdjustmentRequest.target_date == request.target_date,
-                    AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-                    AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED])
-                ).delete(synchronize_session=False)
-
-                db.commit()
         else:
             time_record_repository.create(
                 db, user_id=request.user_id, record_type=request.record_type,
@@ -281,14 +268,14 @@ class AdjustmentService:
     def cancel_adjustment(self, db: Session, request_id: int, user_id: int) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(adjustment_id=request_id)
 
         is_owner = request.user_id == user_id
         if not is_owner:
-            raise AdjustmentPermissionError("Acesso negado.")
+            raise AdjustmentPermissionError("Acesso negado. Apenas o proprietário do ajuste pode cancelá-lo.")
 
         if request.status != AdjustmentStatus.PENDING:
-            raise AdjustmentInvalidStatusError("Apenas solicitações pendentes podem ser canceladas.")
+            raise AdjustmentInvalidStatusError(current_status=str(request.status))
 
         payroll_service.validate_period_open(db, request.target_date)
 
@@ -304,7 +291,7 @@ class AdjustmentService:
                           comment: str | None = None) -> AdjustmentRequest:
         request = adjustment_repository.get(db, request_id)
         if not request:
-            raise AdjustmentNotFoundError(NOT_FOUND_MSG)
+            raise AdjustmentNotFoundError(adjustment_id=request_id)
         payroll_service.validate_period_open(db, request.target_date)
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -397,7 +384,7 @@ class AdjustmentService:
     ) -> tuple[str, str]:
         adjustment = adjustment_repository.get(db, id=adjustment_id)
         if not adjustment:
-            raise AdjustmentNotFoundError("Ajuste não encontrado.")
+            raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if adjustment.user_id != current_user.id and not is_manager:

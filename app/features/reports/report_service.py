@@ -312,7 +312,7 @@ class ReportService:
 
         user = user_repository.get(db, user_id)
         if not user:
-            raise ReportUserNotFoundError()
+            raise ReportUserNotFoundError(user_id=user_id)
 
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
@@ -528,17 +528,17 @@ class ReportService:
             raise ReportGlobalPermissionError()
 
     def check_user_report_access(self, current_user: User, user_id: int,
-                                 detail: str = "Sem permissão para acessar o histórico deste usuário.") -> None:
+                                 detail: str | None = None) -> None:
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         if not is_manager and not current_user.can_export_report and current_user.id != user_id:
-            raise ReportAccessDeniedError(detail=detail)
+            raise ReportAccessDeniedError(user_id=user_id, detail=detail)
 
     def get_advanced_user_report_or_404(
             self, db: Session, user_id: int, month: int, year: int, current_user: User
     ) -> AdvancedUserReportResponse:
         report = self.get_advanced_user_report(db, user_id, month, year, current_user)
         if not report:
-            raise ReportNotFoundOrIncompleteError()
+            raise ReportNotFoundOrIncompleteError(user_id=user_id)
         return report
 
     def validate_excel_export_permission(
