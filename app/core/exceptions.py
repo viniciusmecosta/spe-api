@@ -82,7 +82,10 @@ def setup_exception_handlers(app: FastAPI):
             detail_msg = str(detail_msg)
 
         if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
-            detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
+            if request.url.path.startswith("/uploads/"):
+                detail_msg = "O documento ou arquivo solicitado não foi encontrado."
+            else:
+                detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
         elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Incorrect username or password":
             detail_msg = "Usuário ou senha incorretos."
         elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Could not validate credentials":
