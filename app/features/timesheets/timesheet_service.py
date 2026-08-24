@@ -7,7 +7,6 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -29,6 +28,11 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
+from app.features.timesheets.timesheet_exceptions import (
+    FutureTimesheetNotAllowedError,
+    NoTimesheetRecordsFoundError,
+    TimesheetUserNotFoundError,
+)
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
 from app.shared.enums import DayOfWeek, UserRole
@@ -45,10 +49,7 @@ class TimesheetService:
     def validate_date_not_future(self, month: int, year: int) -> None:
         now = datetime.now()
         if year > now.year or (year == now.year and month > now.month):
-            raise HTTPException(
-                status_code=400,
-                detail="Não é possível solicitar espelhos de ponto referentes a meses futuros.",
-            )
+            raise FutureTimesheetNotAllowedError()
 
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
@@ -345,7 +346,7 @@ class TimesheetService:
     def generate_user_timesheet_pdf(self, db: Session, user_id: int, month: int, year: int) -> io.BytesIO:
         user = user_repository.get(db, user_id)
         if not user:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+            raise TimesheetUserNotFoundError(user_id=user_id)
 
         tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
@@ -563,8 +564,7 @@ class TimesheetService:
         users = query.all()
 
         if not users:
-            raise HTTPException(status_code=404,
-                                detail="Nenhum registro de ponto encontrado para gerar os espelhos neste mês.")
+            raise NoTimesheetRecordsFoundError()
 
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:

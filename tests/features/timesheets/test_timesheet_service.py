@@ -2,12 +2,15 @@ import io
 from datetime import date, time
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import pytest
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
+from app.features.timesheets.timesheet_exceptions import (
+    NoTimesheetRecordsFoundError,
+    TimesheetUserNotFoundError,
+)
 from app.features.timesheets.timesheet_service import timesheet_service
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared.enums import UserRole
@@ -78,7 +81,7 @@ def test_build_daily_records_table():
 
 def test_generate_user_timesheet_pdf_not_found(db_session_mock, mocker):
     mocker.patch('app.features.users.user_repository.user_repository.get', return_value=None)
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(TimesheetUserNotFoundError) as excinfo:
         timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert excinfo.value.status_code == 404
 
@@ -131,7 +134,7 @@ def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
 def test_generate_all_timesheets_pdf_zip_not_found(db_session_mock, mocker):
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value.filter.return_value.all.return_value = []
-    with pytest.raises(HTTPException) as excinfo:
+    with pytest.raises(NoTimesheetRecordsFoundError) as excinfo:
         timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, [1])
     assert excinfo.value.status_code == 404
 

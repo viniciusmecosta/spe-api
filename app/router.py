@@ -24,6 +24,7 @@ from app.features.system.system_router import (
 from app.features.time_records.time_record_router import router as time_records_router
 from app.features.timesheets.timesheet_router import anomalies_router, router as timesheets_router
 from app.features.users.user_router import router as users_router
+from app.features.users.work_schedule_router import router as schedules_router
 
 api_router = APIRouter()
 
@@ -49,8 +50,10 @@ api_router.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(printers_router, prefix="/printers", tags=["Printers"])
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(routine_logs_router, prefix="/routine-logs", tags=["Routine Logs"])
+api_router.include_router(schedules_router, prefix="/schedules", tags=["Schedules"])
 api_router.include_router(sync_router, prefix="/sync", tags=["Sync"])
 api_router.include_router(telegram_actions_router, prefix="/telegram", tags=["Telegram"])
 api_router.include_router(time_records_router, prefix="/time-records", tags=["Time Records"])
 api_router.include_router(timesheets_router, prefix="/timesheets", tags=["Timesheets"])
 api_router.include_router(users_router, prefix="/users", tags=["Users"])
+

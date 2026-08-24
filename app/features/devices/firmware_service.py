@@ -3,10 +3,19 @@ import re
 import shutil
 import time
 
-from fastapi import HTTPException, UploadFile, status
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import ROOT_DIR, settings
+from app.features.devices.device_exceptions import (
+    FirmwareFileNotFoundError,
+    FirmwareNotFoundError,
+    FirmwareVersionAlreadyExistsError,
+    FirmwareVersionNotGreaterError,
+    InvalidFirmwareFileTypeError,
+    InvalidFirmwareVersionError,
+    NoFirmwareAvailableError,
+)
 from app.features.devices.device_models import Firmware
 from app.features.devices.device_repository import firmware_repository
 from app.features.system.audit_service import audit_service
@@ -27,29 +36,25 @@ class FirmwareService:
         try:
             new_ver_tuple = self.parse_version(version)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A versão deve estar no formato vx.x.x (ex: v0.3.1)"
-            )
+            raise InvalidFirmwareVersionError()
 
         if not file.filename.endswith('.bin'):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas arquivos .bin são permitidos")
+            raise InvalidFirmwareFileTypeError()
 
         latest = firmware_repository.get_latest(db)
         if latest:
             try:
                 latest_ver_tuple = self.parse_version(latest.version)
                 if new_ver_tuple <= latest_ver_tuple:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"A nova versão ({version}) deve ser estritamente maior que a versão atual ({latest.version})"
+                    raise FirmwareVersionNotGreaterError(
+                        f"A nova versão ({version}) deve ser estritamente maior que a versão atual ({latest.version})"
                     )
             except ValueError:
                 pass
 
         existing = firmware_repository.get_by_version(db, version)
         if existing:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Versão já existe")
+            raise FirmwareVersionAlreadyExistsError()
 
         timestamp = int(time.time())
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
@@ -64,11 +69,11 @@ class FirmwareService:
 
     def update_firmware_file(self, db: Session, version: str, file: UploadFile, current_user_id: int) -> Firmware:
         if not file.filename.endswith('.bin'):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas arquivos .bin são permitidos")
+            raise InvalidFirmwareFileTypeError()
 
         firmware_old = firmware_repository.get_by_version(db, version)
         if not firmware_old:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Firmware não encontrado")
+            raise FirmwareNotFoundError(version=version)
 
         timestamp = int(time.time())
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
@@ -84,7 +89,7 @@ class FirmwareService:
     def get_latest_firmware(self, db: Session) -> Firmware:
         latest = firmware_repository.get_latest(db)
         if not latest:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum firmware disponível")
+            raise NoFirmwareAvailableError()
         return latest
 
     def get_all_firmwares(self, db: Session) -> list[Firmware]:
@@ -93,13 +98,12 @@ class FirmwareService:
     def get_firmware_file(self, db: Session, version: str) -> str:
         firmware = firmware_repository.get_by_version(db, version)
         if not firmware:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Firmware não encontrado")
+            raise FirmwareNotFoundError(version=version)
 
         absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(
             firmware.file_path) else firmware.file_path
         if not os.path.exists(absolute_file_path):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Arquivo do firmware não encontrado no servidor")
+            raise FirmwareFileNotFoundError(version=version)
 
         return absolute_file_path
 

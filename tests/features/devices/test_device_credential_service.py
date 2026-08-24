@@ -1,9 +1,8 @@
 from unittest.mock import MagicMock
 
-from fastapi import HTTPException
-
 import pytest
 from app.features.devices.device_credential_service import device_credential_service
+from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate
 from app.shared.enums import DeviceKeyType
@@ -71,7 +70,7 @@ def test_update_device_credential_not_found(db_session_mock: MagicMock, mocker: 
         return_value=None,
     )
     payload = DeviceCredentialUpdate(name="New Name")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(DeviceCredentialNotFoundError) as exc_info:
         device_credential_service.update(
             db_session_mock, 99, payload, current_user_id=1
         )
@@ -101,6 +100,6 @@ def test_delete_device_credential_not_found(db_session_mock: MagicMock, mocker: 
         return_value=None,
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(DeviceCredentialNotFoundError) as exc_info:
         device_credential_service.delete(db_session_mock, 99, current_user_id=1)
     assert exc_info.value.status_code == 404

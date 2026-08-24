@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import and_, desc, distinct, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.features.time_records.time_record_models import (
     TimeRecord,
@@ -30,25 +30,37 @@ class TimeRecordRepository:
         return db_record
 
     def get(self, db: Session, record_id: int) -> TimeRecord | None:
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             TimeRecord.id == record_id,
             TimeRecord.is_ignored == False
         ).first()
 
     def get_last_by_user(self, db: Session, user_id: int) -> TimeRecord | None:
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             TimeRecord.user_id == user_id,
             TimeRecord.is_ignored == False
         ).order_by(desc(TimeRecord.record_datetime)).first()
 
     def get_all_by_user(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             TimeRecord.user_id == user_id,
             TimeRecord.is_ignored == False
         ).order_by(desc(TimeRecord.record_datetime)).offset(skip).limit(limit).all()
 
     def get_by_range(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[TimeRecord]:
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             and_(
                 TimeRecord.user_id == user_id,
                 TimeRecord.record_datetime >= start_date,
@@ -59,7 +71,10 @@ class TimeRecordRepository:
 
     def get_by_users_and_range(self, db: Session, user_ids: list[int], start_date: datetime, end_date: datetime) -> \
     list[TimeRecord]:
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             and_(
                 TimeRecord.user_id.in_(user_ids),
                 TimeRecord.record_datetime >= start_date,
@@ -114,7 +129,10 @@ class TimeRecordRepository:
 
         anchor_id = record.original_record_id if record.original_record_id else record.id
 
-        return db.query(TimeRecord).filter(
+        return db.query(TimeRecord).options(
+            selectinload(TimeRecord.user),
+            selectinload(TimeRecord.editor)
+        ).filter(
             or_(
                 TimeRecord.id == anchor_id,
                 TimeRecord.original_record_id == anchor_id

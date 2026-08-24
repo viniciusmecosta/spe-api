@@ -1,8 +1,15 @@
 from unittest.mock import MagicMock, patch, mock_open
 
-from fastapi import HTTPException
-
 import pytest
+from app.features.devices.device_exceptions import (
+    FirmwareFileNotFoundError,
+    FirmwareNotFoundError,
+    FirmwareVersionAlreadyExistsError,
+    FirmwareVersionNotGreaterError,
+    InvalidFirmwareFileTypeError,
+    InvalidFirmwareVersionError,
+    NoFirmwareAvailableError,
+)
 from app.features.devices.device_models import Firmware
 from app.features.devices.firmware_service import FirmwareService
 
@@ -58,7 +65,7 @@ def test_upload_firmware_success(mock_copy, mock_file, mock_time, mock_audit, mo
 
 
 def test_upload_firmware_invalid_version(firmware_service, db_session_mock, mock_upload_file):
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidFirmwareVersionError) as exc:
         firmware_service.upload_firmware(db_session_mock, "1.0.0", mock_upload_file, 1)
     assert exc.value.status_code == 400
     assert "A versão deve estar no formato vx.x.x" in exc.value.detail
@@ -67,7 +74,7 @@ def test_upload_firmware_invalid_version(firmware_service, db_session_mock, mock
 def test_upload_firmware_invalid_file_extension(firmware_service, db_session_mock):
     file_mock = MagicMock()
     file_mock.filename = "test.txt"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidFirmwareFileTypeError) as exc:
         firmware_service.upload_firmware(db_session_mock, "v1.0.0", file_mock, 1)
     assert exc.value.status_code == 400
     assert "Apenas arquivos .bin são permitidos" in exc.value.detail
@@ -77,7 +84,7 @@ def test_upload_firmware_invalid_file_extension(firmware_service, db_session_moc
 def test_upload_firmware_version_not_greater(mock_repo, firmware_service, db_session_mock, mock_upload_file):
     latest_fw = Firmware(id=1, version="v1.1.0")
     mock_repo.get_latest.return_value = latest_fw
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(FirmwareVersionNotGreaterError) as exc:
         firmware_service.upload_firmware(db_session_mock, "v1.0.0", mock_upload_file, 1)
     assert exc.value.status_code == 400
     assert "estritamente maior" in exc.value.detail
@@ -103,7 +110,7 @@ def test_upload_firmware_latest_invalid_version(mock_copy, mock_file, mock_time,
 def test_upload_firmware_version_exists(mock_repo, firmware_service, db_session_mock, mock_upload_file):
     mock_repo.get_latest.return_value = None
     mock_repo.get_by_version.return_value = Firmware(id=1, version="v1.0.0")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(FirmwareVersionAlreadyExistsError) as exc:
         firmware_service.upload_firmware(db_session_mock, "v1.0.0", mock_upload_file, 1)
     assert exc.value.status_code == 400
     assert "Versão já existe" in exc.value.detail
@@ -112,7 +119,7 @@ def test_upload_firmware_version_exists(mock_repo, firmware_service, db_session_
 def test_update_firmware_file_invalid_extension(firmware_service, db_session_mock):
     file_mock = MagicMock()
     file_mock.filename = "test.txt"
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidFirmwareFileTypeError) as exc:
         firmware_service.update_firmware_file(db_session_mock, "v1.0.0", file_mock, 1)
     assert exc.value.status_code == 400
     assert "Apenas arquivos .bin são permitidos" in exc.value.detail
@@ -121,10 +128,10 @@ def test_update_firmware_file_invalid_extension(firmware_service, db_session_moc
 @patch("app.features.devices.firmware_service.firmware_repository")
 def test_update_firmware_file_not_found(mock_repo, firmware_service, db_session_mock, mock_upload_file):
     mock_repo.get_by_version.return_value = None
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(FirmwareNotFoundError) as exc:
         firmware_service.update_firmware_file(db_session_mock, "v1.0.0", mock_upload_file, 1)
     assert exc.value.status_code == 404
-    assert "Firmware não encontrado" in exc.value.detail
+    assert "Firmware versão 'v1.0.0' não encontrado." in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")
@@ -151,7 +158,7 @@ def test_update_firmware_file_success(mock_copy, mock_file, mock_time, mock_audi
 @patch("app.features.devices.firmware_service.firmware_repository")
 def test_get_latest_firmware_not_found(mock_repo, firmware_service, db_session_mock):
     mock_repo.get_latest.return_value = None
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(NoFirmwareAvailableError) as exc:
         firmware_service.get_latest_firmware(db_session_mock)
     assert exc.value.status_code == 404
     assert "Nenhum firmware disponível" in exc.value.detail
@@ -176,20 +183,20 @@ def test_get_all_firmwares(mock_repo, firmware_service, db_session_mock):
 @patch("app.features.devices.firmware_service.firmware_repository")
 def test_get_firmware_file_not_found_db(mock_repo, firmware_service, db_session_mock):
     mock_repo.get_by_version.return_value = None
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(FirmwareNotFoundError) as exc:
         firmware_service.get_firmware_file(db_session_mock, "v1.0.0")
     assert exc.value.status_code == 404
-    assert "Firmware não encontrado" in exc.value.detail
+    assert "Firmware versão 'v1.0.0' não encontrado." in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")
 @patch("os.path.exists", return_value=False)
 def test_get_firmware_file_not_found_fs(mock_exists, mock_repo, firmware_service, db_session_mock):
     mock_repo.get_by_version.return_value = Firmware(id=1, version="v1.0.0", file_path="rel/path")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(FirmwareFileNotFoundError) as exc:
         firmware_service.get_firmware_file(db_session_mock, "v1.0.0")
     assert exc.value.status_code == 404
-    assert "Arquivo do firmware não encontrado no servidor" in exc.value.detail
+    assert "Arquivo do firmware 'v1.0.0' não encontrado no servidor" in exc.value.detail
 
 
 @patch("app.features.devices.firmware_service.firmware_repository")

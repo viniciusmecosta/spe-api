@@ -2,10 +2,14 @@ import sqlite3
 from unittest.mock import MagicMock
 
 import requests
-from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
+from app.features.devices.device_exceptions import (
+    SyncConsumerOnlyError,
+    SyncDatabaseCorruptedError,
+    SyncDatabaseReceiveError,
+)
 from app.features.devices.sync_service import sync_service
 from app.features.system.system_models import RoutineLog
 
@@ -55,7 +59,7 @@ def test_check_sqlite_integrity_exception(mocker):
 def test_receive_database_wrong_mode(mocker):
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mock_file = MagicMock()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(SyncConsumerOnlyError) as exc:
         sync_service.receive_database(mock_file)
     assert exc.value.status_code == 403
 
@@ -80,7 +84,7 @@ def test_receive_database_invalid_integrity(mocker):
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch.object(sync_service, "_check_sqlite_integrity", return_value=False)
     mocker.patch("os.remove")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(SyncDatabaseCorruptedError) as exc:
         sync_service.receive_database(mock_file)
     assert exc.value.status_code == 400
 
@@ -91,7 +95,7 @@ def test_receive_database_os_error(mocker):
     mocker.patch("builtins.open", side_effect=OSError("Disk error"))
     mocker.patch("os.path.exists", return_value=True)
     mocker.patch("os.remove")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(SyncDatabaseReceiveError) as exc:
         sync_service.receive_database(mock_file)
     assert exc.value.status_code == 400
 

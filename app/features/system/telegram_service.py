@@ -2,11 +2,14 @@ import logging
 from datetime import date, datetime, time
 
 import requests
-from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.features.system.system_exceptions import (
+    TelegramInvalidDateRangeError,
+    TelegramPeriodExceededError,
+)
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared.enums import RecordType
@@ -24,17 +27,11 @@ class TelegramService:
 
     def validate_manual_report_dates(self, start_date: date, end_date: date) -> None:
         if start_date > end_date:
-            raise HTTPException(
-                status_code=400,
-                detail="A data de início não pode ser maior que a data de fim.",
-            )
+            raise TelegramInvalidDateRangeError()
 
         delta_days = (end_date - start_date).days
         if delta_days > 7:
-            raise HTTPException(
-                status_code=400,
-                detail="Período excedido. O relatório gerencial no Telegram é limitado a no máximo 7 dias. Utilize a plataforma web para consultar períodos mais extensos.",
-            )
+            raise TelegramPeriodExceededError()
 
     def send_text(self, text: str) -> bool:
         if not self.bot_token or not self.chat_id:

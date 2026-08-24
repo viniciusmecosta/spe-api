@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 import pytest
 from app.core.config import settings
 from app.database.base import Base
+import app.router
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -68,6 +69,12 @@ def db_session_mock():
 
         def all(self):
             return self.items
+
+        def exists(self):
+            return self
+
+        def scalar(self):
+            return self.items[0] if self.items else None
 
         def delete(self, *args, **kwargs):
             return len(self.items)

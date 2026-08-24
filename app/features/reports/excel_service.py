@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -18,6 +17,7 @@ from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_repository import company_repository
 from app.features.holidays.holiday_repository import holiday_repository
+from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
@@ -134,10 +134,7 @@ class ExcelService:
                 (year == prev_year and month == prev_month):
             return
 
-        raise HTTPException(
-            status_code=400,
-            detail="Funcionários só podem gerar relatório Excel do mês atual ou do mês anterior."
-        )
+        raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
     def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: list[int] | None = None,
                               current_user: User | None = None) -> BytesIO:

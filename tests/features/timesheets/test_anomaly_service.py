@@ -1,10 +1,9 @@
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
-from fastapi import HTTPException
-
 import pytest
 from app.features.timesheets.anomaly_service import anomaly_service
+from app.features.timesheets.timesheet_exceptions import InvalidMonthOrYearError
 from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
 
 
@@ -206,7 +205,7 @@ def test_get_anomalies_no_target_users(mock_tr_repo, mock_user_repo, db_session_
 
 
 def test_get_anomalies_by_month_invalid(db_session_mock):
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidMonthOrYearError) as exc_info:
         anomaly_service.get_anomalies_by_month(db_session_mock, 13, 2023)
     assert exc_info.value.status_code == 400
 

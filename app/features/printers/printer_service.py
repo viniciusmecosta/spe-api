@@ -1,6 +1,6 @@
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.features.printers.printer_exceptions import PrinterNotFoundError
 from app.features.printers.printer_models import Printer
 from app.features.printers.printer_repository import printer_repository
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
@@ -13,10 +13,7 @@ class PrinterService:
     def get_by_id(self, db: Session, printer_id: int) -> Printer:
         printer = printer_repository.get_by_id(db, printer_id=printer_id)
         if not printer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=PRINTER_NOT_FOUND_MSG,
-            )
+            raise PrinterNotFoundError(printer_id=printer_id)
         return printer
 
     def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[Printer]:

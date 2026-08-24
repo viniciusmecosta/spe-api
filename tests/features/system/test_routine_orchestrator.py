@@ -2,12 +2,17 @@ from datetime import datetime
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
 from app.core.config import settings
 from app.features.system.routine_orchestrator import RoutineOrchestrator
+from app.features.system.system_exceptions import (
+    BackupGenerationFailedError,
+    EmailNotConfiguredError,
+    NoMaintainersWithEmailError,
+    SMTPConnectionFailedError,
+)
 from app.features.system.system_models import RoutineLog
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -179,6 +184,11 @@ def test_send_managerial_report_telegram_success_with_previous(orchestrator, moc
                         return None
                     return RoutineLog(target_date=datetime(2023, 10, 13).date())
 
+                def scalar(self):
+                    if self.n == 1:
+                        return False
+                    return True
+
             return MockQuery(db_session_mock.query.call_count)
 
         db_session_mock.query.side_effect = side_effect_query
@@ -206,6 +216,9 @@ def test_send_managerial_report_telegram_send_fails(orchestrator, mock_datetime,
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
             return MockQuery(db_session_mock.query.call_count)
 
         db_session_mock.query.side_effect = side_effect_query
@@ -232,6 +245,9 @@ def test_send_managerial_report_telegram_db_error_on_write(orchestrator, mock_da
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
             return MockQuery(db_session_mock.query.call_count)
 
@@ -295,6 +311,9 @@ def test_run_daily_backup_routine_email_no_maintainers(orchestrator, mock_dateti
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
                 def all(self):
                     return []
 
@@ -330,6 +349,11 @@ def test_run_daily_backup_routine_email_backup_fails(orchestrator, mock_datetime
                         return None
                     return RoutineLog(target_date=datetime(2023, 10, 13).date())
 
+                def scalar(self):
+                    if self.n == 1:
+                        return False
+                    return True
+
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
 
@@ -357,6 +381,9 @@ def test_run_daily_backup_routine_email_success(orchestrator, mock_datetime, moc
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
@@ -389,6 +416,9 @@ def test_run_daily_backup_routine_email_send_fails(orchestrator, mock_datetime, 
                 def first(self):
                     return None
 
+                def scalar(self):
+                    return False
+
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
 
@@ -418,6 +448,9 @@ def test_run_daily_backup_routine_email_db_error_on_write(orchestrator, mock_dat
 
                 def first(self):
                     return None
+
+                def scalar(self):
+                    return False
 
                 def all(self):
                     return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
@@ -455,6 +488,9 @@ def test_clean_old_logs_success(orchestrator, mock_datetime, mock_get_db_session
             def first(self):
                 return None
 
+            def scalar(self):
+                return False
+
             def delete(self):
                 return 5
 
@@ -478,6 +514,9 @@ def test_clean_old_logs_db_error_on_write(orchestrator, mock_datetime, mock_get_
 
             def first(self):
                 return None
+
+            def scalar(self):
+                return False
 
             def delete(self):
                 return 5
@@ -553,7 +592,7 @@ def test_send_manual_report_telegram_db_error_on_write(orchestrator, mock_dateti
 
 def test_send_manual_backup_email_no_smtp(orchestrator):
     with patch.object(settings, 'SMTP_HOST', None):
-        with pytest.raises(HTTPException):
+        with pytest.raises(EmailNotConfiguredError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -561,7 +600,7 @@ def test_send_manual_backup_email_no_maintainers(orchestrator, db_session_mock, 
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
         db_session_mock.query.return_value.items = []
-        with pytest.raises(HTTPException):
+        with pytest.raises(NoMaintainersWithEmailError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -572,7 +611,7 @@ def test_send_manual_backup_email_backup_fails(orchestrator, db_session_mock, mo
         db_session_mock.query.return_value.items = [
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
         mock_backup_service.create_safe_backup.return_value = None
-        with pytest.raises(HTTPException):
+        with pytest.raises(BackupGenerationFailedError):
             orchestrator.send_manual_backup_email(None)
 
 
@@ -599,7 +638,7 @@ def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = False
-        with pytest.raises(HTTPException):
+        with pytest.raises(SMTPConnectionFailedError):
             orchestrator.send_manual_backup_email(db_session_mock)
 
 

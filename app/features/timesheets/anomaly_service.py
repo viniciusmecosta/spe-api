@@ -1,13 +1,13 @@
 import calendar
 from datetime import date, datetime
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
+from app.features.timesheets.timesheet_exceptions import InvalidMonthOrYearError
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
 from app.features.users.user_repository import user_repository
 from app.shared.enums import (
@@ -238,7 +238,7 @@ class AnomalyService:
         try:
             _, last_day = calendar.monthrange(year, month)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Mês ou ano inválido.")
+            raise InvalidMonthOrYearError()
 
         start_date = date(year, month, 1)
         end_date = date(year, month, last_day)

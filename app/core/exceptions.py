@@ -10,6 +10,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 logger = logging.getLogger(__name__)
 
 
+class DomainException(Exception):
+    def __init__(self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST):
+        self.detail = detail
+        self.status_code = status_code
+        super().__init__(self.detail)
+
+
 def _translate_pydantic_msg(msg: str) -> str:
     translations = {
         "field required": "Campo obrigatório",
@@ -75,7 +82,10 @@ def setup_exception_handlers(app: FastAPI):
             detail_msg = str(detail_msg)
 
         if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
-            detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
+            if request.url.path.startswith("/uploads/"):
+                detail_msg = "O documento ou arquivo solicitado não foi encontrado."
+            else:
+                detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
         elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Incorrect username or password":
             detail_msg = "Usuário ou senha incorretos."
         elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Could not validate credentials":
@@ -124,6 +134,20 @@ def setup_exception_handlers(app: FastAPI):
                 "title": "Erro no Banco de Dados",
                 "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "detail": "Ocorreu um erro interno ao processar a operação no banco de dados.",
+                "instance": request.url.path
+            }
+        )
+
+    @app.exception_handler(DomainException)
+    async def domain_exception_handler(request: Request, exc: DomainException):
+        logger.warning(f"Domain error {exc.status_code} na rota {request.url.path}: {exc.detail}")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "type": _get_error_type(exc.status_code),
+                "title": _get_error_title(exc.status_code),
+                "status": exc.status_code,
+                "detail": exc.detail,
                 "instance": request.url.path
             }
         )

@@ -1,8 +1,8 @@
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.config import settings
+from app.features.auth.auth_exceptions import InactiveUserError, InvalidCredentialsError
 from app.features.auth.auth_schemas import Token
 from app.features.system.audit_service import audit_service
 from app.features.users.user_repository import user_repository
@@ -20,26 +20,17 @@ class AuthService:
         user = user_repository.get_by_username(db, username=normalized_username)
 
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuário ou senha incorretos.",
-            )
+            raise InvalidCredentialsError()
 
         is_dev = settings.ENVIRONMENT.lower() == "dev"
         allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
 
         if not allow_bypass:
             if not security.verify_password(password, user.password_hash):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Usuário ou senha incorretos.",
-                )
+                raise InvalidCredentialsError()
 
         if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Usuário inativo.",
-            )
+            raise InactiveUserError()
 
         access_token = security.create_access_token(subject=user.id, name=user.name)
         audit_service.log(db, user.id, "LOGIN", entity="USER", entity_id=user.id)

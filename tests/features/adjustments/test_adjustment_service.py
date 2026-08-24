@@ -1,9 +1,22 @@
 from datetime import date, datetime, time
 from io import BytesIO
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 
 import pytest
+from app.features.adjustments.adjustment_exceptions import (
+    AdjustmentAttachmentNotFoundError,
+    AdjustmentInvalidStatusError,
+    AdjustmentNotFoundError,
+    AdjustmentPermissionError,
+    AttachmentFileNotFoundError,
+    CorruptedAttachmentError,
+    InvalidAdjustmentFilenameError,
+    InvalidAdjustmentTypeError,
+    InvalidAttachmentFormatError,
+    WaiverAttachmentRequiredError,
+    WaiverLimitExceededError,
+)
 from app.features.adjustments.adjustment_models import AdjustmentAttachment, AdjustmentRequest
 from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate, AdjustmentWaiverCreate, \
     BulkReprocessExtraTimeRequest
@@ -21,7 +34,7 @@ def test_execute_and_revert_action_no_time(db_session_mock):
 
 def test_cancel_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(AdjustmentNotFoundError) as exc1:
         adjustment_service.cancel_adjustment(db_session_mock, 999, 1)
     assert exc1.value.status_code == 404
 
@@ -30,7 +43,7 @@ def test_cancel_adjustment_forbidden_other_user(db_session_mock, mocker):
     target = date(2026, 1, 1)
     req_other = AdjustmentRequest(id=1, user_id=2, status=AdjustmentStatus.PENDING, target_date=target)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=req_other)
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(AdjustmentPermissionError) as exc2:
         adjustment_service.cancel_adjustment(db_session_mock, 1, 1)
     assert exc2.value.status_code == 403
 
@@ -39,7 +52,7 @@ def test_cancel_adjustment_invalid_status_approved(db_session_mock, mocker):
     target = date(2026, 1, 1)
     req_approved = AdjustmentRequest(id=1, user_id=1, status=AdjustmentStatus.APPROVED, target_date=target)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=req_approved)
-    with pytest.raises(HTTPException) as exc3:
+    with pytest.raises(AdjustmentInvalidStatusError) as exc3:
         adjustment_service.cancel_adjustment(db_session_mock, 1, 1)
     assert exc3.value.status_code == 400
 
@@ -56,7 +69,7 @@ def test_cancel_adjustment_pending_attribute_error(db_session_mock, mocker):
 def test_get_attachment_file_path_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     emp = User(id=1, role=UserRole.EMPLOYEE)
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(AdjustmentNotFoundError) as exc1:
         adjustment_service.get_attachment_file_path(db_session_mock, 999, emp)
     assert exc1.value.status_code == 404
 
@@ -65,7 +78,7 @@ def test_get_attachment_file_path_forbidden(db_session_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     req = AdjustmentRequest(id=1, user_id=2, attachments=[])
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=req)
-    with pytest.raises(HTTPException) as exc2:
+    with pytest.raises(AdjustmentPermissionError) as exc2:
         adjustment_service.get_attachment_file_path(db_session_mock, 1, emp)
     assert exc2.value.status_code == 403
 
@@ -74,7 +87,7 @@ def test_get_attachment_file_path_no_attachments(db_session_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     req_own = AdjustmentRequest(id=1, user_id=1, attachments=[])
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=req_own)
-    with pytest.raises(HTTPException) as exc3:
+    with pytest.raises(AdjustmentAttachmentNotFoundError) as exc3:
         adjustment_service.get_attachment_file_path(db_session_mock, 1, emp)
     assert exc3.value.status_code == 404
 
@@ -84,7 +97,7 @@ def test_get_attachment_file_path_file_not_found(db_session_mock, mocker):
     att = AdjustmentAttachment(id=1, file_path="/non_existent/path/doc.pdf")
     req_att = AdjustmentRequest(id=1, user_id=1, attachments=[att])
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=req_att)
-    with pytest.raises(HTTPException) as exc4:
+    with pytest.raises(AttachmentFileNotFoundError) as exc4:
         adjustment_service.get_attachment_file_path(db_session_mock, 1, emp)
     assert exc4.value.status_code == 404
 
@@ -103,7 +116,7 @@ def test_get_attachment_file_path_fallback_success(db_session_mock, mocker):
 def test_reprocess_historical_extra_time_scenarios(db_session_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     req_in = BulkReprocessExtraTimeRequest(start_date=date(2025, 12, 1), end_date=date(2026, 1, 1), user_ids=[1])
-    with pytest.raises(HTTPException) as exc1:
+    with pytest.raises(AdjustmentPermissionError) as exc1:
         adjustment_service.reprocess_historical_extra_time(db_session_mock, req_in, emp)
     assert exc1.value.status_code == 403
 
@@ -139,7 +152,7 @@ def test_validate_waiver_limit_exceeded(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get_waivers_by_user_and_date",
                  return_value=[AdjustmentRequest(amount_hours=8.0)])
     target_date = date(2023, 10, 1)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(WaiverLimitExceededError) as exc:
         adjustment_service._validate_waiver_limit(db_session_mock, 1, target_date, 5.0)
     assert exc.value.status_code == 400
 
@@ -187,7 +200,7 @@ def test_admin_delete_adjustment(db_session_mock, mocker):
 
 def test_delete_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 404
 
@@ -215,7 +228,7 @@ def test_approve_adjustment_waiver_no_attachment(db_session_mock, mocker):
                                 attachments=[])
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(WaiverAttachmentRequiredError) as exc:
         adjustment_service.approve_adjustment(db_session_mock, 1, 99)
     assert exc.value.status_code == 400
 
@@ -317,7 +330,7 @@ def test_get_my_enriched(db_session_mock, mocker):
 
 def test_admin_delete_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.admin_delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 404
 
@@ -371,7 +384,7 @@ def test_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mock_soft_delete = mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidAdjustmentTypeError) as exc:
         adjustment_service.delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 400
     assert "WAIVER" in exc.value.detail
@@ -385,7 +398,7 @@ def test_admin_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     mock_soft_delete = mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.soft_delete")
 
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidAdjustmentTypeError) as exc:
         adjustment_service.admin_delete_adjustment(db_session_mock, 1, 99, "Justificativa teste")
     assert exc.value.status_code == 400
     assert "WAIVER" in exc.value.detail
@@ -395,7 +408,7 @@ def test_admin_delete_adjustment_wrong_type_blocked(db_session_mock, mocker):
 def test_upload_attachment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
     upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 404
 
@@ -404,7 +417,7 @@ def test_upload_attachment_forbidden(db_session_mock, mocker):
     request = AdjustmentRequest(id=1, user_id=2)
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentPermissionError) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 403
 
@@ -414,7 +427,7 @@ def test_upload_attachment_invalid_name(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     upload_file = UploadFile(filename="test", file=BytesIO(b""))
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidAdjustmentFilenameError) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
@@ -424,7 +437,7 @@ def test_upload_attachment_invalid_ext(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     upload_file = UploadFile(filename="test.txt", file=BytesIO(b""))
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(InvalidAttachmentFormatError) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
@@ -434,7 +447,7 @@ def test_upload_attachment_invalid_content(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.validate_period_open")
     upload_file = UploadFile(filename="test.png", file=BytesIO(b"invalid"))
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(CorruptedAttachmentError) as exc:
         adjustment_service.upload_attachment(db_session_mock, 1, upload_file, 1)
     assert exc.value.status_code == 400
 
@@ -459,14 +472,14 @@ def test_upload_attachment_success(db_session_mock, mocker):
 
 def test_approve_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.approve_adjustment(db_session_mock, 1, 99)
     assert exc.value.status_code == 404
 
 
 def test_reject_adjustment_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.reject_adjustment(db_session_mock, 1, 99, "comentario")
     assert exc.value.status_code == 404
 
@@ -489,7 +502,7 @@ def test_revert_adjustment_action_delete_punch(db_session_mock, mocker):
 
 def test_revert_adjustment_status_not_found(db_session_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_repository.adjustment_repository.get", return_value=None)
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(AdjustmentNotFoundError) as exc:
         adjustment_service.revert_adjustment_status(db_session_mock, 1, 99, AdjustmentStatus.PENDING, "motivo")
     assert exc.value.status_code == 404
 
