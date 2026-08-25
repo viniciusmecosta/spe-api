@@ -1,6 +1,10 @@
-from sqlalchemy import exists, select
-from sqlalchemy.orm import Session
+from typing import Annotated
 
+from fastapi import Depends
+from sqlalchemy import exists, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database.session import get_async_db
 from app.features.users.user_exceptions import (
     InsufficientPrivilegesError,
     UserAlreadyExistsError,
@@ -10,9 +14,11 @@ from app.shared.enums import UserRole
 
 
 class UserValidator:
-    def validate_unique_fields(
+    def __init__(self, db: Annotated[AsyncSession, Depends(get_async_db)]):
+        self.db = db
+
+    async def validate_unique_fields(
         self,
-        db: Session,
         *,
         username: str | None = None,
         email: str | None = None,
@@ -21,17 +27,17 @@ class UserValidator:
     ) -> None:
         if username and (not current_user or username != current_user.username):
             stmt = select(exists().where(User.username == username))
-            if db.scalar(stmt):
+            if await self.db.scalar(stmt):
                 raise UserAlreadyExistsError("Nome de usuário já em uso.")
 
         if email and (not current_user or email != current_user.email):
             stmt = select(exists().where(User.email == email))
-            if db.scalar(stmt):
+            if await self.db.scalar(stmt):
                 raise UserAlreadyExistsError("E-mail já está em uso.")
 
         if cpf and (not current_user or cpf != current_user.cpf):
             stmt = select(exists().where(User.cpf == cpf))
-            if db.scalar(stmt):
+            if await self.db.scalar(stmt):
                 raise UserAlreadyExistsError("CPF já está em uso.")
 
     def validate_manager_privilege(self, current_user: User, target_user: User) -> None:
@@ -44,6 +50,3 @@ class UserValidator:
             UserRole.MAINTAINER,
         ]:
             raise InsufficientPrivilegesError("Privilégios insuficientes.")
-
-
-user_validator = UserValidator()

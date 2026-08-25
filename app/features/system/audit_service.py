@@ -172,5 +172,54 @@ class AuditService:
             order_by=order_by, skip=skip, limit=limit
         )
 
+    async def async_log(
+            self,
+            db,
+            user_id: int | None,
+            action: str,
+            *,
+            entity: str,
+            entity_id: int,
+            old_data: dict | None = None,
+            new_data: dict | None = None,
+    ):
+        obj_in = AuditLogCreate(
+            user_id=user_id,
+            action=action,
+            entity=entity,
+            entity_id=entity_id,
+            old_data=old_data,
+            new_data=new_data
+        )
+        return await audit_repository.async_create(db, obj_in=obj_in)
+
+    async def async_log_change(
+            self,
+            db,
+            user_id: int | None,
+            action: str,
+            *,
+            entity: str | None = None,
+            entity_id: int | None = None,
+            old_model: Any | None = None,
+            new_model: Any | None = None,
+            old_data: dict | None = None,
+            new_data: dict | None = None,
+    ):
+        raw_old = self._prepare_raw_data(old_model, old_data)
+        raw_new = self._prepare_raw_data(new_model, new_data)
+        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
+        final_old, final_new = self._compute_final_data(raw_old, raw_new)
+
+        return await self.async_log(
+            db,
+            user_id=user_id,
+            action=action,
+            entity=resolved_entity,
+            entity_id=resolved_id,
+            old_data=final_old,
+            new_data=final_new,
+        )
+
 
 audit_service = AuditService()

@@ -167,3 +167,4 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
 
 audit_repository = AuditRepository()
 routine_log_repository = RoutineLogRepository()
+

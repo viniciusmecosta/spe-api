@@ -1,6 +1,22 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 
 import pytest
+
+
+@pytest.fixture
+def async_db_mock():
+    from unittest.mock import MagicMock, AsyncMock
+    session = MagicMock()
+    session.scalar = AsyncMock()
+    session.scalars = AsyncMock()
+    session.execute = AsyncMock()
+    session.get = AsyncMock()
+    session.delete = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    return session
+
+
 from app.features.users.user_exceptions import (
     BiometricValidationError,
     InsufficientPrivilegesError,
@@ -10,17 +26,37 @@ from app.features.users.user_exceptions import (
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
-from app.features.users.user_service import user_service
+from app.features.users.user_service import UserService
+from app.features.users.user_validator import UserValidator
+from app.features.users.user_biometric_service import UserBiometricService
 from app.shared.enums import UserRole
 
 
-def test_get_multi(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get_multi", return_value=["u1"])
-    res = user_service.get_multi(db_session_mock, 0, 10)
+@pytest.fixture
+def user_validator(async_db_mock):
+    return UserValidator(db=async_db_mock)
+
+
+@pytest.fixture
+def biometric_service(async_db_mock):
+    return UserBiometricService(db=async_db_mock)
+
+
+@pytest.fixture
+def user_service(async_db_mock, user_validator, biometric_service):
+    service = UserService(db=async_db_mock, validator=user_validator, biometric_service=biometric_service)
+    service.repository = MagicMock()
+    return service
+
+
+@pytest.mark.asyncio
+async def test_get_multi(user_service):
+    user_service.repository.get_multi = AsyncMock(return_value=["u1"])
+    res = await user_service.get_multi(0, 10)
     assert res == ["u1"]
 
 
-def test_get_user_me():
+def test_get_user_me(user_service):
     mgr = User(id=1, role=UserRole.MANAGER, can_manual_punch_desktop=False, can_manual_punch_mobile=False)
     res_mgr = user_service.get_user_me(mgr)
     assert res_mgr["can_manual_punch_desktop"] is True
@@ -32,130 +68,135 @@ def test_get_user_me():
     assert res_emp["can_manual_punch_mobile"] is False
 
 
-def test_get_user_by_id_not_found(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
+@pytest.mark.asyncio
+async def test_get_user_by_id_not_found(user_service):
+    user_service.repository.get = AsyncMock(return_value=None)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     with pytest.raises(UserNotFoundError) as exc1:
-        user_service.get_user_by_id(db_session_mock, 999, current_mgr)
+        await user_service.get_user_by_id(999, current_mgr)
     assert exc1.value.status_code == 404
 
 
-def test_get_user_by_id_forbidden_employee(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_get_user_by_id_forbidden_employee(user_service):
     target_user = User(id=2, role=UserRole.EMPLOYEE)
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=target_user)
+    user_service.repository.get = AsyncMock(return_value=target_user)
     current_emp = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(InsufficientPrivilegesError) as exc2:
-        user_service.get_user_by_id(db_session_mock, 2, current_emp)
+        await user_service.get_user_by_id(2, current_emp)
     assert exc2.value.status_code == 403
 
 
-def test_get_user_by_id_success(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_get_user_by_id_success(user_service):
     target_user = User(id=2, role=UserRole.EMPLOYEE)
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=target_user)
+    user_service.repository.get = AsyncMock(return_value=target_user)
     current_mgr = User(id=1, role=UserRole.MANAGER)
-    assert user_service.get_user_by_id(db_session_mock, 2, current_mgr) == target_user
+    assert await user_service.get_user_by_id(2, current_mgr) == target_user
 
 
-def test_update_user_by_admin_not_found(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
+@pytest.mark.asyncio
+async def test_update_user_by_admin_not_found(user_service):
+    user_service.repository.get = AsyncMock(return_value=None)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     up = UserUpdate()
     with pytest.raises(UserNotFoundError) as exc1:
-        user_service.update_user_by_admin(db_session_mock, 999, up, current_mgr)
+        await user_service.update_user_by_admin(999, up, current_mgr)
     assert exc1.value.status_code == 404
 
 
-def test_update_user_by_admin_forbidden_maintainer(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_update_user_by_admin_forbidden_maintainer(user_service):
     maint_user = User(id=2, role=UserRole.MAINTAINER)
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=maint_user)
+    user_service.repository.get = AsyncMock(return_value=maint_user)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     up = UserUpdate()
     with pytest.raises(InsufficientPrivilegesError) as exc2:
-        user_service.update_user_by_admin(db_session_mock, 2, up, current_mgr)
+        await user_service.update_user_by_admin(2, up, current_mgr)
     assert exc2.value.status_code == 403
 
 
-def test_update_user_by_admin_success(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_update_user_by_admin_success(user_service, mocker):
     emp_user = User(id=2, role=UserRole.EMPLOYEE)
     current_mgr = User(id=1, role=UserRole.MANAGER)
     up = UserUpdate()
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=emp_user)
-    mocker.patch("app.features.users.user_service.user_service.update_user", return_value=emp_user)
-    assert user_service.update_user_by_admin(db_session_mock, 2, up, current_mgr) == emp_user
+    user_service.repository.get = AsyncMock(return_value=emp_user)
+    mocker.patch.object(user_service, "update_user", new_callable=AsyncMock, return_value=emp_user)
+    assert await user_service.update_user_by_admin(2, up, current_mgr) == emp_user
 
 
-def test_get_bio_attr():
-    assert user_service._get_bio_attr({"id": 1}, "id") == 1
-
+def test_get_bio_attr(biometric_service):
+    assert biometric_service._get_bio_attr({"id": 1}, "id") == 1
     class Obj:
         id = 2
 
-    assert user_service._get_bio_attr(Obj(), "id") == 2
-    assert user_service._get_bio_attr(Obj(), "none") is None
+    assert biometric_service._get_bio_attr(Obj(), "id") == 2
+    assert biometric_service._get_bio_attr(Obj(), "none") is None
 
 
-def test_validate_sensor_index_none(db_session_mock):
+@pytest.mark.asyncio
+async def test_validate_sensor_index_none(biometric_service):
     user = User(id=1)
     seen = set()
-    user_service._validate_sensor_index(db_session_mock, user, None, seen)
+    await biometric_service.validate_sensor_index(user, None, seen)
     assert len(seen) == 0
 
 
-def test_validate_sensor_index_duplicate_request(db_session_mock):
+@pytest.mark.asyncio
+async def test_validate_sensor_index_duplicate_request(biometric_service):
     user = User(id=1)
     seen = {1}
     with pytest.raises(BiometricValidationError) as exc:
-        user_service._validate_sensor_index(db_session_mock, user, 1, seen)
+        await biometric_service.validate_sensor_index(user, 1, seen)
     assert exc.value.status_code == 400
 
 
-def test_validate_sensor_index_already_used_db(db_session_mock):
+@pytest.mark.asyncio
+async def test_validate_sensor_index_already_used_db(biometric_service, async_db_mock):
     user = User(id=1)
     seen = set()
-    db_session_mock.query.return_value.scalar = MagicMock(return_value=True)
+    async_db_mock.scalar = AsyncMock(return_value=True)
     with pytest.raises(BiometricValidationError) as exc:
-        user_service._validate_sensor_index(db_session_mock, user, 2, seen)
+        await biometric_service.validate_sensor_index(user, 2, seen)
     assert exc.value.status_code == 400
 
 
-def test_validate_finger_id_none():
+def test_validate_finger_id_none(biometric_service):
     seen = set()
-    user_service._validate_finger_id(None, seen)
+    biometric_service.validate_finger_id(None, seen)
     assert len(seen) == 0
 
 
-def test_validate_finger_id_valid():
+def test_validate_finger_id_valid(biometric_service):
     seen = set()
-    user_service._validate_finger_id(1, seen)
+    biometric_service.validate_finger_id(1, seen)
     assert 1 in seen
 
 
-def test_validate_finger_id_duplicate():
+def test_validate_finger_id_duplicate(biometric_service):
     seen = {1}
     with pytest.raises(BiometricValidationError) as exc:
-        user_service._validate_finger_id(1, seen)
+        biometric_service.validate_finger_id(1, seen)
     assert exc.value.status_code == 400
 
 
-def test_process_single_biometric(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_service.UserService._validate_sensor_index")
-    mocker.patch("app.features.users.user_service.UserService._validate_finger_id")
-
+@pytest.mark.asyncio
+async def test_process_single_biometric(biometric_service, mocker):
+    mocker.patch.object(biometric_service, "validate_sensor_index", new_callable=AsyncMock)
+    mocker.patch.object(biometric_service, "validate_finger_id")
     user = User(id=1)
     seen_idx, seen_fgr = set(), set()
-
     existing = UserBiometric(id=10)
     current = {10: existing}
-
-    res = user_service._process_single_biometric(db_session_mock, user,
+    res = await biometric_service.process_single_biometric(user,
                                                  {"id": 10, "sensor_index": 2, "template_data": "data", "finger_id": 3},
                                                  seen_idx, seen_fgr, current)
     assert res == existing
     assert res.sensor_index == 2
     assert res.template_data == "data"
     assert res.finger_id == 3
-
-    res2 = user_service._process_single_biometric(db_session_mock, user,
+    res2 = await biometric_service.process_single_biometric(user,
                                                   {"id": 11, "sensor_index": 5, "template_data": "data2",
                                                    "finger_id": 4}, seen_idx, seen_fgr, current)
     assert res2.sensor_index == 5
@@ -163,58 +204,51 @@ def test_process_single_biometric(db_session_mock, mocker):
     assert res2.finger_id == 4
 
 
-def test_sync_biometrics(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_service.UserService._process_single_biometric",
-                 return_value=UserBiometric(id=1))
+@pytest.mark.asyncio
+async def test_sync_biometrics(biometric_service, mocker):
+    mocker.patch.object(biometric_service, "process_single_biometric", new_callable=AsyncMock,
+                        return_value=UserBiometric(id=1))
     user = User(id=1, biometrics=[])
-    user_service._sync_biometrics(db_session_mock, user, [{"id": 1}])
+    await biometric_service.sync_biometrics(user, [{"id": 1}])
     assert len(user.biometrics) == 1
 
 
-def test_validate_unique_fields_ok(db_session_mock):
-    db_session_mock.query.return_value.scalar = MagicMock(return_value=False)
-    user_in = MagicMock()
-    user_in.username = "test"
-    user_in.email = "test@test.com"
-    user_in.cpf = "123"
-    user_service._validate_unique_fields(db_session_mock, user_in)
+@pytest.mark.asyncio
+async def test_validate_unique_fields_ok(user_validator, async_db_mock):
+    async_db_mock.scalar = AsyncMock(return_value=False)
+    await user_validator.validate_unique_fields(username="test", email="test@test.com", cpf="123")
 
 
-def test_validate_unique_fields_dup_user(db_session_mock):
-    db_session_mock.query.return_value.scalar = MagicMock(return_value=True)
-    user_in = MagicMock()
-    user_in.username = "test"
+@pytest.mark.asyncio
+async def test_validate_unique_fields_dup_user(user_validator, async_db_mock):
+    async_db_mock.scalar = AsyncMock(return_value=True)
     with pytest.raises(UserAlreadyExistsError) as exc:
-        user_service._validate_unique_fields(db_session_mock, user_in)
+        await user_validator.validate_unique_fields(username="test")
     assert exc.value.status_code == 400
 
 
-def test_validate_unique_fields_dup_email(db_session_mock):
-    db_session_mock.query.return_value.scalar = MagicMock(side_effect=[False, True])
-    user_in = MagicMock()
-    user_in.username = "test"
-    user_in.email = "test@test.com"
+@pytest.mark.asyncio
+async def test_validate_unique_fields_dup_email(user_validator, async_db_mock):
+    async_db_mock.scalar = AsyncMock(side_effect=[False, True])
     with pytest.raises(UserAlreadyExistsError) as exc:
-        user_service._validate_unique_fields(db_session_mock, user_in)
+        await user_validator.validate_unique_fields(username="test", email="test@test.com")
     assert exc.value.status_code == 400
 
 
-def test_validate_unique_fields_dup_cpf(db_session_mock):
-    db_session_mock.query.return_value.scalar = MagicMock(side_effect=[False, False, True])
-    user_in = MagicMock()
-    user_in.username = "test"
-    user_in.email = "test@test.com"
-    user_in.cpf = "123"
+@pytest.mark.asyncio
+async def test_validate_unique_fields_dup_cpf(user_validator, async_db_mock):
+    async_db_mock.scalar = AsyncMock(side_effect=[False, False, True])
     with pytest.raises(UserAlreadyExistsError) as exc:
-        user_service._validate_unique_fields(db_session_mock, user_in)
+        await user_validator.validate_unique_fields(username="test", email="test@test.com", cpf="123")
     assert exc.value.status_code == 400
 
 
-def test_create_user(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
+@pytest.mark.asyncio
+async def test_create_user(user_service, mocker):
+    mocker.patch.object(user_service, "_validate_unique_fields", new_callable=AsyncMock)
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mocker.patch("app.features.system.audit_service.audit_service.log_change")
+    user_service.repository.create = AsyncMock(return_value=User(name="Test", password_hash="hash"))
+    mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     class DummyCreate:
         pass
@@ -235,18 +269,18 @@ def test_create_user(db_session_mock, mocker):
     user_in.can_export_report = False
     user_in.biometrics = [{"id": 1}]
 
-    user = user_service.create_user(db_session_mock, user_in, 99)
+    user = await user_service.create_user(user_in, 99)
     assert user.name == "Test"
     assert user.password_hash == "hash"
 
 
-def test_update_user_not_found(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
+@pytest.mark.asyncio
+async def test_update_user_not_found(user_service):
+    user_service.repository.get = AsyncMock(return_value=None)
     user_in = MagicMock()
     with pytest.raises(UserNotFoundError) as exc:
-        user_service.update_user(db_session_mock, 1, user_in, 99)
+        await user_service.update_user(1, user_in, 99)
     assert exc.value.status_code == 404
-
 
 def test_serialize_user_state():
     from datetime import date
@@ -262,41 +296,44 @@ def test_serialize_user_state():
     assert state["is_tolerance_exempt"] is True
 
 
-def test_update_user_ok(db_session_mock, mocker):
-    user = User(id=1, name="Old", is_active=True)
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.features.users.user_service.UserService._validate_unique_fields")
+@pytest.mark.asyncio
+async def test_update_user_ok(user_service, mocker):
+    user = User(id=1, name="New", is_active=True, password_hash="hash")
+    user_service.repository.get = AsyncMock(return_value=user)
+    user_service.repository.update = AsyncMock(return_value=user)
+    mocker.patch.object(user_service, "_validate_unique_fields", new_callable=AsyncMock)
     mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
-    mocker.patch("app.features.users.user_service.UserService._sync_biometrics")
-    mock_log = mocker.patch("app.features.system.audit_service.audit_service.log_change")
+    mock_log = mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     user_in = UserUpdate(name="New", password="123456")
     user_in.biometrics = []
 
-    res = user_service.update_user(db_session_mock, 1, user_in, 99)
+    res = await user_service.update_user(1, user_in, 99)
     assert res.name == "New"
     assert res.password_hash == "hash"
     mock_log.assert_called_once()
     assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
 
 
-def test_disable_user_not_found(db_session_mock, mocker):
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
+@pytest.mark.asyncio
+async def test_disable_user_not_found(user_service):
+    user_service.repository.get = AsyncMock(return_value=None)
     with pytest.raises(UserNotFoundError) as exc:
-        user_service.disable_user(db_session_mock, 1, 99)
+        await user_service.disable_user(1, 99)
     assert exc.value.status_code == 404
 
 
-def test_disable_user_ok(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_disable_user_ok(user_service, mocker):
     user = User(id=1, is_active=True)
-    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
-    mocker.patch("app.features.system.audit_service.audit_service.log_change")
+    user_service.repository.get = AsyncMock(return_value=user)
+    mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
-    res = user_service.disable_user(db_session_mock, 1, 99)
+    res = await user_service.disable_user(1, 99)
     assert res.is_active is False
 
 
-def test_format_name():
+def test_format_name(user_service):
     assert user_service._format_name("vinicius da costa") == "Vinicius da Costa"
     assert user_service._format_name("ze do carmo") == "Ze do Carmo"
     assert user_service._format_name("MARIA DAS GRACAS") == "Maria das Gracas"

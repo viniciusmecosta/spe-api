@@ -1,3 +1,4 @@
+aiosqlite>=0.22.1
 alembic>=1.18.5
 apscheduler>=3.11.3
 bcrypt>=5.0.0

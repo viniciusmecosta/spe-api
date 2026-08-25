@@ -1,21 +1,26 @@
-from typing import Any
+from typing import Annotated, Any
 
+from fastapi import Depends
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database.session import get_async_db
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_exceptions import BiometricValidationError
 from app.features.users.user_models import User
 
 
 class UserBiometricService:
+    def __init__(self, db: Annotated[AsyncSession, Depends(get_async_db)]):
+        self.db = db
+
     def _get_bio_attr(self, bio_data: Any, attr: str) -> Any:
         if isinstance(bio_data, dict):
             return bio_data.get(attr)
         return getattr(bio_data, attr, None)
 
-    def validate_sensor_index(
-        self, db: Session, user: User, sensor_idx: int | None, seen_indices: set[int]
+    async def validate_sensor_index(
+            self, user: User, sensor_idx: int | None, seen_indices: set[int]
     ) -> None:
         if sensor_idx is None:
             return
@@ -26,7 +31,7 @@ class UserBiometricService:
         stmt = select(UserBiometric).where(UserBiometric.sensor_index == sensor_idx)
         if getattr(user, "id", None):
             stmt = stmt.where(UserBiometric.user_id != user.id)
-        if db.scalar(select(stmt.exists())):
+        if await self.db.scalar(select(stmt.exists())):
             raise BiometricValidationError(f"Índice biométrico {sensor_idx} já cadastrado em outro usuário.")
 
     def validate_finger_id(self, finger_id: int | None, seen_fingers: set[int]) -> None:
@@ -36,9 +41,8 @@ class UserBiometricService:
             raise BiometricValidationError(f"Biometria {finger_id} enviada em duplicidade.")
         seen_fingers.add(finger_id)
 
-    def process_single_biometric(
+    async def process_single_biometric(
         self,
-        db: Session,
         user: User,
         bio_data: Any,
         seen_indices: set[int],
@@ -50,7 +54,7 @@ class UserBiometricService:
         tmpl_data = self._get_bio_attr(bio_data, "template_data")
         finger_id = self._get_bio_attr(bio_data, "finger_id")
 
-        self.validate_sensor_index(db, user, sensor_idx, seen_indices)
+        await self.validate_sensor_index(user, sensor_idx, seen_indices)
         self.validate_finger_id(finger_id, seen_fingers)
 
         if bio_id and bio_id in current_biometrics:
@@ -67,19 +71,16 @@ class UserBiometricService:
             finger_id=finger_id,
         )
 
-    def sync_biometrics(self, db: Session, user: User, biometrics_in: list[Any]) -> None:
+    async def sync_biometrics(self, user: User, biometrics_in: list[Any]) -> None:
         current_biometrics = {b.id: b for b in user.biometrics} if getattr(user, "id", None) else {}
         new_biometrics_list: list[UserBiometric] = []
         seen_indices: set[int] = set()
         seen_fingers: set[int] = set()
 
         for bio_data in biometrics_in:
-            processed_bio = self.process_single_biometric(
-                db, user, bio_data, seen_indices, seen_fingers, current_biometrics
+            processed_bio = await self.process_single_biometric(
+                user, bio_data, seen_indices, seen_fingers, current_biometrics
             )
             new_biometrics_list.append(processed_bio)
 
         user.biometrics = new_biometrics_list
-
-
-user_biometric_service = UserBiometricService()

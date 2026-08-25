@@ -1,7 +1,6 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.orm import Session
 
 from app.features.users.user_models import User
 from app.features.users.user_schemas import (
@@ -10,7 +9,7 @@ from app.features.users.user_schemas import (
     UserUpdate,
     UserUpdateMe,
 )
-from app.features.users.user_service import user_service
+from app.features.users.user_service import UserService
 from app.shared import deps
 from app.shared.enums import UserRole
 from app.shared.openapi_responses import (
@@ -29,9 +28,9 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     responses={**FORBIDDEN_RESPONSE},
 )
 async def read_users(
-        db: Annotated[Session, Depends(deps.get_db)],
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        skip: Annotated[int, Query(ge=0)] = 0,
+        after_id: Annotated[int | None, Query(ge=0)] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
         is_active: Annotated[bool | None, Query()] = None,
         role: Annotated[UserRole | None, Query()] = None,
@@ -42,9 +41,8 @@ async def read_users(
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
 ) -> list[UserResponse]:
     role_value = role.value if role else None
-    return user_service.get_multi(
-        db,
-        skip=skip,
+    return await user_service.get_multi(
+        after_id=after_id,
         limit=limit,
         is_active=is_active,
         role=role_value,
@@ -61,10 +59,10 @@ async def read_users(
 )
 async def create_user(
         user_in: UserCreate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> UserResponse:
-    return user_service.create_user(db, user_in=user_in, current_user_id=current_user.id)
+    return await user_service.create_user(user_in=user_in, current_user_id=current_user.id)
 
 
 @router.put(
@@ -73,12 +71,11 @@ async def create_user(
 )
 async def update_user_me(
         user_in: UserUpdateMe,
-        db: Annotated[Session, Depends(deps.get_db)],
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     update_data = UserUpdate(**user_in.model_dump(exclude_unset=True))
-    return user_service.update_user(
-        db,
+    return await user_service.update_user(
         user_id=current_user.id,
         user_in=update_data,
         current_user_id=current_user.id,
@@ -87,6 +84,7 @@ async def update_user_me(
 
 @router.get("/me")
 async def read_user_me(
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     return user_service.get_user_me(current_user)
@@ -98,10 +96,10 @@ async def read_user_me(
 )
 async def read_user_by_id(
         user_id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
-    return user_service.get_user_by_id(db, user_id=user_id, current_user=current_user)
+    return await user_service.get_user_by_id(user_id=user_id, current_user=current_user)
 
 
 @router.put(
@@ -111,9 +109,9 @@ async def read_user_by_id(
 async def update_user(
         user_id: int,
         user_in: UserUpdate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> UserResponse:
-    return user_service.update_user_by_admin(
-        db, user_id=user_id, user_in=user_in, current_user=current_user
+    return await user_service.update_user_by_admin(
+        user_id=user_id, user_in=user_in, current_user=current_user
     )
