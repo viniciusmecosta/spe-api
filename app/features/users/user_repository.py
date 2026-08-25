@@ -106,6 +106,7 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def update(
         self,
         db: Session,
+            *,
         db_obj: User,
         obj_in: UserUpdate | dict[str, Any],
     ) -> User:
@@ -251,6 +252,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
     async def update(
             self,
             db: AsyncSession,
+            *,
             db_obj: User,
             obj_in: UserUpdate | dict[str, Any],
     ) -> User:

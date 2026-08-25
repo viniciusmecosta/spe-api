@@ -12,15 +12,15 @@ def test_device_credential_repository(db_session):
 
     created = repo.create(
         db_session,
-        DeviceCredentialCreate(name="DevRepo Key", key_type=DeviceKeyType.DEVICE, api_key="secretkey123",
-                               is_active=True)
+        obj_in=DeviceCredentialCreate(name="DevRepo Key", key_type=DeviceKeyType.DEVICE, api_key="secretkey123",
+                                      is_active=True)
     )
     assert created.id is not None
 
     assert repo.get(db_session, created.id) is not None
     assert len(repo.get_all(db_session)) >= 1
 
-    updated = repo.update(db_session, created, DeviceCredentialUpdate(name="DevRepo Key Updated"))
+    updated = repo.update(db_session, db_obj=created, obj_in=DeviceCredentialUpdate(name="DevRepo Key Updated"))
     assert updated.name == "DevRepo Key Updated"
 
     repo.delete(db_session, created.id)

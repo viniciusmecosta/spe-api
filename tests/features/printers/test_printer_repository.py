@@ -7,7 +7,8 @@ def test_printer_repository(db_session, company):
 
     created = repo.create(
         db_session,
-        PrinterCreate(name="Repo Printer", address="192.168.1.100", status=True, paper_width=80, company_id=company.id)
+        obj_in=PrinterCreate(name="Repo Printer", address="192.168.1.100", status=True, paper_width=80,
+                             company_id=company.id)
     )
     assert created.id is not None
 
@@ -17,10 +18,10 @@ def test_printer_repository(db_session, company):
     all_p = repo.get_all(db_session)
     assert len(all_p) >= 1
 
-    updated = repo.update(db_session, created, PrinterUpdate(name="Repo Printer Updated"))
+    updated = repo.update(db_session, db_obj=created, obj_in=PrinterUpdate(name="Repo Printer Updated"))
     assert updated.name == "Repo Printer Updated"
 
-    updated_dict = repo.update(db_session, created, {"name": "Repo Printer Dict"})
+    updated_dict = repo.update(db_session, db_obj=created, obj_in={"name": "Repo Printer Dict"})
     assert updated_dict.name == "Repo Printer Dict"
 
     deleted = repo.delete(db_session, created.id)

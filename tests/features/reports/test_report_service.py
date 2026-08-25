@@ -622,9 +622,10 @@ def test_get_advanced_user_report_or_404_success(service, mock_db):
 
 
 def test_get_advanced_user_report_or_404_not_found(service, mock_db):
+    dummy_user = MagicMock()
     with patch.object(service, "get_advanced_user_report", return_value=None):
         with pytest.raises(ReportNotFoundOrIncompleteError) as exc:
-            service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, MagicMock())
+            service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, dummy_user)
         assert exc.value.status_code == 404
 
 
@@ -639,8 +640,9 @@ def test_validate_excel_export_permission_manager_pending_adjustments(service, m
     mgr.role = UserRole.MANAGER
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = [AdjustmentRequest()]
+    target_date = datetime(2024, 2, 1)
     with pytest.raises(PendingAdjustmentsExistError) as exc_mgr:
-        service.validate_excel_export_permission(mock_db, mgr, 1, 2024, datetime(2024, 2, 1))
+        service.validate_excel_export_permission(mock_db, mgr, 1, 2024, target_date)
     assert exc_mgr.value.status_code == 400
 
 
@@ -656,8 +658,9 @@ def test_validate_excel_export_permission_employee_no_export_perm(service, mock_
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = False
+    target_date = datetime(2024, 2, 1)
     with pytest.raises(ReportExportPermissionError) as exc_emp1:
-        service.validate_excel_export_permission(mock_db, emp, 1, 2024, datetime(2024, 2, 1))
+        service.validate_excel_export_permission(mock_db, emp, 1, 2024, target_date)
     assert exc_emp1.value.status_code == 403
 
 

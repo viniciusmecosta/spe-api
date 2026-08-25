@@ -22,14 +22,18 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
     def create(
         self,
         db: Session,
-        user_id: int,
-        record_type: RecordType,
-        record_datetime: datetime,
+            *,
+            obj_in: TimeRecordCreate | None = None,
+            user_id: int | None = None,
+            record_type: RecordType | None = None,
+            record_datetime: datetime | None = None,
         ip_address: str | None = None,
         device_name: str | None = None,
         platform: str | None = None,
         biometric_id: int | None = None,
     ) -> TimeRecord:
+        if obj_in is not None:
+            return super().create(db, obj_in=obj_in)
         db_record = TimeRecord(
             user_id=user_id,
             record_type=record_type,
@@ -163,7 +167,7 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
         return db.scalar(stmt) or 0
 
     def update(
-        self, db: Session, db_obj: TimeRecord, obj_in: TimeRecordUpdate
+            self, db: Session, *, db_obj: TimeRecord, obj_in: TimeRecordUpdate
     ) -> TimeRecord:
         return super().update(db, db_obj=db_obj, obj_in=obj_in)
 

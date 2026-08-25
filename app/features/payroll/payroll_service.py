@@ -169,7 +169,7 @@ class PayrollService:
 
         db.commit()
 
-        closure = payroll_repository.create(db, month, year, current_user.id)
+        closure = payroll_repository.create(db, month=month, year=year, user_id=current_user.id)
         closure.report_path = f"reports/{filename}"
         db.commit()
         db.refresh(closure)

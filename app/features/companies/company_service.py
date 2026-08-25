@@ -39,7 +39,7 @@ class CompanyService:
         existing = company_repository.get_current(db)
         if existing:
             raise CompanyAlreadyExistsError()
-        company = company_repository.create(db, obj_in)
+        company = company_repository.create(db, obj_in=obj_in)
         audit_service.log_change(db, current_user_id, "CREATE", new_model=company)
         return company
 
@@ -49,7 +49,7 @@ class CompanyService:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para atualizar.")
 
         old_data = serialize_model(existing)
-        company = company_repository.update(db, existing, obj_in)
+        company = company_repository.update(db, db_obj=existing, obj_in=obj_in)
         audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=company)
         return company
 

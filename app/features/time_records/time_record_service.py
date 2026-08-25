@@ -100,8 +100,15 @@ class TimeRecordService:
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
-        record = time_record_repository.create(db, user_id, RecordType.ENTRY, current_time, ip_address, device_name,
-                                               platform=platform)
+        record = time_record_repository.create(
+            db,
+            user_id=user_id,
+            record_type=RecordType.ENTRY,
+            record_datetime=current_time,
+            ip_address=ip_address,
+            device_name=device_name,
+            platform=platform,
+        )
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
@@ -119,8 +126,15 @@ class TimeRecordService:
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
         payroll_service.validate_period_open(db, current_time.date())
-        record = time_record_repository.create(db, user_id, RecordType.EXIT, current_time, ip_address, device_name,
-                                               platform=platform)
+        record = time_record_repository.create(
+            db,
+            user_id=user_id,
+            record_type=RecordType.EXIT,
+            record_datetime=current_time,
+            ip_address=ip_address,
+            device_name=device_name,
+            platform=platform,
+        )
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
@@ -241,27 +255,40 @@ class TimeRecordService:
         audit_service.log_change(db, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                  new_data={"justification": justification_val})
 
+    def _determine_punch_type(self, db: Session, user_id: int, timestamp: datetime) -> RecordType:
+        last_record = time_record_repository.get_last_by_user(db, user_id)
+        if not last_record or last_record.record_type != RecordType.ENTRY:
+            return RecordType.ENTRY
+
+        tz = ZoneInfo(settings.TIMEZONE)
+        last_time = last_record.record_datetime
+        if last_time.tzinfo is None:
+            last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
+        last_local_date = last_time.astimezone(tz).date()
+
+        curr_time = timestamp
+        if curr_time.tzinfo is None:
+            curr_time = curr_time.replace(tzinfo=ZoneInfo("UTC"))
+        curr_local_date = curr_time.astimezone(tz).date()
+
+        if last_local_date == curr_local_date:
+            return RecordType.EXIT
+        return RecordType.ENTRY
+
     def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
                      biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
-        last_record = time_record_repository.get_last_by_user(db, user_id)
-        record_type = RecordType.ENTRY
-        if last_record and last_record.record_type == RecordType.ENTRY:
-            tz = ZoneInfo(settings.TIMEZONE)
-            last_time = last_record.record_datetime
-            if last_time.tzinfo is None:
-                last_time = last_time.replace(tzinfo=ZoneInfo("UTC"))
-            last_local_date = last_time.astimezone(tz).date()
-            curr_time = timestamp
-            if curr_time.tzinfo is None:
-                curr_time = curr_time.replace(tzinfo=ZoneInfo("UTC"))
-            curr_local_date = curr_time.astimezone(tz).date()
-            if last_local_date == curr_local_date:
-                record_type = RecordType.EXIT
+        record_type = self._determine_punch_type(db, user_id, timestamp)
         device_name = get_client_device_name(ip_address)
-        record = time_record_repository.create(db, user_id=user_id, record_type=record_type, record_datetime=timestamp,
-                                               ip_address=ip_address, device_name=device_name, platform=platform,
-                                               biometric_id=biometric_id)
-        return record
+        return time_record_repository.create(
+            db,
+            user_id=user_id,
+            record_type=record_type,
+            record_datetime=timestamp,
+            ip_address=ip_address,
+            device_name=device_name,
+            platform=platform,
+            biometric_id=biometric_id,
+        )
 
     def get_my_records(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
         return time_record_repository.get_all_by_user(db, user_id, skip, limit)
@@ -302,7 +329,7 @@ class TimeRecordService:
                 }
                 background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
-    def get_receipt_data(self, db: Session, short_id: str, current_user: User):
+    def _get_accessible_record(self, db: Session, short_id: str, current_user: User) -> TimeRecord:
         record_id = hashid_service.decode(short_id)
         if not record_id:
             raise InvalidReceiptIdError(receipt_id=short_id)
@@ -313,10 +340,9 @@ class TimeRecordService:
 
         if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
             raise ReceiptAccessDeniedError()
+        return record
 
-        company = company_repository.get_current(db)
-        timeline = self.get_record_timeline(db, record.id)
-
+    def _build_receipt_timeline(self, timeline: list[TimeRecord]) -> list[ReceiptTimelineItem]:
         timeline_items: list[ReceiptTimelineItem] = []
         if timeline and hasattr(timeline[0], "action"):
             for t in timeline:
@@ -329,6 +355,13 @@ class TimeRecordService:
                         new_data=t.new_data,
                     )
                 )
+        return timeline_items
+
+    def get_receipt_data(self, db: Session, short_id: str, current_user: User):
+        record = self._get_accessible_record(db, short_id, current_user)
+        company = company_repository.get_current(db)
+        timeline = self.get_record_timeline(db, record.id)
+        timeline_items = self._build_receipt_timeline(timeline)
 
         return ReceiptResponse(
             short_id=short_id,
@@ -346,17 +379,7 @@ class TimeRecordService:
         )
 
     def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> tuple[bytes, str]:
-        record_id = hashid_service.decode(short_id)
-        if not record_id:
-            raise InvalidReceiptIdError(receipt_id=short_id)
-
-        record = time_record_repository.get(db, record_id)
-        if not record:
-            raise TimeRecordNotFoundError(record_id=record_id)
-
-        if current_user.role == UserRole.EMPLOYEE and record.user_id != current_user.id:
-            raise ReceiptAccessDeniedError()
-
+        record = self._get_accessible_record(db, short_id, current_user)
         company = company_repository.get_current(db)
 
         record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"

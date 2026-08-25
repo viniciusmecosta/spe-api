@@ -18,9 +18,16 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
     def __init__(self):
         super().__init__(AdjustmentRequest)
 
-    def create(self, db: Session, user_id: int, obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
+    def create(
+            self,
+            db: Session,
+            *,
+            obj_in: AdjustmentRequestCreate,
+            user_id: int | None = None,
+    ) -> AdjustmentRequest:
+        target_user_id = user_id if user_id is not None else getattr(obj_in, "user_id", None)
         db_obj = AdjustmentRequest(
-            user_id=user_id,
+            user_id=target_user_id,
             adjustment_type=obj_in.adjustment_type,
             record_type=obj_in.record_type,
             target_date=obj_in.target_date,

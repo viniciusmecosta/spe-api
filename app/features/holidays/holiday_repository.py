@@ -12,7 +12,7 @@ class HolidayRepository(BaseRepository[Holiday, HolidayCreate, HolidayCreate]):
     def __init__(self):
         super().__init__(Holiday)
 
-    def create(self, db: Session, obj_in: HolidayCreate) -> Holiday:
+    def create(self, db: Session, *, obj_in: HolidayCreate) -> Holiday:
         return super().create(db, obj_in=obj_in)
 
     def get_all(self, db: Session) -> list[Holiday]:

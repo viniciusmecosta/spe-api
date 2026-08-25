@@ -20,7 +20,7 @@ class DeviceCredentialRepository(BaseRepository[DeviceCredential, DeviceCredenti
     def __init__(self):
         super().__init__(DeviceCredential)
 
-    def create(self, db: Session, obj_in: DeviceCredentialCreate) -> DeviceCredential:
+    def create(self, db: Session, *, obj_in: DeviceCredentialCreate) -> DeviceCredential:
         hashed_key = get_api_key_hash(obj_in.api_key)
         db_obj = DeviceCredential(
             name=obj_in.name,
@@ -41,7 +41,7 @@ class DeviceCredentialRepository(BaseRepository[DeviceCredential, DeviceCredenti
         return list(db.scalars(stmt).all())
 
     def update(
-        self, db: Session, db_obj: DeviceCredential, obj_in: DeviceCredentialUpdate
+            self, db: Session, *, db_obj: DeviceCredential, obj_in: DeviceCredentialUpdate
     ) -> DeviceCredential:
         return super().update(db, db_obj=db_obj, obj_in=obj_in)
 
@@ -69,8 +69,18 @@ class FirmwareRepository(BaseRepository[Firmware, Firmware, Firmware]):
         stmt = select(Firmware).order_by(desc(Firmware.created_at))
         return list(db.scalars(stmt).all())
 
-    def create(self, db: Session, version: str, file_path: str) -> Firmware:
-        db_obj = Firmware(version=version, file_path=file_path)
+    def create(
+            self,
+            db: Session,
+            *,
+            obj_in: Firmware | None = None,
+            version: str | None = None,
+            file_path: str | None = None,
+    ) -> Firmware:
+        if obj_in is not None:
+            db_obj = obj_in
+        else:
+            db_obj = Firmware(version=version, file_path=file_path)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

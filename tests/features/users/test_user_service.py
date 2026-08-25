@@ -245,8 +245,7 @@ async def test_validate_unique_fields_dup_cpf(user_validator, async_db_mock):
 
 @pytest.mark.asyncio
 async def test_create_user(user_service, mocker):
-    mocker.patch.object(user_service, "_validate_unique_fields", new_callable=AsyncMock)
-    mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
+    mocker.patch.object(user_service.validator, "validate_unique_fields", new_callable=AsyncMock)
     user_service.repository.create = AsyncMock(return_value=User(name="Test", password_hash="hash"))
     mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
@@ -301,8 +300,7 @@ async def test_update_user_ok(user_service, mocker):
     user = User(id=1, name="New", is_active=True, password_hash="hash")
     user_service.repository.get = AsyncMock(return_value=user)
     user_service.repository.update = AsyncMock(return_value=user)
-    mocker.patch.object(user_service, "_validate_unique_fields", new_callable=AsyncMock)
-    mocker.patch("app.features.users.user_service.get_password_hash", return_value="hash")
+    mocker.patch.object(user_service.validator, "validate_unique_fields", new_callable=AsyncMock)
     mock_log = mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     user_in = UserUpdate(name="New", password="123456")

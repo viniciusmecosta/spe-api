@@ -12,24 +12,29 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
+SQLITE_AIOSQLITE_PREFIX = "sqlite+aiosqlite://"
+SQLITE_SYNC_PREFIX = "sqlite://"
+POSTGRESQL_ASYNCPG_PREFIX = "postgresql+asyncpg://"
+POSTGRESQL_SYNC_PREFIX = "postgresql://"
+
 connect_args = {}
 if settings.SQLALCHEMY_DATABASE_URI.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 db_uri_sync = settings.SQLALCHEMY_DATABASE_URI
-if db_uri_sync.startswith("sqlite+aiosqlite://"):
-    db_uri_sync = db_uri_sync.replace("sqlite+aiosqlite://", "sqlite://", 1)
-elif db_uri_sync.startswith("postgresql+asyncpg://"):
-    db_uri_sync = db_uri_sync.replace("postgresql+asyncpg://", "postgresql://", 1)
+if db_uri_sync.startswith(SQLITE_AIOSQLITE_PREFIX):
+    db_uri_sync = db_uri_sync.replace(SQLITE_AIOSQLITE_PREFIX, SQLITE_SYNC_PREFIX, 1)
+elif db_uri_sync.startswith(POSTGRESQL_ASYNCPG_PREFIX):
+    db_uri_sync = db_uri_sync.replace(POSTGRESQL_ASYNCPG_PREFIX, POSTGRESQL_SYNC_PREFIX, 1)
 
 engine = create_engine(db_uri_sync, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 db_uri_async = settings.SQLALCHEMY_DATABASE_URI
-if db_uri_async.startswith("sqlite://") and not db_uri_async.startswith("sqlite+aiosqlite://"):
-    db_uri_async = db_uri_async.replace("sqlite://", "sqlite+aiosqlite://", 1)
-elif db_uri_async.startswith("postgresql://") and not db_uri_async.startswith("postgresql+asyncpg://"):
-    db_uri_async = db_uri_async.replace("postgresql://", "postgresql+asyncpg://", 1)
+if db_uri_async.startswith(SQLITE_SYNC_PREFIX) and not db_uri_async.startswith(SQLITE_AIOSQLITE_PREFIX):
+    db_uri_async = db_uri_async.replace(SQLITE_SYNC_PREFIX, SQLITE_AIOSQLITE_PREFIX, 1)
+elif db_uri_async.startswith(POSTGRESQL_SYNC_PREFIX) and not db_uri_async.startswith(POSTGRESQL_ASYNCPG_PREFIX):
+    db_uri_async = db_uri_async.replace(POSTGRESQL_SYNC_PREFIX, POSTGRESQL_ASYNCPG_PREFIX, 1)
 
 async_engine = create_async_engine(db_uri_async, connect_args=connect_args)
 AsyncSessionLocal = async_sessionmaker(

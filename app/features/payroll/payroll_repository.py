@@ -12,8 +12,29 @@ class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
     def __init__(self):
         super().__init__(PayrollClosure)
 
-    def create(self, db: Session, month: int, year: int, user_id: int) -> PayrollClosure:
-        db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
+    def create(
+            self,
+            db: Session,
+            *,
+            obj_in: Any | None = None,
+            month: int | None = None,
+            year: int | None = None,
+            user_id: int | None = None,
+    ) -> PayrollClosure:
+        if obj_in is not None:
+            if isinstance(obj_in, PayrollClosure):
+                db_obj = obj_in
+            elif isinstance(obj_in, dict):
+                db_obj = PayrollClosure(**obj_in)
+            else:
+                db_obj = PayrollClosure(
+                    month=getattr(obj_in, "month", month),
+                    year=getattr(obj_in, "year", year),
+                    is_closed=True,
+                    closed_by_user_id=getattr(obj_in, "user_id", user_id),
+                )
+        else:
+            db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

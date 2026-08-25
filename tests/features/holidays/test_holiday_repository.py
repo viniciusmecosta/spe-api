@@ -9,8 +9,8 @@ def test_holiday_repository(db_session):
     d1 = date(2026, 12, 25)
     d2 = date(2026, 1, 1)
 
-    h1 = repo.create(db_session, HolidayCreate(date=d1, name="Christmas"))
-    h2 = repo.create(db_session, HolidayCreate(date=d2, name="New Year"))
+    h1 = repo.create(db_session, obj_in=HolidayCreate(date=d1, name="Christmas"))
+    h2 = repo.create(db_session, obj_in=HolidayCreate(date=d2, name="New Year"))
 
     all_h = repo.get_all(db_session)
     assert len(all_h) >= 2

@@ -19,10 +19,10 @@ class PrinterRepository(BaseRepository[Printer, PrinterCreate, PrinterUpdate]):
         stmt = select(Printer).offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
 
-    def create(self, db: Session, obj_in: PrinterCreate) -> Printer:
+    def create(self, db: Session, *, obj_in: PrinterCreate) -> Printer:
         return super().create(db, obj_in=obj_in)
 
-    def update(self, db: Session, db_obj: Printer, obj_in: PrinterUpdate | dict[str, Any]) -> Printer:
+    def update(self, db: Session, *, db_obj: Printer, obj_in: PrinterUpdate | dict[str, Any]) -> Printer:
         return super().update(db, db_obj=db_obj, obj_in=obj_in)
 
     def delete(self, db: Session, printer_id: int) -> bool:
