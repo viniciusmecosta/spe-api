@@ -1,11 +1,17 @@
 from datetime import datetime
+from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database.repository import BaseRepository
 from app.features.payroll.payroll_models import PayrollClosure
 
 
-class PayrollRepository:
+class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
+    def __init__(self):
+        super().__init__(PayrollClosure)
+
     def create(self, db: Session, month: int, year: int, user_id: int) -> PayrollClosure:
         db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
         db.add(db_obj)
@@ -14,33 +20,37 @@ class PayrollRepository:
         return db_obj
 
     def get_by_month(self, db: Session, month: int, year: int) -> PayrollClosure | None:
-        return db.query(PayrollClosure).filter(
+        stmt = select(PayrollClosure).where(
             PayrollClosure.month == month,
             PayrollClosure.year == year,
-            PayrollClosure.deleted_at.is_(None)
-        ).first()
+            PayrollClosure.deleted_at.is_(None),
+        )
+        return db.scalars(stmt).first()
 
     def get_all(self, db: Session, year: int | None = None) -> list[PayrollClosure]:
-        query = db.query(PayrollClosure).filter(PayrollClosure.deleted_at.is_(None))
+        stmt = select(PayrollClosure).where(PayrollClosure.deleted_at.is_(None))
         if year:
-            query = query.filter(PayrollClosure.year == year)
-        return query.order_by(
+            stmt = stmt.where(PayrollClosure.year == year)
+        stmt = stmt.order_by(
             PayrollClosure.year.desc(),
-            PayrollClosure.month.desc()
-        ).all()
+            PayrollClosure.month.desc(),
+        )
+        return list(db.scalars(stmt).all())
 
     def get_history(self, db: Session, month: int, year: int) -> list[PayrollClosure]:
-        return db.query(PayrollClosure).filter(
-            PayrollClosure.month == month,
-            PayrollClosure.year == year
-        ).order_by(PayrollClosure.id.asc()).all()
-
-    def delete(self, db: Session, month: int, year: int, user_id: int, observation: str):
-        record = db.query(PayrollClosure).filter(
+        stmt = select(PayrollClosure).where(
             PayrollClosure.month == month,
             PayrollClosure.year == year,
-            PayrollClosure.deleted_at.is_(None)
-        ).first()
+        ).order_by(PayrollClosure.id.asc())
+        return list(db.scalars(stmt).all())
+
+    def delete(self, db: Session, month: int, year: int, user_id: int, observation: str):
+        stmt = select(PayrollClosure).where(
+            PayrollClosure.month == month,
+            PayrollClosure.year == year,
+            PayrollClosure.deleted_at.is_(None),
+        )
+        record = db.scalars(stmt).first()
         if record:
             record.deleted_at = datetime.now()
             record.deleted_by = user_id

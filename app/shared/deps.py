@@ -5,6 +5,7 @@ import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -54,7 +55,8 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
+    stmt = select(User).where(User.id == int(str(token_data.sub)))
+    user = db.scalars(stmt).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     return user
@@ -99,36 +101,45 @@ def verify_device_api_key(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de API do dispositivo ausente.")
 
     hashed_key = get_api_key_hash(api_key)
-    device = db.query(DeviceCredential).filter(
+    stmt = select(DeviceCredential).where(
         DeviceCredential.api_key_hash == hashed_key,
-        DeviceCredential.key_type == DeviceKeyType.DEVICE
-    ).first()
+        DeviceCredential.key_type == DeviceKeyType.DEVICE,
+    )
+    device = db.scalars(stmt).first()
 
     if not device or not device.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Chave de API do dispositivo inválida ou inativa.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Chave de API do dispositivo inválida ou inativa.",
+        )
 
     request.state.device_name = device.name
     return device
 
 
 def verify_consumer_api_key(
-        request: Request,
-        api_key: Annotated[str | None, Security(consumer_api_key_header)],
-        db: Annotated[Session, Depends(get_db)],
+    request: Request,
+    api_key: Annotated[str | None, Security(consumer_api_key_header)],
+    db: Annotated[Session, Depends(get_db)],
 ) -> DeviceCredential:
     if not api_key:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de API de integração ausente.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Chave de API de integração ausente.",
+        )
 
     hashed_key = get_api_key_hash(api_key)
-    consumer = db.query(DeviceCredential).filter(
+    stmt = select(DeviceCredential).where(
         DeviceCredential.api_key_hash == hashed_key,
-        DeviceCredential.key_type == DeviceKeyType.CONSUMER
-    ).first()
+        DeviceCredential.key_type == DeviceKeyType.CONSUMER,
+    )
+    consumer = db.scalars(stmt).first()
 
     if not consumer or not consumer.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Chave de API de integração inválida ou inativa.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Chave de API de integração inválida ou inativa.",
+        )
 
     request.state.device_name = consumer.name
     return consumer

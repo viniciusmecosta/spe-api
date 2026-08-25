@@ -1,50 +1,33 @@
+from typing import Any
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database.repository import BaseRepository
 from app.features.printers.printer_models import Printer
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 
 
-class PrinterRepository:
+class PrinterRepository(BaseRepository[Printer, PrinterCreate, PrinterUpdate]):
+    def __init__(self):
+        super().__init__(Printer)
+
     def get_by_id(self, db: Session, printer_id: int) -> Printer | None:
-        return db.query(Printer).filter(Printer.id == printer_id).first()
+        return super().get(db, printer_id)
 
     def get_all(self, db: Session, skip: int = 0, limit: int = 100) -> list[Printer]:
-        return db.query(Printer).offset(skip).limit(limit).all()
+        stmt = select(Printer).offset(skip).limit(limit)
+        return list(db.scalars(stmt).all())
 
     def create(self, db: Session, obj_in: PrinterCreate) -> Printer:
-        db_obj = Printer(
-            name=obj_in.name,
-            address=obj_in.address,
-            status=obj_in.status,
-            paper_width=obj_in.paper_width,
-            company_id=obj_in.company_id
-        )
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+        return super().create(db, obj_in=obj_in)
 
-    def update(self, db: Session, db_obj: Printer, obj_in: PrinterUpdate | dict) -> Printer:
-        if isinstance(obj_in, dict):
-            update_data = obj_in
-        else:
-            update_data = obj_in.model_dump(exclude_unset=True)
-
-        for field, value in update_data.items():
-            setattr(db_obj, field, value)
-
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+    def update(self, db: Session, db_obj: Printer, obj_in: PrinterUpdate | dict[str, Any]) -> Printer:
+        return super().update(db, db_obj=db_obj, obj_in=obj_in)
 
     def delete(self, db: Session, printer_id: int) -> bool:
-        obj = db.query(Printer).filter(Printer.id == printer_id).first()
-        if obj:
-            db.delete(obj)
-            db.commit()
-            return True
-        return False
+        obj = super().remove(db, id=printer_id)
+        return obj is not None
 
 
 printer_repository = PrinterRepository()

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -15,6 +16,7 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(settings.TIMEZONE)
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
