@@ -34,7 +34,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE},
 )
-def register_entry(
+async def register_entry(
         request: Request,
         background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -50,7 +50,7 @@ def register_entry(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE},
 )
-def register_exit(
+async def register_exit(
         request: Request,
         background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -65,7 +65,7 @@ def register_exit(
     "/{id}/toggle",
     responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def toggle_record_type(
+async def toggle_record_type(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -74,7 +74,7 @@ def toggle_record_type(
 
 
 @router.get("/my")
-def read_my_records(
+async def read_my_records(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: int = 0,
@@ -87,7 +87,7 @@ def read_my_records(
     "/admin/list",
     responses={**FORBIDDEN_RESPONSE},
 )
-def list_records_for_admin(
+async def list_records_for_admin(
         user_id: int,
         start_date: datetime,
         end_date: datetime,
@@ -102,7 +102,7 @@ def list_records_for_admin(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def create_time_record_admin(
+async def create_time_record_admin(
         record_in: TimeRecordCreateAdmin,
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -120,7 +120,7 @@ def create_time_record_admin(
     "/admin/{record_id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def update_time_record_admin(
+async def update_time_record_admin(
         record_id: int,
         record_in: TimeRecordUpdate,
         request: Request,
@@ -139,7 +139,7 @@ def update_time_record_admin(
     "/admin/{record_id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def delete_time_record_admin(
+async def delete_time_record_admin(
         record_id: int,
         request_body: TimeRecordDeleteAdmin,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -153,7 +153,7 @@ def delete_time_record_admin(
     "/{id}/timeline",
     responses={**FORBIDDEN_RESPONSE},
 )
-def get_time_record_timeline(
+async def get_time_record_timeline(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
@@ -166,7 +166,7 @@ def get_time_record_timeline(
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**FORBIDDEN_RESPONSE},
 )
-def trigger_tolerance_cron() -> SuccessResponse:
+async def trigger_tolerance_cron() -> SuccessResponse:
     tolerance_cron_service.process_unverified_entries()
     return SuccessResponse(
         status="success", message="Rotina de tolerância acionada e concluída com sucesso."
@@ -177,7 +177,7 @@ def trigger_tolerance_cron() -> SuccessResponse:
     "/receipt/{short_id}",
     responses={**NOT_FOUND_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def get_receipt(
+async def get_receipt(
         short_id: str,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -190,7 +190,7 @@ def get_receipt(
     response_class=Response,
     responses={**NOT_FOUND_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def get_receipt_pdf(
+async def get_receipt_pdf(
         short_id: str,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],

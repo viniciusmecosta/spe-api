@@ -28,7 +28,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     "/",
     responses={**FORBIDDEN_RESPONSE},
 )
-def read_users(
+async def read_users(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
@@ -59,7 +59,7 @@ def read_users(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def create_user(
+async def create_user(
         user_in: UserCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -71,7 +71,7 @@ def create_user(
     "/me",
     responses={**BAD_REQUEST_RESPONSE},
 )
-def update_user_me(
+async def update_user_me(
         user_in: UserUpdateMe,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -86,8 +86,7 @@ def update_user_me(
 
 
 @router.get("/me")
-def read_user_me(
-        db: Annotated[Session, Depends(deps.get_db)],
+async def read_user_me(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     return user_service.get_user_me(current_user)
@@ -97,7 +96,7 @@ def read_user_me(
     "/{user_id}",
     responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def read_user_by_id(
+async def read_user_by_id(
         user_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -109,7 +108,7 @@ def read_user_by_id(
     "/{user_id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def update_user(
+async def update_user(
         user_id: int,
         user_in: UserUpdate,
         db: Annotated[Session, Depends(deps.get_db)],

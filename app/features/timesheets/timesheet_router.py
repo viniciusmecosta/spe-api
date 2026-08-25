@@ -23,7 +23,7 @@ anomalies_router = APIRouter(responses={**AUTH_RESPONSES})
     dependencies=[Depends(deps.get_current_manager)],
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def get_official_timesheet_user_pdf(
+async def get_official_timesheet_user_pdf(
         user_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         month: Annotated[int, Query(ge=1, le=12)],
@@ -44,7 +44,7 @@ def get_official_timesheet_user_pdf(
     dependencies=[Depends(deps.get_current_manager)],
     responses={**BAD_REQUEST_RESPONSE},
 )
-def get_official_timesheet_all_pdf(
+async def get_official_timesheet_all_pdf(
         db: Annotated[Session, Depends(deps.get_db)],
         month: Annotated[int, Query(ge=1, le=12)],
         year: Annotated[int, Query(ge=2000)],
@@ -65,7 +65,7 @@ def get_official_timesheet_all_pdf(
     "/all",
     dependencies=[Depends(deps.get_current_manager)],
 )
-def get_all_anomalies(
+async def get_all_anomalies(
         month: int,
         year: int,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -77,7 +77,7 @@ def get_all_anomalies(
     "/user/{user_id}",
     dependencies=[Depends(deps.get_current_manager)],
 )
-def get_user_anomalies(
+async def get_user_anomalies(
         user_id: int,
         month: int,
         year: int,

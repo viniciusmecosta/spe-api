@@ -52,7 +52,7 @@ sync_router = APIRouter()
 
 
 @router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
-def register_device_punch(
+async def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
         background_tasks: BackgroundTasks,
@@ -69,12 +69,12 @@ def register_device_punch(
 
 
 @router.get("/time", dependencies=[Depends(deps.verify_device_api_key)])
-def get_device_time() -> TimeResponsePayload:
+async def get_device_time() -> TimeResponsePayload:
     return device_service.get_device_time()
 
 
 @router.post("/verify-manager")
-def verify_manager_access(
+async def verify_manager_access(
         payload: ManagerVerifyRequest,
         db: Annotated[Session, Depends(deps.get_db)],
         device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
@@ -90,7 +90,7 @@ def verify_manager_access(
     "/",
     status_code=status.HTTP_201_CREATED,
 )
-def create_credential(
+async def create_credential(
         credential_in: DeviceCredentialCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
@@ -102,7 +102,7 @@ def create_credential(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
 )
-def list_credentials(
+async def list_credentials(
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[DeviceCredentialResponse]:
     return device_credential_service.get_all(db)
@@ -112,7 +112,7 @@ def list_credentials(
     "/{id}",
     responses={**CRUD_RESPONSES},
 )
-def update_credential(
+async def update_credential(
         id: int,
         credential_in: DeviceCredentialUpdate,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -125,7 +125,7 @@ def update_credential(
     "/{id}",
     responses={**CRUD_RESPONSES},
 )
-def delete_credential(
+async def delete_credential(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
@@ -138,7 +138,7 @@ def delete_credential(
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**AUTH_RESPONSES},
 )
-def list_firmwares(
+async def list_firmwares(
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[FirmwareListResponse]:
     return firmware_service.get_all_firmwares(db)
@@ -149,7 +149,7 @@ def list_firmwares(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
-def upload_firmware(
+async def upload_firmware(
         version: Annotated[str, Form(...)],
         file: Annotated[UploadFile, File(...)],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -162,7 +162,7 @@ def upload_firmware(
     "/{version}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def update_firmware(
+async def update_firmware(
         version: str,
         file: Annotated[UploadFile, File(...)],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -176,7 +176,7 @@ def update_firmware(
     dependencies=[Depends(deps.verify_device_api_key)],
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def check_firmware(
+async def check_firmware(
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> FirmwareResponse:
     return firmware_service.get_latest_firmware(db)
@@ -187,7 +187,7 @@ def check_firmware(
     dependencies=[Depends(deps.verify_device_api_key)],
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def download_firmware(
+async def download_firmware(
         version: str,
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> FileResponse:
@@ -203,7 +203,7 @@ def download_firmware(
     "/available-sensor-indices",
     dependencies=[Depends(deps.get_current_manager)],
 )
-def get_available_sensor_indices(
+async def get_available_sensor_indices(
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[int]:
     return biometric_service.get_available_sensor_indices(db)
@@ -214,7 +214,7 @@ def get_available_sensor_indices(
     dependencies=[Depends(deps.verify_consumer_api_key)],
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE},
 )
-def sync_database(
+async def sync_database(
         file: Annotated[UploadFile, File(...)],
 ) -> dict[str, str]:
     sync_service.receive_database(file)

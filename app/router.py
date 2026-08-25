@@ -30,7 +30,7 @@ api_router = APIRouter()
 
 
 @api_router.get("/health", tags=["Health"])
-def health_check() -> dict[str, str]:
+async def health_check() -> dict[str, str]:
     return {"status": "ok", "app": "SPE", "version": settings.APP_VERSION}
 
 
@@ -39,10 +39,10 @@ api_router.include_router(anomalies_router, prefix="/anomalies", tags=["Anomalie
 api_router.include_router(audit_router, prefix="/audit", tags=["Audit"])
 api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(backup_router, prefix="/backup", tags=["Backup"])
-api_router.include_router(biometrics_router, prefix="/biometric", tags=["Biometric"])
+api_router.include_router(biometrics_router, prefix="/biometrics", tags=["Biometrics"])
 api_router.include_router(companies_router, prefix="/companies", tags=["Companies"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
-api_router.include_router(device_router, prefix="/device", tags=["Device"])
+api_router.include_router(device_router, prefix="/devices", tags=["Devices"])
 api_router.include_router(device_credentials_router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(firmware_router, prefix="/firmware", tags=["Firmware OTA"])
 api_router.include_router(holidays_router, prefix="/holidays", tags=["Holidays"])

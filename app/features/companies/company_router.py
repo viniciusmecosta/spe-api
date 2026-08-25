@@ -26,7 +26,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     "/",
     dependencies=[Depends(deps.get_current_active_user)],
 )
-def get_company(
+async def get_company(
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> CompanyResponse | None:
@@ -38,7 +38,7 @@ def get_company(
     "/",
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def create_company(
+async def create_company(
         obj_in: CompanyCreate,
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -52,7 +52,7 @@ def create_company(
     "/",
     responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def update_company(
+async def update_company(
         obj_in: CompanyUpdate,
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -66,7 +66,7 @@ def update_company(
     "/logo",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def upload_company_logo(
+async def upload_company_logo(
         request: Request,
         file: Annotated[UploadFile, File(...)],
         db: Annotated[Session, Depends(deps.get_db)],

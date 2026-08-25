@@ -33,7 +33,7 @@ def test_get_available_sensor_indices(client: TestClient, mocker: MagicMock) -> 
         return_value=[1, 2, 3, 4],
     )
 
-    response = client.get("/api/v1/biometric/available-sensor-indices")
+    response = client.get("/api/v1/biometrics/available-sensor-indices")
     assert response.status_code == 200
     data = response.json()
     assert data == [1, 2, 3, 4]

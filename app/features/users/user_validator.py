@@ -43,7 +43,7 @@ class UserValidator:
             UserRole.MANAGER,
             UserRole.MAINTAINER,
         ]:
-            raise InsufficientPrivilegesError("Privilégios insuficientes.", status_code=400)
+            raise InsufficientPrivilegesError("Privilégios insuficientes.")
 
 
 user_validator = UserValidator()

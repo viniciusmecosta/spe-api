@@ -38,7 +38,7 @@ telegram_actions_router = APIRouter(responses={**AUTH_RESPONSES})
     "/",
     dependencies=[Depends(deps.get_current_manager)],
 )
-def read_audit_logs(
+async def read_audit_logs(
         db: Annotated[Session, Depends(deps.get_db)],
         action: str | None = None,
         start_date: date | None = None,
@@ -63,7 +63,7 @@ def read_audit_logs(
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**BAD_REQUEST_RESPONSE},
 )
-def trigger_manual_backup(
+async def trigger_manual_backup(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
@@ -81,7 +81,7 @@ def trigger_manual_backup(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
 )
-def read_routine_logs(
+async def read_routine_logs(
         db: Annotated[Session, Depends(deps.get_db)],
         routine_type: str | None = None,
         status: str | None = None,
@@ -107,7 +107,7 @@ def read_routine_logs(
     "/manual-backup",
     dependencies=[Depends(deps.get_current_maintainer)],
 )
-def trigger_manual_backup_telegram(
+async def trigger_manual_backup_telegram(
         background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
@@ -122,7 +122,7 @@ def trigger_manual_backup_telegram(
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**BAD_REQUEST_RESPONSE},
 )
-def trigger_manual_report_telegram(
+async def trigger_manual_report_telegram(
         background_tasks: BackgroundTasks,
         start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
         end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],

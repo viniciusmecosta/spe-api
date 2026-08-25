@@ -18,7 +18,7 @@ router = APIRouter()
     "/login",
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE},
 )
-def login_access_token(
+async def login_access_token(
         request: Request,
         db: Annotated[Session, Depends(deps.get_db)],
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -35,7 +35,7 @@ def login_access_token(
     "/me",
     responses={**UNAUTHORIZED_RESPONSE},
 )
-def read_users_me(
+async def read_users_me(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
     return current_user

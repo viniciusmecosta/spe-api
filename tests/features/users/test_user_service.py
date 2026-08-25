@@ -46,7 +46,7 @@ def test_get_user_by_id_forbidden_employee(db_session_mock, mocker):
     current_emp = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(InsufficientPrivilegesError) as exc2:
         user_service.get_user_by_id(db_session_mock, 2, current_emp)
-    assert exc2.value.status_code == 400
+    assert exc2.value.status_code == 403
 
 
 def test_get_user_by_id_success(db_session_mock, mocker):

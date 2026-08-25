@@ -21,7 +21,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
-def create_holiday(
+async def create_holiday(
         holiday_in: HolidayCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -33,7 +33,7 @@ def create_holiday(
     "/",
     dependencies=[Depends(deps.get_current_active_user)],
 )
-def read_holidays(
+async def read_holidays(
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[HolidayResponse]:
     return holiday_service.get_all_holidays(db)
@@ -43,7 +43,7 @@ def read_holidays(
     "/{id}",
     responses={**BAD_REQUEST_RESPONSE, **AUTH_RESPONSES},
 )
-def delete_holiday(
+async def delete_holiday(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],

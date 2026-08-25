@@ -25,7 +25,7 @@ router = APIRouter(responses={**AUTH_RESPONSES})
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
 )
-def list_payroll_periods(
+async def list_payroll_periods(
         year: int,
         db: Annotated[Session, Depends(deps.get_db)],
 ) -> list[PayrollClosureResponse]:
@@ -36,7 +36,7 @@ def list_payroll_periods(
     "/close",
     responses={**BAD_REQUEST_RESPONSE},
 )
-def close_payroll_period(
+async def close_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -49,7 +49,7 @@ def close_payroll_period(
     "/reopen",
     responses={**BAD_REQUEST_RESPONSE},
 )
-def reopen_payroll_period(
+async def reopen_payroll_period(
         period: PayrollReopenCreate,
         background_tasks: BackgroundTasks,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -65,7 +65,7 @@ def reopen_payroll_period(
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def upload_legacy_report(
+async def upload_legacy_report(
         closure_id: int,
         file: Annotated[UploadFile, File(...)],
         db: Annotated[Session, Depends(deps.get_db)],

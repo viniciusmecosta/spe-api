@@ -26,7 +26,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     "/",
     responses={**FORBIDDEN_RESPONSE},
 )
-def read_printers(
+async def read_printers(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
@@ -39,7 +39,7 @@ def read_printers(
     "/{printer_id}",
     responses={**NOT_FOUND_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def read_printer(
+async def read_printer(
         printer_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -52,7 +52,7 @@ def read_printer(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def create_printer(
+async def create_printer(
         printer_in: PrinterCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -64,7 +64,7 @@ def create_printer(
     "/{printer_id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def update_printer(
+async def update_printer(
         printer_id: int,
         printer_in: PrinterUpdate,
         db: Annotated[Session, Depends(deps.get_db)],
@@ -78,7 +78,7 @@ def update_printer(
     status_code=status.HTTP_204_NO_CONTENT,
     responses={**CRUD_RESPONSES},
 )
-def delete_printer(
+async def delete_printer(
         printer_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
