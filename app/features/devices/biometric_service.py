@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.features.devices.device_models import UserBiometric
@@ -10,16 +10,12 @@ logger = logging.getLogger(__name__)
 
 class BiometricService:
     def get_available_sensor_indices(self, db: Session) -> list[int]:
-        stmt = select(UserBiometric.sensor_index).where(UserBiometric.sensor_index.isnot(None))
-        raw_indices = db.scalars(stmt).all()
-        used_indices = {
-            item[0] if isinstance(item, (tuple, list)) else item
-            for item in raw_indices
-        }
-
-        all_possible_indices = set(range(1, 128))
-        available_indices = all_possible_indices - used_indices
-        return sorted(available_indices)
+        stmt = select(func.max(UserBiometric.sensor_index))
+        max_index = db.scalar(stmt)
+        start_index = (max_index + 1) if max_index is not None else 1
+        if start_index > 127:
+            return []
+        return list(range(start_index, 128))
 
 
 biometric_service = BiometricService()
