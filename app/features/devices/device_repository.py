@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
@@ -41,7 +43,7 @@ class DeviceCredentialRepository(BaseRepository[DeviceCredential, DeviceCredenti
         return list(db.scalars(stmt).all())
 
     def update(
-            self, db: Session, *, db_obj: DeviceCredential, obj_in: DeviceCredentialUpdate
+            self, db: Session, *, db_obj: DeviceCredential, obj_in: DeviceCredentialUpdate | dict[str, Any]
     ) -> DeviceCredential:
         return super().update(db, db_obj=db_obj, obj_in=obj_in)
 

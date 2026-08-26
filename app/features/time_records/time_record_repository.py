@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import and_, desc, distinct, func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -167,7 +168,7 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
         return db.scalar(stmt) or 0
 
     def update(
-            self, db: Session, *, db_obj: TimeRecord, obj_in: TimeRecordUpdate
+            self, db: Session, *, db_obj: TimeRecord, obj_in: TimeRecordUpdate | dict[str, Any]
     ) -> TimeRecord:
         return super().update(db, db_obj=db_obj, obj_in=obj_in)
 

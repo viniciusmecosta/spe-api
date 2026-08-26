@@ -34,6 +34,7 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def get_multi(
         self,
         db: Session,
+        *,
         skip: int = 0,
         limit: int = 100,
         is_active: bool | None = None,
@@ -168,6 +169,8 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
     async def get_multi(
             self,
             db: AsyncSession,
+            *,
+            skip: int = 0,
             after_id: int | None = None,
             limit: int = 100,
             is_active: bool | None = None,
