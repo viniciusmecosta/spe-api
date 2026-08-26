@@ -97,6 +97,7 @@ class RoutineOrchestrator:
                             execution_time=now_local
                         )
                         db_write.add(log_entry)
+                        db_write.commit()
                     else:
                         logger.exception('Backup - "Telegram horário" Error')
             except SQLAlchemyError as e:
@@ -163,6 +164,7 @@ class RoutineOrchestrator:
                     execution_time=now_local
                 )
                 db_write.add(log_entry)
+                db_write.commit()
                 if not text_success:
                     logger.exception('Relatório - "Telegram diário" Error')
         except SQLAlchemyError as e:
@@ -254,6 +256,7 @@ class RoutineOrchestrator:
                         execution_time=now_local
                     )
                     db_write.add(log_entry)
+                    db_write.commit()
                     if not success:
                         logger.exception('Backup - "Email diário" Error')
             except SQLAlchemyError as e:
@@ -295,6 +298,7 @@ class RoutineOrchestrator:
                     details=f"{deleted_count} logs apagados"
                 )
                 db_write.add(log_entry)
+                db_write.commit()
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao limpar routine_logs: {e}")
 
@@ -322,6 +326,7 @@ class RoutineOrchestrator:
                         execution_time=now_local
                     )
                     db_write.add(log_entry)
+                    db_write.commit()
                     if not success:
                         logger.exception('Backup - "Telegram manual" Error')
             except SQLAlchemyError as e:
@@ -363,6 +368,7 @@ class RoutineOrchestrator:
                     execution_time=now_local
                 )
                 db_write.add(log_entry)
+                db_write.commit()
 
                 if not text_success:
                     logger.exception('Relatório - "Telegram manual" Error')
