@@ -1,6 +1,6 @@
 [project]
 name = "spe"
-version = "1.0.1"
+version = "1.2.0"
 description = "Sistema de Ponto Eletrônico"
 readme = "README.md"
 requires-python = ">=3.12"

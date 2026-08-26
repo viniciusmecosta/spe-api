@@ -4,7 +4,7 @@ from app.core.config import Settings
 def test_config_database_path():
     s = Settings(
         PROJECT_NAME="SPE",
-        APP_VERSION="1.0.0",
+        APP_VERSION="1.2.0",
         ENVIRONMENT="test",
         TIMEZONE="America/Fortaleza",
         SQLALCHEMY_DATABASE_URI="postgresql://user:pass@localhost/db",
