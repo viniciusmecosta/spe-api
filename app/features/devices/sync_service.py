@@ -108,12 +108,14 @@ class SyncService:
                     status="SUCCESS"
                 )
                 db_write.add(log_entry)
+                db_write.commit()
         except requests.RequestException as e:
             logger.exception(f'Sincronização - "Enviar banco de dados" HTTP Error: {e}')
             try:
                 with get_db_session() as db_err:
                     log_error = RoutineLog(routine_type="REMOTE_SYNC_DATABASE", status="FAILED")
                     db_err.add(log_error)
+                    db_err.commit()
             except SQLAlchemyError:
                 pass
         except SQLAlchemyError as e:
