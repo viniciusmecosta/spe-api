@@ -19,7 +19,7 @@ class HolidayService:
         if holiday_repository.get_by_date(db, holiday_in.date):
             raise HolidayAlreadyExistsError(date_str=holiday_in.date.strftime("%d/%m/%Y"))
 
-        holiday = holiday_repository.create(db, holiday_in)
+        holiday = holiday_repository.create(db, obj_in=holiday_in)
         audit_service.log_change(db, current_user_id, "CREATE", new_model=holiday)
         return holiday
 

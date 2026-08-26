@@ -1,9 +1,9 @@
-import os
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -20,19 +20,19 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str
     BACKEND_CORS_ORIGINS: list[str]
     UPLOAD_DIR: str
-    SMTP_HOST: str | None
-    SMTP_PORT: int | None
-    SMTP_USER: str | None
-    SMTP_PASSWORD: str | None
-    EMAIL_FROM: str | None
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int | None = None
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    EMAIL_FROM: str | None = None
 
-    TELEGRAM_BOT_TOKEN: str | None
-    TELEGRAM_CHAT_ID: str | None
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_CHAT_ID: str | None = None
     TELEGRAM_MAX_MESSAGE_LENGTH: int
 
     OPERATION_MODE: str
-    CONSUMER_SERVER_URL: str | None
-    CONSUMER_API_KEY: str | None
+    CONSUMER_SERVER_URL: str | None = None
+    CONSUMER_API_KEY: str | None = None
 
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
@@ -47,10 +47,18 @@ class Settings(BaseSettings):
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod
-    def assemble_cors_origins(cls, v: list[str], info) -> list[str]:
+    def assemble_cors_origins(cls, v: list[str] | str, info=None) -> list[str]:
         if isinstance(v, str):
             v = [i.strip() for i in v.split(",")]
         return v
+
+    @field_validator("UPLOAD_DIR")
+    @classmethod
+    def assemble_upload_dir(cls, v: str) -> str:
+        upload_path = Path(v)
+        if not upload_path.is_absolute():
+            upload_path = ROOT_DIR / upload_path
+        return str(upload_path)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -61,8 +69,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-if not os.path.isabs(settings.UPLOAD_DIR):
-    settings.UPLOAD_DIR = os.path.join(ROOT_DIR, settings.UPLOAD_DIR)
-
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

@@ -79,7 +79,17 @@ def db_session_mock():
         def delete(self, *args, **kwargs):
             return len(self.items)
 
-    session.query.return_value = QueryMock()
+    qm = QueryMock()
+    session.query.return_value = qm
+
+    scalars_mock = MagicMock()
+    scalars_mock.all.side_effect = lambda: qm.all()
+    scalars_mock.first.side_effect = lambda: qm.first()
+    session.scalars.return_value = scalars_mock
+
+    session.scalar.side_effect = lambda *args, **kwargs: qm.scalar()
+    session.execute.return_value.scalars.return_value = scalars_mock
+    session.execute.return_value.scalar.side_effect = lambda *args, **kwargs: qm.scalar()
     return session
 
 

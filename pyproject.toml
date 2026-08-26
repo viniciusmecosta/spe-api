@@ -1,10 +1,11 @@
 [project]
 name = "spe"
-version = "1.0.1"
+version = "1.2.0"
 description = "Sistema de Ponto Eletrônico"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "alembic>=1.18.5",
     "apscheduler>=3.11.3",
     "bcrypt>=5.0.0",

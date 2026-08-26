@@ -197,8 +197,15 @@ def test_register_entry_success(mock_get_trusted_time, mock_validate, db_session
     assert result == record
     mock_validate.assert_called_once_with(db_session_mock, 1, request)
     mock_payroll_service.validate_period_open.assert_called_once_with(db_session_mock, current_time.date())
-    mock_time_record_repo.create.assert_called_once_with(db_session_mock, 1, RecordType.ENTRY, current_time,
-                                                         "127.0.0.1", "TestDevice", platform="desktop")
+    mock_time_record_repo.create.assert_called_once_with(
+        db_session_mock,
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=current_time,
+        ip_address="127.0.0.1",
+        device_name="TestDevice",
+        platform="desktop",
+    )
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")
@@ -240,8 +247,15 @@ def test_register_exit_success(mock_get_trusted_time, mock_validate, db_session_
     assert result == record
     mock_validate.assert_called_once_with(db_session_mock, 1, request)
     mock_payroll_service.validate_period_open.assert_called_once_with(db_session_mock, current_time.date())
-    mock_time_record_repo.create.assert_called_once_with(db_session_mock, 1, RecordType.EXIT, current_time, "127.0.0.1",
-                                                         "TestDevice", platform="desktop")
+    mock_time_record_repo.create.assert_called_once_with(
+        db_session_mock,
+        user_id=1,
+        record_type=RecordType.EXIT,
+        record_datetime=current_time,
+        ip_address="127.0.0.1",
+        device_name="TestDevice",
+        platform="desktop",
+    )
 
 
 @patch.object(time_record_service, "_validate_manual_punch_permission")

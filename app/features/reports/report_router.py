@@ -34,7 +34,7 @@ dashboard_router = APIRouter(responses={**AUTH_RESPONSES})
     "/dashboard",
     responses={**FORBIDDEN_RESPONSE},
 )
-def get_dashboard(
+async def get_dashboard(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> DashboardMetricsResponse:
@@ -43,7 +43,7 @@ def get_dashboard(
 
 
 @router.get("/my/dashboard")
-def get_my_dashboard(
+async def get_my_dashboard(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> MyDashboardResponse:
@@ -51,7 +51,7 @@ def get_my_dashboard(
 
 
 @router.get("/history/me")
-def get_my_history(
+async def get_my_history(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
@@ -64,7 +64,7 @@ def get_my_history(
     "/history/user/{user_id}",
     responses={**FORBIDDEN_RESPONSE},
 )
-def get_user_history(
+async def get_user_history(
         user_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -81,7 +81,7 @@ def get_user_history(
     "/team-hours",
     responses={**FORBIDDEN_RESPONSE},
 )
-def get_team_hours(
+async def get_team_hours(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
@@ -101,7 +101,7 @@ def get_team_hours(
     "/export/excel",
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def export_monthly_report_excel(
+async def export_monthly_report_excel(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
@@ -131,7 +131,7 @@ def export_monthly_report_excel(
     "/user/{user_id}",
     responses={**CRUD_RESPONSES},
 )
-def get_user_detailed_report(
+async def get_user_detailed_report(
         user_id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -152,7 +152,7 @@ def get_user_detailed_report(
 
 
 @dashboard_router.get("/manager")
-def get_manager_dashboard(
+async def get_manager_dashboard(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> ManagerDashboardResponse:

@@ -296,7 +296,7 @@ def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, 
         result = payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
 
     assert result == mock_closure
-    mock_repo.create.assert_called_once_with(db_session_mock, 4, 2024, mock_user_manager.id)
+    mock_repo.create.assert_called_once_with(db_session_mock, month=4, year=2024, user_id=mock_user_manager.id)
     assert db_session_mock.commit.call_count == 2
     mock_audit.log_change.assert_called_once_with(
         db_session_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure

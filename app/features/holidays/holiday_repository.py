@@ -1,27 +1,30 @@
 from datetime import date
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.database.repository import BaseRepository
 from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_schemas import HolidayCreate
 
 
-class HolidayRepository:
-    def create(self, db: Session, obj_in: HolidayCreate) -> Holiday:
-        db_obj = Holiday(date=obj_in.date, name=obj_in.name)
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+class HolidayRepository(BaseRepository[Holiday, HolidayCreate, HolidayCreate]):
+    def __init__(self):
+        super().__init__(Holiday)
+
+    def create(self, db: Session, *, obj_in: HolidayCreate) -> Holiday:
+        return super().create(db, obj_in=obj_in)
 
     def get_all(self, db: Session) -> list[Holiday]:
-        return db.query(Holiday).order_by(Holiday.date).all()
+        stmt = select(Holiday).order_by(Holiday.date)
+        return list(db.scalars(stmt).all())
 
     def get_by_date(self, db: Session, check_date: date) -> Holiday | None:
-        return db.query(Holiday).filter(Holiday.date == check_date).first()
+        stmt = select(Holiday).where(Holiday.date == check_date)
+        return db.scalars(stmt).first()
 
     def get_by_id(self, db: Session, id: int) -> Holiday | None:
-        return db.query(Holiday).filter(Holiday.id == id).first()
+        return super().get(db, id)
 
     def get_by_month(self, db: Session, month: int, year: int) -> list[Holiday]:
         start_date = date(year, month, 1)
@@ -30,13 +33,11 @@ class HolidayRepository:
         else:
             end_date = date(year, month + 1, 1)
 
-        return db.query(Holiday).filter(Holiday.date >= start_date, Holiday.date < end_date).all()
+        stmt = select(Holiday).where(Holiday.date >= start_date, Holiday.date < end_date)
+        return list(db.scalars(stmt).all())
 
     def delete(self, db: Session, id: int):
-        obj = db.query(Holiday).filter(Holiday.id == id).first()
-        if obj:
-            db.delete(obj)
-            db.commit()
+        super().remove(db, id=id)
 
 
 holiday_repository = HolidayRepository()

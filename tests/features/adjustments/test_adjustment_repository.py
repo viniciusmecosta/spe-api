@@ -14,7 +14,7 @@ def test_adjustment_repository_all_methods(db_session, normal_user):
         amount_hours=2.0,
         reason_text="Doctor appointment",
     )
-    created = repo.create(db_session, normal_user.id, obj_in)
+    created = repo.create(db_session, user_id=normal_user.id, obj_in=obj_in)
     assert created.id is not None
 
     fetched = repo.get(db_session, created.id)

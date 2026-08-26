@@ -109,7 +109,7 @@ class AdjustmentService:
         if obj_in.adjustment_type == AdjustmentType.WAIVER:
             self._validate_waiver_limit(db, user_id, obj_in.target_date, obj_in.amount_hours)
 
-        adjustment = adjustment_repository.create(db, user_id, obj_in)
+        adjustment = adjustment_repository.create(db, user_id=user_id, obj_in=obj_in)
         return self._enrich_adjustments_with_records(db, [adjustment])[0]
 
     def create_manager_waiver(self, db: Session, waiver_in: AdjustmentWaiverCreate,
@@ -124,7 +124,7 @@ class AdjustmentService:
             reason_text=waiver_in.reason_text
         )
 
-        adjustment = adjustment_repository.create(db, waiver_in.user_id, adj_in)
+        adjustment = adjustment_repository.create(db, user_id=waiver_in.user_id, obj_in=adj_in)
         adjustment = adjustment_repository.update_status(
             db, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
         )

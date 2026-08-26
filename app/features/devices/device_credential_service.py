@@ -17,7 +17,7 @@ class DeviceCredentialService:
             credential_in: DeviceCredentialCreate,
             current_user_id: int,
     ) -> DeviceCredential:
-        device = device_credential_repository.create(db, credential_in)
+        device = device_credential_repository.create(db, obj_in=credential_in)
         audit_service.log_change(db, current_user_id, "CREATE", new_model=device)
         return device
 
@@ -36,7 +36,7 @@ class DeviceCredentialService:
             raise DeviceCredentialNotFoundError(credential_id=credential_id)
 
         old_data = serialize_model(device)
-        updated_device = device_credential_repository.update(db, device, credential_in)
+        updated_device = device_credential_repository.update(db, db_obj=device, obj_in=credential_in)
         audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=updated_device)
         return updated_device
 

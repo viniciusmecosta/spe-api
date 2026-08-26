@@ -1,5 +1,5 @@
 import logging
-import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +15,7 @@ from app.router import api_router as api_v1_router
 setup_logging()
 logger = logging.getLogger(__name__)
 
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

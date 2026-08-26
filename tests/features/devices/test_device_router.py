@@ -45,7 +45,7 @@ def test_get_device_time_endpoint(client: TestClient, mocker: MagicMock) -> None
         return_value=expected_payload,
     )
 
-    response = client.get("/api/v1/device/time")
+    response = client.get("/api/v1/devices/time")
 
     assert response.status_code == 200
     data = response.json()
@@ -72,7 +72,7 @@ def test_register_device_punch_endpoint(client: TestClient, mocker: MagicMock) -
         return_value=expected_payload,
     )
 
-    response = client.post("/api/v1/device/punch", json={"sensor_index": 5})
+    response = client.post("/api/v1/devices/punch", json={"sensor_index": 5})
 
     assert response.status_code == 200
     data = response.json()
@@ -92,7 +92,7 @@ def test_verify_manager_access_endpoint(client: TestClient, mocker: MagicMock) -
         return_value=expected_payload,
     )
 
-    response = client.post("/api/v1/device/verify-manager", json={"sensor_index": 2})
+    response = client.post("/api/v1/devices/verify-manager", json={"sensor_index": 2})
 
     assert response.status_code == 200
     data = response.json()

@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Enum,
     Float,
     ForeignKey,
     Integer,
@@ -17,6 +18,7 @@ from sqlalchemy.orm import relationship
 
 from app.core.config import settings
 from app.database.base import Base
+from app.shared.enums import UserRole
 
 
 def get_local_time():
@@ -53,7 +55,7 @@ class User(Base):
     data_nascimento = Column(Date, nullable=True)
     password_hash = Column(String)
     is_active = Column(Boolean, default=True)
-    role = Column(String, default="EMPLOYEE")
+    role = Column(Enum(UserRole, native_enum=False, length=50), default=UserRole.EMPLOYEE)
     can_manual_punch_desktop = Column(Boolean, default=True)
     can_manual_punch_mobile = Column(Boolean, default=False)
     can_export_report = Column(Boolean, default=False)

@@ -26,7 +26,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     dependencies=[Depends(deps.get_current_manager)],
     responses={**FORBIDDEN_RESPONSE},
 )
-def get_bulk_schedules(
+async def get_bulk_schedules(
     db: Annotated[Session, Depends(deps.get_db)],
     month: Annotated[int, Query(ge=1, le=12)],
     year: Annotated[int, Query(ge=2000, le=2100)],
@@ -39,7 +39,7 @@ def get_bulk_schedules(
     dependencies=[Depends(deps.get_current_manager)],
     responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def get_bulk_schedule_by_dates(
+async def get_bulk_schedule_by_dates(
     valid_from: date,
     valid_until: date,
     db: Annotated[Session, Depends(deps.get_db)],
@@ -53,7 +53,7 @@ def get_bulk_schedule_by_dates(
     "/bulk",
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def add_bulk_schedules(
+async def add_bulk_schedules(
     schedule_in: BulkWorkScheduleCreate,
     db: Annotated[Session, Depends(deps.get_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -69,7 +69,7 @@ def add_bulk_schedules(
     "/bulk/{valid_from}/{valid_until}",
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def update_bulk_schedules(
+async def update_bulk_schedules(
     valid_from: date,
     valid_until: date,
     schedule_in: BulkWorkScheduleCreate,
@@ -89,7 +89,7 @@ def update_bulk_schedules(
     "/bulk/{valid_from}/{valid_until}",
     responses={**FORBIDDEN_RESPONSE},
 )
-def delete_bulk_schedules(
+async def delete_bulk_schedules(
     valid_from: date,
     valid_until: date,
     db: Annotated[Session, Depends(deps.get_db)],

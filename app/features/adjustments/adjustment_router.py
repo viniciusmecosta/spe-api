@@ -39,7 +39,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE},
 )
-def create_adjustment_request(
+async def create_adjustment_request(
         request_in: AdjustmentRequestCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -52,7 +52,7 @@ def create_adjustment_request(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def waive_absence_admin(
+async def waive_absence_admin(
         waiver_in: AdjustmentWaiverCreate,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -65,7 +65,7 @@ def waive_absence_admin(
     status_code=status.HTTP_200_OK,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-def reprocess_historical_extra_time(
+async def reprocess_historical_extra_time(
         request_in: BulkReprocessExtraTimeRequest,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -78,7 +78,7 @@ def reprocess_historical_extra_time(
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def upload_adjustment_attachment(
+async def upload_adjustment_attachment(
         id: int,
         file: Annotated[UploadFile, File(...)],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -92,7 +92,7 @@ def upload_adjustment_attachment(
     response_class=FileResponse,
     responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
-def download_adjustment_attachment(
+async def download_adjustment_attachment(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -108,7 +108,7 @@ def download_adjustment_attachment(
 
 
 @router.get("/my")
-def read_my_adjustments(
+async def read_my_adjustments(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: Annotated[int, Query(ge=0)] = 0,
@@ -131,7 +131,7 @@ def read_my_adjustments(
     "/",
     responses={**FORBIDDEN_RESPONSE},
 )
-def read_all_adjustments(
+async def read_all_adjustments(
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
@@ -154,7 +154,7 @@ def read_all_adjustments(
     "/{id}/approve",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def approve_adjustment(
+async def approve_adjustment(
         id: int,
         db: Annotated[Session, Depends(deps.get_db)],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
@@ -167,7 +167,7 @@ def approve_adjustment(
     "/{id}/reject",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def reject_adjustment(
+async def reject_adjustment(
         id: int,
         comment: Annotated[str, Body(..., embed=True)],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -180,7 +180,7 @@ def reject_adjustment(
     "/{id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def delete_adjustment(
+async def delete_adjustment(
         id: int,
         reason: Annotated[str, Query(..., min_length=5, description="Justificativa para a exclusão")],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -194,7 +194,7 @@ def delete_adjustment(
     "/admin/{id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def admin_delete_adjustment(
+async def admin_delete_adjustment(
         id: int,
         reason: Annotated[str, Query(..., min_length=5, description="Justificativa para a exclusão")],
         db: Annotated[Session, Depends(deps.get_db)],
@@ -208,7 +208,7 @@ def admin_delete_adjustment(
     "/admin/{id}/revert-status",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
-def admin_revert_adjustment_status(
+async def admin_revert_adjustment_status(
         id: int,
         status: Annotated[AdjustmentStatus, Body(..., embed=True)],
         comment: Annotated[str, Body(..., embed=True)],
