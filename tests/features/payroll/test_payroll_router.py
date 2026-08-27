@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.features.payroll.payroll_schemas import PayrollClosureResponse
+from app.features.payroll.payroll_service import PayrollService
 from app.features.time_records.time_record_schemas import SuccessResponse
 from app.features.users.user_models import User
 from app.main import app
@@ -43,8 +44,9 @@ def test_list_payroll_periods(client: TestClient, mocker: MagicMock) -> None:
             is_closed=True,
         )
     ]
-    mocker.patch(
-        "app.features.payroll.payroll_router.payroll_service.list_periods",
+    mocker.patch.object(
+        PayrollService,
+        "list_periods",
         return_value=expected,
     )
 
@@ -65,8 +67,9 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
         closed_by_user_name="Maintainer",
         is_closed=True,
     )
-    mocker.patch(
-        "app.features.payroll.payroll_router.payroll_service.close_period",
+    mocker.patch.object(
+        PayrollService,
+        "close_period",
         return_value=expected,
     )
 
@@ -77,8 +80,9 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
 
 def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
     expected = SuccessResponse(status="success", message="Period reopened")
-    mocker.patch(
-        "app.features.payroll.payroll_router.payroll_service.reopen_period",
+    mocker.patch.object(
+        PayrollService,
+        "reopen_period",
         return_value=expected,
     )
 
@@ -91,7 +95,7 @@ def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_upload_legacy_report(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.payroll.payroll_router.payroll_service.upload_legacy_report")
+    mocker.patch.object(PayrollService, "upload_legacy_report")
 
     test_file = io.BytesIO(b"fake pdf legacy report")
     response = client.post(

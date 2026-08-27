@@ -3,6 +3,8 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.system.audit_service import AuditService
+from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -28,11 +30,12 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 
 def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.system.system_router.routine_orchestrator.send_manual_backup_email",
+    mocker.patch.object(
+        RoutineOrchestrator,
+        "send_manual_backup_email",
         return_value=True,
     )
-    mocker.patch("app.features.system.system_router.audit_service.log")
+    mocker.patch.object(AuditService, "log")
 
     response = client.post("/api/v1/backup/trigger")
     assert response.status_code == 200
@@ -42,8 +45,9 @@ def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) ->
 
 
 def test_trigger_manual_backup_failure(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.system.system_router.routine_orchestrator.send_manual_backup_email",
+    mocker.patch.object(
+        RoutineOrchestrator,
+        "send_manual_backup_email",
         return_value=False,
     )
 

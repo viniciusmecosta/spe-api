@@ -1,14 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from sqlalchemy.orm import Session
 
 from app.features.companies.company_schemas import (
     CompanyCreate,
     CompanyResponse,
     CompanyUpdate,
 )
-from app.features.companies.company_service import company_service
+from app.features.companies.company_service import CompanyService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -28,10 +27,10 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 )
 async def get_company(
         request: Request,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[CompanyService, Depends()],
 ) -> CompanyResponse | None:
-    company = company_service.get_company(db)
-    return company_service.enrich_logo_url(company, str(request.base_url))
+    company = service.get_company()
+    return service.enrich_logo_url(company, str(request.base_url))
 
 
 @router.post(
@@ -41,11 +40,11 @@ async def get_company(
 async def create_company(
         obj_in: CompanyCreate,
         request: Request,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> CompanyResponse:
-    company = company_service.create_company(db, obj_in, current_user.id)
-    return company_service.enrich_logo_url(company, str(request.base_url))
+    company = service.create_company(obj_in=obj_in, current_user_id=current_user.id)
+    return service.enrich_logo_url(company, str(request.base_url))
 
 
 @router.put(
@@ -55,22 +54,22 @@ async def create_company(
 async def update_company(
         obj_in: CompanyUpdate,
         request: Request,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> CompanyResponse:
-    company = company_service.update_company(db, obj_in, current_user.id)
-    return company_service.enrich_logo_url(company, str(request.base_url))
+    company = service.update_company(obj_in=obj_in, current_user_id=current_user.id)
+    return service.enrich_logo_url(company, str(request.base_url))
 
 
 @router.post(
     "/logo",
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
+    responses={**CRUD_RESPONSES},
 )
 async def upload_company_logo(
         request: Request,
-        file: Annotated[UploadFile, File(...)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+        file: UploadFile = File(...),
 ) -> CompanyResponse:
-    company = company_service.upload_logo(db, file, current_user.id)
-    return company_service.enrich_logo_url(company, str(request.base_url))
+    company = service.upload_logo(file=file, current_user_id=current_user.id)
+    return service.enrich_logo_url(company, str(request.base_url))

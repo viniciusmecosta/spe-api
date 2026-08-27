@@ -9,16 +9,15 @@ from fastapi import (
     Query,
     status,
 )
-from sqlalchemy.orm import Session
 
-from app.features.system.audit_service import audit_service
-from app.features.system.routine_log_service import routine_log_service
-from app.features.system.routine_orchestrator import routine_orchestrator
+from app.features.system.audit_service import AuditService
+from app.features.system.routine_log_service import RoutineLogService
+from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_schemas import (
     AuditLogResponse,
     RoutineLogResponse,
 )
-from app.features.system.telegram_service import telegram_service
+from app.features.system.telegram_service import TelegramService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -39,7 +38,7 @@ telegram_actions_router = APIRouter(responses={**AUTH_RESPONSES})
     dependencies=[Depends(deps.get_current_manager)],
 )
 async def read_audit_logs(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AuditService, Depends()],
         action: str | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
@@ -47,8 +46,7 @@ async def read_audit_logs(
         skip: int = 0,
         limit: int = 100,
 ) -> list[AuditLogResponse]:
-    return audit_service.get_logs(
-        db,
+    return service.get_logs(
         action=action,
         start_date=start_date,
         end_date=end_date,
@@ -64,16 +62,17 @@ async def read_audit_logs(
     responses={**BAD_REQUEST_RESPONSE},
 )
 async def trigger_manual_backup(
-        db: Annotated[Session, Depends(deps.get_db)],
+        audit_svc: Annotated[AuditService, Depends()],
+        routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    sent = routine_orchestrator.send_manual_backup_email(db)
+    sent = routine_orch.send_manual_backup_email()
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Falha ao gerar ou enviar o backup.",
         )
-    audit_service.log(db, current_user.id, "MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
+    audit_svc.log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}
 
 
@@ -82,7 +81,7 @@ async def trigger_manual_backup(
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def read_routine_logs(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[RoutineLogService, Depends()],
         routine_type: str | None = None,
         status: str | None = None,
         start_date: date | None = None,
@@ -91,8 +90,7 @@ async def read_routine_logs(
         skip: int = 0,
         limit: int = 100,
 ) -> list[RoutineLogResponse]:
-    return routine_log_service.get_logs(
-        db,
+    return service.get_logs(
         routine_type=routine_type,
         status=status,
         start_date=start_date,
@@ -109,11 +107,12 @@ async def read_routine_logs(
 )
 async def trigger_manual_backup_telegram(
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        audit_svc: Annotated[AuditService, Depends()],
+        routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    background_tasks.add_task(routine_orchestrator.execute_manual_backup_telegram)
-    audit_service.log(db, current_user.id, "MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
+    background_tasks.add_task(routine_orch.execute_manual_backup_telegram)
+    audit_svc.log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
     return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
 
 
@@ -126,13 +125,15 @@ async def trigger_manual_report_telegram(
         background_tasks: BackgroundTasks,
         start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
         end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
-        db: Annotated[Session, Depends(deps.get_db)],
+        audit_svc: Annotated[AuditService, Depends()],
+        telegram_svc: Annotated[TelegramService, Depends()],
+        routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    telegram_service.validate_manual_report_dates(start_date, end_date)
-    background_tasks.add_task(routine_orchestrator.send_manual_report_telegram, start_date, end_date)
-    audit_service.log(db, current_user.id, "MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
-                      new_data={"start_date": str(start_date), "end_date": str(end_date)})
+    telegram_svc.validate_manual_report_dates(start_date, end_date)
+    background_tasks.add_task(routine_orch.send_manual_report_telegram, start_date, end_date)
+    audit_svc.log(user_id=current_user.id, action="MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
+                  new_data={"start_date": str(start_date), "end_date": str(end_date)})
     return {
         "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
     }

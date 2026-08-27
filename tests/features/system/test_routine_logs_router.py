@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.system.routine_log_service import RoutineLogService
 from app.features.system.system_schemas import RoutineLogResponse
 from app.features.users.user_models import User
 from app.main import app
@@ -39,8 +40,9 @@ def test_read_routine_logs(client: TestClient, mocker: MagicMock) -> None:
             details="Backup OK",
         )
     ]
-    mocker.patch(
-        "app.features.system.system_router.routine_log_service.get_logs",
+    mocker.patch.object(
+        RoutineLogService,
+        "get_logs",
         return_value=expected,
     )
 

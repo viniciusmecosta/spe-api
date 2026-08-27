@@ -1,12 +1,14 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.features.system.system_repository import audit_repository
 from app.features.system.system_schemas import AuditLogCreate
+from app.shared import deps
 
 
 def _serialize_value(val: Any) -> Any:
@@ -62,17 +64,22 @@ def serialize_model(model: Any) -> dict[str, Any]:
 
 
 class AuditService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def log(
             self,
-            db: Session,
-            user_id: int | None,
-            action: str,
+            db: Session | None = None,
+            user_id: int | None = None,
+            action: str = "",
             *,
             entity: str,
             entity_id: int,
             old_data: dict | None = None,
             new_data: dict | None = None,
     ):
+        session = db if db is not None else self.db
+        assert session is not None
         obj_in = AuditLogCreate(
             user_id=user_id,
             action=action,
@@ -81,7 +88,7 @@ class AuditService:
             old_data=old_data,
             new_data=new_data
         )
-        return audit_repository.create(db, obj_in)
+        return audit_repository.create(session, obj_in)
 
     def _prepare_raw_data(self, model: Any | None, data: dict | None) -> dict | None:
         raw = serialize_model(model) if model is not None else {}
@@ -122,9 +129,9 @@ class AuditService:
 
     def log_change(
         self,
-        db: Session,
-        user_id: int | None,
-        action: str,
+        db: Session | None = None,
+        user_id: int | None = None,
+        action: str = "",
         *,
         entity: str | None = None,
         entity_id: int | None = None,
@@ -133,13 +140,15 @@ class AuditService:
         old_data: dict | None = None,
         new_data: dict | None = None,
     ):
+        session = db if db is not None else self.db
+        assert session is not None
         raw_old = self._prepare_raw_data(old_model, old_data)
         raw_new = self._prepare_raw_data(new_model, new_data)
         resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
         final_old, final_new = self._compute_final_data(raw_old, raw_new)
 
         return self.log(
-            db,
+            session,
             user_id=user_id,
             action=action,
             entity=resolved_entity,
@@ -164,11 +173,13 @@ class AuditService:
 
         return actual_old, actual_new
 
-    def get_logs(self, db: Session, action: str | None = None,
+    def get_logs(self, db: Session | None = None, action: str | None = None,
                  start_date: date | None = None, end_date: date | None = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):
+        session = db if db is not None else self.db
+        assert session is not None
         return audit_repository.get_logs(
-            db, action=action, start_date=start_date, end_date=end_date,
+            session, action=action, start_date=start_date, end_date=end_date,
             order_by=order_by, skip=skip, limit=limit
         )
 

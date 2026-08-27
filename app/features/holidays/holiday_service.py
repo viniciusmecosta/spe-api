@@ -1,3 +1,6 @@
+from typing import Annotated
+
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
@@ -6,37 +9,48 @@ from app.features.holidays.holiday_repository import holiday_repository
 from app.features.holidays.holiday_schemas import HolidayCreate
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service
+from app.shared import deps
 
 
 class HolidayService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def create_holiday(
             self,
-            db: Session,
-            holiday_in: HolidayCreate,
-            current_user_id: int,
+            db: Session | None = None,
+            holiday_in: HolidayCreate | None = None,
+            current_user_id: int = 0,
     ) -> Holiday:
-        payroll_service.validate_period_open(db, holiday_in.date)
-        if holiday_repository.get_by_date(db, holiday_in.date):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert holiday_in is not None
+        payroll_service.validate_period_open(session, holiday_in.date)
+        if holiday_repository.get_by_date(session, holiday_in.date):
             raise HolidayAlreadyExistsError(date_str=holiday_in.date.strftime("%d/%m/%Y"))
 
-        holiday = holiday_repository.create(db, obj_in=holiday_in)
-        audit_service.log_change(db, current_user_id, "CREATE", new_model=holiday)
+        holiday = holiday_repository.create(session, obj_in=holiday_in)
+        audit_service.log_change(session, current_user_id, "CREATE", new_model=holiday)
         return holiday
 
-    def get_all_holidays(self, db: Session) -> list[Holiday]:
-        return holiday_repository.get_all(db)
+    def get_all_holidays(self, db: Session | None = None) -> list[Holiday]:
+        session = db if db is not None else self.db
+        assert session is not None
+        return holiday_repository.get_all(session)
 
     def delete_holiday(
             self,
-            db: Session,
-            holiday_id: int,
-            current_user_id: int,
+            db: Session | None = None,
+            holiday_id: int = 0,
+            current_user_id: int = 0,
     ) -> dict[str, str]:
-        holiday = holiday_repository.get_by_id(db, holiday_id)
+        session = db if db is not None else self.db
+        assert session is not None
+        holiday = holiday_repository.get_by_id(session, holiday_id)
         if holiday:
-            payroll_service.validate_period_open(db, holiday.date)
-            holiday_repository.delete(db, holiday_id)
-            audit_service.log_change(db, current_user_id, "DELETE", old_model=holiday)
+            payroll_service.validate_period_open(session, holiday.date)
+            holiday_repository.delete(session, holiday_id)
+            audit_service.log_change(session, current_user_id, "DELETE", old_model=holiday)
         return {"status": "success"}
 
 

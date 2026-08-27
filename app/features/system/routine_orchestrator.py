@@ -3,8 +3,12 @@ import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from typing import Annotated
+
+from fastapi import Depends
 from sqlalchemy import desc, exists
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -21,6 +25,7 @@ from app.features.system.system_exceptions import (
 from app.features.system.system_models import RoutineLog
 from app.features.system.telegram_service import telegram_service
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
@@ -31,6 +36,9 @@ BACKUP_ZIP_FILENAME = "spe.zip"
 
 
 class RoutineOrchestrator:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def _generate_backup_files_zip(self) -> tuple[str | None, str | None, str | None]:
         backup_path = backup_service.create_safe_backup()
         if not backup_path:
@@ -375,12 +383,12 @@ class RoutineOrchestrator:
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao salvar rotina de relatorio manual: {e}")
 
-    def send_manual_backup_email(self, db) -> bool:
+    def send_manual_backup_email(self, db: Session | None = None) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             raise EmailNotConfiguredError()
 
-        try:
-            session = db if db else get_db_session().__enter__()
+        session = db if db is not None else self.db
+        if session is not None:
             maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
                                                      User.email.isnot(None)).all()
             to_emails = [m.email for m in maintainers if m.email]
@@ -396,9 +404,23 @@ class RoutineOrchestrator:
             full_report_html = daily_report_service.generate_daily_report_html(session, yesterday)
             fmt_start = yesterday.strftime(DATE_FORMAT)
             period_text = f"Abaixo está o relatório do dia {fmt_start}:"
-        finally:
-            if db is None and 'session' in locals():
-                get_db_session().__exit__(None, None, None)
+        else:
+            with get_db_session() as bg_session:
+                maintainers = bg_session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                         User.email.isnot(None)).all()
+                to_emails = [m.email for m in maintainers if m.email]
+
+                if not to_emails:
+                    raise NoMaintainersWithEmailError()
+
+                tz = ZoneInfo(settings.TIMEZONE)
+                now = datetime.now(tz)
+                now_local = now.replace(tzinfo=None)
+                yesterday = now_local.date() - timedelta(days=1)
+
+                full_report_html = daily_report_service.generate_daily_report_html(bg_session, yesterday)
+                fmt_start = yesterday.strftime(DATE_FORMAT)
+                period_text = f"Abaixo está o relatório do dia {fmt_start}:"
 
         backup_path, sql_path, zip_path = self._generate_backup_files_zip()
         if not backup_path:

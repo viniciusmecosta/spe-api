@@ -1,8 +1,9 @@
 import os
 import shutil
+from typing import Annotated
 import uuid
 
-from fastapi import UploadFile
+from fastapi import Depends, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -20,11 +21,17 @@ from app.features.companies.company_schemas import (
     CompanyUpdate,
 )
 from app.features.system.audit_service import audit_service, serialize_model
+from app.shared import deps
 
 
 class CompanyService:
-    def get_company(self, db: Session) -> Company | None:
-        return company_repository.get_current(db)
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
+    def get_company(self, db: Session | None = None) -> Company | None:
+        session = db if db is not None else self.db
+        assert session is not None
+        return company_repository.get_current(session)
 
     def enrich_logo_url(self, company: Company | None, base_url: str) -> CompanyResponse | None:
         if not company:
@@ -35,26 +42,35 @@ class CompanyService:
             response_obj.logo_path = f"{clean_base_url}/uploads/{response_obj.logo_path}"
         return response_obj
 
-    def create_company(self, db: Session, obj_in: CompanyCreate, current_user_id: int) -> Company:
-        existing = company_repository.get_current(db)
+    def create_company(self, db: Session | None = None, obj_in: CompanyCreate | None = None, current_user_id: int = 0) -> Company:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        existing = company_repository.get_current(session)
         if existing:
             raise CompanyAlreadyExistsError()
-        company = company_repository.create(db, obj_in=obj_in)
-        audit_service.log_change(db, current_user_id, "CREATE", new_model=company)
+        company = company_repository.create(session, obj_in=obj_in)
+        audit_service.log_change(session, current_user_id, "CREATE", new_model=company)
         return company
 
-    def update_company(self, db: Session, obj_in: CompanyUpdate, current_user_id: int) -> Company:
-        existing = company_repository.get_current(db)
+    def update_company(self, db: Session | None = None, obj_in: CompanyUpdate | None = None, current_user_id: int = 0) -> Company:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        existing = company_repository.get_current(session)
         if not existing:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para atualizar.")
 
         old_data = serialize_model(existing)
-        company = company_repository.update(db, db_obj=existing, obj_in=obj_in)
-        audit_service.log_change(db, current_user_id, "UPDATE", old_model=old_data, new_model=company)
+        company = company_repository.update(session, db_obj=existing, obj_in=obj_in)
+        audit_service.log_change(session, current_user_id, "UPDATE", old_model=old_data, new_model=company)
         return company
 
-    def upload_logo(self, db: Session, file: UploadFile, current_user_id: int) -> Company:
-        existing = company_repository.get_current(db)
+    def upload_logo(self, db: Session | None = None, file: UploadFile | None = None, current_user_id: int = 0) -> Company:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert file is not None
+        existing = company_repository.get_current(session)
         if not existing:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para associar o logotipo.")
 
@@ -81,12 +97,12 @@ class CompanyService:
 
         old_logo = existing.logo_path
         existing.logo_path = filename
-        db.add(existing)
-        db.commit()
-        db.refresh(existing)
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
 
         audit_service.log_change(
-            db, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
+            session, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
             old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
         )
         return existing

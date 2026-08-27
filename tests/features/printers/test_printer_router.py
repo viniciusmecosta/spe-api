@@ -3,6 +3,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.printers.printer_service import PrinterService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared.deps import get_current_manager
@@ -17,16 +18,16 @@ def override_dependency():
     app.dependency_overrides.clear()
 
 
-@patch("app.features.printers.printer_router.printer_service")
-def test_read_printers(mock_service):
-    mock_service.get_all.return_value = []
+@patch.object(PrinterService, "get_all")
+def test_read_printers(mock_get_all):
+    mock_get_all.return_value = []
     response = client.get("/api/v1/printers/")
     assert response.status_code == 200
     assert response.json() == []
 
 
-@patch("app.features.printers.printer_router.printer_service")
-def test_read_printer(mock_service):
+@patch.object(PrinterService, "get_by_id")
+def test_read_printer(mock_get_by_id):
     class MockPrinter:
         id = 1
         name = "Test Printer"
@@ -35,14 +36,14 @@ def test_read_printer(mock_service):
         paper_width = 80
         company_id = 1
 
-    mock_service.get_by_id.return_value = MockPrinter()
+    mock_get_by_id.return_value = MockPrinter()
     response = client.get("/api/v1/printers/1")
     assert response.status_code == 200
     assert response.json()["id"] == 1
 
 
-@patch("app.features.printers.printer_router.printer_service")
-def test_create_printer(mock_service):
+@patch.object(PrinterService, "create")
+def test_create_printer(mock_create):
     class MockPrinter:
         id = 1
         name = "Test Printer"
@@ -51,7 +52,7 @@ def test_create_printer(mock_service):
         paper_width = 80
         company_id = 1
 
-    mock_service.create.return_value = MockPrinter()
+    mock_create.return_value = MockPrinter()
 
     printer_data = {
         "name": "Test Printer",
@@ -65,8 +66,8 @@ def test_create_printer(mock_service):
     assert response.json()["id"] == 1
 
 
-@patch("app.features.printers.printer_router.printer_service")
-def test_update_printer(mock_service):
+@patch.object(PrinterService, "update")
+def test_update_printer(mock_update):
     class MockPrinter:
         id = 1
         name = "Updated Printer"
@@ -75,14 +76,14 @@ def test_update_printer(mock_service):
         paper_width = 80
         company_id = 1
 
-    mock_service.update.return_value = MockPrinter()
+    mock_update.return_value = MockPrinter()
     response = client.patch("/api/v1/printers/1", json={"name": "Updated Printer"})
     assert response.status_code == 200
     assert response.json()["name"] == "Updated Printer"
 
 
-@patch("app.features.printers.printer_router.printer_service")
-def test_delete_printer(mock_service):
-    mock_service.delete.return_value = None
+@patch.object(PrinterService, "delete")
+def test_delete_printer(mock_delete):
+    mock_delete.return_value = None
     response = client.delete("/api/v1/printers/1")
     assert response.status_code == 204

@@ -3,10 +3,10 @@ import os
 import pathlib
 from datetime import date, datetime
 from io import BytesIO
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -25,6 +25,7 @@ from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import dispatch_payroll_email, email_service
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ def dispatch_closure_email_background(month: int, year: int, user_name: str, rep
 
 
 class PayrollService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def _build_history(self, month_closures: list) -> list[dict[str, Any]]:
         history = []
         for h in month_closures:
@@ -103,7 +107,9 @@ class PayrollService:
                 "report_path": None
             }
 
-    def list_periods(self, db: Session, year: int) -> list[dict[str, Any]]:
+    def list_periods(self, db: Session | None = None, year: int = 0) -> list[dict[str, Any]]:
+        session = db if db is not None else self.db
+        assert session is not None
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         current_year = now.year
@@ -116,7 +122,7 @@ class PayrollService:
         else:
             max_month = 0
 
-        all_closures = db.query(PayrollClosure).filter(PayrollClosure.year == year).order_by(
+        all_closures = session.query(PayrollClosure).filter(PayrollClosure.year == year).order_by(
             PayrollClosure.id.asc()).all()
 
         closures_by_month = {}
@@ -130,7 +136,11 @@ class PayrollService:
             result.append(self._build_period_response(mo, year, closures_by_month))
         return result
 
-    def close_period(self, db: Session, month: int, year: int, current_user: User, background_tasks: BackgroundTasks):
+    def close_period(self, db: Session | None = None, month: int = 0, year: int = 0, current_user: User | None = None, background_tasks: BackgroundTasks | None = None):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        assert background_tasks is not None
         if current_user.role not in [UserRole.MANAGER, UserRole.MAINTAINER]:
             raise PayrollPermissionError("Acesso negado: Sem permissão para fechar a folha.")
 
@@ -145,14 +155,14 @@ class PayrollService:
                 f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
-        existing = payroll_repository.get_by_month(db, month, year)
+        existing = payroll_repository.get_by_month(session, month, year)
         if existing:
             raise PayrollAlreadyClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} já está fechada."
             )
 
         try:
-            attachment = excel_service.generate_excel_report(db, month, year, None, current_user)
+            attachment = excel_service.generate_excel_report(session, month, year, None, current_user)
 
             reports_dir = os.path.join(settings.UPLOAD_DIR, "reports")
             os.makedirs(reports_dir, exist_ok=True)
@@ -167,17 +177,17 @@ class PayrollService:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
             raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
 
-        db.commit()
+        session.commit()
 
-        closure = payroll_repository.create(db, month=month, year=year, user_id=current_user.id)
+        closure = payroll_repository.create(session, month=month, year=year, user_id=current_user.id)
         closure.report_path = f"reports/{filename}"
-        db.commit()
-        db.refresh(closure)
+        session.commit()
+        session.refresh(closure)
 
-        audit_service.log_change(db, current_user.id, "CLOSE", new_model=closure)
+        audit_service.log_change(session, current_user.id, "CLOSE", new_model=closure)
 
-        maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                            User.email.isnot(None)).all()
+        maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                 User.email.isnot(None)).all()
         to_emails = [m.email for m in maintainers if m.email]
 
         background_tasks.add_task(
@@ -186,28 +196,32 @@ class PayrollService:
         )
         return closure
 
-    def reopen_period(self, db: Session, month: int, year: int, observation: str, current_user: User,
-                      background_tasks: BackgroundTasks):
+    def reopen_period(self, db: Session | None = None, month: int = 0, year: int = 0, observation: str = "", current_user: User | None = None,
+                      background_tasks: BackgroundTasks | None = None):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        assert background_tasks is not None
         if current_user.role != UserRole.MAINTAINER:
             raise PayrollPermissionError("Acesso negado: Apenas mantenedores reabrem folhas.")
 
-        existing = payroll_repository.get_by_month(db, month, year)
+        existing = payroll_repository.get_by_month(session, month, year)
         if not existing:
             raise PayrollNotClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} não está fechada."
             )
 
         closure_id = existing.id
-        payroll_repository.delete(db, month, year, current_user.id, observation)
+        payroll_repository.delete(session, month, year, current_user.id, observation)
 
         audit_service.log_change(
-            db, current_user.id, "REOPEN",
+            session, current_user.id, "REOPEN",
             entity="PAYROLL_CLOSURE", entity_id=closure_id,
             old_data={"is_closed": True}, new_data={"is_closed": False}
         )
 
-        maintainers = db.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                            User.email.isnot(None)).all()
+        maintainers = session.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
+                                                 User.email.isnot(None)).all()
         to_emails = [m.email for m in maintainers if m.email]
 
         background_tasks.add_task(
@@ -216,15 +230,20 @@ class PayrollService:
         )
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 
-    def validate_period_open(self, db: Session, target_date: date):
-        closure = payroll_repository.get_by_month(db, target_date.month, target_date.year)
+    def validate_period_open(self, db: Session | None = None, target_date: date | None = None):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert target_date is not None
+        closure = payroll_repository.get_by_month(session, target_date.month, target_date.year)
         if closure:
             raise PayrollPeriodClosedError(
                 f"A folha de ponto {target_date.month:02d}/{target_date.year} já está fechada."
             )
 
-    def upload_legacy_report(self, db: Session, closure_id: int, original_filename: str, file_content: bytes):
-        closure = db.query(PayrollClosure).get(closure_id)
+    def upload_legacy_report(self, db: Session | None = None, closure_id: int = 0, original_filename: str = "", file_content: bytes = b""):
+        session = db if db is not None else self.db
+        assert session is not None
+        closure = session.query(PayrollClosure).get(closure_id)
         if not closure:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
@@ -240,7 +259,7 @@ class PayrollService:
             f.write(file_content)
 
         closure.report_path = f"reports/legacy/{filename}"
-        db.commit()
+        session.commit()
 
 
 payroll_service = PayrollService()

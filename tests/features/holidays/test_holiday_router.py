@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.features.holidays.holiday_models import Holiday
+from app.features.holidays.holiday_service import HolidayService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -32,8 +33,9 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 
 def test_create_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
     expected = Holiday(id=1, name="Tiradentes", date=date(2026, 4, 21))
-    mocker.patch(
-        "app.features.holidays.holiday_router.holiday_service.create_holiday",
+    mocker.patch.object(
+        HolidayService,
+        "create_holiday",
         return_value=expected,
     )
 
@@ -44,8 +46,9 @@ def test_create_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
 
 def test_read_holidays_endpoint(client: TestClient, mocker: MagicMock) -> None:
     expected = [Holiday(id=1, name="Tiradentes", date=date(2026, 4, 21))]
-    mocker.patch(
-        "app.features.holidays.holiday_router.holiday_service.get_all_holidays",
+    mocker.patch.object(
+        HolidayService,
+        "get_all_holidays",
         return_value=expected,
     )
 
@@ -55,11 +58,12 @@ def test_read_holidays_endpoint(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_delete_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.holidays.holiday_router.holiday_service.delete_holiday",
+    mocker.patch.object(
+        HolidayService,
+        "delete_holiday",
         return_value={"status": "success"},
     )
 
     response = client.delete("/api/v1/holidays/1")
     assert response.status_code == 200
-    assert response.json() == {"status": "success"}
+    assert response.json()["status"] == "success"

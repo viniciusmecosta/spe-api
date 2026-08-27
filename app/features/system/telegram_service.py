@@ -1,6 +1,8 @@
-import logging
 from datetime import date, datetime, time
+import logging
+from typing import Annotated
 
+from fastapi import Depends
 import requests
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -12,6 +14,7 @@ from app.features.system.system_exceptions import (
 )
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import RecordType
 from app.utils.formatters import format_short_name
 
@@ -21,7 +24,8 @@ DATE_FORMAT = "%d/%m/%Y"
 
 
 class TelegramService:
-    def __init__(self):
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
 
