@@ -63,13 +63,13 @@ async def update_company(
 
 @router.post(
     "/logo",
-    responses={**CRUD_RESPONSES},
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def upload_company_logo(
         request: Request,
         service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
-        file: UploadFile = File(...),
+        file: Annotated[UploadFile, File(...)],
 ) -> CompanyResponse:
     company = service.upload_logo(file=file, current_user_id=current_user.id)
     return service.enrich_logo_url(company, str(request.base_url))
