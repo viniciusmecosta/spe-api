@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy import create_engine, event
@@ -63,6 +63,7 @@ def get_db() -> Generator[Session, None, None]:
     finally:
         db.close()
 
+
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
     db = SessionLocal()
@@ -73,6 +74,17 @@ def get_db_session() -> Generator[Session, None, None]:
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+@asynccontextmanager
+async def get_async_session_context() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
         try:
             yield session

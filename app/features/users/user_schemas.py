@@ -1,7 +1,8 @@
 import re
 from datetime import date, datetime, time
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 from app.features.devices.device_schemas import (
     UserBiometricCreate,
@@ -23,6 +24,32 @@ def validate_cpf_logic(cpf: str) -> bool:
         if digit != int(cpf[i]):
             return False
     return True
+
+
+def _validate_cpf_val(v: str | None) -> str | None:
+    if v:
+        v_clean = re.sub(r'\D', '', v)
+        if not validate_cpf_logic(v_clean):
+            raise ValueError('CPF inválido')
+        return v_clean
+    return v
+
+
+def _username_to_lower(v: str | None) -> str | None:
+    if v:
+        return v.lower()
+    return v
+
+
+def _validate_dob(v: date | None) -> date | None:
+    if v and v > date.today():
+        raise ValueError(DOB_FUTURE_ERROR)
+    return v
+
+
+CpfStr = Annotated[str | None, AfterValidator(_validate_cpf_val)]
+UsernameLowerStr = Annotated[str | None, AfterValidator(_username_to_lower)]
+PastDate = Annotated[date | None, AfterValidator(_validate_dob)]
 
 
 class WorkScheduleBase(BaseModel):
@@ -65,13 +92,13 @@ class BulkWorkScheduleResponse(BaseModel):
 
 
 class UserBase(BaseModel):
-    username: str | None = None
+    username: UsernameLowerStr = None
     name: str | None = None
     email: EmailStr | None = None
-    cpf: str | None = None
+    cpf: CpfStr = None
     pis: str | None = None
     endereco: str | None = None
-    data_nascimento: date | None = None
+    data_nascimento: PastDate = None
     role: UserRole | None = UserRole.EMPLOYEE
     is_active: bool | None = True
     can_manual_punch_desktop: bool | None = True
@@ -81,47 +108,23 @@ class UserBase(BaseModel):
     is_tolerance_exempt: bool | None = False
     auto_print_receipt: bool | None = None
 
-    @field_validator('username')
-    @classmethod
-    def username_to_lower(cls, v: str | None) -> str | None:
-        if v:
-            return v.lower()
-        return v
-
-    @field_validator('cpf')
-    @classmethod
-    def validate_cpf(cls, v: str | None) -> str | None:
-        if v:
-            v_clean = re.sub(r'\D', '', v)
-            if not validate_cpf_logic(v_clean):
-                raise ValueError('CPF inválido')
-            return v_clean
-        return v
-
-    @field_validator('data_nascimento')
-    @classmethod
-    def validate_data_nascimento(cls, v: date | None) -> date | None:
-        if v and v > date.today():
-            raise ValueError(DOB_FUTURE_ERROR)
-        return v
-
 
 class UserCreate(UserBase):
-    username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
+    username: Annotated[str, Field(min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$"), AfterValidator(_username_to_lower)]
     password: str = Field(..., min_length=6)
     role: UserRole = UserRole.EMPLOYEE
     biometrics: list[UserBiometricCreate] = []
 
 
 class UserUpdate(BaseModel):
-    username: str | None = None
+    username: UsernameLowerStr = None
     name: str | None = None
     password: str | None = None
     email: EmailStr | None = None
-    cpf: str | None = None
+    cpf: CpfStr = None
     pis: str | None = None
     endereco: str | None = None
-    data_nascimento: date | None = None
+    data_nascimento: PastDate = None
     role: UserRole | None = None
     is_active: bool | None = None
     can_manual_punch_desktop: bool | None = None
@@ -132,44 +135,13 @@ class UserUpdate(BaseModel):
     auto_print_receipt: bool | None = None
     biometrics: list[UserBiometricUpdate] | None = None
 
-    @field_validator('username')
-    @classmethod
-    def username_to_lower(cls, v: str | None) -> str | None:
-        if v:
-            return v.lower()
-        return v
-
-    @field_validator('cpf')
-    @classmethod
-    def validate_cpf(cls, v: str | None) -> str | None:
-        if v:
-            v_clean = re.sub(r'\D', '', v)
-            if not validate_cpf_logic(v_clean):
-                raise ValueError('CPF inválido')
-            return v_clean
-        return v
-
-    @field_validator('data_nascimento')
-    @classmethod
-    def validate_data_nascimento(cls, v: date | None) -> date | None:
-        if v and v > date.today():
-            raise ValueError(DOB_FUTURE_ERROR)
-        return v
-
 
 class UserUpdateMe(BaseModel):
     name: str | None = None
     password: str | None = None
     email: EmailStr | None = None
     endereco: str | None = None
-    data_nascimento: date | None = None
-
-    @field_validator('data_nascimento')
-    @classmethod
-    def validate_data_nascimento(cls, v: date | None) -> date | None:
-        if v and v > date.today():
-            raise ValueError(DOB_FUTURE_ERROR)
-        return v
+    data_nascimento: PastDate = None
 
 
 class UserInDBBase(UserBase):
