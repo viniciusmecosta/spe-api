@@ -44,7 +44,7 @@ class FirmwareService:
         except ValueError:
             raise InvalidFirmwareVersionError()
 
-        if not file.filename.endswith('.bin'):
+        if not file.filename or not file.filename.endswith('.bin'):
             raise InvalidFirmwareFileTypeError()
 
         latest = firmware_repository.get_latest(session)
@@ -77,7 +77,7 @@ class FirmwareService:
         session = db if db is not None else self.db
         assert session is not None
         assert file is not None
-        if not file.filename.endswith('.bin'):
+        if not file.filename or not file.filename.endswith('.bin'):
             raise InvalidFirmwareFileTypeError()
 
         firmware_old = firmware_repository.get_by_version(session, version)
