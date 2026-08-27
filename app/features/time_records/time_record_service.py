@@ -145,32 +145,55 @@ class TimeRecordService:
                                      new_data={"justification": record.edit_justification})
         return record
 
+    def _process_toggle_invalidations(self, db: Session, record: TimeRecord, new_type: RecordType):
+        previous_type = record.record_type
+        target_date = record.record_datetime.date()
+
+        if previous_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, target_date, record_id=record.id):
+                self._invalidate_extra_time_requests(db, record.user_id, target_date)
+
+        if new_type == RecordType.ENTRY:
+            if self._is_first_entry_affected(db, record.user_id, target_date, new_datetime=record.record_datetime):
+                self._invalidate_extra_time_requests(db, record.user_id, target_date)
+
+    def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
+                               is_manager: bool) -> TimeRecord:
+        original_id = record.original_record_id if record.original_record_id else record.id
+        return TimeRecord(
+            user_id=record.user_id,
+            record_type=new_type,
+            record_datetime=record.record_datetime,
+            ip_address=record.ip_address,
+            device_name=record.device_name,
+            platform=record.platform,
+            biometric_id=record.biometric_id,
+            edited_by=current_user.id,
+            edit_justification="Inversão de marcação efetuada",
+            original_record_id=original_id,
+            created_at=record.created_at,
+            is_verified=bool(is_manager)
+        )
+
     def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
         record = time_record_repository.get(db, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
+
         is_owner = record.user_id == current_user.id
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
-        if not is_owner and (not is_manager):
+        if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
+
         payroll_service.validate_period_open(db, record.record_datetime.date())
-        previous_type = record.record_type
-        new_type = RecordType.EXIT if previous_type == RecordType.ENTRY else RecordType.ENTRY
-        if previous_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
-                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
-        if new_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(),
-                                             new_datetime=record.record_datetime):
-                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+
+        new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
+        self._process_toggle_invalidations(db, record, new_type)
+
         old_data = serialize_model(record)
         record.is_ignored = True
-        new_record = TimeRecord(user_id=record.user_id, record_type=new_type, record_datetime=record.record_datetime,
-                                ip_address=record.ip_address, device_name=record.device_name, platform=record.platform,
-                                biometric_id=record.biometric_id, edited_by=current_user.id,
-                                edit_justification="Inversão de marcação efetuada",
-                                original_record_id=record.original_record_id if record.original_record_id else record.id,
-                                created_at=record.created_at, is_verified=True if is_manager else False)
+        new_record = self._create_toggled_record(record, new_type, current_user, is_manager)
+
         db.add(new_record)
         db.flush()
         db.add(record)
@@ -300,34 +323,45 @@ class TimeRecordService:
     def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
         return time_record_repository.get_timeline(db, record_id)
 
+    def _build_print_data(self, record: TimeRecord, company, short_id: str) -> dict:
+        record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
+        company_cnpj = mask_cnpj(company.cnpj or "") if company.cnpj else "N/A"
+        employee_cpf = mask_cpf(record.user.cpf or "")
+
+        return {
+            "company_name": company.name,
+            "company_address": company.address or "N/A",
+            "company_cnpj": company_cnpj,
+            "employee_name": record.user.name,
+            "employee_cpf": employee_cpf,
+            "employee_pis": record.user.pis or "N/A",
+            "record_date": record.record_datetime.strftime("%d/%m/%Y"),
+            "record_time": record.record_datetime.strftime("%H:%M"),
+            "record_type_str": record_type_str,
+            "device_name": record.device_name or "Desconhecido",
+            "nsr": record.id,
+            "short_id": short_id.upper(),
+        }
+
     def trigger_auto_print(self, db: Session, record: TimeRecord, background_tasks):
         company = company_repository.get_current(db)
-        if not company:
+        if not company or not company.default_printer_id:
             return
 
-        user_auto_print = record.user.auto_print_receipt
-        should_print = user_auto_print if user_auto_print is not None else company.auto_print_receipt
+        should_print = record.user.auto_print_receipt
+        if should_print is None:
+            should_print = company.auto_print_receipt
 
-        if should_print and company.default_printer_id:
-            printer = printer_repository.get_by_id(db, company.default_printer_id)
-            if printer and printer.status:
-                short_id = hashid_service.encode(record.id)
-                record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-                data = {
-                    "company_name": company.name,
-                    "company_address": company.address or "N/A",
-                    "company_cnpj": mask_cnpj(company.cnpj or "") if company.cnpj else "N/A",
-                    "employee_name": record.user.name,
-                    "employee_cpf": mask_cpf(record.user.cpf or ""),
-                    "employee_pis": record.user.pis or "N/A",
-                    "record_date": record.record_datetime.strftime("%d/%m/%Y"),
-                    "record_time": record.record_datetime.strftime("%H:%M"),
-                    "record_type_str": record_type_str,
-                    "device_name": record.device_name or "Desconhecido",
-                    "nsr": record.id,
-                    "short_id": short_id.upper(),
-                }
-                background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
+        if not should_print:
+            return
+
+        printer = printer_repository.get_by_id(db, company.default_printer_id)
+        if not printer or not printer.status:
+            return
+
+        short_id = hashid_service.encode(record.id)
+        data = self._build_print_data(record, company, short_id)
+        background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
     def _get_accessible_record(self, db: Session, short_id: str, current_user: User) -> TimeRecord:
         record_id = hashid_service.decode(short_id)
