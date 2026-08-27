@@ -11,12 +11,11 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 
 from app.core.security import get_client_ip
-from app.features.devices.biometric_service import biometric_service
+from app.features.devices.biometric_service import BiometricService
 from app.features.devices.device_credential_service import (
-    device_credential_service,
+    DeviceCredentialService,
 )
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import (
@@ -31,9 +30,9 @@ from app.features.devices.device_schemas import (
     ManagerVerifyResponse,
     TimeResponsePayload,
 )
-from app.features.devices.device_service import device_service
-from app.features.devices.firmware_service import firmware_service
-from app.features.devices.sync_service import sync_service
+from app.features.devices.device_service import DeviceService
+from app.features.devices.firmware_service import FirmwareService
+from app.features.devices.sync_service import SyncService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -56,11 +55,10 @@ async def register_device_punch(
         payload: DevicePunchRequest,
         request: Request,
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        device_service: Annotated[DeviceService, Depends()],
 ) -> FeedbackPayload:
     ip_address = get_client_ip(request)
     return device_service.process_punch(
-        db=db,
         sensor_index=payload.sensor_index,
         ip_address=ip_address,
         request=request,
@@ -69,18 +67,19 @@ async def register_device_punch(
 
 
 @router.get("/time", dependencies=[Depends(deps.verify_device_api_key)])
-async def get_device_time() -> TimeResponsePayload:
+async def get_device_time(
+        device_service: Annotated[DeviceService, Depends()],
+) -> TimeResponsePayload:
     return device_service.get_device_time()
 
 
 @router.post("/verify-manager")
 async def verify_manager_access(
         payload: ManagerVerifyRequest,
-        db: Annotated[Session, Depends(deps.get_db)],
         device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
+        device_service: Annotated[DeviceService, Depends()],
 ) -> ManagerVerifyResponse:
     return device_service.verify_manager_access(
-        db=db,
         sensor_index=payload.sensor_index,
         device_id=device.id,
     )
@@ -92,10 +91,10 @@ async def verify_manager_access(
 )
 async def create_credential(
         credential_in: DeviceCredentialCreate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> DeviceCredentialResponse:
-    return device_credential_service.create(db, credential_in, current_user.id)
+    return device_credential_service.create(credential_in=credential_in, current_user_id=current_user.id)
 
 
 @device_credentials_router.get(
@@ -103,9 +102,9 @@ async def create_credential(
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def list_credentials(
-        db: Annotated[Session, Depends(deps.get_db)],
+        device_credential_service: Annotated[DeviceCredentialService, Depends()],
 ) -> list[DeviceCredentialResponse]:
-    return device_credential_service.get_all(db)
+    return device_credential_service.get_all()
 
 
 @device_credentials_router.put(
@@ -115,10 +114,10 @@ async def list_credentials(
 async def update_credential(
         id: int,
         credential_in: DeviceCredentialUpdate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> DeviceCredentialResponse:
-    return device_credential_service.update(db, id, credential_in, current_user.id)
+    return device_credential_service.update(credential_id=id, credential_in=credential_in, current_user_id=current_user.id)
 
 
 @device_credentials_router.delete(
@@ -127,10 +126,10 @@ async def update_credential(
 )
 async def delete_credential(
         id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    return device_credential_service.delete(db, id, current_user.id)
+    return device_credential_service.delete(credential_id=id, current_user_id=current_user.id)
 
 
 @firmware_router.get(
@@ -139,9 +138,9 @@ async def delete_credential(
     responses={**AUTH_RESPONSES},
 )
 async def list_firmwares(
-        db: Annotated[Session, Depends(deps.get_db)],
+        firmware_service: Annotated[FirmwareService, Depends()],
 ) -> list[FirmwareListResponse]:
-    return firmware_service.get_all_firmwares(db)
+    return firmware_service.get_all_firmwares()
 
 
 @firmware_router.post(
@@ -152,10 +151,10 @@ async def list_firmwares(
 async def upload_firmware(
         version: Annotated[str, Form(...)],
         file: Annotated[UploadFile, File(...)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        firmware_service: Annotated[FirmwareService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> FirmwareResponse:
-    return firmware_service.upload_firmware(db, version, file, current_user.id)
+    return firmware_service.upload_firmware(version=version, file=file, current_user_id=current_user.id)
 
 
 @firmware_router.put(
@@ -165,10 +164,10 @@ async def upload_firmware(
 async def update_firmware(
         version: str,
         file: Annotated[UploadFile, File(...)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        firmware_service: Annotated[FirmwareService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> FirmwareResponse:
-    return firmware_service.update_firmware_file(db, version, file, current_user.id)
+    return firmware_service.update_firmware_file(version=version, file=file, current_user_id=current_user.id)
 
 
 @firmware_router.get(
@@ -177,9 +176,9 @@ async def update_firmware(
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 async def check_firmware(
-        db: Annotated[Session, Depends(deps.get_db)],
+        firmware_service: Annotated[FirmwareService, Depends()],
 ) -> FirmwareResponse:
-    return firmware_service.get_latest_firmware(db)
+    return firmware_service.get_latest_firmware()
 
 
 @firmware_router.get(
@@ -189,9 +188,9 @@ async def check_firmware(
 )
 async def download_firmware(
         version: str,
-        db: Annotated[Session, Depends(deps.get_db)],
+        firmware_service: Annotated[FirmwareService, Depends()],
 ) -> FileResponse:
-    file_path = firmware_service.get_firmware_file(db, version)
+    file_path = firmware_service.get_firmware_file(version=version)
     return FileResponse(
         path=file_path,
         media_type="application/octet-stream",
@@ -204,9 +203,9 @@ async def download_firmware(
     dependencies=[Depends(deps.get_current_manager)],
 )
 async def get_available_sensor_indices(
-        db: Annotated[Session, Depends(deps.get_db)],
+        biometric_service: Annotated[BiometricService, Depends()],
 ) -> list[int]:
-    return biometric_service.get_available_sensor_indices(db)
+    return biometric_service.get_available_sensor_indices()
 
 
 @sync_router.post(
@@ -216,6 +215,7 @@ async def get_available_sensor_indices(
 )
 async def sync_database(
         file: Annotated[UploadFile, File(...)],
+        sync_service: Annotated[SyncService, Depends()],
 ) -> dict[str, str]:
     sync_service.receive_database(file)
     return {"status": "success"}

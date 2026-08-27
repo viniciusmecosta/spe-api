@@ -2,8 +2,10 @@ import locale
 import logging
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
+from fastapi import Depends
 from sqlalchemy import exists, extract
 from sqlalchemy.orm import Session, joinedload
 
@@ -38,6 +40,7 @@ from app.features.time_records.time_record_repository import (
 from app.features.timesheets.anomaly_service import anomaly_service
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
+from app.shared import deps
 from app.shared import time_calculation_service as time_calc_mod
 from app.shared.enums import AdjustmentStatus, DayOfWeek, UserRole
 
@@ -52,6 +55,9 @@ except locale.Error:
 
 
 class ReportService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def get_month_range(self, month: int, year: int) -> tuple[date, date]:
         start_date = date(year, month, 1)
         _, last_day = monthrange(year, month)
@@ -292,8 +298,11 @@ class ReportService:
             unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
         )
 
-    def get_history_report(self, db: Session, user_id: int, month: int | None, year: int | None,
-                           current_user: User) -> HistoryResponse:
+    def get_history_report(self, db: Session | None = None, user_id: int = 0, month: int | None = None, year: int | None = None,
+                           current_user: User | None = None) -> HistoryResponse:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         today_date = now.date()
@@ -310,23 +319,23 @@ class ReportService:
         elif datetime(year, month, 1).date() > now.date():
             return HistoryResponse(month=month, year=year, total_worked_time="00:00", days=[])
 
-        user = user_repository.get(db, user_id)
+        user = user_repository.get(session, user_id)
         if not user:
             raise ReportUserNotFoundError(user_id=user_id)
 
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-        holidays = holiday_repository.get_by_month(db, month, year)
+        records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
+        holidays = holiday_repository.get_by_month(session, month, year)
 
         ignore_excessive = (current_user.id == user_id)
-        anomalies = anomaly_service.get_anomalies(db, start_date, end_date, user_id,
+        anomalies = anomaly_service.get_anomalies(session, start_date, end_date, user_id,
                                                   ignore_excessive_hours=ignore_excessive)
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
-        all_adjustments = db.query(AdjustmentRequest).filter(
+        all_adjustments = session.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
@@ -393,13 +402,15 @@ class ReportService:
             ).all()
         return all_records, all_adjustments, holidays
 
-    def get_advanced_user_report(self, db: Session, user_id: int, month: int, year: int,
+    def get_advanced_user_report(self, db: Session | None = None, user_id: int = 0, month: int = 0, year: int = 0,
                                  current_user: User | None = None,
                                  prefetched_records: list[TimeRecord] | None = None,
                                  prefetched_adjustments: list | None = None,
                                  prefetched_holidays: list | None = None) -> AdvancedUserReportResponse | None:
+        session = db if db is not None else self.db
+        assert session is not None
         start_date, end_date = self._get_month_range(month, year)
-        user = user_repository.get(db, user_id)
+        user = user_repository.get(session, user_id)
         if not user:
             return None
 
@@ -411,7 +422,7 @@ class ReportService:
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
         all_records, all_adjustments, holidays = self._fetch_report_data(
-            db, user_id, month, year, start_dt, end_dt,
+            session, user_id, month, year, start_dt, end_dt,
             prefetched_records, prefetched_adjustments, prefetched_holidays
         )
 
@@ -473,10 +484,12 @@ class ReportService:
 
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
 
-    def get_monthly_summary(self, db: Session, month: int, year: int,
+    def get_monthly_summary(self, db: Session | None = None, month: int = 0, year: int = 0,
                             employee_ids: list[int] | None = None,
                             current_user: User | None = None) -> MonthlyReportResponse:
-        query = db.query(User).options(joinedload(User.historical_schedules))
+        session = db if db is not None else self.db
+        assert session is not None
+        query = session.query(User).options(joinedload(User.historical_schedules))
         query = self._apply_employee_filters(query, employee_ids)
         users = query.all()
 
@@ -486,7 +499,7 @@ class ReportService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        all_records_batch = db.query(TimeRecord).filter(
+        all_records_batch = session.query(TimeRecord).filter(
             TimeRecord.user_id.in_(user_ids),
             TimeRecord.record_datetime >= start_dt,
             TimeRecord.record_datetime <= end_dt,
@@ -497,7 +510,7 @@ class ReportService:
         for r in all_records_batch:
             records_by_user.setdefault(r.user_id, []).append(r)
 
-        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+        all_adjustments_batch = session.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id.in_(user_ids),
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
@@ -507,12 +520,12 @@ class ReportService:
         for a in all_adjustments_batch:
             adjustments_by_user.setdefault(a.user_id, []).append(a)
 
-        holidays_batch = holiday_repository.get_by_month(db, month, year)
+        holidays_batch = holiday_repository.get_by_month(session, month, year)
 
         payroll_data = []
         for user in users:
             report = self.get_advanced_user_report(
-                db, user.id, month, year, current_user,
+                session, user.id, month, year, current_user,
                 prefetched_records=records_by_user.get(user.id, []),
                 prefetched_adjustments=adjustments_by_user.get(user.id, []),
                 prefetched_holidays=holidays_batch
@@ -534,16 +547,23 @@ class ReportService:
             raise ReportAccessDeniedError(user_id=user_id, detail=detail)
 
     def get_advanced_user_report_or_404(
-            self, db: Session, user_id: int, month: int, year: int, current_user: User
+            self, db: Session | None = None, user_id: int = 0, month: int = 0, year: int = 0, current_user: User | None = None
     ) -> AdvancedUserReportResponse:
-        report = self.get_advanced_user_report(db, user_id, month, year, current_user)
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        report = self.get_advanced_user_report(session, user_id, month, year, current_user)
         if not report:
             raise ReportNotFoundOrIncompleteError(user_id=user_id)
         return report
 
     def validate_excel_export_permission(
-            self, db: Session, current_user: User, month: int, year: int, now: datetime
+            self, db: Session | None = None, current_user: User | None = None, month: int = 0, year: int = 0, now: datetime | None = None
     ) -> None:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        assert now is not None
         is_maintainer = current_user.role == UserRole.MAINTAINER
         is_manager = current_user.role == UserRole.MANAGER
 
@@ -551,7 +571,7 @@ class ReportService:
             return
 
         if is_manager:
-            pending_adjustments = db.query(exists().where(
+            pending_adjustments = session.query(exists().where(
                 AdjustmentRequest.status == AdjustmentStatus.PENDING,
                 extract("month", AdjustmentRequest.target_date) == month,
                 extract("year", AdjustmentRequest.target_date) == year,
@@ -570,7 +590,7 @@ class ReportService:
         if month != prev_month or year != prev_year:
             raise EmployeePreviousMonthOnlyError()
 
-        payroll_closed = db.query(exists().where(
+        payroll_closed = session.query(exists().where(
             PayrollClosure.month == month,
             PayrollClosure.year == year,
             PayrollClosure.is_closed == True,

@@ -1,6 +1,7 @@
 import logging
+from typing import Annotated
 
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.features.devices.device_repository import biometric_repository
@@ -14,6 +15,7 @@ from app.features.devices.device_schemas import (
 from app.features.devices.punch_service import punch_service
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
+from app.shared import deps
 from app.shared.enums import RecordType, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
@@ -22,22 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def process_punch(
             self,
-            db: Session,
-            sensor_index: int,
-            ip_address: str,
+            db: Session | None = None,
+            sensor_index: int = 0,
+            ip_address: str = "",
             request: Request | None = None,
             background_tasks: BackgroundTasks | None = None,
     ) -> FeedbackPayload:
+        session = db if db is not None else self.db
+        assert session is not None
         try:
             success, message, record = punch_service.process_biometric_punch(
-                db, sensor_index, ip_address, request=request
+                session, sensor_index, ip_address, request=request
             )
 
             if success and record:
                 if background_tasks:
-                    time_record_service.trigger_auto_print(db, record, background_tasks)
+                    time_record_service.trigger_auto_print(session, record, background_tasks)
 
                 if request is not None and hasattr(request, "state") and record.user and record.user.name:
                     request.state.attempted_user = record.user.name
@@ -97,15 +104,17 @@ class DeviceService:
 
     def verify_manager_access(
             self,
-            db: Session,
-            sensor_index: int,
-            device_id: int,
+            db: Session | None = None,
+            sensor_index: int = 0,
+            device_id: int = 0,
     ) -> ManagerVerifyResponse:
-        managers_with_bio = biometric_repository.get_manager_with_biometric(db)
+        session = db if db is not None else self.db
+        assert session is not None
+        managers_with_bio = biometric_repository.get_manager_with_biometric(session)
 
         if not managers_with_bio:
             audit_service.log_change(
-                db,
+                session,
                 None,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -117,10 +126,10 @@ class DeviceService:
                 message="Nenhum gestor cadastrado. Acesso liberado.",
             )
 
-        biometric = biometric_repository.get_by_sensor_index(db, sensor_index)
+        biometric = biometric_repository.get_by_sensor_index(session, sensor_index)
         if not biometric:
             audit_service.log_change(
-                db,
+                session,
                 None,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -134,7 +143,7 @@ class DeviceService:
 
         if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
             audit_service.log_change(
-                db,
+                session,
                 biometric.user.id,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -147,7 +156,7 @@ class DeviceService:
             )
 
         audit_service.log_change(
-            db,
+            session,
             biometric.user.id,
             "VERIFY_MANAGER",
             entity="DEVICE",

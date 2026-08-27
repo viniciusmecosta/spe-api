@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 import pytest
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_schemas import FirmwareListResponse, FirmwareResponse
+from app.features.devices.firmware_service import FirmwareService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -51,8 +52,9 @@ def test_list_firmwares(client: TestClient, mocker: MagicMock) -> None:
             created_at=datetime(2026, 8, 14, 10, 0, 0),
         )
     ]
-    mocker.patch(
-        "app.features.devices.device_router.firmware_service.get_all_firmwares",
+    mocker.patch.object(
+        FirmwareService,
+        "get_all_firmwares",
         return_value=expected,
     )
 
@@ -68,8 +70,9 @@ def test_upload_firmware(client: TestClient, mocker: MagicMock) -> None:
         version="1.0.0",
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.devices.device_router.firmware_service.upload_firmware",
+    mocker.patch.object(
+        FirmwareService,
+        "upload_firmware",
         return_value=expected,
     )
 
@@ -88,8 +91,9 @@ def test_update_firmware(client: TestClient, mocker: MagicMock) -> None:
         version="1.0.0",
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.devices.device_router.firmware_service.update_firmware_file",
+    mocker.patch.object(
+        FirmwareService,
+        "update_firmware_file",
         return_value=expected,
     )
 
@@ -107,8 +111,9 @@ def test_check_firmware(client: TestClient, mocker: MagicMock) -> None:
         version="1.0.1",
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.devices.device_router.firmware_service.get_latest_firmware",
+    mocker.patch.object(
+        FirmwareService,
+        "get_latest_firmware",
         return_value=expected,
     )
 
@@ -123,8 +128,9 @@ def test_download_firmware(client: TestClient, mocker: MagicMock) -> None:
         temp_path = f.name
 
     try:
-        mocker.patch(
-            "app.features.devices.device_router.firmware_service.get_firmware_file",
+        mocker.patch.object(
+            FirmwareService,
+            "get_firmware_file",
             return_value=temp_path,
         )
 

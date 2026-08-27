@@ -3,8 +3,10 @@ import re
 import sys
 from datetime import datetime, timedelta
 from io import BytesIO
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
+from fastapi import Depends
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -21,6 +23,7 @@ from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodEr
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import DayOfWeek, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
@@ -31,7 +34,8 @@ NOT_REGISTERED = "Não registrado"
 
 
 class ExcelService:
-    def __init__(self):
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
         self._setup_styles()
 
     def _setup_styles(self):
@@ -136,16 +140,18 @@ class ExcelService:
 
         raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
-    def generate_excel_report(self, db: Session, month: int, year: int, employee_ids: list[int] | None = None,
+    def generate_excel_report(self, db: Session | None = None, month: int = 0, year: int = 0, employee_ids: list[int] | None = None,
                               current_user: User | None = None) -> BytesIO:
+        session = db if db is not None else self.db
+        assert session is not None
         if current_user:
             self._validate_employee_report_period(current_user, month, year)
 
-        query = db.query(User).options(joinedload(User.historical_schedules))
+        query = session.query(User).options(joinedload(User.historical_schedules))
         query = report_service.apply_employee_filters(query, employee_ids)
         users = query.all()
 
-        company = company_repository.get_current(db)
+        company = company_repository.get_current(session)
 
         logo_path = None
         if company and company.logo_path:
@@ -159,7 +165,7 @@ class ExcelService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        all_records_batch = db.query(TimeRecord).filter(
+        all_records_batch = session.query(TimeRecord).filter(
             TimeRecord.user_id.in_(user_ids),
             TimeRecord.record_datetime >= start_dt,
             TimeRecord.record_datetime <= end_dt,
@@ -170,7 +176,7 @@ class ExcelService:
         for r in all_records_batch:
             records_by_user.setdefault(r.user_id, []).append(r)
 
-        all_adjustments_batch = db.query(AdjustmentRequest).filter(
+        all_adjustments_batch = session.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id.in_(user_ids),
             AdjustmentRequest.target_date >= start_date,
             AdjustmentRequest.target_date <= end_date,
@@ -180,12 +186,12 @@ class ExcelService:
         for a in all_adjustments_batch:
             adjustments_by_user.setdefault(a.user_id, []).append(a)
 
-        holidays_batch = holiday_repository.get_by_month(db, month, year)
+        holidays_batch = holiday_repository.get_by_month(session, month, year)
 
         user_reports = []
         for user in users:
             report = report_service.get_advanced_user_report(
-                db, user.id, month, year, current_user,
+                session, user.id, month, year, current_user,
                 prefetched_records=records_by_user.get(user.id, []),
                 prefetched_adjustments=adjustments_by_user.get(user.id, []),
                 prefetched_holidays=holidays_batch
