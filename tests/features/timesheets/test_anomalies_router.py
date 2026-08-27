@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.timesheets.anomaly_service import AnomalyService
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
 from app.features.users.user_models import User
 from app.main import app
@@ -39,8 +40,9 @@ def test_get_all_anomalies(client: TestClient, mocker: MagicMock) -> None:
             severity="HIGH",
         )
     ]
-    mocker.patch(
-        "app.features.timesheets.timesheet_router.anomaly_service.get_anomalies_by_month",
+    mocker.patch.object(
+        AnomalyService,
+        "get_anomalies_by_month",
         return_value=expected,
     )
 
@@ -62,8 +64,9 @@ def test_get_user_anomalies(client: TestClient, mocker: MagicMock) -> None:
             severity="MEDIUM",
         )
     ]
-    mocker.patch(
-        "app.features.timesheets.timesheet_router.anomaly_service.get_anomalies_by_month",
+    mocker.patch.object(
+        AnomalyService,
+        "get_anomalies_by_month",
         return_value=expected,
     )
 

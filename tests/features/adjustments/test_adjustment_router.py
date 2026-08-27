@@ -11,6 +11,7 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,
     AdjustmentRequestResponse,
 )
+from app.features.adjustments.adjustment_service import AdjustmentService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -49,8 +50,9 @@ def test_create_adjustment_request(client: TestClient, mocker: MagicMock) -> Non
         status=AdjustmentStatus.PENDING,
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.create_adjustment_request",
+    mocker.patch.object(
+        AdjustmentService,
+        "create_adjustment_request",
         return_value=expected,
     )
 
@@ -79,8 +81,9 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
         status=AdjustmentStatus.APPROVED,
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.create_manager_waiver",
+    mocker.patch.object(
+        AdjustmentService,
+        "create_manager_waiver",
         return_value=expected,
     )
 
@@ -98,8 +101,9 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_reprocess_historical_extra_time(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.reprocess_historical_extra_time",
+    mocker.patch.object(
+        AdjustmentService,
+        "reprocess_historical_extra_time",
         return_value={"status": "success", "message": "Reprocessamento concluído com sucesso."},
     )
 
@@ -118,8 +122,9 @@ def test_upload_adjustment_attachment(client: TestClient, mocker: MagicMock) -> 
         file_type="application/pdf",
         uploaded_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.upload_attachment",
+    mocker.patch.object(
+        AdjustmentService,
+        "upload_attachment",
         return_value=expected,
     )
 
@@ -138,8 +143,9 @@ def test_download_adjustment_attachment(client: TestClient, mocker: MagicMock) -
         temp_path = f.name
 
     try:
-        mocker.patch(
-            "app.features.adjustments.adjustment_router.adjustment_service.get_attachment_file_path",
+        mocker.patch.object(
+            AdjustmentService,
+            "get_attachment_file_path",
             return_value=(temp_path, "test.pdf"),
         )
 
@@ -152,8 +158,9 @@ def test_download_adjustment_attachment(client: TestClient, mocker: MagicMock) -
 
 
 def test_read_my_adjustments(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.get_my_enriched",
+    mocker.patch.object(
+        AdjustmentService,
+        "get_my_enriched",
         return_value=[],
     )
 
@@ -163,8 +170,9 @@ def test_read_my_adjustments(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_read_all_adjustments(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.get_all_enriched",
+    mocker.patch.object(
+        AdjustmentService,
+        "get_all_enriched",
         return_value=[],
     )
 
@@ -185,8 +193,9 @@ def test_approve_adjustment(client: TestClient, mocker: MagicMock) -> None:
         status=AdjustmentStatus.APPROVED,
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.approve_adjustment",
+    mocker.patch.object(
+        AdjustmentService,
+        "approve_adjustment",
         return_value=expected,
     )
 
@@ -210,8 +219,9 @@ def test_reject_adjustment(client: TestClient, mocker: MagicMock) -> None:
         status=AdjustmentStatus.REJECTED,
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.reject_adjustment",
+    mocker.patch.object(
+        AdjustmentService,
+        "reject_adjustment",
         return_value=expected,
     )
 
@@ -224,7 +234,7 @@ def test_reject_adjustment(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.adjustments.adjustment_router.adjustment_service.delete_adjustment")
+    mocker.patch.object(AdjustmentService, "delete_adjustment")
 
     response = client.delete("/api/v1/adjustments/1?reason=Exclusao+justificada")
     assert response.status_code == 200
@@ -232,7 +242,7 @@ def test_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_admin_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.adjustments.adjustment_router.adjustment_service.admin_delete_adjustment")
+    mocker.patch.object(AdjustmentService, "admin_delete_adjustment")
 
     response = client.delete("/api/v1/adjustments/admin/1?reason=Exclusao+admin+justificada")
     assert response.status_code == 200
@@ -251,8 +261,9 @@ def test_admin_revert_adjustment_status(client: TestClient, mocker: MagicMock) -
         status=AdjustmentStatus.PENDING,
         created_at=datetime(2026, 8, 14, 10, 0, 0),
     )
-    mocker.patch(
-        "app.features.adjustments.adjustment_router.adjustment_service.revert_adjustment_status",
+    mocker.patch.object(
+        AdjustmentService,
+        "revert_adjustment_status",
         return_value=expected,
     )
 

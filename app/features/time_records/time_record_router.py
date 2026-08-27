@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
-from sqlalchemy.orm import Session
 
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.time_records.time_record_schemas import (
@@ -14,7 +13,7 @@ from app.features.time_records.time_record_schemas import (
     TimeRecordTimelineResponse,
     TimeRecordUpdate,
 )
-from app.features.time_records.time_record_service import time_record_service
+from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -37,11 +36,11 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 async def register_entry(
         request: Request,
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = time_record_service.register_entry(db, current_user.id, request)
-    time_record_service.trigger_auto_print(db, record, background_tasks)
+    record = service.register_entry(user_id=current_user.id, request=request)
+    service.trigger_auto_print(record=record, background_tasks=background_tasks)
     return record
 
 
@@ -53,11 +52,11 @@ async def register_entry(
 async def register_exit(
         request: Request,
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = time_record_service.register_exit(db, current_user.id, request)
-    time_record_service.trigger_auto_print(db, record, background_tasks)
+    record = service.register_exit(user_id=current_user.id, request=request)
+    service.trigger_auto_print(record=record, background_tasks=background_tasks)
     return record
 
 
@@ -67,20 +66,20 @@ async def register_exit(
 )
 async def toggle_record_type(
         id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    return time_record_service.toggle_record_type(db, id, current_user)
+    return service.toggle_record_type(record_id=id, current_user=current_user)
 
 
 @router.get("/my")
 async def read_my_records(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: int = 0,
         limit: int = 100,
 ) -> list[TimeRecordResponse]:
-    return time_record_service.get_my_records(db, current_user.id, skip, limit)
+    return service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
 
 
 @router.get(
@@ -91,10 +90,10 @@ async def list_records_for_admin(
         user_id: int,
         start_date: datetime,
         end_date: datetime,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> list[TimeRecordResponse]:
-    return time_record_service.list_records_for_admin(db, user_id, start_date, end_date)
+    return service.list_records_for_admin(user_id=user_id, start_date=start_date, end_date=end_date)
 
 
 @router.post(
@@ -105,14 +104,14 @@ async def list_records_for_admin(
 async def create_time_record_admin(
         record_in: TimeRecordCreateAdmin,
         request: Request,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    return time_record_service.create_admin_record(
-        db, record_in, current_user.id, ip_address, device_name, platform
+    return service.create_admin_record(
+        obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
 
 
@@ -124,14 +123,14 @@ async def update_time_record_admin(
         record_id: int,
         record_in: TimeRecordUpdate,
         request: Request,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    return time_record_service.update_admin_record(
-        db, record_id, record_in, current_user.id, ip_address, device_name, platform
+    return service.update_admin_record(
+        record_id=record_id, obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
 
 
@@ -142,10 +141,10 @@ async def update_time_record_admin(
 async def delete_time_record_admin(
         record_id: int,
         request_body: TimeRecordDeleteAdmin,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:
-    time_record_service.delete_admin_record(db, record_id, request_body, current_user.id)
+    service.delete_admin_record(record_id=record_id, obj_in=request_body, manager_id=current_user.id)
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 
@@ -155,10 +154,10 @@ async def delete_time_record_admin(
 )
 async def get_time_record_timeline(
         id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> list[TimeRecordTimelineResponse]:
-    return time_record_service.get_record_timeline(db, id)
+    return service.get_record_timeline(record_id=id)
 
 
 @router.post(
@@ -179,10 +178,10 @@ async def trigger_tolerance_cron() -> SuccessResponse:
 )
 async def get_receipt(
         short_id: str,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> ReceiptResponse:
-    return time_record_service.get_receipt_data(db, short_id, current_user)
+    return service.get_receipt_data(short_id=short_id, current_user=current_user)
 
 
 @router.get(
@@ -192,10 +191,10 @@ async def get_receipt(
 )
 async def get_receipt_pdf(
         short_id: str,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> Response:
-    pdf_bytes, filename = time_record_service.get_receipt_pdf(db, short_id, current_user)
+    pdf_bytes, filename = service.get_receipt_pdf(short_id=short_id, current_user=current_user)
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"'
     }

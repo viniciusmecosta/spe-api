@@ -1,7 +1,8 @@
 from datetime import datetime, time
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -36,6 +37,7 @@ from app.features.time_records.time_record_schemas import (
 )
 from app.features.users.user_models import User
 from app.features.users.user_repository import user_repository
+from app.shared import deps
 from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
@@ -48,6 +50,8 @@ from app.utils.formatters import mask_cnpj, mask_cpf
 
 
 class TimeRecordService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
 
     def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
         requests = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id,
@@ -93,15 +97,18 @@ class TimeRecordService:
             return
         raise ManualPunchUnauthorizedError()
 
-    def register_entry(self, db: Session, user_id: int, request: Request) -> TimeRecord:
-        self._validate_manual_punch_permission(db, user_id, request)
+    def register_entry(self, db: Session | None = None, user_id: int = 0, request: Request | None = None) -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert request is not None
+        self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
-        payroll_service.validate_period_open(db, current_time.date())
+        payroll_service.validate_period_open(session, current_time.date())
         record = time_record_repository.create(
-            db,
+            session,
             user_id=user_id,
             record_type=RecordType.ENTRY,
             record_datetime=current_time,
@@ -112,22 +119,25 @@ class TimeRecordService:
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
-            db.add(record)
-            db.commit()
-            db.refresh(record)
-            audit_service.log_change(db, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
                                      new_data={"justification": record.edit_justification})
         return record
 
-    def register_exit(self, db: Session, user_id: int, request: Request) -> TimeRecord:
-        self._validate_manual_punch_permission(db, user_id, request)
+    def register_exit(self, db: Session | None = None, user_id: int = 0, request: Request | None = None) -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert request is not None
+        self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
-        payroll_service.validate_period_open(db, current_time.date())
+        payroll_service.validate_period_open(session, current_time.date())
         record = time_record_repository.create(
-            db,
+            session,
             user_id=user_id,
             record_type=RecordType.EXIT,
             record_datetime=current_time,
@@ -138,10 +148,10 @@ class TimeRecordService:
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
-            db.add(record)
-            db.commit()
-            db.refresh(record)
-            audit_service.log_change(db, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+            session.add(record)
+            session.commit()
+            session.refresh(record)
+            audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
                                      new_data={"justification": record.edit_justification})
         return record
 
@@ -175,8 +185,11 @@ class TimeRecordService:
             is_verified=bool(is_manager)
         )
 
-    def toggle_record_type(self, db: Session, record_id: int, current_user: User) -> TimeRecord:
-        record = time_record_repository.get(db, record_id)
+    def toggle_record_type(self, db: Session | None = None, record_id: int = 0, current_user: User | None = None) -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
@@ -185,40 +198,43 @@ class TimeRecordService:
         if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
 
-        payroll_service.validate_period_open(db, record.record_datetime.date())
+        payroll_service.validate_period_open(session, record.record_datetime.date())
 
         new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
-        self._process_toggle_invalidations(db, record, new_type)
+        self._process_toggle_invalidations(session, record, new_type)
 
         old_data = serialize_model(record)
         record.is_ignored = True
         new_record = self._create_toggled_record(record, new_type, current_user, is_manager)
 
-        db.add(new_record)
-        db.flush()
-        db.add(record)
-        db.commit()
-        db.refresh(new_record)
-        audit_service.log_change(db, current_user.id, "TOGGLE_RECORD", old_model=old_data, new_model=new_record)
+        session.add(new_record)
+        session.flush()
+        session.add(record)
+        session.commit()
+        session.refresh(new_record)
+        audit_service.log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data, new_model=new_record)
         return new_record
 
-    def create_admin_record(self, db: Session, obj_in: TimeRecordCreateAdmin, manager_id: int, ip_address: str,
-                            device_name: str | None, platform: str = "WEB_ADMIN") -> TimeRecord:
-        payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+    def create_admin_record(self, db: Session | None = None, obj_in: TimeRecordCreateAdmin | None = None, manager_id: int = 0, ip_address: str = "",
+                            device_name: str | None = None, platform: str = "WEB_ADMIN") -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        payroll_service.validate_period_open(session, obj_in.record_datetime.date())
         if obj_in.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, obj_in.user_id, obj_in.record_datetime.date(),
+            if self._is_first_entry_affected(session, obj_in.user_id, obj_in.record_datetime.date(),
                                              new_datetime=obj_in.record_datetime):
-                self._invalidate_extra_time_requests(db, obj_in.user_id, obj_in.record_datetime.date())
-        record = time_record_repository.create(db, user_id=obj_in.user_id, record_type=obj_in.record_type,
+                self._invalidate_extra_time_requests(session, obj_in.user_id, obj_in.record_datetime.date())
+        record = time_record_repository.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
                                                record_datetime=obj_in.record_datetime, ip_address=ip_address,
                                                device_name=device_name if device_name else "", platform=platform)
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
         record.is_verified = True
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        audit_service.log_change(db, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+        audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
         return record
 
     def _handle_admin_update_invalidations(self, db: Session, record: TimeRecord, obj_in: TimeRecordUpdate,
@@ -232,22 +248,25 @@ class TimeRecordService:
             if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
                 self._invalidate_extra_time_requests(db, record.user_id, new_date)
 
-    def update_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordUpdate, manager_id: int,
+    def update_admin_record(self, db: Session | None = None, record_id: int = 0, obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
                             ip_address: str | None = None, device_name: str | None = None,
                             platform: str | None = None) -> TimeRecord:
-        record = time_record_repository.get(db, record_id)
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
-        payroll_service.validate_period_open(db, record.record_datetime.date())
+        payroll_service.validate_period_open(session, record.record_datetime.date())
         if obj_in.record_datetime:
-            payroll_service.validate_period_open(db, obj_in.record_datetime.date())
+            payroll_service.validate_period_open(session, obj_in.record_datetime.date())
         new_record_type = obj_in.record_type if obj_in.record_type else record.record_type
         new_record_datetime = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
         if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
             return record
         old_date = record.record_datetime.date()
         new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
-        self._handle_admin_update_invalidations(db, record, obj_in, old_date, new_date, new_record_type)
+        self._handle_admin_update_invalidations(session, record, obj_in, old_date, new_date, new_record_type)
 
         old_data = serialize_model(record)
         record.is_ignored = True
@@ -257,25 +276,28 @@ class TimeRecordService:
                                 edited_by=manager_id, edit_justification=obj_in.edit_justification,
                                 original_record_id=record.original_record_id if record.original_record_id else record.id,
                                 created_at=get_local_time(), is_verified=True)
-        db.add(new_record)
-        db.add(record)
-        db.commit()
-        db.refresh(new_record)
-        audit_service.log_change(db, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data, new_model=new_record)
+        session.add(new_record)
+        session.add(record)
+        session.commit()
+        session.refresh(new_record)
+        audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data, new_model=new_record)
         return new_record
 
-    def delete_admin_record(self, db: Session, record_id: int, obj_in: TimeRecordDeleteAdmin, manager_id: int):
-        record = time_record_repository.get(db, record_id)
+    def delete_admin_record(self, db: Session | None = None, record_id: int = 0, obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
-        payroll_service.validate_period_open(db, record.record_datetime.date())
+        payroll_service.validate_period_open(session, record.record_datetime.date())
         if record.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, record.record_datetime.date(), record_id=record.id):
-                self._invalidate_extra_time_requests(db, record.user_id, record.record_datetime.date())
+            if self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(), record_id=record.id):
+                self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
         old_data = serialize_model(record)
-        time_record_repository.delete(db, record_id, manager_id)
-        audit_service.log_change(db, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+        time_record_repository.delete(session, record_id, manager_id)
+        audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                  new_data={"justification": justification_val})
 
     def _determine_punch_type(self, db: Session, user_id: int, timestamp: datetime) -> RecordType:
@@ -298,12 +320,15 @@ class TimeRecordService:
             return RecordType.EXIT
         return RecordType.ENTRY
 
-    def create_punch(self, db: Session, user_id: int, timestamp: datetime, ip_address: str,
+    def create_punch(self, db: Session | None = None, user_id: int = 0, timestamp: datetime | None = None, ip_address: str = "",
                      biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
-        record_type = self._determine_punch_type(db, user_id, timestamp)
+        session = db if db is not None else self.db
+        assert session is not None
+        assert timestamp is not None
+        record_type = self._determine_punch_type(session, user_id, timestamp)
         device_name = get_client_device_name(ip_address)
         return time_record_repository.create(
-            db,
+            session,
             user_id=user_id,
             record_type=record_type,
             record_datetime=timestamp,
@@ -313,15 +338,23 @@ class TimeRecordService:
             biometric_id=biometric_id,
         )
 
-    def get_my_records(self, db: Session, user_id: int, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
-        return time_record_repository.get_all_by_user(db, user_id, skip, limit)
+    def get_my_records(self, db: Session | None = None, user_id: int = 0, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
+        session = db if db is not None else self.db
+        assert session is not None
+        return time_record_repository.get_all_by_user(session, user_id, skip, limit)
 
-    def list_records_for_admin(self, db: Session, user_id: int, start_date: datetime, end_date: datetime) -> list[
+    def list_records_for_admin(self, db: Session | None = None, user_id: int = 0, start_date: datetime | None = None, end_date: datetime | None = None) -> list[
         TimeRecord]:
-        return time_record_repository.get_by_range(db, user_id, start_date, end_date)
+        session = db if db is not None else self.db
+        assert session is not None
+        assert start_date is not None
+        assert end_date is not None
+        return time_record_repository.get_by_range(session, user_id, start_date, end_date)
 
-    def get_record_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
-        return time_record_repository.get_timeline(db, record_id)
+    def get_record_timeline(self, db: Session | None = None, record_id: int = 0) -> list[TimeRecord]:
+        session = db if db is not None else self.db
+        assert session is not None
+        return time_record_repository.get_timeline(session, record_id)
 
     def _build_print_data(self, record: TimeRecord, company, short_id: str) -> dict:
         record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
@@ -343,8 +376,11 @@ class TimeRecordService:
             "short_id": short_id.upper(),
         }
 
-    def trigger_auto_print(self, db: Session, record: TimeRecord, background_tasks):
-        company = company_repository.get_current(db)
+    def trigger_auto_print(self, db: Session | None = None, record: TimeRecord | None = None, background_tasks=None):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert record is not None
+        company = company_repository.get_current(session)
         if not company or not company.default_printer_id:
             return
 
@@ -355,7 +391,7 @@ class TimeRecordService:
         if not should_print:
             return
 
-        printer = printer_repository.get_by_id(db, company.default_printer_id)
+        printer = printer_repository.get_by_id(session, company.default_printer_id)
         if not printer or not printer.status:
             return
 
@@ -391,10 +427,13 @@ class TimeRecordService:
                 )
         return timeline_items
 
-    def get_receipt_data(self, db: Session, short_id: str, current_user: User):
-        record = self._get_accessible_record(db, short_id, current_user)
-        company = company_repository.get_current(db)
-        timeline = self.get_record_timeline(db, record.id)
+    def get_receipt_data(self, db: Session | None = None, short_id: str = "", current_user: User | None = None):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        record = self._get_accessible_record(session, short_id, current_user)
+        company = company_repository.get_current(session)
+        timeline = self.get_record_timeline(session, record.id)
         timeline_items = self._build_receipt_timeline(timeline)
 
         return ReceiptResponse(
@@ -412,9 +451,12 @@ class TimeRecordService:
             timeline=timeline_items,
         )
 
-    def get_receipt_pdf(self, db: Session, short_id: str, current_user: User) -> tuple[bytes, str]:
-        record = self._get_accessible_record(db, short_id, current_user)
-        company = company_repository.get_current(db)
+    def get_receipt_pdf(self, db: Session | None = None, short_id: str = "", current_user: User | None = None) -> tuple[bytes, str]:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        record = self._get_accessible_record(session, short_id, current_user)
+        company = company_repository.get_current(session)
 
         record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
         date_str = record.record_datetime.strftime("%d/%m/%Y")

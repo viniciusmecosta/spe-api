@@ -10,7 +10,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,
@@ -19,7 +18,7 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentWaiverCreate,
     BulkReprocessExtraTimeRequest,
 )
-from app.features.adjustments.adjustment_service import adjustment_service
+from app.features.adjustments.adjustment_service import AdjustmentService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus
@@ -41,10 +40,10 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 )
 async def create_adjustment_request(
         request_in: AdjustmentRequestCreate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> AdjustmentRequestResponse:
-    return adjustment_service.create_adjustment_request(db, current_user.id, request_in)
+    return service.create_adjustment_request(user_id=current_user.id, obj_in=request_in)
 
 
 @router.post(
@@ -54,10 +53,10 @@ async def create_adjustment_request(
 )
 async def waive_absence_admin(
         waiver_in: AdjustmentWaiverCreate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
-    return adjustment_service.create_manager_waiver(db, waiver_in, current_user.id)
+    return service.create_manager_waiver(waiver_in=waiver_in, manager_id=current_user.id)
 
 
 @router.post(
@@ -67,10 +66,10 @@ async def waive_absence_admin(
 )
 async def reprocess_historical_extra_time(
         request_in: BulkReprocessExtraTimeRequest,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> dict[str, str]:
-    return adjustment_service.reprocess_historical_extra_time(db, request_in, current_user)
+    return service.reprocess_historical_extra_time(request_in=request_in, current_user=current_user)
 
 
 @router.post(
@@ -81,10 +80,10 @@ async def reprocess_historical_extra_time(
 async def upload_adjustment_attachment(
         id: int,
         file: Annotated[UploadFile, File(...)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> AdjustmentAttachmentResponse:
-    return adjustment_service.upload_attachment(db, id, file, current_user.id)
+    return service.upload_attachment(request_id=id, file=file, user_id=current_user.id)
 
 
 @router.get(
@@ -94,11 +93,11 @@ async def upload_adjustment_attachment(
 )
 async def download_adjustment_attachment(
         id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> FileResponse:
-    safe_file_path, filename = adjustment_service.get_attachment_file_path(
-        db, id, current_user
+    safe_file_path, filename = service.get_attachment_file_path(
+        adjustment_id=id, current_user=current_user
     )
     return FileResponse(
         path=safe_file_path,
@@ -109,7 +108,7 @@ async def download_adjustment_attachment(
 
 @router.get("/my")
 async def read_my_adjustments(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
@@ -122,8 +121,8 @@ async def read_my_adjustments(
         order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
-    return adjustment_service.get_my_enriched(
-        db, current_user.id, skip, limit, month, year, status, order_by, order_direction
+    return service.get_my_enriched(
+        user_id=current_user.id, skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
     )
 
 
@@ -132,7 +131,7 @@ async def read_my_adjustments(
     responses={**FORBIDDEN_RESPONSE},
 )
 async def read_all_adjustments(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
@@ -145,8 +144,8 @@ async def read_all_adjustments(
         order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
-    return adjustment_service.get_all_enriched(
-        db, skip, limit, month, year, status, order_by, order_direction
+    return service.get_all_enriched(
+        skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
     )
 
 
@@ -156,11 +155,11 @@ async def read_all_adjustments(
 )
 async def approve_adjustment(
         id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         comment: Annotated[str | None, Body(embed=True)] = None,
 ) -> AdjustmentRequestResponse:
-    return adjustment_service.approve_adjustment(db, id, current_user.id, comment)
+    return service.approve_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
 
 
 @router.put(
@@ -170,10 +169,10 @@ async def approve_adjustment(
 async def reject_adjustment(
         id: int,
         comment: Annotated[str, Body(..., embed=True)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
-    return adjustment_service.reject_adjustment(db, id, current_user.id, comment)
+    return service.reject_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
 
 
 @router.delete(
@@ -183,10 +182,10 @@ async def reject_adjustment(
 async def delete_adjustment(
         id: int,
         reason: Annotated[str, Query(..., min_length=5, description="Justificativa para a exclusão")],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> dict[str, str]:
-    adjustment_service.delete_adjustment(db, id, current_user.id, reason)
+    service.delete_adjustment(adjustment_id=id, manager_id=current_user.id, reason=reason)
     return {"status": "success"}
 
 
@@ -197,10 +196,10 @@ async def delete_adjustment(
 async def admin_delete_adjustment(
         id: int,
         reason: Annotated[str, Query(..., min_length=5, description="Justificativa para a exclusão")],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    adjustment_service.admin_delete_adjustment(db, id, current_user.id, reason)
+    service.admin_delete_adjustment(adjustment_id=id, admin_id=current_user.id, reason=reason)
     return {"status": "success"}
 
 
@@ -212,9 +211,9 @@ async def admin_revert_adjustment_status(
         id: int,
         status: Annotated[AdjustmentStatus, Body(..., embed=True)],
         comment: Annotated[str, Body(..., embed=True)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> AdjustmentRequestResponse:
-    return adjustment_service.revert_adjustment_status(
-        db, id, current_user.id, status, comment
+    return service.revert_adjustment_status(
+        request_id=id, manager_id=current_user.id, new_status=status, comment=comment
     )

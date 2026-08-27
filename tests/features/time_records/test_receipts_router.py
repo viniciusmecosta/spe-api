@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.features.time_records.time_record_schemas import ReceiptResponse
+from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared.deps import get_current_active_user
@@ -20,9 +21,9 @@ def override_dependency():
     app.dependency_overrides.clear()
 
 
-@patch("app.features.time_records.time_record_router.time_record_service")
-def test_get_receipt(mock_service):
-    mock_service.get_receipt_data.return_value = ReceiptResponse(
+@patch.object(TimeRecordService, "get_receipt_data")
+def test_get_receipt(mock_get_receipt_data):
+    mock_get_receipt_data.return_value = ReceiptResponse(
         short_id="aB3dE5",
         record_id=1,
         company_name="Company",
@@ -43,9 +44,9 @@ def test_get_receipt(mock_service):
     assert response.json()["company_name"] == "Company"
 
 
-@patch("app.features.time_records.time_record_router.time_record_service")
-def test_get_receipt_pdf(mock_service):
-    mock_service.get_receipt_pdf.return_value = (b"%PDF-1.4...", "1.pdf")
+@patch.object(TimeRecordService, "get_receipt_pdf")
+def test_get_receipt_pdf(mock_get_receipt_pdf):
+    mock_get_receipt_pdf.return_value = (b"%PDF-1.4...", "1.pdf")
 
     response = client.get("/api/v1/time-records/receipt/aB3dE5/pdf")
     assert response.status_code == 200

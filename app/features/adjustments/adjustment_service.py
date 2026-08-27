@@ -3,7 +3,9 @@ import shutil
 import uuid
 from datetime import date, datetime
 
-from fastapi import UploadFile
+from typing import Annotated
+
+from fastapi import Depends, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -35,6 +37,7 @@ from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.tolerance_cron_service import tolerance_cron_service
 
@@ -42,6 +45,8 @@ NOT_FOUND_MSG = "Solicitação não encontrada."
 
 
 class AdjustmentService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
 
     def _enrich_adjustments_with_records(self, db: Session, adjustments: list[AdjustmentRequest]) -> list[
         AdjustmentRequest]:
@@ -84,38 +89,48 @@ class AdjustmentService:
             )
 
     def get_all_enriched(
-            self, db: Session, skip: int = 0, limit: int = 100,
+            self, db: Session | None = None, skip: int = 0, limit: int = 100,
             month: int | None = None, year: int | None = None,
             status: str | None = None,
             order_by: str = "created_at", order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        adjustments = adjustment_repository.get_all(db, skip, limit, month, year, status, order_by, order_direction)
-        return self._enrich_adjustments_with_records(db, adjustments)
+        session = db if db is not None else self.db
+        assert session is not None
+        adjustments = adjustment_repository.get_all(session, skip, limit, month, year, status, order_by, order_direction)
+        return self._enrich_adjustments_with_records(session, adjustments)
 
     def get_my_enriched(
-            self, db: Session, user_id: int, skip: int = 0, limit: int = 100,
+            self, db: Session | None = None, user_id: int = 0, skip: int = 0, limit: int = 100,
             month: int | None = None, year: int | None = None,
             status: str | None = None,
             order_by: str = "created_at", order_direction: str = "desc"
     ) -> list[AdjustmentRequest]:
-        adjustments = adjustment_repository.get_all_by_user(db, user_id, skip, limit, month, year, status, order_by,
+        session = db if db is not None else self.db
+        assert session is not None
+        adjustments = adjustment_repository.get_all_by_user(session, user_id, skip, limit, month, year, status, order_by,
                                                             order_direction)
-        return self._enrich_adjustments_with_records(db, adjustments)
+        return self._enrich_adjustments_with_records(session, adjustments)
 
-    def create_adjustment_request(self, db: Session, user_id: int,
-                                  obj_in: AdjustmentRequestCreate) -> AdjustmentRequest:
-        payroll_service.validate_period_open(db, obj_in.target_date)
+    def create_adjustment_request(self, db: Session | None = None, user_id: int = 0,
+                                  obj_in: AdjustmentRequestCreate | None = None) -> AdjustmentRequest:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert obj_in is not None
+        payroll_service.validate_period_open(session, obj_in.target_date)
 
         if obj_in.adjustment_type == AdjustmentType.WAIVER:
-            self._validate_waiver_limit(db, user_id, obj_in.target_date, obj_in.amount_hours)
+            self._validate_waiver_limit(session, user_id, obj_in.target_date, obj_in.amount_hours)
 
-        adjustment = adjustment_repository.create(db, user_id=user_id, obj_in=obj_in)
-        return self._enrich_adjustments_with_records(db, [adjustment])[0]
+        adjustment = adjustment_repository.create(session, user_id=user_id, obj_in=obj_in)
+        return self._enrich_adjustments_with_records(session, [adjustment])[0]
 
-    def create_manager_waiver(self, db: Session, waiver_in: AdjustmentWaiverCreate,
-                              manager_id: int) -> AdjustmentRequest:
-        payroll_service.validate_period_open(db, waiver_in.target_date)
-        self._validate_waiver_limit(db, waiver_in.user_id, waiver_in.target_date, waiver_in.amount_hours)
+    def create_manager_waiver(self, db: Session | None = None, waiver_in: AdjustmentWaiverCreate | None = None,
+                              manager_id: int = 0) -> AdjustmentRequest:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert waiver_in is not None
+        payroll_service.validate_period_open(session, waiver_in.target_date)
+        self._validate_waiver_limit(session, waiver_in.user_id, waiver_in.target_date, waiver_in.amount_hours)
 
         adj_in = AdjustmentRequestCreate(
             adjustment_type=AdjustmentType.WAIVER,
@@ -124,58 +139,65 @@ class AdjustmentService:
             reason_text=waiver_in.reason_text
         )
 
-        adjustment = adjustment_repository.create(db, user_id=waiver_in.user_id, obj_in=adj_in)
+        adjustment = adjustment_repository.create(session, user_id=waiver_in.user_id, obj_in=adj_in)
         adjustment = adjustment_repository.update_status(
-            db, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
+            session, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
         )
-        audit_service.log_change(db, manager_id, "CREATE_WAIVER", new_model=adjustment)
-        return self._enrich_adjustments_with_records(db, [adjustment])[0]
+        audit_service.log_change(session, manager_id, "CREATE_WAIVER", new_model=adjustment)
+        return self._enrich_adjustments_with_records(session, [adjustment])[0]
 
-    def admin_delete_adjustment(self, db: Session, adjustment_id: int, admin_id: int, reason: str) -> None:
-        request = adjustment_repository.get(db, adjustment_id)
+    def admin_delete_adjustment(self, db: Session | None = None, adjustment_id: int = 0, admin_id: int = 0, reason: str = "") -> None:
+        session = db if db is not None else self.db
+        assert session is not None
+        request = adjustment_repository.get(session, adjustment_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
             raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
-            self._revert_adjustment_action(db, request, admin_id)
+            self._revert_adjustment_action(session, request, admin_id)
 
         old_data = serialize_model(request)
-        adjustment_repository.soft_delete(db, adjustment_id, admin_id)
+        adjustment_repository.soft_delete(session, adjustment_id, admin_id)
         audit_service.log_change(
-            db, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
+            session, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
 
-    def delete_adjustment(self, db: Session, adjustment_id: int, manager_id: int, reason: str) -> None:
-        request = adjustment_repository.get(db, adjustment_id)
+    def delete_adjustment(self, db: Session | None = None, adjustment_id: int = 0, manager_id: int = 0, reason: str = "") -> None:
+        session = db if db is not None else self.db
+        assert session is not None
+        request = adjustment_repository.get(session, adjustment_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
             raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
-            self._revert_adjustment_action(db, request, manager_id)
+            self._revert_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)
-        adjustment_repository.soft_delete(db, adjustment_id, manager_id)
+        adjustment_repository.soft_delete(session, adjustment_id, manager_id)
         audit_service.log_change(
-            db, manager_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
+            session, manager_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
 
-    def upload_attachment(self, db: Session, request_id: int, file: UploadFile, user_id: int):
-        request = adjustment_repository.get(db, request_id)
+    def upload_attachment(self, db: Session | None = None, request_id: int = 0, file: UploadFile | None = None, user_id: int = 0):
+        session = db if db is not None else self.db
+        assert session is not None
+        assert file is not None
+        request = adjustment_repository.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError("Solicitação de abono não encontrada.")
 
         if request.user_id != user_id:
             raise AdjustmentPermissionError("Acesso negado.")
 
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         filename = (file.filename or "").lower()
         if "." not in filename:
@@ -210,35 +232,37 @@ class AdjustmentService:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        attachment = adjustment_repository.create_attachment(db, request_id, safe_filename, file.content_type or "")
+        attachment = adjustment_repository.create_attachment(session, request_id, safe_filename, file.content_type or "")
         audit_service.log_change(
-            db, user_id, "UPLOAD_ATTACHMENT",
+            session, user_id, "UPLOAD_ATTACHMENT",
             entity="ADJUSTMENT", entity_id=request_id,
             new_data={"file_name": safe_filename, "file_type": file.content_type}
         )
         return attachment
 
-    def approve_adjustment(self, db: Session, request_id: int, manager_id: int,
+    def approve_adjustment(self, db: Session | None = None, request_id: int = 0, manager_id: int = 0,
                            comment: str | None = None) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
+        session = db if db is not None else self.db
+        assert session is not None
+        request = adjustment_repository.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=request_id)
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
-            self._execute_adjustment_action(db, request, manager_id)
+            self._execute_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)
-        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.APPROVED, manager_id, comment)
+        updated = adjustment_repository.update_status(session, request, AdjustmentStatus.APPROVED, manager_id, comment)
         audit_service.log_change(
-            db, manager_id, "APPROVE_ADJUSTMENT",
+            session, manager_id, "APPROVE_ADJUSTMENT",
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        return self._enrich_adjustments_with_records(db, [updated])[0]
+        return self._enrich_adjustments_with_records(session, [updated])[0]
 
     def _execute_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
         if not request.time:
@@ -265,8 +289,10 @@ class AdjustmentService:
                 record_datetime=target_dt, ip_address="ADJUSTMENT_APPROVED"
             )
 
-    def cancel_adjustment(self, db: Session, request_id: int, user_id: int) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
+    def cancel_adjustment(self, db: Session | None = None, request_id: int = 0, user_id: int = 0) -> AdjustmentRequest:
+        session = db if db is not None else self.db
+        assert session is not None
+        request = adjustment_repository.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=request_id)
 
@@ -277,34 +303,36 @@ class AdjustmentService:
         if request.status != AdjustmentStatus.PENDING:
             raise AdjustmentInvalidStatusError(current_status=str(request.status))
 
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         old_data = serialize_model(request)
-        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.CANCELED, user_id)
+        updated = adjustment_repository.update_status(session, request, AdjustmentStatus.CANCELED, user_id)
         audit_service.log_change(
-            db, user_id, "CANCEL_ADJUSTMENT",
+            session, user_id, "CANCEL_ADJUSTMENT",
             old_model=old_data, new_model=updated
         )
-        return self._enrich_adjustments_with_records(db, [updated])[0]
+        return self._enrich_adjustments_with_records(session, [updated])[0]
 
-    def reject_adjustment(self, db: Session, request_id: int, manager_id: int,
+    def reject_adjustment(self, db: Session | None = None, request_id: int = 0, manager_id: int = 0,
                           comment: str | None = None) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
+        session = db if db is not None else self.db
+        assert session is not None
+        request = adjustment_repository.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=request_id)
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         if request.status == AdjustmentStatus.APPROVED:
-            self._revert_adjustment_action(db, request, manager_id)
+            self._revert_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)
-        updated = adjustment_repository.update_status(db, request, AdjustmentStatus.REJECTED, manager_id, comment)
+        updated = adjustment_repository.update_status(session, request, AdjustmentStatus.REJECTED, manager_id, comment)
         audit_service.log_change(
-            db, manager_id, "REJECT_ADJUSTMENT",
+            session, manager_id, "REJECT_ADJUSTMENT",
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        return self._enrich_adjustments_with_records(db, [updated])[0]
+        return self._enrich_adjustments_with_records(session, [updated])[0]
 
     def _revert_adjustment_action(self, db: Session, request: AdjustmentRequest, manager_id: int):
         if request.adjustment_type in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
@@ -348,41 +376,47 @@ class AdjustmentService:
                 record.deleted_by = manager_id
                 db.commit()
 
-    def revert_adjustment_status(self, db: Session, request_id: int, manager_id: int, new_status: AdjustmentStatus,
-                                 comment: str) -> AdjustmentRequest:
-        request = adjustment_repository.get(db, request_id)
+    def revert_adjustment_status(self, db: Session | None = None, request_id: int = 0, manager_id: int = 0, new_status: AdjustmentStatus | None = None,
+                                 comment: str = "") -> AdjustmentRequest:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert new_status is not None
+        request = adjustment_repository.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(NOT_FOUND_MSG)
 
-        payroll_service.validate_period_open(db, request.target_date)
+        payroll_service.validate_period_open(session, request.target_date)
 
         old_status = request.status
 
         if old_status == new_status:
-            return self._enrich_adjustments_with_records(db, [request])[0]
+            return self._enrich_adjustments_with_records(session, [request])[0]
 
         if old_status == AdjustmentStatus.APPROVED and new_status in [AdjustmentStatus.PENDING,
                                                                       AdjustmentStatus.REJECTED]:
-            self._revert_adjustment_action(db, request, manager_id)
+            self._revert_adjustment_action(session, request, manager_id)
 
         elif old_status in [AdjustmentStatus.PENDING,
                             AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
             if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME]:
-                self._execute_adjustment_action(db, request, manager_id)
+                self._execute_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)
-        updated = adjustment_repository.update_status(db, request, new_status, manager_id, comment)
+        updated = adjustment_repository.update_status(session, request, new_status, manager_id, comment)
         audit_service.log_change(
-            db, manager_id, "REVERT_ADJUSTMENT",
+            session, manager_id, "REVERT_ADJUSTMENT",
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        return self._enrich_adjustments_with_records(db, [updated])[0]
+        return self._enrich_adjustments_with_records(session, [updated])[0]
 
     def get_attachment_file_path(
-            self, db: Session, adjustment_id: int, current_user: User
+            self, db: Session | None = None, adjustment_id: int = 0, current_user: User | None = None
     ) -> tuple[str, str]:
-        adjustment = adjustment_repository.get(db, id=adjustment_id)
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        adjustment = adjustment_repository.get(session, id=adjustment_id)
         if not adjustment:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
 
@@ -409,10 +443,14 @@ class AdjustmentService:
 
     def reprocess_historical_extra_time(
             self,
-            db: Session,
-            request_in: BulkReprocessExtraTimeRequest,
-            current_user: User,
+            db: Session | None = None,
+            request_in: BulkReprocessExtraTimeRequest | None = None,
+            current_user: User | None = None,
     ) -> dict[str, str]:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert request_in is not None
+        assert current_user is not None
         if current_user.role != UserRole.MAINTAINER:
             raise AdjustmentPermissionError(
                 "Acesso negado. Requer privilégios de Mantenedor.",
@@ -420,21 +458,21 @@ class AdjustmentService:
 
         curr = request_in.start_date.replace(day=1)
         while curr <= request_in.end_date:
-            payroll_service.validate_period_open(db, curr)
+            payroll_service.validate_period_open(session, curr)
             if curr.month == 12:
                 curr = curr.replace(year=curr.year + 1, month=1)
             else:
                 curr = curr.replace(month=curr.month + 1)
 
         tolerance_cron_service.reprocess_historical_entries(
-            db=db,
+            db=session,
             start_date=request_in.start_date,
             end_date=request_in.end_date,
             user_ids=request_in.user_ids,
         )
 
         audit_service.log_change(
-            db,
+            session,
             current_user.id,
             "REPROCESS",
             entity="EXTRA_TIME",
