@@ -14,7 +14,7 @@ from app.features.companies.company_exceptions import (
     LogoSaveError,
 )
 from app.features.companies.company_models import Company
-from app.features.companies.company_repository import company_repository
+from app.features.companies.company_repository import CompanyRepository, company_repository
 from app.features.companies.company_schemas import (
     CompanyCreate,
     CompanyResponse,
@@ -25,13 +25,18 @@ from app.shared import deps
 
 
 class CompanyService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[CompanyRepository, Depends()] = None,
+    ):
         self.db = db
+        self.repo = repo if repo is not None else company_repository
 
     def get_company(self, db: Session | None = None) -> Company | None:
         session = db if db is not None else self.db
         assert session is not None
-        return company_repository.get_current(session)
+        return self.repo.get_current(session)
 
     def enrich_logo_url(self, company: Company | None, base_url: str) -> CompanyResponse | None:
         if not company:
@@ -46,10 +51,10 @@ class CompanyService:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        existing = company_repository.get_current(session)
+        existing = self.repo.get_current(session)
         if existing:
             raise CompanyAlreadyExistsError()
-        company = company_repository.create(session, obj_in=obj_in)
+        company = self.repo.create(session, obj_in=obj_in)
         audit_service.log_change(session, current_user_id, "CREATE", new_model=company)
         return company
 
@@ -57,12 +62,12 @@ class CompanyService:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        existing = company_repository.get_current(session)
+        existing = self.repo.get_current(session)
         if not existing:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para atualizar.")
 
         old_data = serialize_model(existing)
-        company = company_repository.update(session, db_obj=existing, obj_in=obj_in)
+        company = self.repo.update(session, db_obj=existing, obj_in=obj_in)
         audit_service.log_change(session, current_user_id, "UPDATE", old_model=old_data, new_model=company)
         return company
 
@@ -70,7 +75,7 @@ class CompanyService:
         session = db if db is not None else self.db
         assert session is not None
         assert file is not None
-        existing = company_repository.get_current(session)
+        existing = self.repo.get_current(session)
         if not existing:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para associar o logotipo.")
 

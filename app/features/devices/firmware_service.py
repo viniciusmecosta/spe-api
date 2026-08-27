@@ -18,16 +18,25 @@ from app.features.devices.device_exceptions import (
     NoFirmwareAvailableError,
 )
 from app.features.devices.device_models import Firmware
-from app.features.devices.device_repository import firmware_repository
+from app.features.devices.device_repository import FirmwareRepository, firmware_repository
 from app.features.system.audit_service import audit_service
 from app.shared import deps
 
 
 class FirmwareService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[FirmwareRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
         self.firmware_dir = os.path.join(settings.UPLOAD_DIR, "firmware")
         os.makedirs(self.firmware_dir, exist_ok=True)
+
+    @property
+    def repo(self) -> FirmwareRepository:
+        return self._repo if self._repo is not None else firmware_repository
 
     def parse_version(self, version: str) -> tuple[int, int, int]:
         match = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", version)
@@ -47,7 +56,7 @@ class FirmwareService:
         if not file.filename or not file.filename.endswith('.bin'):
             raise InvalidFirmwareFileTypeError()
 
-        latest = firmware_repository.get_latest(session)
+        latest = self.repo.get_latest(session)
         if latest:
             try:
                 latest_ver_tuple = self.parse_version(latest.version)
@@ -58,7 +67,7 @@ class FirmwareService:
             except ValueError:
                 pass
 
-        existing = firmware_repository.get_by_version(session, version)
+        existing = self.repo.get_by_version(session, version)
         if existing:
             raise FirmwareVersionAlreadyExistsError()
 
@@ -69,7 +78,7 @@ class FirmwareService:
         with open(absolute_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        firmware = firmware_repository.create(session, version=version, file_path=relative_file_path)
+        firmware = self.repo.create(session, version=version, file_path=relative_file_path)
         audit_service.log_change(session, current_user_id, "UPLOAD", new_model=firmware)
         return firmware
 
@@ -80,7 +89,7 @@ class FirmwareService:
         if not file.filename or not file.filename.endswith('.bin'):
             raise InvalidFirmwareFileTypeError()
 
-        firmware_old = firmware_repository.get_by_version(session, version)
+        firmware_old = self.repo.get_by_version(session, version)
         if not firmware_old:
             raise FirmwareNotFoundError(version=version)
 
@@ -91,14 +100,14 @@ class FirmwareService:
         with open(absolute_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        firmware = firmware_repository.create(session, version=version, file_path=relative_file_path)
+        firmware = self.repo.create(session, version=version, file_path=relative_file_path)
         audit_service.log_change(session, current_user_id, "UPDATE", old_model=firmware_old, new_model=firmware)
         return firmware
 
     def get_latest_firmware(self, db: Session | None = None) -> Firmware:
         session = db if db is not None else self.db
         assert session is not None
-        latest = firmware_repository.get_latest(session)
+        latest = self.repo.get_latest(session)
         if not latest:
             raise NoFirmwareAvailableError()
         return latest
@@ -106,12 +115,12 @@ class FirmwareService:
     def get_all_firmwares(self, db: Session | None = None) -> list[Firmware]:
         session = db if db is not None else self.db
         assert session is not None
-        return firmware_repository.get_all(session)
+        return self.repo.get_all(session)
 
     def get_firmware_file(self, db: Session | None = None, version: str = "") -> str:
         session = db if db is not None else self.db
         assert session is not None
-        firmware = firmware_repository.get_by_version(session, version)
+        firmware = self.repo.get_by_version(session, version)
         if not firmware:
             raise FirmwareNotFoundError(version=version)
 

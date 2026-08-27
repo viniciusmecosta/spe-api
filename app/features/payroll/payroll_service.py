@@ -20,7 +20,7 @@ from app.features.payroll.payroll_exceptions import (
     PayrollReportGenerationError,
 )
 from app.features.payroll.payroll_models import PayrollClosure
-from app.features.payroll.payroll_repository import payroll_repository
+from app.features.payroll.payroll_repository import PayrollRepository, payroll_repository
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import dispatch_payroll_email, email_service
@@ -47,8 +47,17 @@ def dispatch_closure_email_background(month: int, year: int, user_name: str, rep
 
 
 class PayrollService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[PayrollRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> PayrollRepository:
+        return self._repo if self._repo is not None else payroll_repository
 
     def _build_history(self, month_closures: list) -> list[dict[str, Any]]:
         history = []
@@ -59,7 +68,7 @@ class PayrollService:
                 "user_id": h.closed_by_user_id,
                 "user_name": h.closed_by.name if h.closed_by else None,
                 "observation": None,
-                "report_path": h.report_path,
+                "report_path": h.report_path
             })
             if h.deleted_at:
                 history.append({
@@ -68,7 +77,7 @@ class PayrollService:
                     "user_id": h.deleted_by,
                     "user_name": h.deleter.name if h.deleter else None,
                     "observation": h.reopen_observation,
-                    "report_path": None,
+                    "report_path": None
                 })
         history.sort(key=lambda x: x["timestamp"], reverse=True)
         return history
@@ -155,7 +164,7 @@ class PayrollService:
                 f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
-        existing = payroll_repository.get_by_month(session, month, year)
+        existing = self.repo.get_by_month(session, month, year)
         if existing:
             raise PayrollAlreadyClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} já está fechada."
@@ -179,7 +188,7 @@ class PayrollService:
 
         session.commit()
 
-        closure = payroll_repository.create(session, month=month, year=year, user_id=current_user.id)
+        closure = self.repo.create(session, month=month, year=year, user_id=current_user.id)
         closure.report_path = f"reports/{filename}"
         session.commit()
         session.refresh(closure)
@@ -205,14 +214,14 @@ class PayrollService:
         if current_user.role != UserRole.MAINTAINER:
             raise PayrollPermissionError("Acesso negado: Apenas mantenedores reabrem folhas.")
 
-        existing = payroll_repository.get_by_month(session, month, year)
+        existing = self.repo.get_by_month(session, month, year)
         if not existing:
             raise PayrollNotClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} não está fechada."
             )
 
         closure_id = existing.id
-        payroll_repository.delete(session, month, year, current_user.id, observation)
+        self.repo.delete(session, month, year, current_user.id, observation)
 
         audit_service.log_change(
             session, current_user.id, "REOPEN",
@@ -234,7 +243,7 @@ class PayrollService:
         session = db if db is not None else self.db
         assert session is not None
         assert target_date is not None
-        closure = payroll_repository.get_by_month(session, target_date.month, target_date.year)
+        closure = self.repo.get_by_month(session, target_date.month, target_date.year)
         if closure:
             raise PayrollPeriodClosedError(
                 f"A folha de ponto {target_date.month:02d}/{target_date.year} já está fechada."

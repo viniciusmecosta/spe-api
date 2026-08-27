@@ -9,7 +9,7 @@ from app.features.system.audit_service import audit_service, serialize_model
 from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import UserNotFoundError
 from app.features.users.user_models import User
-from app.features.users.user_repository import async_user_repository
+from app.features.users.user_repository import AsyncUserRepository, async_user_repository
 from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.features.users.user_validator import UserValidator
 from app.shared.enums import UserRole
@@ -19,14 +19,23 @@ from app.utils.formatters import format_name
 class UserService:
     def __init__(
         self,
-            db: Annotated[AsyncSession, Depends(get_async_db)],
-            validator: Annotated[UserValidator, Depends()],
-            biometric_service: Annotated[UserBiometricService, Depends()],
+        db: Annotated[AsyncSession, Depends(get_async_db)],
+        validator: Annotated[UserValidator, Depends()],
+        biometric_service: Annotated[UserBiometricService, Depends()],
+        repository: Annotated[AsyncUserRepository, Depends()] = None,
     ):
         self.db = db
         self.validator = validator
         self.biometric_service = biometric_service
-        self.repository = async_user_repository
+        self._repository = repository
+
+    @property
+    def repository(self) -> AsyncUserRepository:
+        return self._repository if self._repository is not None else async_user_repository
+
+    @repository.setter
+    def repository(self, value: AsyncUserRepository) -> None:
+        self._repository = value
 
     async def _validate_unique_fields(
             self, user_in: Any, user: User | None = None
@@ -56,7 +65,6 @@ class UserService:
         if data.get("name"):
             data["name"] = self._format_name(data["name"])
 
-        # Create user via repository (it handles password and biometrics)
         db_user = await self.repository.create(self.db, obj_in=data)
 
         await audit_service.async_log_change(self.db, current_user_id, "CREATE", new_model=db_user)

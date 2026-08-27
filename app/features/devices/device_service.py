@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.features.devices.device_repository import biometric_repository
+from app.features.devices.device_repository import BiometricRepository, biometric_repository
 from app.features.devices.device_schemas import (
     BuzzerNote,
     DeviceActions,
@@ -24,8 +24,17 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[BiometricRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> BiometricRepository:
+        return self._repo if self._repo is not None else biometric_repository
 
     def process_punch(
             self,
@@ -110,7 +119,7 @@ class DeviceService:
     ) -> ManagerVerifyResponse:
         session = db if db is not None else self.db
         assert session is not None
-        managers_with_bio = biometric_repository.get_manager_with_biometric(session)
+        managers_with_bio = self.repo.get_manager_with_biometric(session)
 
         if not managers_with_bio:
             audit_service.log_change(
@@ -126,7 +135,7 @@ class DeviceService:
                 message="Nenhum gestor cadastrado. Acesso liberado.",
             )
 
-        biometric = biometric_repository.get_by_sensor_index(session, sensor_index)
+        biometric = self.repo.get_by_sensor_index(session, sensor_index)
         if not biometric:
             audit_service.log_change(
                 session,

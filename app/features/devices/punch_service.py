@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.features.devices.device_models import UserBiometric
+from app.features.devices.device_repository import BiometricRepository, biometric_repository
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
 from app.shared import deps
@@ -15,8 +16,17 @@ logger = logging.getLogger(__name__)
 
 
 class PunchService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[BiometricRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> BiometricRepository:
+        return self._repo if self._repo is not None else biometric_repository
 
     def process_biometric_punch(self, db: Session | None = None, sensor_index: int = 0, ip_address: str | None = None,
                                 request: Request | None = None):

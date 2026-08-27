@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.features.system.system_repository import audit_repository
+from app.features.system.system_repository import AuditRepository, audit_repository
 from app.features.system.system_schemas import AuditLogCreate
 from app.shared import deps
 
@@ -43,11 +43,10 @@ def _serialize_sqlalchemy_model(model: Any) -> dict[str, Any]:
 
 def _serialize_regular_model(model: Any) -> dict[str, Any]:
     result: dict[str, Any] = {}
-    for key, value in model.__dict__.items():
-        if not key.startswith("_") and key != "password_hash":
-            val = _serialize_value(value)
-            if val is not value or isinstance(value, (str, int, float, bool)) or value is None:
-                result[key] = val
+    for k, v in model.__dict__.items():
+        if k.startswith("_") or k == "password_hash":
+            continue
+        result[k] = _serialize_value(v)
     return result
 
 
@@ -64,8 +63,17 @@ def serialize_model(model: Any) -> dict[str, Any]:
 
 
 class AuditService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+        self,
+        db: Annotated[Session, Depends(deps.get_db)] = None,
+        repo: Annotated[AuditRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> AuditRepository:
+        return self._repo if self._repo is not None else audit_repository
 
     def log(
             self,
@@ -88,7 +96,7 @@ class AuditService:
             old_data=old_data,
             new_data=new_data
         )
-        return audit_repository.create(session, obj_in)
+        return self.repo.create(session, obj_in)
 
     def _prepare_raw_data(self, model: Any | None, data: dict | None) -> dict | None:
         raw = serialize_model(model) if model is not None else {}
