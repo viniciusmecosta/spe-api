@@ -1,7 +1,13 @@
+from unittest.mock import MagicMock
+
+import pytest
 from app.features.devices.device_repository import (
+    AsyncBiometricRepository,
+    AsyncDeviceCredentialRepository,
+    AsyncFirmwareRepository,
+    BiometricRepository,
     DeviceCredentialRepository,
     FirmwareRepository,
-    BiometricRepository,
 )
 from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate
 from app.shared.enums import DeviceKeyType
@@ -43,3 +49,30 @@ def test_biometric_repository(db_session):
 
     assert repo.get_by_sensor_index(db_session, 999999) is None
     assert repo.get_manager_with_biometric(db_session) is None or True
+
+
+@pytest.mark.asyncio
+async def test_async_device_repositories(async_db_mock):
+    cred_repo = AsyncDeviceCredentialRepository()
+    created = await cred_repo.create(
+        async_db_mock,
+        obj_in=DeviceCredentialCreate(name="Async Key", key_type=DeviceKeyType.DEVICE, api_key="secret", is_active=True)
+    )
+    assert created.name == "Async Key"
+
+    async_db_mock.get.return_value = created
+    assert await cred_repo.get(async_db_mock, 1) == created
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [created]
+    mock_scalars.first.return_value = created
+    async_db_mock.scalars.return_value = mock_scalars
+
+    assert len(await cred_repo.get_all(async_db_mock)) == 1
+
+    fw_repo = AsyncFirmwareRepository()
+    fw = await fw_repo.create(async_db_mock, version="1.0.0", file_path="/tmp/fw.bin")
+    assert fw.version == "1.0.0"
+
+    bio_repo = AsyncBiometricRepository()
+    assert await bio_repo.get_by_sensor_index(async_db_mock, 1) == created

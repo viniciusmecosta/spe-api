@@ -31,7 +31,7 @@ async def read_printers(
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[PrinterResponse]:
-    return service.get_all(skip=skip, limit=limit)
+    return await service.get_all(skip=skip, limit=limit)
 
 
 @router.get(
@@ -43,7 +43,7 @@ async def read_printer(
         service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return service.get_by_id(printer_id=printer_id)
+    return await service.get_by_id(printer_id=printer_id)
 
 
 @router.post(
@@ -56,7 +56,7 @@ async def create_printer(
         service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return service.create(obj_in=printer_in, current_user_id=current_user.id)
+    return await service.create(obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.patch(
@@ -69,7 +69,7 @@ async def update_printer(
         service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return service.update(printer_id=printer_id, obj_in=printer_in, current_user_id=current_user.id)
+    return await service.update(printer_id=printer_id, obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.delete(
@@ -82,4 +82,4 @@ async def delete_printer(
         service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> None:
-    service.delete(printer_id=printer_id, current_user_id=current_user.id)
+    await service.delete(printer_id=printer_id, current_user_id=current_user.id)

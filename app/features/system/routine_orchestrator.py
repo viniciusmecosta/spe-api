@@ -1,12 +1,10 @@
 import logging
 import os
 from datetime import datetime, timedelta
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from typing import Annotated
-
 from fastapi import Depends
-from sqlalchemy import desc, exists
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -22,7 +20,10 @@ from app.features.system.system_exceptions import (
     NoMaintainersWithEmailError,
     SMTPConnectionFailedError,
 )
-from app.features.system.system_models import RoutineLog
+from app.features.system.system_repository import (
+    RoutineLogRepository,
+    routine_log_repository,
+)
 from app.features.system.telegram_service import telegram_service
 from app.features.users.user_models import User
 from app.shared import deps
@@ -36,8 +37,17 @@ BACKUP_ZIP_FILENAME = "spe.zip"
 
 
 class RoutineOrchestrator:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(
+            self,
+            db: Annotated[Session, Depends(deps.get_db)] = None,
+            repo: Annotated[RoutineLogRepository, Depends()] = None,
+    ):
         self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> RoutineLogRepository:
+        return self._repo if self._repo is not None else routine_log_repository
 
     def _generate_backup_files_zip(self) -> tuple[str | None, str | None, str | None]:
         backup_path = backup_service.create_safe_backup()
@@ -72,13 +82,8 @@ class RoutineOrchestrator:
         try:
             with get_db_session() as db_read:
                 current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)
-
-                exists_log = db_read.query(exists().where(
-                    RoutineLog.routine_type == "TELEGRAM_HOURLY_BACKUP",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.execution_time >= current_hour_start_local
-                )).scalar()
-                if exists_log:
+                if self.repo.has_hourly_routine_run(db_read, "TELEGRAM_HOURLY_BACKUP", current_hour_start_local,
+                                                    status="SUCCESS"):
                     return
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao verificar backup horário Telegram: {e}")
@@ -99,13 +104,12 @@ class RoutineOrchestrator:
             try:
                 with get_db_session() as db_write:
                     if success:
-                        log_entry = RoutineLog(
+                        self.repo.log_execution(
+                            db_write,
                             routine_type="TELEGRAM_HOURLY_BACKUP",
                             status="SUCCESS",
-                            execution_time=now_local
+                            execution_time=now_local,
                         )
-                        db_write.add(log_entry)
-                        db_write.commit()
                     else:
                         logger.exception('Backup - "Telegram horário" Error')
             except SQLAlchemyError as e:
@@ -128,25 +132,12 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(exists().where(
-                    RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date == yesterday
-                )).scalar()
-
-                if ran_today:
+                if self.repo.has_routine_run_for_target_date(db_read, "TELEGRAM_DAILY_REPORT", yesterday,
+                                                             status="SUCCESS"):
                     return
 
-                last_success = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "TELEGRAM_DAILY_REPORT",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date.isnot(None)
-                ).order_by(desc(RoutineLog.target_date)).first()
-
-                start_date = yesterday
-                if last_success and last_success.target_date:
-                    start_date = last_success.target_date + timedelta(days=1)
-
+                last_success = self.repo.get_last_successful_target_date(db_read, "TELEGRAM_DAILY_REPORT")
+                start_date = (last_success + timedelta(days=1)) if last_success else yesterday
                 start_date = min(start_date, yesterday)
 
                 report_text = telegram_service.generate_report_text(db_read, start_date, yesterday)
@@ -165,14 +156,13 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_write:
-                log_entry = RoutineLog(
+                self.repo.log_execution(
+                    db_write,
                     routine_type="TELEGRAM_DAILY_REPORT",
                     target_date=yesterday,
                     status="SUCCESS" if text_success else "FAILED",
-                    execution_time=now_local
+                    execution_time=now_local,
                 )
-                db_write.add(log_entry)
-                db_write.commit()
                 if not text_success:
                     logger.exception('Relatório - "Telegram diário" Error')
         except SQLAlchemyError as e:
@@ -211,13 +201,8 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(exists().where(
-                    RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date == yesterday
-                )).scalar()
-
-                if ran_today:
+                if self.repo.has_routine_run_for_target_date(db_read, "EMAIL_DAILY_BACKUP", yesterday,
+                                                             status="SUCCESS"):
                     return
 
                 maintainers = db_read.query(User).filter(User.role == UserRole.MAINTAINER, User.is_active == True,
@@ -227,16 +212,8 @@ class RoutineOrchestrator:
                 if not to_emails:
                     return
 
-                last_success = db_read.query(RoutineLog).filter(
-                    RoutineLog.routine_type == "EMAIL_DAILY_BACKUP",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date.isnot(None)
-                ).order_by(desc(RoutineLog.target_date)).first()
-
-                start_date = yesterday
-                if last_success and last_success.target_date:
-                    start_date = last_success.target_date + timedelta(days=1)
-
+                last_success = self.repo.get_last_successful_target_date(db_read, "EMAIL_DAILY_BACKUP")
+                start_date = (last_success + timedelta(days=1)) if last_success else yesterday
                 start_date = min(start_date, yesterday)
 
                 full_report_html, attachments, period_text = self._generate_daily_backup_report(db_read, start_date,
@@ -257,14 +234,13 @@ class RoutineOrchestrator:
 
             try:
                 with get_db_session() as db_write:
-                    log_entry = RoutineLog(
+                    self.repo.log_execution(
+                        db_write,
                         routine_type="EMAIL_DAILY_BACKUP",
                         target_date=yesterday,
                         status="SUCCESS" if success else "FAILED",
-                        execution_time=now_local
+                        execution_time=now_local,
                     )
-                    db_write.add(log_entry)
-                    db_write.commit()
                     if not success:
                         logger.exception('Backup - "Email diário" Error')
             except SQLAlchemyError as e:
@@ -281,13 +257,7 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_read:
-                ran_today = db_read.query(exists().where(
-                    RoutineLog.routine_type == "CLEANUP_ROUTINE_LOGS",
-                    RoutineLog.status == "SUCCESS",
-                    RoutineLog.target_date == today
-                )).scalar()
-
-                if ran_today:
+                if self.repo.has_routine_run_for_target_date(db_read, "CLEANUP_ROUTINE_LOGS", today, status="SUCCESS"):
                     return
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao verificar rotina de limpeza: {e}")
@@ -296,17 +266,16 @@ class RoutineOrchestrator:
         try:
             with get_db_session() as db_write:
                 cutoff_date = now_local - timedelta(days=days_to_keep)
-                deleted_count = db_write.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date).delete()
+                deleted_count = self.repo.delete_older_than(db_write, cutoff_date)
 
-                log_entry = RoutineLog(
+                self.repo.log_execution(
+                    db_write,
                     routine_type="CLEANUP_ROUTINE_LOGS",
                     target_date=today,
                     status="SUCCESS",
                     execution_time=now_local,
-                    details=f"{deleted_count} logs apagados"
+                    details=f"{deleted_count} logs apagados",
                 )
-                db_write.add(log_entry)
-                db_write.commit()
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao limpar routine_logs: {e}")
 
@@ -328,13 +297,12 @@ class RoutineOrchestrator:
 
             try:
                 with get_db_session() as db_write:
-                    log_entry = RoutineLog(
+                    self.repo.log_execution(
+                        db_write,
                         routine_type="TELEGRAM_MANUAL_BACKUP",
                         status="SUCCESS" if success else "FAILED",
-                        execution_time=now_local
+                        execution_time=now_local,
                     )
-                    db_write.add(log_entry)
-                    db_write.commit()
                     if not success:
                         logger.exception('Backup - "Telegram manual" Error')
             except SQLAlchemyError as e:
@@ -369,14 +337,13 @@ class RoutineOrchestrator:
 
         try:
             with get_db_session() as db_write:
-                log_entry = RoutineLog(
+                self.repo.log_execution(
+                    db_write,
                     routine_type="TELEGRAM_MANUAL_REPORT",
                     target_date=end_date,
                     status="SUCCESS" if text_success else "FAILED",
-                    execution_time=now_local
+                    execution_time=now_local,
                 )
-                db_write.add(log_entry)
-                db_write.commit()
 
                 if not text_success:
                     logger.exception('Relatório - "Telegram manual" Error')

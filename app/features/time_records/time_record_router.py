@@ -39,8 +39,8 @@ async def register_entry(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = service.register_entry(user_id=current_user.id, request=request)
-    service.trigger_auto_print(record=record, background_tasks=background_tasks)
+    record = await service.register_entry(user_id=current_user.id, request=request)
+    await service.trigger_auto_print(record=record, background_tasks=background_tasks)
     return record
 
 
@@ -55,8 +55,8 @@ async def register_exit(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = service.register_exit(user_id=current_user.id, request=request)
-    service.trigger_auto_print(record=record, background_tasks=background_tasks)
+    record = await service.register_exit(user_id=current_user.id, request=request)
+    await service.trigger_auto_print(record=record, background_tasks=background_tasks)
     return record
 
 
@@ -69,7 +69,7 @@ async def toggle_record_type(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    return service.toggle_record_type(record_id=id, current_user=current_user)
+    return await service.toggle_record_type(record_id=id, current_user=current_user)
 
 
 @router.get("/my")
@@ -79,7 +79,7 @@ async def read_my_records(
         skip: int = 0,
         limit: int = 100,
 ) -> list[TimeRecordResponse]:
-    return service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
+    return await service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
 
 
 @router.get(
@@ -93,7 +93,7 @@ async def list_records_for_admin(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> list[TimeRecordResponse]:
-    return service.list_records_for_admin(user_id=user_id, start_date=start_date, end_date=end_date)
+    return await service.list_records_for_admin(user_id=user_id, start_date=start_date, end_date=end_date)
 
 
 @router.post(
@@ -110,7 +110,7 @@ async def create_time_record_admin(
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    return service.create_admin_record(
+    return await service.create_admin_record(
         obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
 
@@ -129,7 +129,7 @@ async def update_time_record_admin(
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    return service.update_admin_record(
+    return await service.update_admin_record(
         record_id=record_id, obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
 
@@ -144,7 +144,7 @@ async def delete_time_record_admin(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:
-    service.delete_admin_record(record_id=record_id, obj_in=request_body, manager_id=current_user.id)
+    await service.delete_admin_record(record_id=record_id, obj_in=request_body, manager_id=current_user.id)
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 
@@ -157,7 +157,7 @@ async def get_time_record_timeline(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> list[TimeRecordTimelineResponse]:
-    return service.get_record_timeline(record_id=id)
+    return await service.get_record_timeline(record_id=id)
 
 
 @router.post(
@@ -181,7 +181,7 @@ async def get_receipt(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> ReceiptResponse:
-    return service.get_receipt_data(short_id=short_id, current_user=current_user)
+    return await service.get_receipt_data(short_id=short_id, current_user=current_user)
 
 
 @router.get(
@@ -194,7 +194,7 @@ async def get_receipt_pdf(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> Response:
-    pdf_bytes, filename = service.get_receipt_pdf(short_id=short_id, current_user=current_user)
+    pdf_bytes, filename = await service.get_receipt_pdf(short_id=short_id, current_user=current_user)
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}"'
     }

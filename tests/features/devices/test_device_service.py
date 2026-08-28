@@ -1,14 +1,16 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
+import pytest
 from app.core.config import settings
 from app.features.devices.device_schemas import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
 from app.features.devices.device_service import device_service
 from app.shared.enums import RecordType, UserRole
 
 
-def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_process_punch_success_entry(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_record = MagicMock()
     mock_record.user.name = "Vinicius Costa"
     mock_record.record_datetime = datetime(2026, 8, 14, 8, 30, 0)
@@ -16,15 +18,19 @@ def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMo
 
     mocker.patch(
         "app.features.devices.device_service.punch_service.process_biometric_punch",
+        new_callable=AsyncMock,
         return_value=(True, "Sucesso", mock_record),
+    )
+    mocker.patch(
+        "app.features.devices.device_service.time_record_service.trigger_auto_print"
     )
 
     request = MagicMock()
     request.state = MagicMock()
     bg_mock = MagicMock()
 
-    result = device_service.process_punch(
-        db=db_session_mock,
+    result = await device_service.process_punch(
+        db=async_db_mock,
         sensor_index=1,
         ip_address="192.168.1.100",
         request=request,
@@ -40,7 +46,8 @@ def test_process_punch_success_entry(db_session_mock: MagicMock, mocker: MagicMo
     assert request.state.attempted_user == "Vinicius Costa"
 
 
-def test_process_punch_success_exit_no_user_name(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_process_punch_success_exit_no_user_name(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_record = MagicMock()
     mock_record.user = None
     mock_record.record_datetime = datetime(2026, 8, 14, 17, 0, 0)
@@ -48,11 +55,12 @@ def test_process_punch_success_exit_no_user_name(db_session_mock: MagicMock, moc
 
     mocker.patch(
         "app.features.devices.device_service.punch_service.process_biometric_punch",
+        new_callable=AsyncMock,
         return_value=(True, "Sucesso", mock_record),
     )
 
-    result = device_service.process_punch(
-        db=db_session_mock,
+    result = await device_service.process_punch(
+        db=async_db_mock,
         sensor_index=2,
         ip_address="192.168.1.100",
         request=None,
@@ -65,14 +73,16 @@ def test_process_punch_success_exit_no_user_name(db_session_mock: MagicMock, moc
     assert result.line3 == "Saida"
 
 
-def test_process_punch_failure(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_process_punch_failure(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mocker.patch(
         "app.features.devices.device_service.punch_service.process_biometric_punch",
+        new_callable=AsyncMock,
         return_value=(False, "Biometria desconhecida", None),
     )
 
-    result = device_service.process_punch(
-        db=db_session_mock,
+    result = await device_service.process_punch(
+        db=async_db_mock,
         sensor_index=99,
         ip_address="192.168.1.100",
     )
@@ -84,14 +94,16 @@ def test_process_punch_failure(db_session_mock: MagicMock, mocker: MagicMock) ->
     assert result.line3 == ""
 
 
-def test_process_punch_failure_empty_message(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_process_punch_failure_empty_message(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mocker.patch(
         "app.features.devices.device_service.punch_service.process_biometric_punch",
+        new_callable=AsyncMock,
         return_value=(False, None, None),
     )
 
-    result = device_service.process_punch(
-        db=db_session_mock,
+    result = await device_service.process_punch(
+        db=async_db_mock,
         sensor_index=99,
         ip_address="192.168.1.100",
     )
@@ -102,14 +114,15 @@ def test_process_punch_failure_empty_message(db_session_mock: MagicMock, mocker:
     assert result.line2 == ""
 
 
-def test_process_punch_exception(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_process_punch_exception(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mocker.patch(
         "app.features.devices.device_service.punch_service.process_biometric_punch",
         side_effect=Exception("Database crash"),
     )
 
-    result = device_service.process_punch(
-        db=db_session_mock,
+    result = await device_service.process_punch(
+        db=async_db_mock,
         sensor_index=1,
         ip_address="192.168.1.100",
     )
@@ -136,15 +149,18 @@ def test_get_device_time(mocker: MagicMock) -> None:
     assert result.formatted == "14/08/2026 12:00:00"
 
 
-def test_verify_manager_access_no_managers(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_no_managers(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[],
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
+        return_value=None,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=1,
         device_id=10,
     )
@@ -155,19 +171,23 @@ def test_verify_manager_access_no_managers(db_session_mock: MagicMock, mocker: M
     audit_mock.assert_called_once()
 
 
-def test_verify_manager_access_biometric_not_found(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_biometric_not_found(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[MagicMock()],
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
     )
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.async_biometric_repository.get_by_sensor_index",
+        new_callable=AsyncMock,
         return_value=None,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=99,
         device_id=10,
     )
@@ -178,24 +198,28 @@ def test_verify_manager_access_biometric_not_found(db_session_mock: MagicMock, m
     audit_mock.assert_called_once()
 
 
-def test_verify_manager_access_authorized_manager(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_authorized_manager(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_bio = MagicMock()
     mock_bio.user.id = 5
     mock_bio.user.role = UserRole.MANAGER
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[mock_bio],
-    )
-    mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    mocker.patch(
+        "app.features.devices.device_service.async_biometric_repository.get_by_sensor_index",
+        new_callable=AsyncMock,
+        return_value=mock_bio,
+    )
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=5,
         device_id=10,
     )
@@ -206,24 +230,28 @@ def test_verify_manager_access_authorized_manager(db_session_mock: MagicMock, mo
     audit_mock.assert_called_once()
 
 
-def test_verify_manager_access_authorized_maintainer(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_authorized_maintainer(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_bio = MagicMock()
     mock_bio.user.id = 6
     mock_bio.user.role = UserRole.MAINTAINER
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[mock_bio],
-    )
-    mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    mocker.patch(
+        "app.features.devices.device_service.async_biometric_repository.get_by_sensor_index",
+        new_callable=AsyncMock,
+        return_value=mock_bio,
+    )
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=6,
         device_id=10,
     )
@@ -234,24 +262,28 @@ def test_verify_manager_access_authorized_maintainer(db_session_mock: MagicMock,
     audit_mock.assert_called_once()
 
 
-def test_verify_manager_access_denied_role(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_denied_role(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_bio = MagicMock()
     mock_bio.user.id = 7
     mock_bio.user.role = UserRole.EMPLOYEE
     mock_bio.user.is_active = True
 
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[MagicMock()],
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
     )
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.async_biometric_repository.get_by_sensor_index",
+        new_callable=AsyncMock,
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=7,
         device_id=10,
     )
@@ -262,24 +294,28 @@ def test_verify_manager_access_denied_role(db_session_mock: MagicMock, mocker: M
     audit_mock.assert_called_once()
 
 
-def test_verify_manager_access_denied_inactive(db_session_mock: MagicMock, mocker: MagicMock) -> None:
+@pytest.mark.asyncio
+async def test_verify_manager_access_denied_inactive(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_bio = MagicMock()
     mock_bio.user.id = 8
     mock_bio.user.role = UserRole.MANAGER
     mock_bio.user.is_active = False
 
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_manager_with_biometric",
-        return_value=[MagicMock()],
+        "app.features.devices.device_service.async_biometric_repository.get_manager_with_biometric",
+        new_callable=AsyncMock,
+        return_value=MagicMock(),
     )
     mocker.patch(
-        "app.features.devices.device_service.biometric_repository.get_by_sensor_index",
+        "app.features.devices.device_service.async_biometric_repository.get_by_sensor_index",
+        new_callable=AsyncMock,
         return_value=mock_bio,
     )
-    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.log_change")
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
 
-    result = device_service.verify_manager_access(
-        db=db_session_mock,
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
         sensor_index=8,
         device_id=10,
     )

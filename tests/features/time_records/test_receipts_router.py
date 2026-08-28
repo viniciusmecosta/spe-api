@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +8,7 @@ from app.features.time_records.time_record_schemas import ReceiptResponse
 from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.main import app
-from app.shared.deps import get_current_active_user
+from app.shared.deps import get_async_db, get_current_active_user
 from app.shared.enums import RecordType
 
 client = TestClient(app)
@@ -16,12 +16,16 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def override_dependency():
+    async def override_get_async_db():
+        yield AsyncMock()
+
     app.dependency_overrides[get_current_active_user] = lambda: User(id=1, role="ADMIN")
+    app.dependency_overrides[get_async_db] = override_get_async_db
     yield
     app.dependency_overrides.clear()
 
 
-@patch.object(TimeRecordService, "get_receipt_data")
+@patch.object(TimeRecordService, "get_receipt_data", new_callable=AsyncMock)
 def test_get_receipt(mock_get_receipt_data):
     mock_get_receipt_data.return_value = ReceiptResponse(
         short_id="aB3dE5",
@@ -44,7 +48,7 @@ def test_get_receipt(mock_get_receipt_data):
     assert response.json()["company_name"] == "Company"
 
 
-@patch.object(TimeRecordService, "get_receipt_pdf")
+@patch.object(TimeRecordService, "get_receipt_pdf", new_callable=AsyncMock)
 def test_get_receipt_pdf(mock_get_receipt_pdf):
     mock_get_receipt_pdf.return_value = (b"%PDF-1.4...", "1.pdf")
 

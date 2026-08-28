@@ -43,7 +43,7 @@ async def create_adjustment_request(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> AdjustmentRequestResponse:
-    return service.create_adjustment_request(user_id=current_user.id, obj_in=request_in)
+    return await service.create_adjustment_request(user_id=current_user.id, obj_in=request_in)
 
 
 @router.post(
@@ -56,7 +56,7 @@ async def waive_absence_admin(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
-    return service.create_manager_waiver(waiver_in=waiver_in, manager_id=current_user.id)
+    return await service.create_manager_waiver(waiver_in=waiver_in, manager_id=current_user.id)
 
 
 @router.post(
@@ -69,7 +69,7 @@ async def reprocess_historical_extra_time(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> dict[str, str]:
-    return service.reprocess_historical_extra_time(request_in=request_in, current_user=current_user)
+    return await service.reprocess_historical_extra_time(request_in=request_in, current_user=current_user)
 
 
 @router.post(
@@ -83,7 +83,7 @@ async def upload_adjustment_attachment(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> AdjustmentAttachmentResponse:
-    return service.upload_attachment(request_id=id, file=file, user_id=current_user.id)
+    return await service.upload_attachment(request_id=id, file=file, user_id=current_user.id)
 
 
 @router.get(
@@ -96,7 +96,7 @@ async def download_adjustment_attachment(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> FileResponse:
-    safe_file_path, filename = service.get_attachment_file_path(
+    safe_file_path, filename = await service.get_attachment_file_path(
         adjustment_id=id, current_user=current_user
     )
     return FileResponse(
@@ -121,7 +121,7 @@ async def read_my_adjustments(
         order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
-    return service.get_my_enriched(
+    return await service.get_my_enriched(
         user_id=current_user.id, skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
     )
 
@@ -144,7 +144,7 @@ async def read_all_adjustments(
         order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
 ) -> list[AdjustmentRequestResponse]:
-    return service.get_all_enriched(
+    return await service.get_all_enriched(
         skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
     )
 
@@ -159,7 +159,7 @@ async def approve_adjustment(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         comment: Annotated[str | None, Body(embed=True)] = None,
 ) -> AdjustmentRequestResponse:
-    return service.approve_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
+    return await service.approve_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
 
 
 @router.put(
@@ -172,7 +172,7 @@ async def reject_adjustment(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
-    return service.reject_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
+    return await service.reject_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
 
 
 @router.delete(
@@ -185,7 +185,7 @@ async def delete_adjustment(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> dict[str, str]:
-    service.delete_adjustment(adjustment_id=id, manager_id=current_user.id, reason=reason)
+    await service.delete_adjustment(adjustment_id=id, manager_id=current_user.id, reason=reason)
     return {"status": "success"}
 
 
@@ -199,7 +199,7 @@ async def admin_delete_adjustment(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    service.admin_delete_adjustment(adjustment_id=id, admin_id=current_user.id, reason=reason)
+    await service.admin_delete_adjustment(adjustment_id=id, admin_id=current_user.id, reason=reason)
     return {"status": "success"}
 
 
@@ -214,6 +214,6 @@ async def admin_revert_adjustment_status(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> AdjustmentRequestResponse:
-    return service.revert_adjustment_status(
+    return await service.revert_adjustment_status(
         request_id=id, manager_id=current_user.id, new_status=status, comment=comment
     )

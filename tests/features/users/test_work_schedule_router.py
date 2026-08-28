@@ -1,11 +1,12 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-import pytest
 
+import pytest
 from app.features.users.user_models import User
 from app.features.users.user_schemas import BulkWorkScheduleResponse
+from app.features.users.user_work_schedule_service import UserWorkScheduleService
 from app.main import app
 from app.shared import deps
 from app.shared.enums import UserRole
@@ -37,10 +38,14 @@ def mock_employee_user() -> User:
 
 @pytest.fixture
 def client(mock_manager_user: User) -> TestClient:
+    async def override_get_async_db():
+        yield AsyncMock()
+
     app.dependency_overrides[deps.get_current_active_user] = lambda: mock_manager_user
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_manager_user
     app.dependency_overrides[deps.get_current_maintainer] = lambda: mock_manager_user
     app.dependency_overrides[deps.get_db] = lambda: MagicMock()
+    app.dependency_overrides[deps.get_async_db] = override_get_async_db
 
     test_client = TestClient(app)
     yield test_client
@@ -55,8 +60,10 @@ def test_get_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
             users=[],
         )
     ]
-    mocker.patch(
-        "app.features.users.work_schedule_router.user_work_schedule_service.get_bulk_schedules",
+    mocker.patch.object(
+        UserWorkScheduleService,
+        "get_bulk_schedules",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -71,8 +78,10 @@ def test_get_bulk_schedule_by_dates(client: TestClient, mocker: MagicMock) -> No
         valid_until=date(2026, 8, 31),
         users=[],
     )
-    mocker.patch(
-        "app.features.users.work_schedule_router.user_work_schedule_service.get_bulk_schedule",
+    mocker.patch.object(
+        UserWorkScheduleService,
+        "get_bulk_schedule",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -82,8 +91,10 @@ def test_get_bulk_schedule_by_dates(client: TestClient, mocker: MagicMock) -> No
 
 
 def test_add_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.users.work_schedule_router.user_work_schedule_service.bulk_add_schedules",
+    mocker.patch.object(
+        UserWorkScheduleService,
+        "bulk_add_schedules",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 
@@ -99,8 +110,10 @@ def test_add_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_update_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.users.work_schedule_router.user_work_schedule_service.update_bulk_schedules",
+    mocker.patch.object(
+        UserWorkScheduleService,
+        "update_bulk_schedules",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 
@@ -116,8 +129,10 @@ def test_update_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_delete_bulk_schedules(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.users.work_schedule_router.user_work_schedule_service.delete_bulk_schedules",
+    mocker.patch.object(
+        UserWorkScheduleService,
+        "delete_bulk_schedules",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 

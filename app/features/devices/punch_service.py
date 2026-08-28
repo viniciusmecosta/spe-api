@@ -2,14 +2,16 @@ import logging
 from typing import Annotated
 
 from fastapi import Depends, Request
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.database.session import get_async_db
 from app.features.devices.device_models import UserBiometric
-from app.features.devices.device_repository import BiometricRepository, biometric_repository
+from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
-from app.shared import deps
 from app.shared.trusted_time_service import trusted_time_service
 
 logger = logging.getLogger(__name__)
@@ -18,22 +20,30 @@ logger = logging.getLogger(__name__)
 class PunchService:
     def __init__(
         self,
-        db: Annotated[Session, Depends(deps.get_db)] = None,
-        repo: Annotated[BiometricRepository, Depends()] = None,
+            db: Annotated[AsyncSession, Depends(get_async_db)] = None,
+            repo: Annotated[AsyncBiometricRepository, Depends()] = None,
     ):
         self.db = db
         self._repo = repo
 
     @property
-    def repo(self) -> BiometricRepository:
-        return self._repo if self._repo is not None else biometric_repository
+    def repo(self) -> AsyncBiometricRepository:
+        return self._repo if self._repo is not None else async_biometric_repository
 
-    def process_biometric_punch(self, db: Session | None = None, sensor_index: int = 0, ip_address: str | None = None,
+    @repo.setter
+    def repo(self, value: AsyncBiometricRepository) -> None:
+        self._repo = value
+
+    async def process_biometric_punch(self, db: AsyncSession | None = None, sensor_index: int = 0,
+                                      ip_address: str | None = None,
                                 request: Request | None = None):
         session = db if db is not None else self.db
         assert session is not None
         try:
-            biometric = session.query(UserBiometric).filter(UserBiometric.sensor_index == sensor_index).first()
+            stmt = select(UserBiometric).options(selectinload(UserBiometric.user)).where(
+                UserBiometric.sensor_index == sensor_index)
+            res = await session.scalars(stmt)
+            biometric = res.first()
 
             if not biometric:
                 return False, "Nao Cadastrado", None
@@ -52,6 +62,8 @@ class PunchService:
                 biometric_id=biometric.id,
                 platform="IOT"
             )
+            if hasattr(new_record, "__await__"):
+                new_record = await new_record
 
             if not used_ntp:
                 if request:
@@ -59,10 +71,10 @@ class PunchService:
 
                 new_record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
                 session.add(new_record)
-                session.commit()
-                session.refresh(new_record)
+                await session.commit()
+                await session.refresh(new_record)
 
-                audit_service.log_change(
+                await audit_service.async_log_change(
                     session,
                     user.id,
                     "NTP_FALLBACK",

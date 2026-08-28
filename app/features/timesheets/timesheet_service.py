@@ -5,7 +5,7 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
@@ -20,14 +20,23 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.companies.company_repository import company_repository
-from app.features.holidays.holiday_repository import holiday_repository
+from app.features.companies.company_repository import (
+    async_company_repository,
+    company_repository,
+)
+from app.features.holidays.holiday_repository import (
+    async_holiday_repository,
+    holiday_repository,
+)
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import (
+    async_time_record_repository,
     time_record_repository,
 )
 from app.features.timesheets.timesheet_exceptions import (
@@ -36,7 +45,10 @@ from app.features.timesheets.timesheet_exceptions import (
     TimesheetUserNotFoundError,
 )
 from app.features.users.user_models import User
-from app.features.users.user_repository import user_repository
+from app.features.users.user_repository import (
+    async_user_repository,
+    user_repository,
+)
 from app.shared import deps
 from app.shared.enums import DayOfWeek, UserRole
 from app.shared.time_calculation_service import time_calculation_service
@@ -48,7 +60,7 @@ NON_DIGIT_REGEX = re.compile(r'\D')
 
 
 class TimesheetService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
         self.db = db
 
     def validate_date_not_future(self, month: int, year: int) -> None:
@@ -348,10 +360,14 @@ class TimesheetService:
             story.append(table)
             story.append(Spacer(1, 5))
 
-    def generate_user_timesheet_pdf(self, db: Session | None = None, user_id: int = 0, month: int = 0, year: int = 0) -> io.BytesIO:
+    async def generate_user_timesheet_pdf(self, db: Any | None = None, user_id: int = 0, month: int = 0,
+                                          year: int = 0) -> io.BytesIO:
         session = db if db is not None else self.db
         assert session is not None
-        user = user_repository.get(session, user_id)
+        if hasattr(session, "sync_session"):
+            user = await async_user_repository.get(session, user_id)
+        else:
+            user = user_repository.get(session, user_id)
         if not user:
             raise TimesheetUserNotFoundError(user_id=user_id)
 
@@ -365,16 +381,28 @@ class TimesheetService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
-        holidays = holiday_repository.get_by_month(session, month, year)
-        all_adjustments = session.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id == user_id,
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
-
-        company = company_repository.get_current(session)
+        if hasattr(session, "sync_session"):
+            records = await async_time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
+            holidays = await async_holiday_repository.get_by_month(session, month, year)
+            adj_stmt = select(AdjustmentRequest).where(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None)
+            )
+            adj_res = await session.scalars(adj_stmt)
+            all_adjustments = list(adj_res.all())
+            company = await async_company_repository.get_current(session)
+        else:
+            records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
+            holidays = holiday_repository.get_by_month(session, month, year)
+            all_adjustments = session.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all()
+            company = company_repository.get_current(session)
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -547,7 +575,7 @@ class TimesheetService:
         buffer.seek(0)
         return buffer
 
-    def generate_all_timesheets_pdf_zip(self, db: Session | None = None, month: int = 0, year: int = 0,
+    async def generate_all_timesheets_pdf_zip(self, db: Any | None = None, month: int = 0, year: int = 0,
                                         employee_ids: list[int] | None = None) -> io.BytesIO:
         session = db if db is not None else self.db
         assert session is not None
@@ -559,18 +587,34 @@ class TimesheetService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        query = session.query(User).join(TimeRecord, User.id == TimeRecord.user_id).filter(
-            User.role == UserRole.EMPLOYEE,
-            User.is_exempt_from_rules.is_(False),
-            TimeRecord.record_datetime >= start_dt,
-            TimeRecord.record_datetime <= end_dt,
-            TimeRecord.is_ignored == False
-        ).distinct()
-
-        if employee_ids:
-            query = query.filter(User.id.in_(employee_ids))
-
-        users = query.all()
+        if hasattr(session, "sync_session"):
+            stmt = (
+                select(User)
+                .join(TimeRecord, User.id == TimeRecord.user_id)
+                .where(
+                    User.role == UserRole.EMPLOYEE,
+                    User.is_exempt_from_rules.is_(False),
+                    TimeRecord.record_datetime >= start_dt,
+                    TimeRecord.record_datetime <= end_dt,
+                    TimeRecord.is_ignored.is_(False),
+                )
+                .distinct()
+            )
+            if employee_ids:
+                stmt = stmt.where(User.id.in_(employee_ids))
+            res = await session.scalars(stmt)
+            users = list(res.all())
+        else:
+            query = session.query(User).join(TimeRecord, User.id == TimeRecord.user_id).filter(
+                User.role == UserRole.EMPLOYEE,
+                User.is_exempt_from_rules.is_(False),
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.is_ignored == False
+            ).distinct()
+            if employee_ids:
+                query = query.filter(User.id.in_(employee_ids))
+            users = query.all()
 
         if not users:
             raise NoTimesheetRecordsFoundError()
@@ -579,7 +623,7 @@ class TimesheetService:
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for user in users:
                 try:
-                    pdf_buffer = self.generate_user_timesheet_pdf(session, user.id, month, year)
+                    pdf_buffer = await self.generate_user_timesheet_pdf(session, user.id, month, year)
                     safe_name = "".join([c for c in user.name if c.isalpha() or c.isdigit() or c == ' ']).rstrip()
                     safe_name = safe_name.replace(" ", "_")
 

@@ -1,16 +1,24 @@
 from datetime import datetime, time
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.companies.company_repository import company_repository
+from app.features.companies.company_repository import (
+    async_company_repository,
+    company_repository,
+)
 from app.features.payroll.payroll_service import payroll_service
-from app.features.printers.printer_repository import printer_repository
+from app.features.printers.printer_repository import (
+    async_printer_repository,
+    printer_repository,
+)
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.receipt_service import receipt_service
 from app.features.time_records.time_record_exceptions import (
@@ -26,7 +34,8 @@ from app.features.time_records.time_record_models import (
     get_local_time,
 )
 from app.features.time_records.time_record_repository import (
-    TimeRecordRepository,
+    AsyncTimeRecordRepository,
+    async_time_record_repository,
     time_record_repository,
 )
 from app.features.time_records.time_record_schemas import (
@@ -37,7 +46,10 @@ from app.features.time_records.time_record_schemas import (
     TimeRecordUpdate,
 )
 from app.features.users.user_models import User
-from app.features.users.user_repository import user_repository
+from app.features.users.user_repository import (
+    async_user_repository,
+    user_repository,
+)
 from app.shared import deps
 from app.shared.enums import (
     AdjustmentStatus,
@@ -53,35 +65,66 @@ from app.utils.formatters import mask_cnpj, mask_cpf
 class TimeRecordService:
     def __init__(
         self,
-        db: Annotated[Session, Depends(deps.get_db)] = None,
-        repo: Annotated[TimeRecordRepository, Depends()] = None,
+            db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None,
+            repo: Annotated[AsyncTimeRecordRepository, Depends()] = None,
     ):
         self.db = db
         self._repo = repo
 
     @property
-    def repo(self) -> TimeRecordRepository:
-        return self._repo if self._repo is not None else time_record_repository
+    def repo(self) -> AsyncTimeRecordRepository:
+        return self._repo if self._repo is not None else async_time_record_repository
 
-    def _invalidate_extra_time_requests(self, db: Session, user_id: int, target_date: datetime.date):
-        requests = db.query(AdjustmentRequest).filter(AdjustmentRequest.user_id == user_id,
-                                                      AdjustmentRequest.target_date == target_date,
-                                                      AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-                                                      AdjustmentRequest.status == AdjustmentStatus.PENDING).all()
-        for req in requests:
-            db.delete(req)
-        db.flush()
+    async def _invalidate_extra_time_requests(self, db: Any, user_id: int, target_date: datetime.date):
+        stmt = select(AdjustmentRequest).where(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+            AdjustmentRequest.status == AdjustmentStatus.PENDING,
+        )
+        if hasattr(db, "sync_session"):
+            res = await db.scalars(stmt)
+            requests = list(res.all())
+            for req in requests:
+                await db.delete(req)
+            await db.flush()
+        else:
+            requests = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date == target_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+            ).all()
+            for req in requests:
+                db.delete(req)
+            db.flush()
 
-    def _is_first_entry_affected(self, db: Session, user_id: int, target_date: datetime.date,
+    async def _is_first_entry_affected(self, db: Any, user_id: int, target_date: datetime.date,
                                  record_id: int | None = None, new_datetime: datetime | None = None) -> bool:
         start_of_day = datetime.combine(target_date, time.min, tzinfo=ZoneInfo(settings.TIMEZONE))
         end_of_day = datetime.combine(target_date, time.max, tzinfo=ZoneInfo(settings.TIMEZONE))
-        first_entry = (db.query(TimeRecord).filter(TimeRecord.user_id == user_id,
-                                                   TimeRecord.record_type == RecordType.ENTRY,
-                                                   TimeRecord.deleted_at.is_(None),
-                                                   TimeRecord.record_datetime >= start_of_day,
-                                                   TimeRecord.record_datetime <= end_of_day)
-                       .order_by(TimeRecord.record_datetime.asc()).first())
+        stmt = (
+            select(TimeRecord)
+            .where(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_type == RecordType.ENTRY,
+                TimeRecord.deleted_at.is_(None),
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+            )
+            .order_by(TimeRecord.record_datetime.asc())
+        )
+        if hasattr(db, "sync_session"):
+            first_entry = (await db.scalars(stmt)).first()
+        else:
+            first_entry = (db.query(TimeRecord).filter(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_type == RecordType.ENTRY,
+                TimeRecord.deleted_at.is_(None),
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+            ).order_by(TimeRecord.record_datetime.asc()).first())
+
         if not first_entry:
             return new_datetime is not None
         if record_id is not None and first_entry.id == record_id:
@@ -91,8 +134,11 @@ class TimeRecordService:
                 return True
         return False
 
-    def _validate_manual_punch_permission(self, db: Session, user_id: int, request: Request):
-        user = user_repository.get(db, user_id)
+    async def _validate_manual_punch_permission(self, db: Any, user_id: int, request: Request):
+        if hasattr(db, "sync_session"):
+            user = await async_user_repository.get(db, user_id)
+        else:
+            user = user_repository.get(db, user_id)
         if not user:
             raise TimeRecordUserNotFoundError()
         if user.role in [UserRole.MANAGER, UserRole.MAINTAINER]:
@@ -107,75 +153,124 @@ class TimeRecordService:
             return
         raise ManualPunchUnauthorizedError()
 
-    def register_entry(self, db: Session | None = None, user_id: int = 0, request: Request | None = None) -> TimeRecord:
+    async def register_entry(self, db: Any | None = None, user_id: int = 0,
+                             request: Request | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert request is not None
-        self._validate_manual_punch_permission(session, user_id, request)
+        await self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
-        payroll_service.validate_period_open(session, current_time.date())
-        record = self.repo.create(
-            session,
-            user_id=user_id,
-            record_type=RecordType.ENTRY,
-            record_datetime=current_time,
-            ip_address=ip_address,
-            device_name=device_name,
-            platform=platform,
-        )
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, current_time.date())
+        else:
+            payroll_service.validate_period_open(session, current_time.date())
+
+        if hasattr(session, "sync_session"):
+            record = await self.repo.create(
+                session,
+                user_id=user_id,
+                record_type=RecordType.ENTRY,
+                record_datetime=current_time,
+                ip_address=ip_address,
+                device_name=device_name,
+                platform=platform,
+            )
+        else:
+            record = time_record_repository.create(
+                session,
+                user_id=user_id,
+                record_type=RecordType.ENTRY,
+                record_datetime=current_time,
+                ip_address=ip_address,
+                device_name=device_name,
+                platform=platform,
+            )
+
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
             session.add(record)
-            session.commit()
-            session.refresh(record)
-            audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
-                                     new_data={"justification": record.edit_justification})
+            if hasattr(session, "sync_session"):
+                await session.commit()
+                await session.refresh(record)
+                await audit_service.async_log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD",
+                                                     entity_id=record.id,
+                                                     new_data={"justification": record.edit_justification})
+            else:
+                session.commit()
+                session.refresh(record)
+                audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+                                         new_data={"justification": record.edit_justification})
         return record
 
-    def register_exit(self, db: Session | None = None, user_id: int = 0, request: Request | None = None) -> TimeRecord:
+    async def register_exit(self, db: Any | None = None, user_id: int = 0,
+                            request: Request | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert request is not None
-        self._validate_manual_punch_permission(session, user_id, request)
+        await self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
-        payroll_service.validate_period_open(session, current_time.date())
-        record = self.repo.create(
-            session,
-            user_id=user_id,
-            record_type=RecordType.EXIT,
-            record_datetime=current_time,
-            ip_address=ip_address,
-            device_name=device_name,
-            platform=platform,
-        )
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, current_time.date())
+        else:
+            payroll_service.validate_period_open(session, current_time.date())
+
+        if hasattr(session, "sync_session"):
+            record = await self.repo.create(
+                session,
+                user_id=user_id,
+                record_type=RecordType.EXIT,
+                record_datetime=current_time,
+                ip_address=ip_address,
+                device_name=device_name,
+                platform=platform,
+            )
+        else:
+            record = time_record_repository.create(
+                session,
+                user_id=user_id,
+                record_type=RecordType.EXIT,
+                record_datetime=current_time,
+                ip_address=ip_address,
+                device_name=device_name,
+                platform=platform,
+            )
+
         if not used_ntp:
             request.state.ntp_error = True
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
             session.add(record)
-            session.commit()
-            session.refresh(record)
-            audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
-                                     new_data={"justification": record.edit_justification})
+            if hasattr(session, "sync_session"):
+                await session.commit()
+                await session.refresh(record)
+                await audit_service.async_log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD",
+                                                     entity_id=record.id,
+                                                     new_data={"justification": record.edit_justification})
+            else:
+                session.commit()
+                session.refresh(record)
+                audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
+                                         new_data={"justification": record.edit_justification})
         return record
 
-    def _process_toggle_invalidations(self, db: Session, record: TimeRecord, new_type: RecordType):
+    async def _process_toggle_invalidations(self, db: Any, record: TimeRecord, new_type: RecordType):
         previous_type = record.record_type
         target_date = record.record_datetime.date()
 
         if previous_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, target_date, record_id=record.id):
-                self._invalidate_extra_time_requests(db, record.user_id, target_date)
+            if await self._is_first_entry_affected(db, record.user_id, target_date, record_id=record.id):
+                await self._invalidate_extra_time_requests(db, record.user_id, target_date)
 
         if new_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, target_date, new_datetime=record.record_datetime):
-                self._invalidate_extra_time_requests(db, record.user_id, target_date)
+            if await self._is_first_entry_affected(db, record.user_id, target_date,
+                                                   new_datetime=record.record_datetime):
+                await self._invalidate_extra_time_requests(db, record.user_id, target_date)
 
     def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
                                is_manager: bool) -> TimeRecord:
@@ -195,11 +290,15 @@ class TimeRecordService:
             is_verified=bool(is_manager)
         )
 
-    def toggle_record_type(self, db: Session | None = None, record_id: int = 0, current_user: User | None = None) -> TimeRecord:
+    async def toggle_record_type(self, db: Any | None = None, record_id: int = 0,
+                                 current_user: User | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
-        record = self.repo.get(session, record_id)
+        if hasattr(session, "sync_session"):
+            record = await self.repo.get(session, record_id)
+        else:
+            record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
@@ -208,75 +307,115 @@ class TimeRecordService:
         if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
 
-        payroll_service.validate_period_open(session, record.record_datetime.date())
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
+        else:
+            payroll_service.validate_period_open(session, record.record_datetime.date())
 
         new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
-        self._process_toggle_invalidations(session, record, new_type)
+        await self._process_toggle_invalidations(session, record, new_type)
 
         old_data = serialize_model(record)
         record.is_ignored = True
         new_record = self._create_toggled_record(record, new_type, current_user, is_manager)
 
         session.add(new_record)
-        session.flush()
-        session.add(record)
-        session.commit()
-        session.refresh(new_record)
-        audit_service.log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data, new_model=new_record)
+        if hasattr(session, "sync_session"):
+            await session.flush()
+            session.add(record)
+            await session.commit()
+            await session.refresh(new_record)
+            await audit_service.async_log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
+                                                 new_model=new_record)
+        else:
+            session.flush()
+            session.add(record)
+            session.commit()
+            session.refresh(new_record)
+            audit_service.log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
+                                     new_model=new_record)
         return new_record
 
-    def create_admin_record(self, db: Session | None = None, obj_in: TimeRecordCreateAdmin | None = None, manager_id: int = 0, ip_address: str = "",
+    async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
+                                  manager_id: int = 0, ip_address: str = "",
                             device_name: str | None = None, platform: str = "WEB_ADMIN") -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
+        else:
+            payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+
         if obj_in.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(session, obj_in.user_id, obj_in.record_datetime.date(),
+            if await self._is_first_entry_affected(session, obj_in.user_id, obj_in.record_datetime.date(),
                                              new_datetime=obj_in.record_datetime):
-                self._invalidate_extra_time_requests(session, obj_in.user_id, obj_in.record_datetime.date())
-        record = self.repo.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
-                                               record_datetime=obj_in.record_datetime, ip_address=ip_address,
-                                               device_name=device_name if device_name else "", platform=platform)
+                await self._invalidate_extra_time_requests(session, obj_in.user_id, obj_in.record_datetime.date())
+
+        if hasattr(session, "sync_session"):
+            record = await self.repo.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
+                                            record_datetime=obj_in.record_datetime, ip_address=ip_address,
+                                            device_name=device_name if device_name else "", platform=platform)
+        else:
+            record = time_record_repository.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
+                                                   record_datetime=obj_in.record_datetime, ip_address=ip_address,
+                                                   device_name=device_name if device_name else "", platform=platform)
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
         record.is_verified = True
         session.add(record)
-        session.commit()
-        session.refresh(record)
-        audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
+        if hasattr(session, "sync_session"):
+            await session.commit()
+            await session.refresh(record)
+            await audit_service.async_log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
+        else:
+            session.commit()
+            session.refresh(record)
+            audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
         return record
 
-    def _handle_admin_update_invalidations(self, db: Session, record: TimeRecord, obj_in: TimeRecordUpdate,
+    async def _handle_admin_update_invalidations(self, db: Any, record: TimeRecord, obj_in: TimeRecordUpdate,
                                            old_date: datetime.date, new_date: datetime.date,
                                            new_record_type: RecordType):
         if record.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
-                self._invalidate_extra_time_requests(db, record.user_id, old_date)
+            if await self._is_first_entry_affected(db, record.user_id, old_date, record_id=record.id):
+                await self._invalidate_extra_time_requests(db, record.user_id, old_date)
         if new_record_type == RecordType.ENTRY:
             new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
-            if self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt):
-                self._invalidate_extra_time_requests(db, record.user_id, new_date)
+            if await self._is_first_entry_affected(db, record.user_id, new_date, record_id=record.id,
+                                                   new_datetime=new_dt):
+                await self._invalidate_extra_time_requests(db, record.user_id, new_date)
 
-    def update_admin_record(self, db: Session | None = None, record_id: int = 0, obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
+    async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
+                                  obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
                             ip_address: str | None = None, device_name: str | None = None,
                             platform: str | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        record = self.repo.get(session, record_id)
+        if hasattr(session, "sync_session"):
+            record = await self.repo.get(session, record_id)
+        else:
+            record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
-        payroll_service.validate_period_open(session, record.record_datetime.date())
-        if obj_in.record_datetime:
-            payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
+            if obj_in.record_datetime:
+                await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
+        else:
+            payroll_service.validate_period_open(session, record.record_datetime.date())
+            if obj_in.record_datetime:
+                payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+
         new_record_type = obj_in.record_type if obj_in.record_type else record.record_type
         new_record_datetime = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
         if new_record_type == record.record_type and new_record_datetime == record.record_datetime:
             return record
         old_date = record.record_datetime.date()
         new_date = obj_in.record_datetime.date() if obj_in.record_datetime else old_date
-        self._handle_admin_update_invalidations(session, record, obj_in, old_date, new_date, new_record_type)
+        await self._handle_admin_update_invalidations(session, record, obj_in, old_date, new_date, new_record_type)
 
         old_data = serialize_model(record)
         record.is_ignored = True
@@ -288,30 +427,55 @@ class TimeRecordService:
                                 created_at=get_local_time(), is_verified=True)
         session.add(new_record)
         session.add(record)
-        session.commit()
-        session.refresh(new_record)
-        audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data, new_model=new_record)
+        if hasattr(session, "sync_session"):
+            await session.commit()
+            await session.refresh(new_record)
+            await audit_service.async_log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
+                                                 new_model=new_record)
+        else:
+            session.commit()
+            session.refresh(new_record)
+            audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
+                                     new_model=new_record)
         return new_record
 
-    def delete_admin_record(self, db: Session | None = None, record_id: int = 0, obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0):
+    async def delete_admin_record(self, db: Any | None = None, record_id: int = 0,
+                                  obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        record = self.repo.get(session, record_id)
+        if hasattr(session, "sync_session"):
+            record = await self.repo.get(session, record_id)
+        else:
+            record = time_record_repository.get(session, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
-        payroll_service.validate_period_open(session, record.record_datetime.date())
+
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
+        else:
+            payroll_service.validate_period_open(session, record.record_datetime.date())
+
         if record.record_type == RecordType.ENTRY:
-            if self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(), record_id=record.id):
-                self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
+            if await self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(),
+                                                   record_id=record.id):
+                await self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
         old_data = serialize_model(record)
-        self.repo.delete(session, record_id, manager_id)
-        audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
-                                 new_data={"justification": justification_val})
+        if hasattr(session, "sync_session"):
+            await self.repo.delete(session, record_id, manager_id)
+            await audit_service.async_log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+                                                 new_data={"justification": justification_val})
+        else:
+            time_record_repository.delete(session, record_id, manager_id)
+            audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+                                     new_data={"justification": justification_val})
 
-    def _determine_punch_type(self, db: Session, user_id: int, timestamp: datetime) -> RecordType:
-        last_record = self.repo.get_last_by_user(db, user_id)
+    async def _determine_punch_type(self, db: Any, user_id: int, timestamp: datetime) -> RecordType:
+        if hasattr(db, "sync_session"):
+            last_record = await self.repo.get_last_by_user(db, user_id)
+        else:
+            last_record = time_record_repository.get_last_by_user(db, user_id)
         if not last_record or last_record.record_type != RecordType.ENTRY:
             return RecordType.ENTRY
 
@@ -330,14 +494,26 @@ class TimeRecordService:
             return RecordType.EXIT
         return RecordType.ENTRY
 
-    def create_punch(self, db: Session | None = None, user_id: int = 0, timestamp: datetime | None = None, ip_address: str = "",
+    async def create_punch(self, db: Any | None = None, user_id: int = 0, timestamp: datetime | None = None,
+                           ip_address: str = "",
                      biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert timestamp is not None
-        record_type = self._determine_punch_type(session, user_id, timestamp)
+        record_type = await self._determine_punch_type(session, user_id, timestamp)
         device_name = get_client_device_name(ip_address)
-        return self.repo.create(
+        if hasattr(session, "sync_session"):
+            return await self.repo.create(
+                session,
+                user_id=user_id,
+                record_type=record_type,
+                record_datetime=timestamp,
+                ip_address=ip_address,
+                device_name=device_name,
+                platform=platform,
+                biometric_id=biometric_id,
+            )
+        return time_record_repository.create(
             session,
             user_id=user_id,
             record_type=record_type,
@@ -348,23 +524,31 @@ class TimeRecordService:
             biometric_id=biometric_id,
         )
 
-    def get_my_records(self, db: Session | None = None, user_id: int = 0, skip: int = 0, limit: int = 100) -> list[TimeRecord]:
+    async def get_my_records(self, db: Any | None = None, user_id: int = 0, skip: int = 0, limit: int = 100) -> list[
+        TimeRecord]:
         session = db if db is not None else self.db
         assert session is not None
-        return self.repo.get_all_by_user(session, user_id, skip, limit)
+        if hasattr(session, "sync_session"):
+            return await self.repo.get_all_by_user(session, user_id, skip, limit)
+        return time_record_repository.get_all_by_user(session, user_id, skip, limit)
 
-    def list_records_for_admin(self, db: Session | None = None, user_id: int = 0, start_date: datetime | None = None, end_date: datetime | None = None) -> list[
+    async def list_records_for_admin(self, db: Any | None = None, user_id: int = 0, start_date: datetime | None = None,
+                                     end_date: datetime | None = None) -> list[
         TimeRecord]:
         session = db if db is not None else self.db
         assert session is not None
         assert start_date is not None
         assert end_date is not None
-        return self.repo.get_by_range(session, user_id, start_date, end_date)
+        if hasattr(session, "sync_session"):
+            return await self.repo.get_by_range(session, user_id, start_date, end_date)
+        return time_record_repository.get_by_range(session, user_id, start_date, end_date)
 
-    def get_record_timeline(self, db: Session | None = None, record_id: int = 0) -> list[TimeRecord]:
+    async def get_record_timeline(self, db: Any | None = None, record_id: int = 0) -> list[TimeRecord]:
         session = db if db is not None else self.db
         assert session is not None
-        return self.repo.get_timeline(session, record_id)
+        if hasattr(session, "sync_session"):
+            return await self.repo.get_timeline(session, record_id)
+        return time_record_repository.get_timeline(session, record_id)
 
     def _build_print_data(self, record: TimeRecord, company, short_id: str) -> dict:
         record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
@@ -386,11 +570,14 @@ class TimeRecordService:
             "short_id": short_id.upper(),
         }
 
-    def trigger_auto_print(self, db: Session | None = None, record: TimeRecord | None = None, background_tasks=None):
+    async def trigger_auto_print(self, db: Any | None = None, record: TimeRecord | None = None, background_tasks=None):
         session = db if db is not None else self.db
         assert session is not None
         assert record is not None
-        company = company_repository.get_current(session)
+        if hasattr(session, "sync_session"):
+            company = await async_company_repository.get_current(session)
+        else:
+            company = company_repository.get_current(session)
         if not company or not company.default_printer_id:
             return
 
@@ -401,7 +588,10 @@ class TimeRecordService:
         if not should_print:
             return
 
-        printer = printer_repository.get_by_id(session, company.default_printer_id)
+        if hasattr(session, "sync_session"):
+            printer = await async_printer_repository.get_by_id(session, company.default_printer_id)
+        else:
+            printer = printer_repository.get_by_id(session, company.default_printer_id)
         if not printer or not printer.status:
             return
 
@@ -409,12 +599,15 @@ class TimeRecordService:
         data = self._build_print_data(record, company, short_id)
         background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
-    def _get_accessible_record(self, db: Session, short_id: str, current_user: User) -> TimeRecord:
+    async def _get_accessible_record(self, db: Any, short_id: str, current_user: User) -> TimeRecord:
         record_id = hashid_service.decode(short_id)
         if not record_id:
             raise InvalidReceiptIdError(receipt_id=short_id)
 
-        record = self.repo.get(db, record_id)
+        if hasattr(db, "sync_session"):
+            record = await self.repo.get(db, record_id)
+        else:
+            record = time_record_repository.get(db, record_id)
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
@@ -437,13 +630,17 @@ class TimeRecordService:
                 )
         return timeline_items
 
-    def get_receipt_data(self, db: Session | None = None, short_id: str = "", current_user: User | None = None):
+    async def get_receipt_data(self, db: Any | None = None, short_id: str = "", current_user: User | None = None):
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
-        record = self._get_accessible_record(session, short_id, current_user)
-        company = company_repository.get_current(session)
-        timeline = self.get_record_timeline(session, record.id)
+        record = await self._get_accessible_record(session, short_id, current_user)
+        if hasattr(session, "sync_session"):
+            company = await async_company_repository.get_current(session)
+            timeline = await self.get_record_timeline(session, record.id)
+        else:
+            company = company_repository.get_current(session)
+            timeline = await self.get_record_timeline(session, record.id)
         timeline_items = self._build_receipt_timeline(timeline)
 
         return ReceiptResponse(
@@ -461,12 +658,16 @@ class TimeRecordService:
             timeline=timeline_items,
         )
 
-    def get_receipt_pdf(self, db: Session | None = None, short_id: str = "", current_user: User | None = None) -> tuple[bytes, str]:
+    async def get_receipt_pdf(self, db: Any | None = None, short_id: str = "", current_user: User | None = None) -> \
+            tuple[bytes, str]:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
-        record = self._get_accessible_record(session, short_id, current_user)
-        company = company_repository.get_current(session)
+        record = await self._get_accessible_record(session, short_id, current_user)
+        if hasattr(session, "sync_session"):
+            company = await async_company_repository.get_current(session)
+        else:
+            company = company_repository.get_current(session)
 
         record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
         date_str = record.record_datetime.strftime("%d/%m/%Y")

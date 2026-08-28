@@ -1,6 +1,6 @@
 import io
 from datetime import date, time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
@@ -79,14 +79,16 @@ def test_build_daily_records_table():
     assert t is not None
 
 
-def test_generate_user_timesheet_pdf_not_found(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_not_found(db_session_mock, mocker):
     mocker.patch('app.features.users.user_repository.user_repository.get', return_value=None)
     with pytest.raises(TimesheetUserNotFoundError) as excinfo:
-        timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+        await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert excinfo.value.status_code == 404
 
 
-def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User'
@@ -126,20 +128,22 @@ def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
     mock_calc.return_value = mock_period
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
 
-def test_generate_all_timesheets_pdf_zip_not_found(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_all_timesheets_pdf_zip_not_found(db_session_mock, mocker):
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value.filter.return_value.all.return_value = []
     with pytest.raises(NoTimesheetRecordsFoundError) as excinfo:
-        timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, [1])
+        await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, [1])
     assert excinfo.value.status_code == 404
 
 
-def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User A'
@@ -147,14 +151,16 @@ def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
+    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf',
+                            new_callable=AsyncMock)
     mock_pdf.return_value = io.BytesIO(b'dummy pdf content')
-    buffer = timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
+    buffer = await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
 
-def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User A'
@@ -162,13 +168,15 @@ def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker)
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf')
+    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf',
+                            new_callable=AsyncMock)
     mock_pdf.side_effect = ValueError('Test error')
-    buffer = timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
+    buffer = await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
     assert isinstance(buffer, io.BytesIO)
 
 
-def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     from reportlab.platypus import Flowable
     class DummyLogo(Flowable):
         def __init__(self, *args, **kwargs):
@@ -223,12 +231,13 @@ def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mocker):
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
     mock_calc.return_value = mock_period
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
 
-def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User'
@@ -269,12 +278,13 @@ def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, mocker
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
     mock_calc.return_value = mock_period
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
 
-def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User'
@@ -316,7 +326,7 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
     mock_calc.return_value = mock_period
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
     assert len(buffer.getvalue()) > 0
 
@@ -324,7 +334,8 @@ def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, mocker)
 from reportlab.platypus import Paragraph, Table
 
 
-def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Teste Funcionario Silva'
@@ -370,7 +381,7 @@ def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
         captured_story.extend(story)
 
     mocker.patch('app.features.timesheets.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert len(captured_story) > 10, 'A story deve conter múltiplos elementos (Parágrafos e Tabelas)'
     paragraphs = [item for item in captured_story if isinstance(item, Paragraph)]
     tables = [item for item in captured_story if isinstance(item, Table)]
@@ -484,7 +495,8 @@ def test_build_work_schedules_section_branches():
     assert any(isinstance(item, Table) for item in story)
 
 
-def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Funcionario Com Expediente'
@@ -537,7 +549,7 @@ def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocker):
     mock_period.daily_is_holiday = daily_hol
     mock_calc.return_value = mock_period
 
-    buffer = timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
 
 

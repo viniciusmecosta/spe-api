@@ -3,7 +3,7 @@ import re
 import sys
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
@@ -13,12 +13,20 @@ from openpyxl.cell.text import InlineFont
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.companies.company_repository import company_repository
-from app.features.holidays.holiday_repository import holiday_repository
+from app.features.companies.company_repository import (
+    async_company_repository,
+    company_repository,
+)
+from app.features.holidays.holiday_repository import (
+    async_holiday_repository,
+    holiday_repository,
+)
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -34,7 +42,7 @@ NOT_REGISTERED = "Não registrado"
 
 
 class ExcelService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
         self.db = db
         self._setup_styles()
 
@@ -140,18 +148,25 @@ class ExcelService:
 
         raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
-    def generate_excel_report(self, db: Session | None = None, month: int = 0, year: int = 0, employee_ids: list[int] | None = None,
+    async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
+                                    employee_ids: list[int] | None = None,
                               current_user: User | None = None) -> BytesIO:
         session = db if db is not None else self.db
         assert session is not None
         if current_user:
             self._validate_employee_report_period(current_user, month, year)
 
-        query = session.query(User).options(joinedload(User.historical_schedules))
-        query = report_service.apply_employee_filters(query, employee_ids)
-        users = query.all()
-
-        company = company_repository.get_current(session)
+        if hasattr(session, "sync_session"):
+            stmt = select(User).options(selectinload(User.historical_schedules))
+            stmt = report_service.apply_employee_filters(stmt, employee_ids)
+            res = await session.scalars(stmt)
+            users = list(res.all())
+            company = await async_company_repository.get_current(session)
+        else:
+            query = session.query(User).options(joinedload(User.historical_schedules))
+            query = report_service.apply_employee_filters(query, employee_ids)
+            users = query.all()
+            company = company_repository.get_current(session)
 
         logo_path = None
         if company and company.logo_path:
@@ -165,32 +180,59 @@ class ExcelService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        all_records_batch = session.query(TimeRecord).filter(
-            TimeRecord.user_id.in_(user_ids),
-            TimeRecord.record_datetime >= start_dt,
-            TimeRecord.record_datetime <= end_dt,
-            TimeRecord.deleted_at.is_(None),
-            TimeRecord.is_ignored == False
-        ).all() if user_ids else []
+        if hasattr(session, "sync_session"):
+            if user_ids:
+                rec_stmt = select(TimeRecord).where(
+                    TimeRecord.user_id.in_(user_ids),
+                    TimeRecord.record_datetime >= start_dt,
+                    TimeRecord.record_datetime <= end_dt,
+                    TimeRecord.deleted_at.is_(None),
+                    TimeRecord.is_ignored.is_(False),
+                )
+                rec_res = await session.scalars(rec_stmt)
+                all_records_batch = list(rec_res.all())
+
+                adj_stmt = select(AdjustmentRequest).where(
+                    AdjustmentRequest.user_id.in_(user_ids),
+                    AdjustmentRequest.target_date >= start_date,
+                    AdjustmentRequest.target_date <= end_date,
+                    AdjustmentRequest.deleted_at.is_(None),
+                )
+                adj_res = await session.scalars(adj_stmt)
+                all_adjustments_batch = list(adj_res.all())
+            else:
+                all_records_batch = []
+                all_adjustments_batch = []
+            holidays_batch = await async_holiday_repository.get_by_month(session, month, year)
+        else:
+            all_records_batch = session.query(TimeRecord).filter(
+                TimeRecord.user_id.in_(user_ids),
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.deleted_at.is_(None),
+                TimeRecord.is_ignored == False
+            ).all() if user_ids else []
+
+            all_adjustments_batch = session.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id.in_(user_ids),
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all() if user_ids else []
+
+            holidays_batch = holiday_repository.get_by_month(session, month, year)
+
         records_by_user = {}
         for r in all_records_batch:
             records_by_user.setdefault(r.user_id, []).append(r)
 
-        all_adjustments_batch = session.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id.in_(user_ids),
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all() if user_ids else []
         adjustments_by_user = {}
         for a in all_adjustments_batch:
             adjustments_by_user.setdefault(a.user_id, []).append(a)
 
-        holidays_batch = holiday_repository.get_by_month(session, month, year)
-
         user_reports = []
         for user in users:
-            report = report_service.get_advanced_user_report(
+            report = await report_service.get_advanced_user_report(
                 session, user.id, month, year, current_user,
                 prefetched_records=records_by_user.get(user.id, []),
                 prefetched_adjustments=adjustments_by_user.get(user.id, []),

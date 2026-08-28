@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -45,6 +45,7 @@ def test_create_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
     mocker.patch.object(
         DeviceCredentialService,
         "create",
+        new_callable=AsyncMock,
         return_value=mock_dev,
     )
 
@@ -69,6 +70,7 @@ def test_list_credentials_endpoint(client: TestClient, mocker: MagicMock) -> Non
     mocker.patch.object(
         DeviceCredentialService,
         "get_all",
+        new_callable=AsyncMock,
         return_value=[mock_dev],
     )
 
@@ -90,6 +92,7 @@ def test_update_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
     mocker.patch.object(
         DeviceCredentialService,
         "update",
+        new_callable=AsyncMock,
         return_value=mock_dev,
     )
 
@@ -105,6 +108,7 @@ def test_delete_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
     mocker.patch.object(
         DeviceCredentialService,
         "delete",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 

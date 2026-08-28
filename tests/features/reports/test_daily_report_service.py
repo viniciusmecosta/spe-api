@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.features.reports.daily_report_service import DailyReportService
@@ -57,7 +57,7 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
             self.user_name = user_name
             self.description = description
 
-    mock_anomaly_service.get_anomalies.return_value = [AnomalyMock("Jane Smith", "Missing Exit")]
+    mock_anomaly_service.get_anomalies = AsyncMock(return_value=[AnomalyMock("Jane Smith", "Missing Exit")])
     mock_template_service.get_daily_report_html.return_value = "<html>Mock HTML</html>"
 
     result = service.generate_daily_report_html(db_session_mock, target_date)
@@ -97,7 +97,7 @@ def test_generate_daily_report_html_no_records(mock_template_service, mock_anoma
 
     db_session_mock.query.return_value = QueryMock([])
 
-    mock_anomaly_service.get_anomalies.return_value = []
+    mock_anomaly_service.get_anomalies = AsyncMock(return_value=[])
     mock_template_service.get_daily_report_html.return_value = "<html>Mock HTML No Records</html>"
 
     result = service.generate_daily_report_html(db_session_mock, target_date)

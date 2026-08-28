@@ -58,7 +58,7 @@ async def register_device_punch(
         device_service: Annotated[DeviceService, Depends()],
 ) -> FeedbackPayload:
     ip_address = get_client_ip(request)
-    return device_service.process_punch(
+    return await device_service.process_punch(
         sensor_index=payload.sensor_index,
         ip_address=ip_address,
         request=request,
@@ -79,7 +79,7 @@ async def verify_manager_access(
         device: Annotated[DeviceCredential, Depends(deps.verify_device_api_key)],
         device_service: Annotated[DeviceService, Depends()],
 ) -> ManagerVerifyResponse:
-    return device_service.verify_manager_access(
+    return await device_service.verify_manager_access(
         sensor_index=payload.sensor_index,
         device_id=device.id,
     )
@@ -94,7 +94,7 @@ async def create_credential(
         device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> DeviceCredentialResponse:
-    return device_credential_service.create(credential_in=credential_in, current_user_id=current_user.id)
+    return await device_credential_service.create(credential_in=credential_in, current_user_id=current_user.id)
 
 
 @device_credentials_router.get(
@@ -104,7 +104,7 @@ async def create_credential(
 async def list_credentials(
         device_credential_service: Annotated[DeviceCredentialService, Depends()],
 ) -> list[DeviceCredentialResponse]:
-    return device_credential_service.get_all()
+    return await device_credential_service.get_all()
 
 
 @device_credentials_router.put(
@@ -117,7 +117,8 @@ async def update_credential(
         device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> DeviceCredentialResponse:
-    return device_credential_service.update(credential_id=id, credential_in=credential_in, current_user_id=current_user.id)
+    return await device_credential_service.update(credential_id=id, credential_in=credential_in,
+                                                  current_user_id=current_user.id)
 
 
 @device_credentials_router.delete(
@@ -129,7 +130,7 @@ async def delete_credential(
         device_credential_service: Annotated[DeviceCredentialService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    return device_credential_service.delete(credential_id=id, current_user_id=current_user.id)
+    return await device_credential_service.delete(credential_id=id, current_user_id=current_user.id)
 
 
 @firmware_router.get(
@@ -140,7 +141,7 @@ async def delete_credential(
 async def list_firmwares(
         firmware_service: Annotated[FirmwareService, Depends()],
 ) -> list[FirmwareListResponse]:
-    return firmware_service.get_all_firmwares()
+    return await firmware_service.get_all_firmwares()
 
 
 @firmware_router.post(
@@ -154,7 +155,7 @@ async def upload_firmware(
         firmware_service: Annotated[FirmwareService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> FirmwareResponse:
-    return firmware_service.upload_firmware(version=version, file=file, current_user_id=current_user.id)
+    return await firmware_service.upload_firmware(version=version, file=file, current_user_id=current_user.id)
 
 
 @firmware_router.put(
@@ -167,7 +168,7 @@ async def update_firmware(
         firmware_service: Annotated[FirmwareService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> FirmwareResponse:
-    return firmware_service.update_firmware_file(version=version, file=file, current_user_id=current_user.id)
+    return await firmware_service.update_firmware_file(version=version, file=file, current_user_id=current_user.id)
 
 
 @firmware_router.get(
@@ -178,7 +179,7 @@ async def update_firmware(
 async def check_firmware(
         firmware_service: Annotated[FirmwareService, Depends()],
 ) -> FirmwareResponse:
-    return firmware_service.get_latest_firmware()
+    return await firmware_service.get_latest_firmware()
 
 
 @firmware_router.get(
@@ -190,7 +191,7 @@ async def download_firmware(
         version: str,
         firmware_service: Annotated[FirmwareService, Depends()],
 ) -> FileResponse:
-    file_path = firmware_service.get_firmware_file(version=version)
+    file_path = await firmware_service.get_firmware_file(version=version)
     return FileResponse(
         path=file_path,
         media_type="application/octet-stream",
@@ -205,7 +206,7 @@ async def download_firmware(
 async def get_available_sensor_indices(
         biometric_service: Annotated[BiometricService, Depends()],
 ) -> list[int]:
-    return biometric_service.get_available_sensor_indices()
+    return await biometric_service.get_available_sensor_indices()
 
 
 @sync_router.post(

@@ -1,7 +1,7 @@
 import sys
 from datetime import datetime
 from io import BytesIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from openpyxl import Workbook
 
@@ -112,11 +112,12 @@ def test_validate_employee_report_period_january(excel_service, mock_user, monke
         excel_service._validate_employee_report_period(mock_user, 11, 2022)
 
 
+@pytest.mark.asyncio
 @patch.object(ExcelService, '_validate_employee_report_period')
 @patch('app.features.reports.excel_service.report_service')
 @patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
-def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service,
+async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service,
                                db_session_mock, mock_user):
     mock_exists.return_value = True
     mock_company = MagicMock()
@@ -157,15 +158,16 @@ def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_servi
     mock_day.date = datetime(2023, 5, 1)
     mock_day.day_name = 'Segunda'
     mock_report.daily_details = [mock_day]
-    mock_report_service.get_advanced_user_report.return_value = mock_report
-    output = excel_service.generate_excel_report(db_session_mock, 5, 2023, [1], mock_user)
+    mock_report_service.get_advanced_user_report = AsyncMock(return_value=mock_report)
+    output = await excel_service.generate_excel_report(db_session_mock, 5, 2023, [1], mock_user)
     assert isinstance(output, BytesIO)
     mock_validate.assert_called_once_with(mock_user, 5, 2023)
 
 
+@pytest.mark.asyncio
 @patch('app.features.reports.excel_service.report_service')
 @patch('app.features.reports.excel_service.company_repository')
-def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock,
+async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock,
                                        mock_user):
     mock_company = MagicMock()
     mock_company.logo_path = None
@@ -206,8 +208,8 @@ def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, e
     mock_day.date = datetime(2023, 5, 1)
     mock_day.day_name = 'Segunda'
     mock_report.daily_details = [mock_day]
-    mock_report_service.get_advanced_user_report.return_value = mock_report
-    output = excel_service.generate_excel_report(db_session_mock, 5, 2023, [1])
+    mock_report_service.get_advanced_user_report = AsyncMock(return_value=mock_report)
+    output = await excel_service.generate_excel_report(db_session_mock, 5, 2023, [1])
     assert isinstance(output, BytesIO)
 
 
@@ -348,11 +350,13 @@ import openpyxl
 from app.features.reports.report_schemas import UserPayrollSummary, DailyReportItem
 
 
+@pytest.mark.asyncio
 @patch.object(ExcelService, '_validate_employee_report_period')
 @patch('app.features.reports.excel_service.report_service')
 @patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
-def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service, mock_validate,
+async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service,
+                                                      mock_validate,
                                                 excel_service, db_session_mock, mock_user):
     mock_exists.return_value = False
     mock_company = MagicMock()
@@ -401,8 +405,8 @@ def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, 
                            unapproved_extra_time='00:00', punches=[], holiday_name=None, entries=[], exits=[],
                            detailed_punches=None, adjustment_id=None)
     mock_report.daily_details = [day1, day2, day3]
-    mock_report_service.get_advanced_user_report.return_value = mock_report
-    output = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
+    mock_report_service.get_advanced_user_report = AsyncMock(return_value=mock_report)
+    output = await excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
     wb = openpyxl.load_workbook(output)
     assert 'Resumo' in wb.sheetnames, 'Aba Resumo deve existir'
     assert 'Test User' in wb.sheetnames, 'Aba com nome do funcionário deve existir'
@@ -582,9 +586,10 @@ def test_build_day_row_abono_status(excel_service):
     assert ws.cell(row=last_row, column=6).fill == excel_service.fill_excused
 
 
+@pytest.mark.asyncio
 @patch("app.features.reports.excel_service.company_repository")
 @patch("app.features.reports.excel_service.report_service")
-def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service,
+async def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service,
                                                             db_session_mock):
     from datetime import datetime, date
     from app.features.time_records.time_record_models import TimeRecord
@@ -632,13 +637,14 @@ def test_generate_excel_report_with_records_and_adjustments(mock_report_service,
         final_balance=0.0
     )
     mock_rep.daily_details = []
-    mock_report_service.get_advanced_user_report.return_value = mock_rep
+    mock_report_service.get_advanced_user_report = AsyncMock(return_value=mock_rep)
 
-    res = excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
+    res = await excel_service.generate_excel_report(db_session_mock, 10, 2023, [1])
     assert res is not None
 
 
-def test_generate_excel_report_filters_ignored_records(excel_service, db_session_mock):
+@pytest.mark.asyncio
+async def test_generate_excel_report_filters_ignored_records(excel_service, db_session_mock):
     from app.features.users.user_models import User
     from unittest.mock import patch, MagicMock
 
@@ -668,9 +674,10 @@ def test_generate_excel_report_filters_ignored_records(excel_service, db_session
 
     db_session_mock.query.side_effect = mock_query_side_effect
 
-    with patch('app.features.reports.excel_service.company_repository.get_current', return_value=None), \
-            patch('app.features.reports.report_service.report_service.get_advanced_user_report', return_value=None):
-        excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
+    with patch('app.features.companies.company_repository.company_repository.get_current', return_value=None), \
+            patch('app.features.reports.report_service.report_service.get_advanced_user_report', new_callable=AsyncMock,
+                  return_value=None):
+        await excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
 
     filter_args = mock_query_tr.filter.call_args[0]
     is_ignored_filtered = False
@@ -682,7 +689,8 @@ def test_generate_excel_report_filters_ignored_records(excel_service, db_session
     assert is_ignored_filtered, "O filtro TimeRecord.is_ignored == False deve ser aplicado no ExcelService!"
 
 
-def test_insert_header_includes_generated_at_and_metadata(excel_service, db_session_mock):
+@pytest.mark.asyncio
+async def test_insert_header_includes_generated_at_and_metadata(excel_service, db_session_mock):
     from openpyxl import load_workbook
     from unittest.mock import patch, MagicMock
     from app.features.users.user_models import User
@@ -713,9 +721,10 @@ def test_insert_header_includes_generated_at_and_metadata(excel_service, db_sess
 
     db_session_mock.query.side_effect = mock_query_side_effect
 
-    with patch('app.features.reports.excel_service.company_repository.get_current', return_value=None), \
-            patch('app.features.reports.report_service.report_service.get_advanced_user_report', return_value=None):
-        res = excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
+    with patch('app.features.companies.company_repository.company_repository.get_current', return_value=None), \
+            patch('app.features.reports.report_service.report_service.get_advanced_user_report', new_callable=AsyncMock,
+                  return_value=None):
+        res = await excel_service.generate_excel_report(db_session_mock, 1, 2024, [1])
 
     wb = load_workbook(res)
     from app.core.config import settings

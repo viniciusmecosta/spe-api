@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -28,10 +28,12 @@ def mock_db_query(db_session_mock):
     }
 
 
+@pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.time_record_repository.count_unique_users_in_range")
 @patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_users, db_session_mock, mock_db_query):
+async def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_users, db_session_mock,
+                                     mock_db_query):
     mock_db_query["filter"].count.return_value = 5
     mock_count_pending.return_value = 3
     mock_count_users.return_value = 2
@@ -42,7 +44,7 @@ def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_use
     mock_datetime.min = datetime.min
     mock_datetime.max = datetime.max
 
-    response = dashboard_service.get_dashboard_metrics(db_session_mock)
+    response = await dashboard_service.get_dashboard_metrics(db_session_mock)
 
     assert isinstance(response, DashboardMetricsResponse)
     assert response.total_active_employees == 5
@@ -50,12 +52,13 @@ def test_get_dashboard_metrics(mock_datetime, mock_count_pending, mock_count_use
     assert response.employees_present_today == 2
 
 
-@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.date")
 @patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+async def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                        mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
@@ -96,7 +99,7 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, moc
 
     mock_db_query["filter"].all.return_value = [bday_user1, bday_user2]
 
-    response = dashboard_service.get_my_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_my_dashboard(db_session_mock, user)
 
     assert response.full_name == "Test User"
     assert response.next_punch_type == "ENTRY"
@@ -112,12 +115,14 @@ def test_get_my_dashboard_with_records(mock_datetime, mock_get_trusted_time, moc
     assert response.aniversariantes_do_mes[1].dia == 20
 
 
-@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.date")
 @patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+async def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted_time, mock_date,
+                                                       mock_get_by_range,
                                                  mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
@@ -137,19 +142,21 @@ def test_get_my_dashboard_no_records_and_no_bday(mock_datetime, mock_get_trusted
     bday_user.data_nascimento = None
     mock_db_query["filter"].all.return_value = [bday_user]
 
-    response = dashboard_service.get_my_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_my_dashboard(db_session_mock, user)
 
     assert response.next_punch_type == "ENTRY"
     assert len(response.today_punches) == 0
     assert len(response.aniversariantes_do_mes) == 0
 
 
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.date")
 @patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
-                                         db_session_mock, mock_db_query):
+async def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+                                               mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
     fixed_now = datetime(2026, 7, 1, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -161,19 +168,21 @@ def test_get_my_dashboard_start_of_month(mock_datetime, mock_get_trusted_time, m
     mock_get_trusted_time.return_value = (fixed_now, True)
 
     mock_get_by_range.return_value = []
+    mock_get_anomalies.return_value = []
     mock_db_query["filter"].all.return_value = []
 
-    response = dashboard_service.get_my_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_my_dashboard(db_session_mock, user)
 
     assert len(response.month_anomalies) == 0
 
 
-@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies")
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
 @patch("app.features.reports.dashboard_service.date")
 @patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
+async def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time, mock_date, mock_get_by_range,
                                             mock_get_anomalies, db_session_mock, mock_db_query):
     user = User(id=1, name="Test User")
 
@@ -195,13 +204,14 @@ def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_trusted_time
     mock_get_anomalies.return_value = []
     mock_db_query["filter"].all.return_value = []
 
-    response = dashboard_service.get_my_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_my_dashboard(db_session_mock, user)
 
     assert response.next_punch_type == "EXIT"
 
 
-@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report")
-def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
+async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
     current_user = User(id=1, name="Admin")
 
     user1 = MagicMock()
@@ -222,7 +232,7 @@ def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
 
     mock_get_report.side_effect = [report1, report2]
 
-    response = dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
+    response = await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
 
     assert response.month == 7
     assert response.year == 2026
@@ -235,8 +245,9 @@ def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
     assert response.employees[0].formatted_time == "2h"
 
 
-@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report")
-def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_db_query):
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
+async def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_db_query):
     current_user = User(id=1, name="Admin")
 
     user1 = MagicMock()
@@ -247,20 +258,21 @@ def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_
 
     mock_get_report.return_value = None
 
-    response = dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
+    response = await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
 
     assert response.team_total_hours == 0.0
     assert response.team_formatted_time == "0h"
     assert len(response.employees) == 0
 
 
+@pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.time_record_repository.count_records_in_range")
 @patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
-@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
-@patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch.object(dashboard_service, "get_team_worked_hours", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
+async def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
                                           mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -282,7 +294,7 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
     mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h",
                                                      employees=[])
 
-    response = dashboard_service.get_manager_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_manager_dashboard(db_session_mock, user)
 
     assert response.full_name == "Manager User"
     assert response.next_punch_type == "EXIT"
@@ -294,13 +306,14 @@ def test_get_manager_dashboard_with_entry(mock_datetime, mock_team_hours, mock_g
     assert response.today_total_punches == 12
 
 
+@pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.time_record_repository.count_records_in_range")
 @patch("app.features.reports.dashboard_service.adjustment_repository.count_pending")
-@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month")
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.time_record_repository.get_by_range")
-@patch("app.features.reports.dashboard_service.dashboard_service.get_team_worked_hours")
+@patch.object(dashboard_service, "get_team_worked_hours", new_callable=AsyncMock)
 @patch("app.features.reports.dashboard_service.datetime")
-def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
+async def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, mock_get_by_range, mock_anomalies,
                                              mock_pending, mock_count_punches, db_session_mock):
     user = User(id=1, name="Manager User")
     fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
@@ -316,7 +329,7 @@ def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hours, moc
     mock_team_hours.return_value = TeamHoursResponse(month=7, year=2026, team_total_hours=0.0, team_formatted_time="0h",
                                                      employees=[])
 
-    response = dashboard_service.get_manager_dashboard(db_session_mock, user)
+    response = await dashboard_service.get_manager_dashboard(db_session_mock, user)
 
     assert response.next_punch_type == "ENTRY"
     assert len(response.today_punches) == 0

@@ -29,7 +29,7 @@ async def get_official_timesheet_user_pdf(
         service: Annotated[TimesheetService, Depends()],
 ) -> StreamingResponse:
     service.validate_date_not_future(month, year)
-    pdf_buffer = service.generate_user_timesheet_pdf(user_id=user_id, month=month, year=year)
+    pdf_buffer = await service.generate_user_timesheet_pdf(user_id=user_id, month=month, year=year)
     filename = f"espelho_ponto_{user_id}_{month:02d}_{year}.pdf"
     return StreamingResponse(
         pdf_buffer,
@@ -50,7 +50,7 @@ async def get_official_timesheet_all_pdf(
         employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
     service.validate_date_not_future(month, year)
-    zip_buffer = service.generate_all_timesheets_pdf_zip(month=month, year=year, employee_ids=employee_ids)
+    zip_buffer = await service.generate_all_timesheets_pdf_zip(month=month, year=year, employee_ids=employee_ids)
     filename = f"espelhos_ponto_lote_{month:02d}_{year}.zip"
 
     return StreamingResponse(
@@ -69,7 +69,7 @@ async def get_all_anomalies(
         year: int,
         service: Annotated[AnomalyService, Depends()],
 ) -> list[AnomalyResponse]:
-    return service.get_anomalies_by_month(month=month, year=year)
+    return await service.get_anomalies_by_month(month=month, year=year)
 
 
 @anomalies_router.get(
@@ -82,4 +82,4 @@ async def get_user_anomalies(
         year: int,
         service: Annotated[AnomalyService, Depends()],
 ) -> list[AnomalyResponse]:
-    return service.get_anomalies_by_month(month=month, year=year, user_id=user_id)
+    return await service.get_anomalies_by_month(month=month, year=year, user_id=user_id)

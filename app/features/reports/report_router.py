@@ -39,7 +39,7 @@ async def get_dashboard(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> DashboardMetricsResponse:
     report_service.check_report_permission(current_user)
-    return dashboard_service.get_dashboard_metrics()
+    return await dashboard_service.get_dashboard_metrics()
 
 
 @router.get("/my/dashboard")
@@ -47,7 +47,7 @@ async def get_my_dashboard(
         dashboard_service: Annotated[DashboardService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> MyDashboardResponse:
-    return dashboard_service.get_my_dashboard(current_user=current_user)
+    return await dashboard_service.get_my_dashboard(current_user=current_user)
 
 
 @router.get("/history/me")
@@ -57,7 +57,8 @@ async def get_my_history(
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
         year: Annotated[int | None, Query(ge=2000)] = None,
 ) -> HistoryResponse:
-    return report_service.get_history_report(user_id=current_user.id, month=month, year=year, current_user=current_user)
+    return await report_service.get_history_report(user_id=current_user.id, month=month, year=year,
+                                                   current_user=current_user)
 
 
 @router.get(
@@ -74,7 +75,7 @@ async def get_user_history(
     report_service.check_user_report_access(
         current_user, user_id, detail="Sem permissão para acessar o histórico deste usuário."
     )
-    return report_service.get_history_report(user_id=user_id, month=month, year=year, current_user=current_user)
+    return await report_service.get_history_report(user_id=user_id, month=month, year=year, current_user=current_user)
 
 
 @router.get(
@@ -95,7 +96,7 @@ async def get_team_hours(
     if not year:
         year = now.year
 
-    return dashboard_service.get_team_worked_hours(month=month, year=year, current_user=current_user)
+    return await dashboard_service.get_team_worked_hours(month=month, year=year, current_user=current_user)
 
 
 @router.get(
@@ -117,9 +118,10 @@ async def export_monthly_report_excel(
     if not year:
         year = now.year
 
-    report_service.validate_excel_export_permission(current_user=current_user, month=month, year=year, now=now)
+    await report_service.validate_excel_export_permission(current_user=current_user, month=month, year=year, now=now)
 
-    file_stream = excel_service.generate_excel_report(month=month, year=year, employee_ids=employee_ids, current_user=current_user)
+    file_stream = await excel_service.generate_excel_report(month=month, year=year, employee_ids=employee_ids,
+                                                            current_user=current_user)
 
     filename = f"folha_ponto_{month}_{year}.xlsx"
     return StreamingResponse(
@@ -150,7 +152,8 @@ async def get_user_detailed_report(
     if not year:
         year = now.year
 
-    return report_service.get_advanced_user_report_or_404(user_id=user_id, month=month, year=year, current_user=current_user)
+    return await report_service.get_advanced_user_report_or_404(user_id=user_id, month=month, year=year,
+                                                                current_user=current_user)
 
 
 @dashboard_router.get("/manager")
@@ -158,4 +161,4 @@ async def get_manager_dashboard(
         dashboard_service: Annotated[DashboardService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> ManagerDashboardResponse:
-    return dashboard_service.get_manager_dashboard(current_user=current_user)
+    return await dashboard_service.get_manager_dashboard(current_user=current_user)

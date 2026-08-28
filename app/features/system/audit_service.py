@@ -4,9 +4,14 @@ from enum import Enum
 from typing import Annotated, Any
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.features.system.system_repository import AuditRepository, audit_repository
+from app.features.system.system_repository import (
+    AsyncAuditRepository,
+    async_audit_repository,
+    audit_repository,
+)
 from app.features.system.system_schemas import AuditLogCreate
 from app.shared import deps
 
@@ -65,19 +70,19 @@ def serialize_model(model: Any) -> dict[str, Any]:
 class AuditService:
     def __init__(
         self,
-        db: Annotated[Session, Depends(deps.get_db)] = None,
-        repo: Annotated[AuditRepository, Depends()] = None,
+            db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None,
+            repo: Annotated[AsyncAuditRepository, Depends()] = None,
     ):
         self.db = db
         self._repo = repo
 
     @property
-    def repo(self) -> AuditRepository:
-        return self._repo if self._repo is not None else audit_repository
+    def repo(self) -> AsyncAuditRepository:
+        return self._repo if self._repo is not None else async_audit_repository
 
     def log(
             self,
-            db: Session | None = None,
+            db: Any | None = None,
             user_id: int | None = None,
             action: str = "",
             *,
@@ -96,7 +101,7 @@ class AuditService:
             old_data=old_data,
             new_data=new_data
         )
-        return self.repo.create(session, obj_in)
+        return audit_repository.create(session, obj_in)
 
     def _prepare_raw_data(self, model: Any | None, data: dict | None) -> dict | None:
         raw = serialize_model(model) if model is not None else {}
@@ -137,7 +142,7 @@ class AuditService:
 
     def log_change(
         self,
-        db: Session | None = None,
+            db: Any | None = None,
         user_id: int | None = None,
         action: str = "",
         *,
@@ -181,11 +186,16 @@ class AuditService:
 
         return actual_old, actual_new
 
-    def get_logs(self, db: Session | None = None, action: str | None = None,
+    async def get_logs(self, db: AsyncSession | None = None, action: str | None = None,
                  start_date: date | None = None, end_date: date | None = None,
                  order_by: str = "desc", skip: int = 0, limit: int = 100):
         session = db if db is not None else self.db
         assert session is not None
+        if hasattr(session, "sync_session"):
+            return await self.repo.get_logs(
+                session, action=action, start_date=start_date, end_date=end_date,
+                order_by=order_by, skip=skip, limit=limit
+            )
         return audit_repository.get_logs(
             session, action=action, start_date=start_date, end_date=end_date,
             order_by=order_by, skip=skip, limit=limit
@@ -210,7 +220,7 @@ class AuditService:
             old_data=old_data,
             new_data=new_data
         )
-        return await audit_repository.async_create(db, obj_in=obj_in)
+        return await async_audit_repository.create(db, obj_in=obj_in)
 
     async def async_log_change(
             self,

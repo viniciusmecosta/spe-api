@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -32,6 +32,7 @@ def test_get_available_sensor_indices(client: TestClient, mocker: MagicMock) -> 
     mocker.patch.object(
         BiometricService,
         "get_available_sensor_indices",
+        new_callable=AsyncMock,
         return_value=[1, 2, 3, 4],
     )
 

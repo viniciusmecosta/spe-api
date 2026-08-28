@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -43,6 +43,7 @@ def test_read_routine_logs(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         RoutineLogService,
         "get_logs",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 

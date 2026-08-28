@@ -286,12 +286,16 @@ def test_compute_diffs_identical():
     assert actual_new == {}
 
 
-def test_get_logs(db_session_mock, mocker):
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_get_logs(db_session_mock, mocker):
     mock_get_logs = mocker.patch("app.features.system.audit_service.audit_repository.get_logs")
     mock_get_logs.return_value = ["log1", "log2"]
     start = date(2023, 1, 1)
     end = date(2023, 12, 31)
-    result = audit_service.get_logs(
+    result = await audit_service.get_logs(
         db=db_session_mock,
         action="CREATE",
         start_date=start,

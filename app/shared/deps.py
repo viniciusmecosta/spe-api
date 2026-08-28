@@ -1,5 +1,6 @@
+import inspect
 from collections.abc import Generator
-from typing import Annotated
+from typing import Annotated, Any
 
 import jwt
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -10,7 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_api_key_hash
-from app.database.session import SessionLocal
+from app.database.session import (
+    SessionLocal,
+    get_async_db,
+)
 from app.features.auth.auth_schemas import TokenPayload
 from app.features.devices.device_models import DeviceCredential
 from app.features.users.user_models import User
@@ -32,8 +36,8 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def get_current_user(
-        db: Annotated[Session, Depends(get_db)],
+async def get_current_user(
+        db: Annotated[Any, Depends(get_async_db)],
         token: Annotated[str, Depends(reusable_oauth2)],
 ) -> User:
     try:
@@ -56,7 +60,14 @@ def get_current_user(
         )
 
     stmt = select(User).where(User.id == int(str(token_data.sub)))
-    user = db.scalars(stmt).first()
+    if hasattr(db, "scalars"):
+        res = db.scalars(stmt)
+        if inspect.isawaitable(res):
+            res = await res
+        user = res.first() if hasattr(res, "first") else None
+    else:
+        user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
+
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     return user
@@ -92,10 +103,10 @@ def get_current_maintainer(
     return current_user
 
 
-def verify_device_api_key(
+async def verify_device_api_key(
         request: Request,
         api_key: Annotated[str | None, Security(api_key_header)],
-        db: Annotated[Session, Depends(get_db)],
+        db: Annotated[Any, Depends(get_async_db)],
 ) -> DeviceCredential:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Chave de API do dispositivo ausente.")
@@ -105,7 +116,16 @@ def verify_device_api_key(
         DeviceCredential.api_key_hash == hashed_key,
         DeviceCredential.key_type == DeviceKeyType.DEVICE,
     )
-    device = db.scalars(stmt).first()
+    if hasattr(db, "scalars"):
+        res = db.scalars(stmt)
+        if inspect.isawaitable(res):
+            res = await res
+        device = res.first() if hasattr(res, "first") else None
+    else:
+        device = db.query(DeviceCredential).filter(
+            DeviceCredential.api_key_hash == hashed_key,
+            DeviceCredential.key_type == DeviceKeyType.DEVICE,
+        ).first()
 
     if not device or not device.is_active:
         raise HTTPException(
@@ -117,10 +137,10 @@ def verify_device_api_key(
     return device
 
 
-def verify_consumer_api_key(
+async def verify_consumer_api_key(
     request: Request,
     api_key: Annotated[str | None, Security(consumer_api_key_header)],
-    db: Annotated[Session, Depends(get_db)],
+        db: Annotated[Any, Depends(get_async_db)],
 ) -> DeviceCredential:
     if not api_key:
         raise HTTPException(
@@ -133,7 +153,16 @@ def verify_consumer_api_key(
         DeviceCredential.api_key_hash == hashed_key,
         DeviceCredential.key_type == DeviceKeyType.CONSUMER,
     )
-    consumer = db.scalars(stmt).first()
+    if hasattr(db, "scalars"):
+        res = db.scalars(stmt)
+        if inspect.isawaitable(res):
+            res = await res
+        consumer = res.first() if hasattr(res, "first") else None
+    else:
+        consumer = db.query(DeviceCredential).filter(
+            DeviceCredential.api_key_hash == hashed_key,
+            DeviceCredential.key_type == DeviceKeyType.CONSUMER,
+        ).first()
 
     if not consumer or not consumer.is_active:
         raise HTTPException(

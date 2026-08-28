@@ -29,7 +29,7 @@ async def get_company(
         request: Request,
         service: Annotated[CompanyService, Depends()],
 ) -> CompanyResponse | None:
-    company = service.get_company()
+    company = await service.get_company()
     return service.enrich_logo_url(company, str(request.base_url))
 
 
@@ -43,7 +43,7 @@ async def create_company(
         service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> CompanyResponse:
-    company = service.create_company(obj_in=obj_in, current_user_id=current_user.id)
+    company = await service.create_company(obj_in=obj_in, current_user_id=current_user.id)
     return service.enrich_logo_url(company, str(request.base_url))
 
 
@@ -57,7 +57,7 @@ async def update_company(
         service: Annotated[CompanyService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> CompanyResponse:
-    company = service.update_company(obj_in=obj_in, current_user_id=current_user.id)
+    company = await service.update_company(obj_in=obj_in, current_user_id=current_user.id)
     return service.enrich_logo_url(company, str(request.base_url))
 
 
@@ -71,5 +71,5 @@ async def upload_company_logo(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
         file: Annotated[UploadFile, File(...)],
 ) -> CompanyResponse:
-    company = service.upload_logo(file=file, current_user_id=current_user.id)
+    company = await service.upload_logo(file=file, current_user_id=current_user.id)
     return service.enrich_logo_url(company, str(request.base_url))

@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -72,6 +72,7 @@ def test_register_device_punch_endpoint(client: TestClient, mocker: MagicMock) -
     mocker.patch.object(
         DeviceService,
         "process_punch",
+        new_callable=AsyncMock,
         return_value=expected_payload,
     )
 
@@ -93,6 +94,7 @@ def test_verify_manager_access_endpoint(client: TestClient, mocker: MagicMock) -
     mocker.patch.object(
         DeviceService,
         "verify_manager_access",
+        new_callable=AsyncMock,
         return_value=expected_payload,
     )
 

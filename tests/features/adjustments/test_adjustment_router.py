@@ -2,7 +2,7 @@ import io
 import os
 import tempfile
 from datetime import date, datetime, time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -53,6 +53,7 @@ def test_create_adjustment_request(client: TestClient, mocker: MagicMock) -> Non
     mocker.patch.object(
         AdjustmentService,
         "create_adjustment_request",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -84,6 +85,7 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
         "create_manager_waiver",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -104,6 +106,7 @@ def test_reprocess_historical_extra_time(client: TestClient, mocker: MagicMock) 
     mocker.patch.object(
         AdjustmentService,
         "reprocess_historical_extra_time",
+        new_callable=AsyncMock,
         return_value={"status": "success", "message": "Reprocessamento concluído com sucesso."},
     )
 
@@ -125,6 +128,7 @@ def test_upload_adjustment_attachment(client: TestClient, mocker: MagicMock) -> 
     mocker.patch.object(
         AdjustmentService,
         "upload_attachment",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -146,6 +150,7 @@ def test_download_adjustment_attachment(client: TestClient, mocker: MagicMock) -
         mocker.patch.object(
             AdjustmentService,
             "get_attachment_file_path",
+            new_callable=AsyncMock,
             return_value=(temp_path, "test.pdf"),
         )
 
@@ -161,6 +166,7 @@ def test_read_my_adjustments(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
         "get_my_enriched",
+        new_callable=AsyncMock,
         return_value=[],
     )
 
@@ -173,6 +179,7 @@ def test_read_all_adjustments(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
         "get_all_enriched",
+        new_callable=AsyncMock,
         return_value=[],
     )
 
@@ -196,6 +203,7 @@ def test_approve_adjustment(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
         "approve_adjustment",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -222,6 +230,7 @@ def test_reject_adjustment(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
         "reject_adjustment",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -234,7 +243,7 @@ def test_reject_adjustment(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(AdjustmentService, "delete_adjustment")
+    mocker.patch.object(AdjustmentService, "delete_adjustment", new_callable=AsyncMock)
 
     response = client.delete("/api/v1/adjustments/1?reason=Exclusao+justificada")
     assert response.status_code == 200
@@ -242,7 +251,7 @@ def test_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_admin_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(AdjustmentService, "admin_delete_adjustment")
+    mocker.patch.object(AdjustmentService, "admin_delete_adjustment", new_callable=AsyncMock)
 
     response = client.delete("/api/v1/adjustments/admin/1?reason=Exclusao+admin+justificada")
     assert response.status_code == 200
@@ -264,6 +273,7 @@ def test_admin_revert_adjustment_status(client: TestClient, mocker: MagicMock) -
     mocker.patch.object(
         AdjustmentService,
         "revert_adjustment_status",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 

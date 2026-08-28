@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -18,7 +18,7 @@ def override_dependency():
     app.dependency_overrides.clear()
 
 
-@patch.object(PrinterService, "get_all")
+@patch.object(PrinterService, "get_all", new_callable=AsyncMock)
 def test_read_printers(mock_get_all):
     mock_get_all.return_value = []
     response = client.get("/api/v1/printers/")
@@ -26,7 +26,7 @@ def test_read_printers(mock_get_all):
     assert response.json() == []
 
 
-@patch.object(PrinterService, "get_by_id")
+@patch.object(PrinterService, "get_by_id", new_callable=AsyncMock)
 def test_read_printer(mock_get_by_id):
     class MockPrinter:
         id = 1
@@ -42,7 +42,7 @@ def test_read_printer(mock_get_by_id):
     assert response.json()["id"] == 1
 
 
-@patch.object(PrinterService, "create")
+@patch.object(PrinterService, "create", new_callable=AsyncMock)
 def test_create_printer(mock_create):
     class MockPrinter:
         id = 1
@@ -66,7 +66,7 @@ def test_create_printer(mock_create):
     assert response.json()["id"] == 1
 
 
-@patch.object(PrinterService, "update")
+@patch.object(PrinterService, "update", new_callable=AsyncMock)
 def test_update_printer(mock_update):
     class MockPrinter:
         id = 1
@@ -82,7 +82,7 @@ def test_update_printer(mock_update):
     assert response.json()["name"] == "Updated Printer"
 
 
-@patch.object(PrinterService, "delete")
+@patch.object(PrinterService, "delete", new_callable=AsyncMock)
 def test_delete_printer(mock_delete):
     mock_delete.return_value = None
     response = client.delete("/api/v1/printers/1")

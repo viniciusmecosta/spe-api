@@ -2,7 +2,7 @@ import io
 import os
 import tempfile
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -55,6 +55,7 @@ def test_list_firmwares(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         FirmwareService,
         "get_all_firmwares",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -73,6 +74,7 @@ def test_upload_firmware(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         FirmwareService,
         "upload_firmware",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -94,6 +96,7 @@ def test_update_firmware(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         FirmwareService,
         "update_firmware_file",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -114,6 +117,7 @@ def test_check_firmware(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         FirmwareService,
         "get_latest_firmware",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -131,6 +135,7 @@ def test_download_firmware(client: TestClient, mocker: MagicMock) -> None:
         mocker.patch.object(
             FirmwareService,
             "get_firmware_file",
+            new_callable=AsyncMock,
             return_value=temp_path,
         )
 

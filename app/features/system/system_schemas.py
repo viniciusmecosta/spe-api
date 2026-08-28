@@ -38,6 +38,7 @@ class RoutineLogBase(BaseModel):
     routine_type: str
     status: str
     target_date: date | None = None
+    execution_time: datetime | None = None
     details: str | None = None
 
 

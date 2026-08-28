@@ -1,6 +1,6 @@
 import io
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -47,6 +47,7 @@ def test_list_payroll_periods(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         PayrollService,
         "list_periods",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -70,6 +71,7 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         PayrollService,
         "close_period",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -83,6 +85,7 @@ def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         PayrollService,
         "reopen_period",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -95,7 +98,7 @@ def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_upload_legacy_report(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(PayrollService, "upload_legacy_report")
+    mocker.patch.object(PayrollService, "upload_legacy_report", new_callable=AsyncMock)
 
     test_file = io.BytesIO(b"fake pdf legacy report")
     response = client.post(

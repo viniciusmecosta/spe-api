@@ -46,7 +46,7 @@ async def read_audit_logs(
         skip: int = 0,
         limit: int = 100,
 ) -> list[AuditLogResponse]:
-    return service.get_logs(
+    return await service.get_logs(
         action=action,
         start_date=start_date,
         end_date=end_date,
@@ -90,7 +90,7 @@ async def read_routine_logs(
         skip: int = 0,
         limit: int = 100,
 ) -> list[RoutineLogResponse]:
-    return service.get_logs(
+    return await service.get_logs(
         routine_type=routine_type,
         status=status,
         start_date=start_date,

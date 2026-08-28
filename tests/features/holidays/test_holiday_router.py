@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -36,6 +36,7 @@ def test_create_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         HolidayService,
         "create_holiday",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -49,6 +50,7 @@ def test_read_holidays_endpoint(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         HolidayService,
         "get_all_holidays",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 
@@ -61,6 +63,7 @@ def test_delete_holiday_endpoint(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         HolidayService,
         "delete_holiday",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 

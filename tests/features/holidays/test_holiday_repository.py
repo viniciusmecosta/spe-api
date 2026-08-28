@@ -1,6 +1,8 @@
 from datetime import date
+from unittest.mock import MagicMock
 
-from app.features.holidays.holiday_repository import HolidayRepository
+import pytest
+from app.features.holidays.holiday_repository import AsyncHolidayRepository, HolidayRepository
 from app.features.holidays.holiday_schemas import HolidayCreate
 
 
@@ -29,3 +31,33 @@ def test_holiday_repository(db_session):
 
     repo.delete(db_session, h1.id)
     assert repo.get_by_id(db_session, h1.id) is None
+
+
+@pytest.mark.asyncio
+async def test_async_holiday_repository(async_db_mock):
+    repo = AsyncHolidayRepository()
+    d1 = date(2026, 12, 25)
+
+    created = await repo.create(async_db_mock, obj_in=HolidayCreate(date=d1, name="Christmas"))
+    assert created.name == "Christmas"
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [created]
+    mock_scalars.first.return_value = created
+    async_db_mock.scalars.return_value = mock_scalars
+
+    all_h = await repo.get_all(async_db_mock)
+    assert len(all_h) == 1
+
+    by_date = await repo.get_by_date(async_db_mock, d1)
+    assert by_date == created
+
+    async_db_mock.get.return_value = created
+    by_id = await repo.get_by_id(async_db_mock, 1)
+    assert by_id == created
+
+    by_month = await repo.get_by_month(async_db_mock, 12, 2026)
+    assert len(by_month) == 1
+
+    await repo.delete(async_db_mock, 1)
+    async_db_mock.delete.assert_called_once()
