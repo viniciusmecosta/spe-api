@@ -182,7 +182,9 @@ class ExcelService:
 
         if hasattr(session, "sync_session"):
             if user_ids:
-                rec_stmt = select(TimeRecord).where(
+                rec_stmt = select(TimeRecord).options(
+                    selectinload(TimeRecord.editor)
+                ).where(
                     TimeRecord.user_id.in_(user_ids),
                     TimeRecord.record_datetime >= start_dt,
                     TimeRecord.record_datetime <= end_dt,

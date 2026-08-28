@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from sqlalchemy import asc, desc, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
 from app.features.system.system_models import AuditLog, RoutineLog, get_local_time_naive
@@ -28,9 +28,9 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
         limit: int = 100,
     ) -> list[AuditLog]:
         if hasattr(db, "scalars"):
-            exec_res = db.scalars(select(AuditLog))
+            exec_res = db.scalars(select(AuditLog).options(selectinload(AuditLog.user)))
             if not isinstance(exec_res, MagicMock):
-                stmt = select(AuditLog)
+                stmt = select(AuditLog).options(selectinload(AuditLog.user))
                 if action:
                     stmt = stmt.where(AuditLog.action == action)
                 if start_date:
@@ -64,48 +64,6 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
             query = query.order_by(desc(AuditLog.timestamp))
         return query.offset(skip).limit(limit).all()
 
-    def get_manual_changes(
-        self,
-        db: Session,
-        start_date: date | None = None,
-        end_date: date | None = None,
-        order_by: str = "desc",
-        skip: int = 0,
-        limit: int = 100,
-    ) -> list[AuditLog]:
-        if hasattr(db, "scalars"):
-            exec_res = db.scalars(select(AuditLog))
-            if not isinstance(exec_res, MagicMock):
-                stmt = select(AuditLog)
-                if start_date:
-                    dt_start = datetime.combine(start_date, time.min)
-                    stmt = stmt.where(AuditLog.timestamp >= dt_start)
-                if end_date:
-                    dt_end = datetime.combine(end_date, time.max)
-                    stmt = stmt.where(AuditLog.timestamp <= dt_end)
-
-                if order_by.lower() == "asc":
-                    stmt = stmt.order_by(asc(AuditLog.timestamp))
-                else:
-                    stmt = stmt.order_by(desc(AuditLog.timestamp))
-
-                stmt = stmt.offset(skip).limit(limit)
-                return list(db.scalars(stmt).all())
-
-        query = db.query(AuditLog)
-        if start_date:
-            dt_start = datetime.combine(start_date, time.min)
-            query = query.filter(AuditLog.timestamp >= dt_start)
-        if end_date:
-            dt_end = datetime.combine(end_date, time.max)
-            query = query.filter(AuditLog.timestamp <= dt_end)
-
-        if order_by.lower() == "asc":
-            query = query.order_by(asc(AuditLog.timestamp))
-        else:
-            query = query.order_by(desc(AuditLog.timestamp))
-        return query.offset(skip).limit(limit).all()
-
 
 class AsyncAuditRepository(AsyncBaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
     def __init__(self):
@@ -124,35 +82,9 @@ class AsyncAuditRepository(AsyncBaseRepository[AuditLog, AuditLogCreate, AuditLo
             skip: int = 0,
             limit: int = 100,
     ) -> list[AuditLog]:
-        stmt = select(AuditLog)
+        stmt = select(AuditLog).options(selectinload(AuditLog.user))
         if action:
             stmt = stmt.where(AuditLog.action == action)
-        if start_date:
-            dt_start = datetime.combine(start_date, time.min)
-            stmt = stmt.where(AuditLog.timestamp >= dt_start)
-        if end_date:
-            dt_end = datetime.combine(end_date, time.max)
-            stmt = stmt.where(AuditLog.timestamp <= dt_end)
-
-        if order_by.lower() == "asc":
-            stmt = stmt.order_by(asc(AuditLog.timestamp))
-        else:
-            stmt = stmt.order_by(desc(AuditLog.timestamp))
-
-        stmt = stmt.offset(skip).limit(limit)
-        result = await db.scalars(stmt)
-        return list(result.all())
-
-    async def get_manual_changes(
-            self,
-            db: AsyncSession,
-            start_date: date | None = None,
-            end_date: date | None = None,
-            order_by: str = "desc",
-            skip: int = 0,
-            limit: int = 100,
-    ) -> list[AuditLog]:
-        stmt = select(AuditLog)
         if start_date:
             dt_start = datetime.combine(start_date, time.min)
             stmt = stmt.where(AuditLog.timestamp >= dt_start)

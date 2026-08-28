@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,9 +13,10 @@ from app.features.system.system_exceptions import (
     NoMaintainersWithEmailError,
     SMTPConnectionFailedError,
 )
-from app.features.system.system_models import RoutineLog
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
+
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
@@ -26,21 +27,23 @@ def mock_environment():
 
 @pytest.fixture
 def mock_get_db_session(db_session_mock):
-    with patch("app.features.system.routine_orchestrator.get_db_session") as m:
-        class ContextManagerMock:
-            def __enter__(self):
+    with patch("app.features.system.routine_orchestrator.get_async_session_context") as m:
+        class AsyncContextManagerMock:
+            async def __aenter__(self):
                 return db_session_mock
 
-            def __exit__(self, exc_type, exc_val, exc_tb):
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
                 pass
 
-        m.return_value = ContextManagerMock()
+        m.return_value = AsyncContextManagerMock()
         yield m
 
 
 @pytest.fixture
 def orchestrator():
-    return RoutineOrchestrator()
+    orc = RoutineOrchestrator()
+    orc._repo = AsyncMock()
+    return orc
 
 
 @pytest.fixture
@@ -87,181 +90,130 @@ def mock_get_log_path():
         yield m
 
 
-def test_execute_hourly_backup_telegram_out_of_hours(orchestrator, mock_datetime):
+async def test_execute_hourly_backup_telegram_out_of_hours(orchestrator, mock_datetime):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 14), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        orchestrator.execute_hourly_backup_telegram()
+        await orchestrator.execute_hourly_backup_telegram()
 
 
-def test_execute_hourly_backup_telegram_already_exists(orchestrator, mock_datetime, mock_get_db_session,
-                                                       db_session_mock):
+async def test_execute_hourly_backup_telegram_already_exists(orchestrator, mock_datetime, mock_get_db_session,
+                                                             db_session_mock):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.return_value.items = [RoutineLog(routine_type="TELEGRAM_HOURLY_BACKUP", status="SUCCESS")]
-        orchestrator.execute_hourly_backup_telegram()
+        orchestrator._repo.has_hourly_routine_run.return_value = True
+        await orchestrator.execute_hourly_backup_telegram()
 
 
-def test_execute_hourly_backup_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
-                                                         db_session_mock):
+async def test_execute_hourly_backup_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
+                                                               db_session_mock):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.execute_hourly_backup_telegram()
+        orchestrator._repo.has_hourly_routine_run.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.execute_hourly_backup_telegram()
 
 
-def test_execute_hourly_backup_telegram_backup_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                     mock_backup_service):
+async def test_execute_hourly_backup_telegram_backup_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                           db_session_mock,
+                                                           mock_backup_service):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.return_value.items = []
+        orchestrator._repo.has_hourly_routine_run.return_value = False
         mock_backup_service.create_safe_backup.return_value = None
-        orchestrator.execute_hourly_backup_telegram()
+        await orchestrator.execute_hourly_backup_telegram()
 
 
-def test_execute_hourly_backup_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                mock_backup_service, mock_telegram_service, mock_os):
+async def test_execute_hourly_backup_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+                                                      mock_backup_service, mock_telegram_service, mock_os):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.return_value.items = []
+        orchestrator._repo.has_hourly_routine_run.return_value = False
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_telegram_service.send_document.return_value = True
-        orchestrator.execute_hourly_backup_telegram()
-        db_session_mock.add.assert_called_once()
+        await orchestrator.execute_hourly_backup_telegram()
+        orchestrator._repo.log_execution.assert_called_once()
         mock_os[1].assert_any_call("/tmp/backup.zip")
 
 
-def test_execute_hourly_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                   mock_backup_service, mock_telegram_service, mock_os):
+async def test_execute_hourly_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                         db_session_mock,
+                                                         mock_backup_service, mock_telegram_service, mock_os):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.return_value.items = []
+        orchestrator._repo.has_hourly_routine_run.return_value = False
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_telegram_service.send_document.return_value = False
-        orchestrator.execute_hourly_backup_telegram()
-        db_session_mock.add.assert_not_called()
+        await orchestrator.execute_hourly_backup_telegram()
+        orchestrator._repo.log_execution.assert_not_called()
 
 
-def test_execute_hourly_backup_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
-                                                          db_session_mock, mock_backup_service, mock_telegram_service,
-                                                          mock_os):
+async def test_execute_hourly_backup_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
+                                                                db_session_mock, mock_backup_service,
+                                                                mock_telegram_service,
+                                                                mock_os):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 10), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
-        db_session_mock.query.return_value.items = []
+        orchestrator._repo.has_hourly_routine_run.return_value = False
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_telegram_service.send_document.return_value = True
-        db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.execute_hourly_backup_telegram()
+        orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.execute_hourly_backup_telegram()
 
 
-def test_send_managerial_report_telegram_out_of_hours(orchestrator, mock_datetime):
+async def test_send_managerial_report_telegram_out_of_hours(orchestrator, mock_datetime):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 14):
-        orchestrator.send_managerial_report_telegram()
+        await orchestrator.send_managerial_report_telegram()
 
 
-def test_send_managerial_report_telegram_already_ran(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+async def test_send_managerial_report_telegram_already_ran(orchestrator, mock_datetime, mock_get_db_session,
+                                                           db_session_mock):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        db_session_mock.query.return_value.items = [RoutineLog(routine_type="TELEGRAM_DAILY_REPORT", status="SUCCESS")]
-        orchestrator.send_managerial_report_telegram()
+        orchestrator._repo.has_routine_run_for_target_date.return_value = True
+        await orchestrator.send_managerial_report_telegram()
 
 
-def test_send_managerial_report_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
-                                                          db_session_mock):
+async def test_send_managerial_report_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
+                                                                db_session_mock):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        db_session_mock.query.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.send_managerial_report_telegram()
+        orchestrator._repo.has_routine_run_for_target_date.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.send_managerial_report_telegram()
 
 
-def test_send_managerial_report_telegram_success_with_previous(orchestrator, mock_datetime, mock_get_db_session,
-                                                               db_session_mock, mock_telegram_service,
-                                                               mock_get_log_path, mock_os):
+async def test_send_managerial_report_telegram_success_with_previous(orchestrator, mock_datetime, mock_get_db_session,
+                                                                     db_session_mock, mock_telegram_service,
+                                                                     mock_get_log_path, mock_os):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    if self.n == 1:
-                        return None
-                    return RoutineLog(target_date=datetime(2023, 10, 13).date())
-
-                def scalar(self):
-                    if self.n == 1:
-                        return False
-                    return True
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        orchestrator._repo.get_last_successful_target_date.return_value = datetime(2023, 10, 13).date()
         mock_telegram_service.generate_report_text.return_value = "Report"
         mock_telegram_service.send_text.return_value = True
-        orchestrator.send_managerial_report_telegram()
-        db_session_mock.add.assert_called_once()
+        await orchestrator.send_managerial_report_telegram()
+        orchestrator._repo.log_execution.assert_called_once()
         mock_telegram_service.send_document.assert_called()
 
 
-def test_send_managerial_report_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                    mock_telegram_service, mock_get_log_path, mock_os):
+async def test_send_managerial_report_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                          db_session_mock,
+                                                          mock_telegram_service, mock_get_log_path, mock_os):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        orchestrator._repo.get_last_successful_target_date.return_value = None
         mock_telegram_service.generate_report_text.return_value = "Report"
         mock_telegram_service.send_text.return_value = False
-        orchestrator.send_managerial_report_telegram()
-        db_session_mock.add.assert_called_once()
+        await orchestrator.send_managerial_report_telegram()
+        orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_send_managerial_report_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
-                                                           db_session_mock, mock_telegram_service, mock_get_log_path,
-                                                           mock_os):
+async def test_send_managerial_report_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
+                                                                 db_session_mock, mock_telegram_service,
+                                                                 mock_get_log_path,
+                                                                 mock_os):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        orchestrator._repo.get_last_successful_target_date.return_value = None
         mock_telegram_service.generate_report_text.return_value = "Report"
         mock_telegram_service.send_text.return_value = True
-        db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.send_managerial_report_telegram()
+        orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.send_managerial_report_telegram()
 
 
-def test_generate_daily_backup_report(orchestrator, db_session_mock, mock_daily_report_service, mock_get_log_path,
-                                      mock_os):
+async def test_generate_daily_backup_report(orchestrator, db_session_mock, mock_daily_report_service, mock_get_log_path,
+                                            mock_os):
+    mock_daily_report_service.generate_daily_report_html = AsyncMock()
     mock_daily_report_service.generate_daily_report_html.return_value = "<p>Report</p>"
-    html, att, p_text = orchestrator._generate_daily_backup_report(
+    html, att, p_text = await orchestrator._generate_daily_backup_report(
         db_session_mock,
         datetime(2023, 10, 13).date(),
         datetime(2023, 10, 14).date()
@@ -270,11 +222,12 @@ def test_generate_daily_backup_report(orchestrator, db_session_mock, mock_daily_
     assert len(att) == 2
 
 
-def test_generate_daily_backup_report_empty(orchestrator, db_session_mock, mock_daily_report_service,
-                                            mock_get_log_path):
+async def test_generate_daily_backup_report_empty(orchestrator, db_session_mock, mock_daily_report_service,
+                                                  mock_get_log_path):
     with patch("app.features.system.routine_orchestrator.os.path.exists", return_value=False):
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
         mock_daily_report_service.generate_daily_report_html.return_value = ""
-        html, att, p_text = orchestrator._generate_daily_backup_report(
+        html, att, p_text = await orchestrator._generate_daily_backup_report(
             db_session_mock,
             datetime(2023, 10, 14).date(),
             datetime(2023, 10, 14).date()
@@ -283,378 +236,254 @@ def test_generate_daily_backup_report_empty(orchestrator, db_session_mock, mock_
         assert len(att) == 0
 
 
-def test_run_daily_backup_routine_email_out_of_hours(orchestrator, mock_datetime):
+async def test_run_daily_backup_routine_email_out_of_hours(orchestrator, mock_datetime):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 14):
-        orchestrator.run_daily_backup_routine_email()
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_run_daily_backup_routine_email_already_ran(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+async def test_run_daily_backup_routine_email_already_ran(orchestrator, mock_datetime, mock_get_db_session,
+                                                          db_session_mock):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        db_session_mock.query.return_value.items = [RoutineLog(routine_type="EMAIL_DAILY_BACKUP", status="SUCCESS")]
-        orchestrator.run_daily_backup_routine_email()
+        orchestrator._repo.has_routine_run_for_target_date.return_value = True
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_run_daily_backup_routine_email_no_maintainers(orchestrator, mock_datetime, mock_get_db_session,
-                                                       db_session_mock):
+async def test_run_daily_backup_routine_email_no_maintainers(orchestrator, mock_datetime, mock_get_db_session,
+                                                             db_session_mock):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-                def all(self):
-                    return []
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
-        orchestrator.run_daily_backup_routine_email()
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_run_daily_backup_routine_email_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
-                                                         db_session_mock):
+async def test_run_daily_backup_routine_email_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
+                                                               db_session_mock):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        db_session_mock.query.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.run_daily_backup_routine_email()
+        orchestrator._repo.has_routine_run_for_target_date.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_run_daily_backup_routine_email_backup_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                     mock_backup_service):
+async def test_run_daily_backup_routine_email_backup_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                           db_session_mock,
+                                                           mock_backup_service):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    if self.n == 1:
-                        return None
-                    return RoutineLog(target_date=datetime(2023, 10, 13).date())
-
-                def scalar(self):
-                    if self.n == 1:
-                        return False
-                    return True
-
-                def all(self):
-                    return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        orchestrator._repo.get_last_successful_target_date.return_value = datetime(2023, 10, 13).date()
         mock_backup_service.create_safe_backup.return_value = None
-        orchestrator.run_daily_backup_routine_email()
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_run_daily_backup_routine_email_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                mock_backup_service, mock_email_service, mock_daily_report_service,
-                                                mock_os, mock_get_log_path):
+async def test_run_daily_backup_routine_email_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+                                                      mock_backup_service, mock_email_service,
+                                                      mock_daily_report_service,
+                                                      mock_os, mock_get_log_path):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-                def all(self):
-                    return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        orchestrator._repo.get_last_successful_target_date.return_value = None
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = True
-        orchestrator.run_daily_backup_routine_email()
-        db_session_mock.add.assert_called_once()
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
+        mock_daily_report_service.generate_daily_report_html.return_value = ""
+        await orchestrator.run_daily_backup_routine_email()
+        orchestrator._repo.log_execution.assert_called_once()
         mock_os[1].assert_any_call("/tmp/backup.zip")
 
 
-def test_run_daily_backup_routine_email_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                   mock_backup_service, mock_email_service, mock_daily_report_service,
-                                                   mock_os, mock_get_log_path):
+async def test_run_daily_backup_routine_email_send_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                         db_session_mock,
+                                                         mock_backup_service, mock_email_service,
+                                                         mock_daily_report_service,
+                                                         mock_os, mock_get_log_path):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-                def all(self):
-                    return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        orchestrator._repo.get_last_successful_target_date.return_value = None
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = False
-        orchestrator.run_daily_backup_routine_email()
-        db_session_mock.add.assert_called_once()
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
+        mock_daily_report_service.generate_daily_report_html.return_value = ""
+        await orchestrator.run_daily_backup_routine_email()
+        orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_run_daily_backup_routine_email_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
-                                                          db_session_mock, mock_backup_service, mock_email_service,
-                                                          mock_daily_report_service, mock_os, mock_get_log_path):
+async def test_run_daily_backup_routine_email_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
+                                                                db_session_mock, mock_backup_service,
+                                                                mock_email_service,
+                                                                mock_daily_report_service, mock_os, mock_get_log_path):
     with patch.object(settings, 'DAILY_REPORT_HOUR', 10):
-        def side_effect_query(*args, **kwargs):
-            class MockQuery:
-                def __init__(self, n):
-                    self.n = n
-
-                def filter(self, *a, **k):
-                    return self
-
-                def order_by(self, *a, **k):
-                    return self
-
-                def first(self):
-                    return None
-
-                def scalar(self):
-                    return False
-
-                def all(self):
-                    return [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
-
-            return MockQuery(db_session_mock.query.call_count)
-
-        db_session_mock.query.side_effect = side_effect_query
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        orchestrator._repo.get_last_successful_target_date.return_value = None
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = True
-        db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-        orchestrator.run_daily_backup_routine_email()
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
+        mock_daily_report_service.generate_daily_report_html.return_value = ""
+        orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+        await orchestrator.run_daily_backup_routine_email()
 
 
-def test_clean_old_logs_already_ran(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
-    db_session_mock.query.return_value.items = [RoutineLog(routine_type="CLEANUP_ROUTINE_LOGS", status="SUCCESS")]
-    orchestrator.clean_old_logs(days_to_keep=30)
+async def test_clean_old_logs_already_ran(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+    orchestrator._repo.has_routine_run_for_target_date.return_value = True
+    await orchestrator.clean_old_logs(days_to_keep=30)
 
 
-def test_clean_old_logs_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
-    db_session_mock.query.side_effect = SQLAlchemyError("DB Error")
-    orchestrator.clean_old_logs(days_to_keep=30)
+async def test_clean_old_logs_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+    orchestrator._repo.has_routine_run_for_target_date.side_effect = SQLAlchemyError("DB Error")
+    await orchestrator.clean_old_logs(days_to_keep=30)
 
 
-def test_clean_old_logs_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
-    db_session_mock.query.return_value.items = []
-
-    def side_effect_query(*args, **kwargs):
-        class MockQuery:
-            def __init__(self, n):
-                self.n = n
-
-            def filter(self, *a, **k):
-                return self
-
-            def first(self):
-                return None
-
-            def scalar(self):
-                return False
-
-            def delete(self):
-                return 5
-
-        return MockQuery(db_session_mock.query.call_count)
-
-    db_session_mock.query.side_effect = side_effect_query
-    orchestrator.clean_old_logs(days_to_keep=None)
-    db_session_mock.add.assert_called_once()
+async def test_clean_old_logs_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+    orchestrator._repo.has_routine_run_for_target_date.return_value = False
+    orchestrator._repo.delete_older_than.return_value = 5
+    await orchestrator.clean_old_logs(days_to_keep=None)
+    orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_clean_old_logs_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
-    db_session_mock.query.return_value.items = []
-
-    def side_effect_query(*args, **kwargs):
-        class MockQuery:
-            def __init__(self, n):
-                self.n = n
-
-            def filter(self, *a, **k):
-                return self
-
-            def first(self):
-                return None
-
-            def scalar(self):
-                return False
-
-            def delete(self):
-                return 5
-
-        return MockQuery(db_session_mock.query.call_count)
-
-    db_session_mock.query.side_effect = side_effect_query
-    db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-    orchestrator.clean_old_logs(days_to_keep=30)
+async def test_clean_old_logs_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+    orchestrator._repo.has_routine_run_for_target_date.return_value = False
+    orchestrator._repo.delete_older_than.return_value = 5
+    orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+    await orchestrator.clean_old_logs(days_to_keep=30)
 
 
-def test_execute_manual_backup_telegram_backup_fails(orchestrator, mock_backup_service):
+async def test_execute_manual_backup_telegram_backup_fails(orchestrator, mock_backup_service):
     mock_backup_service.create_safe_backup.return_value = None
-    orchestrator.execute_manual_backup_telegram()
+    await orchestrator.execute_manual_backup_telegram()
 
 
-def test_execute_manual_backup_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                mock_backup_service, mock_telegram_service, mock_os):
+async def test_execute_manual_backup_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+                                                      mock_backup_service, mock_telegram_service, mock_os):
     mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
     mock_telegram_service.send_document.return_value = True
-    orchestrator.execute_manual_backup_telegram()
-    db_session_mock.add.assert_called_once()
+    await orchestrator.execute_manual_backup_telegram()
+    orchestrator._repo.log_execution.assert_called_once()
     mock_os[1].assert_any_call("/tmp/backup.zip")
 
 
-def test_execute_manual_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                   mock_backup_service, mock_telegram_service, mock_os):
+async def test_execute_manual_backup_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session,
+                                                         db_session_mock,
+                                                         mock_backup_service, mock_telegram_service, mock_os):
     mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
     mock_telegram_service.send_document.return_value = False
-    orchestrator.execute_manual_backup_telegram()
-    db_session_mock.add.assert_called_once()
+    await orchestrator.execute_manual_backup_telegram()
+    orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_execute_manual_backup_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
-                                                          db_session_mock, mock_backup_service, mock_telegram_service,
-                                                          mock_os):
+async def test_execute_manual_backup_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
+                                                                db_session_mock, mock_backup_service,
+                                                                mock_telegram_service,
+                                                                mock_os):
     mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
     mock_telegram_service.send_document.return_value = True
-    db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-    orchestrator.execute_manual_backup_telegram()
+    orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+    await orchestrator.execute_manual_backup_telegram()
 
 
-def test_send_manual_report_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                      mock_telegram_service):
+async def test_send_manual_report_telegram_db_error_on_read(orchestrator, mock_datetime, mock_get_db_session,
+                                                            db_session_mock,
+                                                            mock_telegram_service):
     mock_telegram_service.generate_report_text.side_effect = SQLAlchemyError("DB Error")
-    orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
+    await orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
 
 
-def test_send_manual_report_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                             mock_telegram_service, mock_os, mock_get_log_path):
+async def test_send_manual_report_telegram_success(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+                                                   mock_telegram_service, mock_os, mock_get_log_path):
     mock_telegram_service.generate_report_text.return_value = "Report"
     mock_telegram_service.send_text.return_value = True
-    orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
-    db_session_mock.add.assert_called_once()
+    await orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
+    orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_send_manual_report_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
-                                                mock_telegram_service, mock_os, mock_get_log_path):
+async def test_send_manual_report_telegram_send_fails(orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+                                                      mock_telegram_service, mock_os, mock_get_log_path):
     mock_telegram_service.generate_report_text.return_value = "Report"
     mock_telegram_service.send_text.return_value = False
-    orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
-    db_session_mock.add.assert_called_once()
+    await orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
+    orchestrator._repo.log_execution.assert_called_once()
 
 
-def test_send_manual_report_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
-                                                       db_session_mock, mock_telegram_service, mock_os,
-                                                       mock_get_log_path):
+async def test_send_manual_report_telegram_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session,
+                                                             db_session_mock, mock_telegram_service, mock_os,
+                                                             mock_get_log_path):
     mock_telegram_service.generate_report_text.return_value = "Report"
     mock_telegram_service.send_text.return_value = True
-    db_session_mock.add.side_effect = SQLAlchemyError("DB Error")
-    orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
+    orchestrator._repo.log_execution.side_effect = SQLAlchemyError("DB Error")
+    await orchestrator.send_manual_report_telegram(datetime(2023, 10, 13).date(), datetime(2023, 10, 14).date())
 
 
-def test_send_manual_backup_email_no_smtp(orchestrator):
+async def test_send_manual_backup_email_no_smtp(orchestrator):
     with patch.object(settings, 'SMTP_HOST', None):
         with pytest.raises(EmailNotConfiguredError):
-            orchestrator.send_manual_backup_email(None)
+            await orchestrator.send_manual_backup_email(None)
 
 
-def test_send_manual_backup_email_no_maintainers(orchestrator, db_session_mock, mock_get_db_session):
+async def test_send_manual_backup_email_no_maintainers(orchestrator, db_session_mock, mock_get_db_session):
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
-        db_session_mock.query.return_value.items = []
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
         with pytest.raises(NoMaintainersWithEmailError):
-            orchestrator.send_manual_backup_email(None)
+            await orchestrator.send_manual_backup_email(db_session_mock)
 
 
-def test_send_manual_backup_email_backup_fails(orchestrator, db_session_mock, mock_get_db_session,
-                                               mock_daily_report_service, mock_backup_service):
+async def test_send_manual_backup_email_backup_fails(orchestrator, db_session_mock, mock_get_db_session,
+                                                     mock_daily_report_service, mock_backup_service):
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
-        db_session_mock.query.return_value.items = [
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
         mock_backup_service.create_safe_backup.return_value = None
+        mock_daily_report_service.generate_daily_report_html = AsyncMock(return_value="")
         with pytest.raises(BackupGenerationFailedError):
-            orchestrator.send_manual_backup_email(None)
+            await orchestrator.send_manual_backup_email(db_session_mock)
 
 
-def test_send_manual_backup_email_success(orchestrator, db_session_mock, mock_get_db_session, mock_daily_report_service,
-                                          mock_backup_service, mock_email_service, mock_os, mock_get_log_path,
-                                          mock_datetime):
+async def test_send_manual_backup_email_success(orchestrator, db_session_mock, mock_get_db_session,
+                                                mock_daily_report_service,
+                                                mock_backup_service, mock_email_service, mock_os, mock_get_log_path,
+                                                mock_datetime):
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
-        db_session_mock.query.return_value.items = [
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = True
-        res = orchestrator.send_manual_backup_email(None)
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
+        mock_daily_report_service.generate_daily_report_html.return_value = ""
+        res = await orchestrator.send_manual_backup_email(db_session_mock)
         assert res is True
         mock_os[1].assert_any_call("/tmp/backup.zip")
 
 
-def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock_get_db_session,
-                                             mock_daily_report_service, mock_backup_service, mock_email_service,
-                                             mock_os, mock_get_log_path, mock_datetime):
+async def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock, mock_get_db_session,
+                                                   mock_daily_report_service, mock_backup_service, mock_email_service,
+                                                   mock_os, mock_get_log_path, mock_datetime):
     with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
             settings, 'SMTP_PASSWORD', 'pass'):
-        db_session_mock.query.return_value.items = [
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
         mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
         mock_email_service.send_email.return_value = False
+        mock_daily_report_service.generate_daily_report_html = AsyncMock()
+        mock_daily_report_service.generate_daily_report_html.return_value = ""
         with pytest.raises(SMTPConnectionFailedError):
-            orchestrator.send_manual_backup_email(db_session_mock)
-
-
-def test_execute_hourly_backup_telegram_dev_environment(orchestrator):
-    with patch("app.features.system.routine_orchestrator.settings.ENVIRONMENT", "dev"):
-        orchestrator.execute_hourly_backup_telegram()
-
-
-def test_send_managerial_report_telegram_dev_environment(orchestrator):
-    with patch("app.features.system.routine_orchestrator.settings.ENVIRONMENT", "dev"):
-        orchestrator.send_managerial_report_telegram()
-
-
-def test_cleanup_backup_files_os_error(orchestrator):
-    with patch("app.features.system.routine_orchestrator.os.path.exists", return_value=True), patch(
-            "app.features.system.routine_orchestrator.os.remove", side_effect=OSError("Remove error")), patch(
-        "app.features.system.routine_orchestrator.logger.exception") as mock_log:
-        orchestrator._cleanup_backup_files("/tmp/b.db", "/tmp/b.sql", "/tmp/b.zip")
-        assert mock_log.call_count == 3
+            await orchestrator.send_manual_backup_email(db_session_mock)

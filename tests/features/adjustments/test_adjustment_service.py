@@ -7,7 +7,6 @@ from fastapi import UploadFile
 import pytest
 from app.features.adjustments.adjustment_exceptions import (
     AdjustmentAttachmentNotFoundError,
-    AdjustmentInvalidStatusError,
     AdjustmentNotFoundError,
     AdjustmentPermissionError,
     AttachmentFileNotFoundError,
@@ -35,49 +34,6 @@ async def test_execute_and_revert_action_no_time(async_db_mock):
     req = AdjustmentRequest(user_id=1, target_date=date(2026, 1, 1), time=None)
     await adjustment_service._execute_adjustment_action(async_db_mock, req, 1)
     await adjustment_service._revert_adjustment_action(async_db_mock, req, 1)
-
-
-@pytest.mark.asyncio
-async def test_cancel_adjustment_not_found(async_db_mock, mocker):
-    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
-                 return_value=None)
-    with pytest.raises(AdjustmentNotFoundError) as exc1:
-        await adjustment_service.cancel_adjustment(async_db_mock, 999, 1)
-    assert exc1.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_cancel_adjustment_forbidden_other_user(async_db_mock, mocker):
-    target = date(2026, 1, 1)
-    req_other = AdjustmentRequest(id=1, user_id=2, status=AdjustmentStatus.PENDING, target_date=target)
-    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
-                 return_value=req_other)
-    with pytest.raises(AdjustmentPermissionError) as exc2:
-        await adjustment_service.cancel_adjustment(async_db_mock, 1, 1)
-    assert exc2.value.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_cancel_adjustment_invalid_status_approved(async_db_mock, mocker):
-    target = date(2026, 1, 1)
-    req_approved = AdjustmentRequest(id=1, user_id=1, status=AdjustmentStatus.APPROVED, target_date=target)
-    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
-                 return_value=req_approved)
-    with pytest.raises(AdjustmentInvalidStatusError) as exc3:
-        await adjustment_service.cancel_adjustment(async_db_mock, 1, 1)
-    assert exc3.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_cancel_adjustment_pending_attribute_error(async_db_mock, mocker):
-    target = date(2026, 1, 1)
-    req_pending = AdjustmentRequest(id=1, user_id=1, status=AdjustmentStatus.PENDING, target_date=target)
-    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
-                 return_value=req_pending)
-    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
-                 new_callable=AsyncMock)
-    with pytest.raises(AttributeError):
-        await adjustment_service.cancel_adjustment(async_db_mock, 1, 1)
 
 
 @pytest.mark.asyncio

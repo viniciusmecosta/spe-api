@@ -74,9 +74,6 @@ def test_adjustment_repository_all_methods(db_session, normal_user):
                                  comment="Approved")
     assert updated.status == AdjustmentStatus.APPROVED
 
-    approved = repo.get_approved_by_range(db_session, normal_user.id, date(2026, 8, 1), date(2026, 8, 31))
-    assert len(approved) >= 1
-
     waivers = repo.get_waivers_by_user_and_date(db_session, normal_user.id, date(2026, 8, 1))
     assert len(waivers) >= 1
 
@@ -111,7 +108,6 @@ async def test_async_adjustment_repository(async_db_mock):
     assert len(await repo.get_all_by_user(async_db_mock, 1, month=8, year=2026, status="PENDING")) == 1
     assert len(await repo.get_all(async_db_mock, month=8, year=2026, status="NOT_PENDING")) == 1
     assert await repo.count_pending(async_db_mock, from_date=date(2026, 1, 1)) == 1
-    assert len(await repo.get_approved_by_range(async_db_mock, 1, date(2026, 8, 1), date(2026, 8, 31))) == 1
     assert len(await repo.get_waivers_by_user_and_date(async_db_mock, 1, date(2026, 8, 1))) == 1
 
     updated = await repo.update_status(async_db_mock, created, AdjustmentStatus.APPROVED, 1, "Approved")

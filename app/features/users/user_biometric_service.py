@@ -70,17 +70,3 @@ class UserBiometricService:
             template_data=tmpl_data,
             finger_id=finger_id,
         )
-
-    async def sync_biometrics(self, user: User, biometrics_in: list[Any]) -> None:
-        current_biometrics = {b.id: b for b in user.biometrics} if getattr(user, "id", None) else {}
-        new_biometrics_list: list[UserBiometric] = []
-        seen_indices: set[int] = set()
-        seen_fingers: set[int] = set()
-
-        for bio_data in biometrics_in:
-            processed_bio = await self.process_single_biometric(
-                user, bio_data, seen_indices, seen_fingers, current_biometrics
-            )
-            new_biometrics_list.append(processed_bio)
-
-        user.biometrics = new_biometrics_list

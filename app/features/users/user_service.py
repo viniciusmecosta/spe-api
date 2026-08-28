@@ -105,27 +105,6 @@ class UserService:
         )
         return user
 
-    async def disable_user(self, user_id: int, current_user_id: int) -> User:
-        user = await self.repository.get(self.db, user_id)
-        if not user:
-            raise UserNotFoundError(user_id=user_id)
-
-        user.is_active = False
-        self.db.add(user)
-        await self.db.commit()
-        await self.db.refresh(user)
-
-        await audit_service.async_log_change(
-            self.db,
-            current_user_id,
-            "DISABLE",
-            entity="USER",
-            entity_id=user.id,
-            old_data={"is_active": True},
-            new_data={"is_active": False},
-        )
-        return user
-
     async def get_multi(
         self,
             after_id: int | None = None,

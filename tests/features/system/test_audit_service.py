@@ -369,34 +369,3 @@ def test_audit_repository_get_logs():
         limit=100
     )
     assert res_desc == ["audit1", "audit2"]
-
-
-def test_audit_repository_get_manual_changes():
-    db_mock = MagicMock()
-    query_mock = MagicMock()
-    db_mock.query.return_value = query_mock
-    query_mock.filter.return_value = query_mock
-    query_mock.order_by.return_value = query_mock
-    query_mock.offset.return_value = query_mock
-    query_mock.limit.return_value = query_mock
-    query_mock.all.return_value = ["manual_log"]
-
-    res_asc = audit_repository.get_manual_changes(
-        db_mock,
-        start_date=date(2026, 1, 1),
-        end_date=date(2026, 1, 31),
-        order_by="asc",
-        skip=0,
-        limit=50
-    )
-    assert res_asc == ["manual_log"]
-
-    res_desc = audit_repository.get_manual_changes(
-        db_mock,
-        start_date=None,
-        end_date=None,
-        order_by="desc",
-        skip=10,
-        limit=100
-    )
-    assert res_desc == ["manual_log"]

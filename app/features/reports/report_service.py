@@ -33,7 +33,6 @@ from app.features.reports.report_schemas import (
     HistoryDay,
     HistoryPunch,
     HistoryResponse,
-    MonthlyReportResponse,
     PunchDetail,
     UserPayrollSummary,
 )
@@ -535,90 +534,6 @@ class ReportService:
         )
 
         return AdvancedUserReportResponse(summary=summary, daily_details=daily_details)
-
-    async def get_monthly_summary(self, db: Any | None = None, month: int = 0, year: int = 0,
-                            employee_ids: list[int] | None = None,
-                            current_user: User | None = None) -> MonthlyReportResponse:
-        session = db if db is not None else self.db
-        assert session is not None
-        if hasattr(session, "sync_session"):
-            stmt = select(User).options(selectinload(User.historical_schedules))
-            stmt = self._apply_employee_filters(stmt, employee_ids)
-            res = await session.scalars(stmt)
-            users = list(res.all())
-        else:
-            query = session.query(User).options(joinedload(User.historical_schedules))
-            query = self._apply_employee_filters(query, employee_ids)
-            users = query.all()
-
-        user_ids = [u.id for u in users]
-        start_date, end_date = self._get_month_range(month, year)
-        tz = ZoneInfo(settings.TIMEZONE)
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
-        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
-
-        if hasattr(session, "sync_session"):
-            if user_ids:
-                rec_stmt = select(TimeRecord).where(
-                    TimeRecord.user_id.in_(user_ids),
-                    TimeRecord.record_datetime >= start_dt,
-                    TimeRecord.record_datetime <= end_dt,
-                    TimeRecord.deleted_at.is_(None),
-                    TimeRecord.is_ignored.is_(False),
-                )
-                rec_res = await session.scalars(rec_stmt)
-                all_records_batch = list(rec_res.all())
-
-                adj_stmt = select(AdjustmentRequest).where(
-                    AdjustmentRequest.user_id.in_(user_ids),
-                    AdjustmentRequest.target_date >= start_date,
-                    AdjustmentRequest.target_date <= end_date,
-                    AdjustmentRequest.deleted_at.is_(None),
-                )
-                adj_res = await session.scalars(adj_stmt)
-                all_adjustments_batch = list(adj_res.all())
-            else:
-                all_records_batch = []
-                all_adjustments_batch = []
-            holidays_batch = await async_holiday_repository.get_by_month(session, month, year)
-        else:
-            all_records_batch = session.query(TimeRecord).filter(
-                TimeRecord.user_id.in_(user_ids),
-                TimeRecord.record_datetime >= start_dt,
-                TimeRecord.record_datetime <= end_dt,
-                TimeRecord.deleted_at.is_(None),
-                TimeRecord.is_ignored == False
-            ).all() if user_ids else []
-
-            all_adjustments_batch = session.query(AdjustmentRequest).filter(
-                AdjustmentRequest.user_id.in_(user_ids),
-                AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date,
-                AdjustmentRequest.deleted_at.is_(None)
-            ).all() if user_ids else []
-
-            holidays_batch = holiday_repository.get_by_month(session, month, year)
-
-        records_by_user = {}
-        for r in all_records_batch:
-            records_by_user.setdefault(r.user_id, []).append(r)
-
-        adjustments_by_user = {}
-        for a in all_adjustments_batch:
-            adjustments_by_user.setdefault(a.user_id, []).append(a)
-
-        payroll_data = []
-        for user in users:
-            report = await self.get_advanced_user_report(
-                session, user.id, month, year, current_user,
-                prefetched_records=records_by_user.get(user.id, []),
-                prefetched_adjustments=adjustments_by_user.get(user.id, []),
-                prefetched_holidays=holidays_batch
-            )
-            if report and report.summary.total_worked_minutes > 0:
-                payroll_data.append(report.summary)
-
-        return MonthlyReportResponse(month=month, year=year, payroll_data=payroll_data)
 
     def check_report_permission(self, current_user: User) -> None:
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]

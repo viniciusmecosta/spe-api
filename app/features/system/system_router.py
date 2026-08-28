@@ -66,7 +66,7 @@ async def trigger_manual_backup(
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    sent = routine_orch.send_manual_backup_email()
+    sent = await routine_orch.send_manual_backup_email()
     if not sent:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

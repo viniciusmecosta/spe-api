@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.features.adjustments.adjustment_exceptions import (
     AdjustmentAttachmentNotFoundError,
-    AdjustmentInvalidStatusError,
     AdjustmentNotFoundError,
     AdjustmentPermissionError,
     AttachmentFileNotFoundError,
@@ -325,32 +324,6 @@ class AdjustmentService:
             db.add(time_rec)
             await db.commit()
             await db.refresh(time_rec)
-
-    async def cancel_adjustment(self, db: AsyncSession | None = None, request_id: int = 0,
-                                user_id: int = 0) -> AdjustmentRequest:
-        session = db if db is not None else self.db
-        assert session is not None
-        request = await self.repo.get(session, request_id)
-        if not request:
-            raise AdjustmentNotFoundError(adjustment_id=request_id)
-
-        is_owner = request.user_id == user_id
-        if not is_owner:
-            raise AdjustmentPermissionError("Acesso negado. Apenas o proprietário do ajuste pode cancelá-lo.")
-
-        if request.status != AdjustmentStatus.PENDING:
-            raise AdjustmentInvalidStatusError(current_status=str(request.status))
-
-        await self._validate_period_open(session, request.target_date)
-
-        old_data = serialize_model(request)
-        updated = await self.repo.update_status(session, request, AdjustmentStatus.CANCELED, user_id)
-        await audit_service.async_log_change(
-            session, user_id, "CANCEL_ADJUSTMENT",
-            old_model=old_data, new_model=updated
-        )
-        enriched = await self._enrich_adjustments_with_records(session, [updated])
-        return enriched[0]
 
     async def reject_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                           comment: str | None = None) -> AdjustmentRequest:

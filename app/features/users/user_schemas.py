@@ -63,10 +63,6 @@ class WorkScheduleBase(BaseModel):
     valid_until: date | None = None
 
 
-class WorkScheduleCreate(WorkScheduleBase):
-    id: int | None = None
-
-
 class WorkSchedule(WorkScheduleBase):
     id: int
     user_id: int

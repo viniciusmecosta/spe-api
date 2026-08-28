@@ -40,13 +40,6 @@ def test_audit_repository(db_session, normal_user):
     logs_desc = repo.get_logs(db_session, order_by="desc")
     assert isinstance(logs_desc, list)
 
-    manual = repo.get_manual_changes(db_session, start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),
-                                     order_by="asc")
-    assert len(manual) >= 1
-
-    manual_desc = repo.get_manual_changes(db_session, order_by="desc")
-    assert isinstance(manual_desc, list)
-
 
 def test_routine_log_repository(db_session):
     repo = RoutineLogRepository()
@@ -127,13 +120,6 @@ async def test_async_audit_repository(async_db_mock):
 
     logs_desc = await repo.get_logs(async_db_mock, order_by="desc")
     assert len(logs_desc) == 1
-
-    manual = await repo.get_manual_changes(async_db_mock, start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),
-                                           order_by="asc")
-    assert len(manual) == 1
-
-    manual_desc = await repo.get_manual_changes(async_db_mock, order_by="desc")
-    assert len(manual_desc) == 1
 
 
 @pytest.mark.asyncio

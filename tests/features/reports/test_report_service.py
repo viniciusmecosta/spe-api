@@ -18,10 +18,6 @@ from app.features.reports.report_exceptions import (
     ReportNotFoundOrIncompleteError,
     ReportUserNotFoundError,
 )
-from app.features.reports.report_schemas import (
-    AdvancedUserReportResponse,
-    UserPayrollSummary,
-)
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
@@ -503,84 +499,6 @@ async def test_get_advanced_user_report_success(service, mock_db, mock_repo_user
     assert res.summary.total_missing_hours == 4.0
     assert res.summary.final_balance == -2.0
     assert len(res.daily_details) == 31
-
-
-@pytest.mark.asyncio
-async def test_get_monthly_summary(service, mock_db, mock_repo_holiday, mock_time_calc_service):
-    user1 = User(id=1, name="User One", role=UserRole.EMPLOYEE, historical_schedules=[])
-    user2 = User(id=2, name="User Two", role=UserRole.EMPLOYEE, historical_schedules=[])
-
-    rec1 = TimeRecord(id=10, user_id=1, record_datetime=datetime(2024, 1, 5, 8, 0), record_type=RecordType.ENTRY)
-    adj1 = AdjustmentRequest(id=20, user_id=1, target_date=date(2024, 1, 5))
-
-    class MockQueryRouter:
-        def __init__(self, items):
-            self.items = items
-
-        def options(self, *args, **kwargs):
-            return self
-
-        def filter(self, *args, **kwargs):
-            return self
-
-        def all(self):
-            return self.items
-
-    def fake_query(model):
-        if model == User:
-            return MockQueryRouter([user1, user2])
-        elif model == TimeRecord:
-            return MockQueryRouter([rec1])
-        elif model == AdjustmentRequest:
-            return MockQueryRouter([adj1])
-        return MockQueryRouter([])
-
-    mock_db.query.side_effect = fake_query
-    mock_repo_holiday.get_by_month.return_value = []
-
-    rep1 = AdvancedUserReportResponse(
-        summary=UserPayrollSummary(
-            user_id=1,
-            user_name="User One",
-            total_worked_time="10:00",
-            total_expected_time="10:00",
-            total_worked_minutes=600,
-            total_expected_minutes=600,
-            days_worked=1,
-            absences=0,
-            total_worked_hours=10.0,
-            total_expected_hours=10.0,
-            total_extra_hours=0.0,
-            total_missing_hours=0.0,
-            final_balance=0.0,
-        ),
-        daily_details=[],
-    )
-    rep2 = AdvancedUserReportResponse(
-        summary=UserPayrollSummary(
-            user_id=2,
-            user_name="User Two",
-            total_worked_time="00:00",
-            total_expected_time="00:00",
-            total_worked_minutes=0,
-            total_expected_minutes=0,
-            days_worked=0,
-            absences=0,
-            total_worked_hours=0.0,
-            total_expected_hours=0.0,
-            total_extra_hours=0.0,
-            total_missing_hours=0.0,
-            final_balance=0.0,
-        ),
-        daily_details=[],
-    )
-
-    with patch.object(service, "get_advanced_user_report", new_callable=AsyncMock, side_effect=[rep1, rep2]):
-        res = await service.get_monthly_summary(mock_db, month=1, year=2024, employee_ids=[1, 2])
-        assert res.month == 1
-        assert res.year == 2024
-        assert len(res.payroll_data) == 1
-        assert res.payroll_data[0].user_id == 1
 
 
 def test_check_report_permission(service):

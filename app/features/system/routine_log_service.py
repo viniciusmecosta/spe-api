@@ -48,6 +48,3 @@ class RoutineLogService:
             session, routine_type=routine_type, status=status, start_date=start_date, end_date=end_date,
             order_by=order_by, skip=skip, limit=limit
         )
-
-
-routine_log_service = RoutineLogService()

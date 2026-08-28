@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.database.session import get_async_session_context, get_db_session
+from app.database.session import get_db_session
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
@@ -194,31 +194,6 @@ class ToleranceCronService:
                         record.is_verified = True
 
                 db.commit()
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro ao processar tolerancia de entradas (banco): {e}")
-        except Exception as e:
-            logger.exception(f"Erro inesperado ao processar tolerancia de entradas: {e}")
-
-    async def async_process_unverified_entries(self):
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-
-        try:
-            async with get_async_session_context() as db:
-                stmt = select(TimeRecord).options(selectinload(TimeRecord.user)).where(
-                    TimeRecord.is_verified.is_(False),
-                    TimeRecord.deleted_at.is_(None)
-                )
-                res = await db.scalars(stmt)
-                unverified_records = list(res.all())
-
-                for record in unverified_records:
-                    if record.record_type == RecordType.ENTRY:
-                        await self.async_process_entry_record(db, record, now, tz)
-                    elif record.record_type == RecordType.EXIT:
-                        record.is_verified = True
-
-                await db.commit()
         except SQLAlchemyError as e:
             logger.exception(f"Erro ao processar tolerancia de entradas (banco): {e}")
         except Exception as e:

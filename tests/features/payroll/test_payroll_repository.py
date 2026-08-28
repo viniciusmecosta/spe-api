@@ -20,9 +20,6 @@ def test_payroll_repository(db_session, normal_user):
     all_res = repo.get_all(db_session, year=2026)
     assert len(all_res) >= 1
 
-    hist = repo.get_history(db_session, 11, 2026)
-    assert len(hist) >= 1
-
     repo.delete(db_session, 11, 2026, user_id=normal_user.id, observation="Reopened test")
     assert repo.get_by_month(db_session, 11, 2026) is None
 
@@ -45,8 +42,5 @@ async def test_async_payroll_repository(async_db_mock):
 
     res_all = await repo.get_all(async_db_mock, year=2026)
     assert len(res_all) == 1
-
-    res_hist = await repo.get_history(async_db_mock, 11, 2026)
-    assert len(res_hist) == 1
 
     await repo.delete(async_db_mock, 11, 2026, 1, "observation")

@@ -2,17 +2,18 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
-from app.features.system.routine_log_service import routine_log_service
+from app.features.system.routine_log_service import RoutineLogService
 
 
 @pytest.mark.asyncio
 async def test_get_logs(db_session_mock):
+    service = RoutineLogService(db=db_session_mock)
     with patch("app.features.system.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
         mock_get_logs.return_value = ["log1", "log2"]
         start_date = date(2023, 1, 1)
         end_date = date(2023, 1, 2)
 
-        result = await routine_log_service.get_logs(
+        result = await service.get_logs(
             db=db_session_mock,
             routine_type="type1",
             status="success",
@@ -38,10 +39,11 @@ async def test_get_logs(db_session_mock):
 
 @pytest.mark.asyncio
 async def test_get_logs_defaults(db_session_mock):
+    service = RoutineLogService(db=db_session_mock)
     with patch("app.features.system.routine_log_service.routine_log_repository.get_logs") as mock_get_logs:
         mock_get_logs.return_value = []
 
-        result = await routine_log_service.get_logs(db=db_session_mock)
+        result = await service.get_logs(db=db_session_mock)
 
         assert result == []
         mock_get_logs.assert_called_once_with(

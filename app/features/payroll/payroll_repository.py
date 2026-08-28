@@ -59,13 +59,6 @@ class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
         )
         return list(db.scalars(stmt).all())
 
-    def get_history(self, db: Session, month: int, year: int) -> list[PayrollClosure]:
-        stmt = select(PayrollClosure).where(
-            PayrollClosure.month == month,
-            PayrollClosure.year == year,
-        ).order_by(PayrollClosure.id.asc())
-        return list(db.scalars(stmt).all())
-
     def delete(self, db: Session, month: int, year: int, user_id: int, observation: str):
         stmt = select(PayrollClosure).where(
             PayrollClosure.month == month,
@@ -129,14 +122,6 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             PayrollClosure.year.desc(),
             PayrollClosure.month.desc(),
         )
-        result = await db.scalars(stmt)
-        return list(result.all())
-
-    async def get_history(self, db: AsyncSession, month: int, year: int) -> list[PayrollClosure]:
-        stmt = select(PayrollClosure).where(
-            PayrollClosure.month == month,
-            PayrollClosure.year == year,
-        ).order_by(PayrollClosure.id.asc())
         result = await db.scalars(stmt)
         return list(result.all())
 

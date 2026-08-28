@@ -635,6 +635,3 @@ class TimesheetService:
 
         zip_buffer.seek(0)
         return zip_buffer
-
-
-timesheet_service = TimesheetService()

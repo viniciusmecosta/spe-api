@@ -11,10 +11,12 @@ from app.features.timesheets.timesheet_exceptions import (
     NoTimesheetRecordsFoundError,
     TimesheetUserNotFoundError,
 )
-from app.features.timesheets.timesheet_service import timesheet_service
+from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared.enums import UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
+
+timesheet_service = TimesheetService()
 
 
 def test_format_duration():
@@ -151,7 +153,7 @@ async def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf',
+    mock_pdf = mocker.patch.object(timesheet_service, 'generate_user_timesheet_pdf',
                             new_callable=AsyncMock)
     mock_pdf.return_value = io.BytesIO(b'dummy pdf content')
     buffer = await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
@@ -168,7 +170,7 @@ async def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, m
     query_mock = db_session_mock.query.return_value.join.return_value.filter.return_value.distinct.return_value
     query_mock.all.return_value = [mock_user]
     query_mock.filter.return_value.all.return_value = [mock_user]
-    mock_pdf = mocker.patch('app.features.timesheets.timesheet_service.timesheet_service.generate_user_timesheet_pdf',
+    mock_pdf = mocker.patch.object(timesheet_service, 'generate_user_timesheet_pdf',
                             new_callable=AsyncMock)
     mock_pdf.side_effect = ValueError('Test error')
     buffer = await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)

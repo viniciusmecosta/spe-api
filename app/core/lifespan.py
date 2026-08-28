@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
@@ -11,7 +11,7 @@ from app.features.devices.sync_service import sync_service
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.tolerance_cron_service import tolerance_cron_service
 
-scheduler = BackgroundScheduler()
+scheduler = AsyncIOScheduler()
 
 
 @asynccontextmanager

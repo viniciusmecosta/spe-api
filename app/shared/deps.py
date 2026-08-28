@@ -7,7 +7,7 @@ from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.security import get_api_key_hash
@@ -59,14 +59,19 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    stmt = select(User).where(User.id == int(str(token_data.sub)))
+    stmt = (
+        select(User)
+        .options(selectinload(User.current_schedules_rel), selectinload(User.biometrics))
+        .where(User.id == int(str(token_data.sub)))
+    )
     if hasattr(db, "scalars"):
         res = db.scalars(stmt)
         if inspect.isawaitable(res):
             res = await res
         user = res.first() if hasattr(res, "first") else None
     else:
-        user = db.query(User).filter(User.id == int(str(token_data.sub))).first()
+        user = db.query(User).options(selectinload(User.current_schedules_rel), selectinload(User.biometrics)).filter(
+            User.id == int(str(token_data.sub))).first()
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")

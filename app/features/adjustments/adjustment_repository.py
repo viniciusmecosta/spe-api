@@ -163,28 +163,6 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
             stmt = stmt.where(AdjustmentRequest.target_date >= from_date)
         return db.scalar(stmt) or 0
 
-    def get_approved_by_range(
-        self, db: Session, user_id: int, start_date: date, end_date: date
-    ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(
-                and_(
-                    AdjustmentRequest.user_id == user_id,
-                    AdjustmentRequest.status == AdjustmentStatus.APPROVED,
-                    AdjustmentRequest.target_date >= start_date,
-                    AdjustmentRequest.target_date <= end_date,
-                    AdjustmentRequest.deleted_at.is_(None),
-                )
-            )
-        )
-        return list(db.scalars(stmt).all())
-
     def get_waivers_by_user_and_date(
         self, db: Session, user_id: int, target_date: date
     ) -> list[AdjustmentRequest]:
@@ -274,8 +252,8 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         )
         db.add(db_obj)
         await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+        refreshed = await self.get(db, db_obj.id)
+        return refreshed if refreshed else db_obj
 
     async def get(self, db: AsyncSession, id: Any) -> AdjustmentRequest | None:
         stmt = (
@@ -403,29 +381,6 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         result = await db.scalar(stmt)
         return result or 0
 
-    async def get_approved_by_range(
-            self, db: AsyncSession, user_id: int, start_date: date, end_date: date
-    ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(
-                and_(
-                    AdjustmentRequest.user_id == user_id,
-                    AdjustmentRequest.status == AdjustmentStatus.APPROVED,
-                    AdjustmentRequest.target_date >= start_date,
-                    AdjustmentRequest.target_date <= end_date,
-                    AdjustmentRequest.deleted_at.is_(None),
-                )
-            )
-        )
-        result = await db.scalars(stmt)
-        return list(result.all())
-
     async def get_waivers_by_user_and_date(
             self, db: AsyncSession, user_id: int, target_date: date
     ) -> list[AdjustmentRequest]:
@@ -463,8 +418,8 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         db_obj.reviewed_at = get_local_time()
         db.add(db_obj)
         await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+        refreshed = await self.get(db, db_obj.id)
+        return refreshed if refreshed else db_obj
 
     async def create_attachment(
             self, db: AsyncSession, request_id: int, file_path: str, file_type: str
