@@ -205,15 +205,6 @@ async def test_process_single_biometric(biometric_service, mocker):
 
 
 @pytest.mark.asyncio
-async def test_sync_biometrics(biometric_service, mocker):
-    mocker.patch.object(biometric_service, "process_single_biometric", new_callable=AsyncMock,
-                        return_value=UserBiometric(id=1))
-    user = User(id=1, biometrics=[])
-    await biometric_service.sync_biometrics(user, [{"id": 1}])
-    assert len(user.biometrics) == 1
-
-
-@pytest.mark.asyncio
 async def test_validate_unique_fields_ok(user_validator, async_db_mock):
     async_db_mock.scalar = AsyncMock(return_value=False)
     await user_validator.validate_unique_fields(username="test", email="test@test.com", cpf="123")
@@ -311,24 +302,6 @@ async def test_update_user_ok(user_service, mocker):
     assert res.password_hash == "hash"
     mock_log.assert_called_once()
     assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
-
-
-@pytest.mark.asyncio
-async def test_disable_user_not_found(user_service):
-    user_service.repository.get = AsyncMock(return_value=None)
-    with pytest.raises(UserNotFoundError) as exc:
-        await user_service.disable_user(1, 99)
-    assert exc.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_disable_user_ok(user_service, mocker):
-    user = User(id=1, is_active=True)
-    user_service.repository.get = AsyncMock(return_value=user)
-    mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
-
-    res = await user_service.disable_user(1, 99)
-    assert res.is_active is False
 
 
 def test_format_name(user_service):

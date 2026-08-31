@@ -1,11 +1,12 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordTimelineResponse
+from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -23,10 +24,14 @@ def mock_user() -> User:
 
 @pytest.fixture
 def client(mock_user: User, db_session_mock: MagicMock) -> TestClient:
+    async def override_get_async_db():
+        yield AsyncMock()
+
     app.dependency_overrides[deps.get_current_active_user] = lambda: mock_user
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_user
     app.dependency_overrides[deps.get_current_maintainer] = lambda: mock_user
     app.dependency_overrides[deps.get_db] = lambda: db_session_mock
+    app.dependency_overrides[deps.get_async_db] = override_get_async_db
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
@@ -41,10 +46,13 @@ def test_register_entry(client: TestClient, mocker: MagicMock) -> None:
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.register_entry",
+    mocker.patch.object(
+        TimeRecordService,
+        "register_entry",
+        new_callable=AsyncMock,
         return_value=mock_record,
     )
+    mocker.patch.object(TimeRecordService, "trigger_auto_print", new_callable=AsyncMock)
 
     response = client.post("/api/v1/time-records/entry")
     assert response.status_code == 201
@@ -60,10 +68,13 @@ def test_register_exit(client: TestClient, mocker: MagicMock) -> None:
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.register_exit",
+    mocker.patch.object(
+        TimeRecordService,
+        "register_exit",
+        new_callable=AsyncMock,
         return_value=mock_record,
     )
+    mocker.patch.object(TimeRecordService, "trigger_auto_print", new_callable=AsyncMock)
 
     response = client.post("/api/v1/time-records/exit")
     assert response.status_code == 201
@@ -79,8 +90,10 @@ def test_toggle_record_type(client: TestClient, mocker: MagicMock) -> None:
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.toggle_record_type",
+    mocker.patch.object(
+        TimeRecordService,
+        "toggle_record_type",
+        new_callable=AsyncMock,
         return_value=mock_record,
     )
 
@@ -98,8 +111,10 @@ def test_read_my_records(client: TestClient, mocker: MagicMock) -> None:
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.get_my_records",
+    mocker.patch.object(
+        TimeRecordService,
+        "get_my_records",
+        new_callable=AsyncMock,
         return_value=[mock_record],
     )
 
@@ -117,8 +132,10 @@ def test_list_records_for_admin(client: TestClient, mocker: MagicMock) -> None:
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.list_records_for_admin",
+    mocker.patch.object(
+        TimeRecordService,
+        "list_records_for_admin",
+        new_callable=AsyncMock,
         return_value=[mock_record],
     )
 
@@ -137,8 +154,10 @@ def test_create_time_record_admin(client: TestClient, mocker: MagicMock) -> None
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.create_admin_record",
+    mocker.patch.object(
+        TimeRecordService,
+        "create_admin_record",
+        new_callable=AsyncMock,
         return_value=mock_record,
     )
 
@@ -159,8 +178,10 @@ def test_update_time_record_admin(client: TestClient, mocker: MagicMock) -> None
         record_datetime=now,
         created_at=now,
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.update_admin_record",
+    mocker.patch.object(
+        TimeRecordService,
+        "update_admin_record",
+        new_callable=AsyncMock,
         return_value=mock_record,
     )
 
@@ -172,7 +193,7 @@ def test_update_time_record_admin(client: TestClient, mocker: MagicMock) -> None
 
 
 def test_delete_time_record_admin(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.time_records.time_record_router.time_record_service.delete_admin_record")
+    mocker.patch.object(TimeRecordService, "delete_admin_record", new_callable=AsyncMock)
 
     response = client.request(
         "DELETE",
@@ -194,8 +215,10 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
         is_ignored=False,
         short_id="test_id"
     )
-    mocker.patch(
-        "app.features.time_records.time_record_router.time_record_service.get_record_timeline",
+    mocker.patch.object(
+        TimeRecordService,
+        "get_record_timeline",
+        new_callable=AsyncMock,
         return_value=[timeline_item],
     )
 

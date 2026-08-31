@@ -1,9 +1,10 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.system.audit_service import AuditService
 from app.features.system.system_schemas import AuditLogResponse
 from app.features.users.user_models import User
 from app.main import app
@@ -42,8 +43,10 @@ def test_read_audit_logs(client: TestClient, mocker: MagicMock) -> None:
             timestamp=datetime(2026, 8, 14, 10, 0, 0),
         )
     ]
-    mocker.patch(
-        "app.features.system.system_router.audit_service.get_logs",
+    mocker.patch.object(
+        AuditService,
+        "get_logs",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 

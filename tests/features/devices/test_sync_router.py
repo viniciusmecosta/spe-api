@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import pytest
 from app.features.devices.device_models import DeviceCredential
+from app.features.devices.sync_service import SyncService
 from app.main import app
 from app.shared import deps
 from app.shared.enums import DeviceKeyType
@@ -30,7 +31,7 @@ def client(mock_consumer_device: DeviceCredential, db_session_mock: MagicMock) -
 
 
 def test_sync_database_endpoint(client: TestClient, mocker: MagicMock) -> None:
-    mock_receive = mocker.patch("app.features.devices.device_router.sync_service.receive_database")
+    mock_receive = mocker.patch.object(SyncService, "receive_database")
 
     test_file = io.BytesIO(b"fake sqlite db content")
     response = client.post(

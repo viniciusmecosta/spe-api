@@ -1,17 +1,16 @@
 import sqlite3
 from unittest.mock import MagicMock
 
-import requests
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
+import requests
 from app.features.devices.device_exceptions import (
     SyncConsumerOnlyError,
     SyncDatabaseCorruptedError,
     SyncDatabaseReceiveError,
 )
 from app.features.devices.sync_service import sync_service
-from app.features.system.system_models import RoutineLog
 
 
 @pytest.fixture
@@ -122,7 +121,7 @@ def test_send_database_already_exists(mocker, db_session_mock, sync_get_db_sessi
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = [RoutineLog()]
+    db_session_mock.scalar.return_value = True
     result = sync_service.send_database_to_consumer()
     assert result is None
 
@@ -148,7 +147,7 @@ def test_send_database_backup_fails(mocker, db_session_mock, sync_get_db_session
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = []
+    db_session_mock.scalar.return_value = False
     mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup", return_value=None)
     result = sync_service.send_database_to_consumer()
     assert result is None
@@ -158,7 +157,7 @@ def test_send_database_success(mocker, db_session_mock, sync_get_db_session):
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = []
+    db_session_mock.scalar.return_value = False
     mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup", return_value="backup.db")
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("requests.post")
@@ -172,7 +171,7 @@ def test_send_database_request_exception(mocker, db_session_mock, sync_get_db_se
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = []
+    db_session_mock.scalar.return_value = False
     mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup", return_value="backup.db")
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("requests.post", side_effect=requests.RequestException("Req error"))
@@ -186,7 +185,7 @@ def test_send_database_request_exception_and_db_error(mocker, db_session_mock, s
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = []
+    db_session_mock.scalar.return_value = False
     mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup", return_value="backup.db")
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("requests.post", side_effect=requests.RequestException("Req error"))
@@ -216,7 +215,7 @@ def test_send_database_db_error_on_write(mocker, db_session_mock, sync_get_db_se
     mocker.patch("app.features.devices.sync_service.settings.OPERATION_MODE", "EXPORTADOR")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_SERVER_URL", "http://test")
     mocker.patch("app.features.devices.sync_service.settings.CONSUMER_API_KEY", "key")
-    db_session_mock.query.return_value.items = []
+    db_session_mock.scalar.return_value = False
     mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup", return_value="backup.db")
     mocker.patch("builtins.open", mocker.mock_open())
     mocker.patch("requests.post")

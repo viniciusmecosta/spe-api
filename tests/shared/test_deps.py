@@ -28,32 +28,36 @@ def test_get_db():
         pass
 
 
-def test_get_current_user_invalid_jwt():
+@pytest.mark.asyncio
+async def test_get_current_user_invalid_jwt():
     db = MagicMock()
     with patch("jwt.decode", side_effect=jwt.PyJWTError("jwt error")):
         with pytest.raises(HTTPException) as exc_info:
-            get_current_user(db, "invalid_token")
+            await get_current_user(db, "invalid_token")
         assert exc_info.value.status_code == 401
 
 
-def test_get_current_user_no_sub():
+@pytest.mark.asyncio
+async def test_get_current_user_no_sub():
     db = MagicMock()
     with patch("jwt.decode", return_value={}):
         with pytest.raises(HTTPException) as exc_info:
-            get_current_user(db, "valid_jwt_no_sub")
+            await get_current_user(db, "valid_jwt_no_sub")
         assert exc_info.value.status_code == 401
 
 
-def test_get_current_user_not_found(db_session):
+@pytest.mark.asyncio
+async def test_get_current_user_not_found(db_session):
     with patch("jwt.decode", return_value={"sub": "999999"}):
         with pytest.raises(HTTPException) as exc_info:
-            get_current_user(db_session, "valid_jwt_non_existent")
+            await get_current_user(db_session, "valid_jwt_non_existent")
         assert exc_info.value.status_code == 404
 
 
-def test_get_current_user_success(db_session, normal_user):
+@pytest.mark.asyncio
+async def test_get_current_user_success(db_session, normal_user):
     with patch("jwt.decode", return_value={"sub": str(normal_user.id)}):
-        user = get_current_user(db_session, "token")
+        user = await get_current_user(db_session, "token")
         assert user.id == normal_user.id
 
 
@@ -97,22 +101,25 @@ def test_get_current_maintainer_success():
     assert get_current_maintainer(user) == user
 
 
-def test_verify_device_api_key_none(db_session):
+@pytest.mark.asyncio
+async def test_verify_device_api_key_none(db_session):
     req = MagicMock()
     db = MagicMock()
     with pytest.raises(HTTPException) as exc_info:
-        verify_device_api_key(req, None, db)
+        await verify_device_api_key(req, None, db)
     assert exc_info.value.status_code == 401
 
 
-def test_verify_device_api_key_invalid(db_session):
+@pytest.mark.asyncio
+async def test_verify_device_api_key_invalid(db_session):
     req = MagicMock()
     with pytest.raises(HTTPException) as exc_info:
-        verify_device_api_key(req, "invalid_key", db_session)
+        await verify_device_api_key(req, "invalid_key", db_session)
     assert exc_info.value.status_code == 401
 
 
-def test_verify_device_api_key_success(db_session):
+@pytest.mark.asyncio
+async def test_verify_device_api_key_success(db_session):
     req = MagicMock()
     raw_key = "valid_device_key_deps_test"
     hashed = get_api_key_hash(raw_key)
@@ -120,27 +127,30 @@ def test_verify_device_api_key_success(db_session):
     db_session.add(cred)
     db_session.commit()
 
-    device = verify_device_api_key(req, raw_key, db_session)
+    device = await verify_device_api_key(req, raw_key, db_session)
     assert device.name == "Relogio Dep"
     assert req.state.device_name == "Relogio Dep"
 
 
-def test_verify_consumer_api_key_none(db_session):
+@pytest.mark.asyncio
+async def test_verify_consumer_api_key_none(db_session):
     req = MagicMock()
     db = MagicMock()
     with pytest.raises(HTTPException) as exc_info:
-        verify_consumer_api_key(req, None, db)
+        await verify_consumer_api_key(req, None, db)
     assert exc_info.value.status_code == 401
 
 
-def test_verify_consumer_api_key_invalid(db_session):
+@pytest.mark.asyncio
+async def test_verify_consumer_api_key_invalid(db_session):
     req = MagicMock()
     with pytest.raises(HTTPException) as exc_info:
-        verify_consumer_api_key(req, "invalid_key", db_session)
+        await verify_consumer_api_key(req, "invalid_key", db_session)
     assert exc_info.value.status_code == 401
 
 
-def test_verify_consumer_api_key_success(db_session):
+@pytest.mark.asyncio
+async def test_verify_consumer_api_key_success(db_session):
     req = MagicMock()
     raw_key = "valid_consumer_key_deps_test"
     hashed = get_api_key_hash(raw_key)
@@ -148,6 +158,6 @@ def test_verify_consumer_api_key_success(db_session):
     db_session.add(cred)
     db_session.commit()
 
-    consumer = verify_consumer_api_key(req, raw_key, db_session)
+    consumer = await verify_consumer_api_key(req, raw_key, db_session)
     assert consumer.name == "Servidor Dep"
     assert req.state.device_name == "Servidor Dep"

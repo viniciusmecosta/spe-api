@@ -1,9 +1,11 @@
 import logging
+from typing import Annotated
 
-from fastapi import BackgroundTasks, Request
-from sqlalchemy.orm import Session
+from fastapi import BackgroundTasks, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.devices.device_repository import biometric_repository
+from app.database.session import get_async_db
+from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
 from app.features.devices.device_schemas import (
     BuzzerNote,
     DeviceActions,
@@ -22,22 +24,40 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceService:
-    def process_punch(
+    def __init__(
+        self,
+            db: Annotated[AsyncSession, Depends(get_async_db)] = None,
+            repo: Annotated[AsyncBiometricRepository, Depends()] = None,
+    ):
+        self.db = db
+        self._repo = repo
+
+    @property
+    def repo(self) -> AsyncBiometricRepository:
+        return self._repo if self._repo is not None else async_biometric_repository
+
+    @repo.setter
+    def repo(self, value: AsyncBiometricRepository) -> None:
+        self._repo = value
+
+    async def process_punch(
             self,
-            db: Session,
-            sensor_index: int,
-            ip_address: str,
+            db: AsyncSession | None = None,
+            sensor_index: int = 0,
+            ip_address: str = "",
             request: Request | None = None,
             background_tasks: BackgroundTasks | None = None,
     ) -> FeedbackPayload:
+        session = db if db is not None else self.db
+        assert session is not None
         try:
-            success, message, record = punch_service.process_biometric_punch(
-                db, sensor_index, ip_address, request=request
+            success, message, record = await punch_service.process_biometric_punch(
+                session, sensor_index, ip_address, request=request
             )
 
             if success and record:
                 if background_tasks:
-                    time_record_service.trigger_auto_print(db, record, background_tasks)
+                    await time_record_service.trigger_auto_print(session, record, background_tasks)
 
                 if request is not None and hasattr(request, "state") and record.user and record.user.name:
                     request.state.attempted_user = record.user.name
@@ -95,17 +115,19 @@ class DeviceService:
             formatted=trusted_now.strftime("%d/%m/%Y %H:%M:%S"),
         )
 
-    def verify_manager_access(
+    async def verify_manager_access(
             self,
-            db: Session,
-            sensor_index: int,
-            device_id: int,
+            db: AsyncSession | None = None,
+            sensor_index: int = 0,
+            device_id: int = 0,
     ) -> ManagerVerifyResponse:
-        managers_with_bio = biometric_repository.get_manager_with_biometric(db)
+        session = db if db is not None else self.db
+        assert session is not None
+        managers_with_bio = await self.repo.get_manager_with_biometric(session)
 
         if not managers_with_bio:
-            audit_service.log_change(
-                db,
+            await audit_service.async_log_change(
+                session,
                 None,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -117,10 +139,10 @@ class DeviceService:
                 message="Nenhum gestor cadastrado. Acesso liberado.",
             )
 
-        biometric = biometric_repository.get_by_sensor_index(db, sensor_index)
+        biometric = await self.repo.get_by_sensor_index(session, sensor_index)
         if not biometric:
-            audit_service.log_change(
-                db,
+            await audit_service.async_log_change(
+                session,
                 None,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -133,8 +155,8 @@ class DeviceService:
             )
 
         if biometric.user.role in [UserRole.MANAGER, UserRole.MAINTAINER] and biometric.user.is_active:
-            audit_service.log_change(
-                db,
+            await audit_service.async_log_change(
+                session,
                 biometric.user.id,
                 "VERIFY_MANAGER",
                 entity="DEVICE",
@@ -146,8 +168,8 @@ class DeviceService:
                 message="Acesso autorizado.",
             )
 
-        audit_service.log_change(
-            db,
+        await audit_service.async_log_change(
+            session,
             biometric.user.id,
             "VERIFY_MANAGER",
             entity="DEVICE",

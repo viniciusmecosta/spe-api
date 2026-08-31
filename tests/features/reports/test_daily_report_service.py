@@ -1,11 +1,13 @@
 from datetime import date, datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 from app.features.reports.daily_report_service import DailyReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared.enums import RecordType
+
+pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -15,7 +17,8 @@ def service():
 
 @patch("app.features.reports.daily_report_service.anomaly_service")
 @patch("app.features.reports.daily_report_service.template_service")
-def test_generate_daily_report_html_with_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
+async def test_generate_daily_report_html_with_records(mock_template_service, mock_anomaly_service, service,
+                                                       db_session_mock):
     target_date = date(2026, 7, 24)
 
     user = User(id=1, name="John Doe")
@@ -34,33 +37,19 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
         is_ignored=False
     )
 
-    class QueryMock:
-        def __init__(self, items):
-            self.items = items
-
-        def join(self, *args, **kwargs):
-            return self
-
-        def filter(self, *args, **kwargs):
-            return self
-
-        def order_by(self, *args, **kwargs):
-            return self
-
-        def all(self):
-            return self.items
-
-    db_session_mock.query.return_value = QueryMock([(record1, user), (record2, user)])
+    mock_result = MagicMock()
+    mock_result.all.return_value = [(record1, user), (record2, user)]
+    db_session_mock.execute = AsyncMock(return_value=mock_result)
 
     class AnomalyMock:
         def __init__(self, user_name, description):
             self.user_name = user_name
             self.description = description
 
-    mock_anomaly_service.get_anomalies.return_value = [AnomalyMock("Jane Smith", "Missing Exit")]
+    mock_anomaly_service.get_anomalies = AsyncMock(return_value=[AnomalyMock("Jane Smith", "Missing Exit")])
     mock_template_service.get_daily_report_html.return_value = "<html>Mock HTML</html>"
 
-    result = service.generate_daily_report_html(db_session_mock, target_date)
+    result = await service.generate_daily_report_html(db_session_mock, target_date)
 
     assert result == "<html>Mock HTML</html>"
     mock_template_service.get_daily_report_html.assert_called_once()
@@ -76,31 +65,18 @@ def test_generate_daily_report_html_with_records(mock_template_service, mock_ano
 
 @patch("app.features.reports.daily_report_service.anomaly_service")
 @patch("app.features.reports.daily_report_service.template_service")
-def test_generate_daily_report_html_no_records(mock_template_service, mock_anomaly_service, service, db_session_mock):
+async def test_generate_daily_report_html_no_records(mock_template_service, mock_anomaly_service, service,
+                                                     db_session_mock):
     target_date = date(2026, 7, 24)
 
-    class QueryMock:
-        def __init__(self, items):
-            self.items = items
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    db_session_mock.execute = AsyncMock(return_value=mock_result)
 
-        def join(self, *args, **kwargs):
-            return self
-
-        def filter(self, *args, **kwargs):
-            return self
-
-        def order_by(self, *args, **kwargs):
-            return self
-
-        def all(self):
-            return self.items
-
-    db_session_mock.query.return_value = QueryMock([])
-
-    mock_anomaly_service.get_anomalies.return_value = []
+    mock_anomaly_service.get_anomalies = AsyncMock(return_value=[])
     mock_template_service.get_daily_report_html.return_value = "<html>Mock HTML No Records</html>"
 
-    result = service.generate_daily_report_html(db_session_mock, target_date)
+    result = await service.generate_daily_report_html(db_session_mock, target_date)
 
     assert result == "<html>Mock HTML No Records</html>"
     mock_template_service.get_daily_report_html.assert_called_once()
@@ -112,11 +88,11 @@ def test_generate_daily_report_html_no_records(mock_template_service, mock_anoma
     assert args[4] == []
 
 
-def test_generate_daily_report_html_exception(service, db_session_mock):
+async def test_generate_daily_report_html_exception(service, db_session_mock):
     target_date = date(2026, 7, 24)
 
-    db_session_mock.query.side_effect = ValueError("Database Error")
+    db_session_mock.execute = AsyncMock(side_effect=ValueError("Database Error"))
 
-    result = service.generate_daily_report_html(db_session_mock, target_date)
+    result = await service.generate_daily_report_html(db_session_mock, target_date)
 
     assert result == "<p><em>Erro ao gerar relatório para 2026-07-24.</em></p>"

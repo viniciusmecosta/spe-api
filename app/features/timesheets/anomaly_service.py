@@ -1,15 +1,24 @@
 import calendar
 from datetime import date, datetime
+from typing import Annotated, Any
 
+from fastapi import Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_repository import (
+    async_time_record_repository,
     time_record_repository,
 )
 from app.features.timesheets.timesheet_exceptions import InvalidMonthOrYearError
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
-from app.features.users.user_repository import user_repository
+from app.features.users.user_repository import (
+    async_user_repository,
+    user_repository,
+)
+from app.shared import deps
 from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
@@ -20,6 +29,9 @@ from app.shared.enums import (
 
 
 class AnomalyService:
+    def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
+        self.db = db
+
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
@@ -203,13 +215,25 @@ class AnomalyService:
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
 
-    def get_anomalies(self, db: Session, start_date: date, end_date: date, user_id: int | None = None,
+    async def get_anomalies(self, db: Any | None = None, start_date: date | None = None, end_date: date | None = None,
+                            user_id: int | None = None,
                       ignore_excessive_hours: bool = False) -> list[AnomalyResponse]:
-        if user_id:
-            user = user_repository.get(db, user_id)
-            users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+        session = db if db is not None else self.db
+        assert session is not None
+        assert start_date is not None
+        assert end_date is not None
+        if hasattr(session, "sync_session"):
+            if user_id:
+                user = await async_user_repository.get(session, user_id)
+                users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+            else:
+                users = await async_user_repository.get_active_employees(session)
         else:
-            users = user_repository.get_active_employees(db)
+            if user_id:
+                user = user_repository.get(session, user_id)
+                users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+            else:
+                users = user_repository.get_active_employees(session)
 
         target_user_ids = [u.id for u in users]
         if not target_user_ids:
@@ -218,22 +242,38 @@ class AnomalyService:
         dt_start = datetime.combine(start_date, datetime.min.time())
         dt_end = datetime.combine(end_date, datetime.max.time())
 
-        records_flat = time_record_repository.get_by_users_and_range(db, target_user_ids, dt_start, dt_end)
-
-        extra_time_adjustments = db.query(AdjustmentRequest).filter(
-            AdjustmentRequest.user_id.in_(target_user_ids),
-            AdjustmentRequest.target_date >= start_date,
-            AdjustmentRequest.target_date <= end_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
-            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
-            AdjustmentRequest.deleted_at.is_(None)
-        ).all()
+        if hasattr(session, "sync_session"):
+            records_flat = await async_time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start,
+                                                                                     dt_end)
+            adj_stmt = select(AdjustmentRequest).where(
+                AdjustmentRequest.user_id.in_(target_user_ids),
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+                AdjustmentRequest.deleted_at.is_(None),
+            )
+            adj_res = await session.scalars(adj_stmt)
+            extra_time_adjustments = list(adj_res.all())
+        else:
+            records_flat = time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start, dt_end)
+            extra_time_adjustments = session.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id.in_(target_user_ids),
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
+                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+                AdjustmentRequest.deleted_at.is_(None)
+            ).all()
 
         records_map, adj_map = self._build_data_maps(records_flat, extra_time_adjustments, target_user_ids)
         return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours)
 
-    def get_anomalies_by_month(self, db: Session, month: int, year: int, user_id: int | None = None,
+    async def get_anomalies_by_month(self, db: Any | None = None, month: int = 0, year: int = 0,
+                                     user_id: int | None = None,
                                ignore_excessive_hours: bool = False) -> list[AnomalyResponse]:
+        session = db if db is not None else self.db
+        assert session is not None
         today = date.today()
         try:
             _, last_day = calendar.monthrange(year, month)
@@ -248,7 +288,7 @@ class AnomalyService:
         if start_date > end_date:
             return []
 
-        return self.get_anomalies(db, start_date, end_date, user_id, ignore_excessive_hours)
+        return await self.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours)
 
 
 anomaly_service = AnomalyService()

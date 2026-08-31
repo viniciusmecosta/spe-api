@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.report_schemas import ManagerDashboardResponse, TeamHoursResponse
 from app.features.users.user_models import User
 from app.main import app
@@ -21,8 +22,12 @@ def mock_manager_user() -> User:
 
 @pytest.fixture
 def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
+    async def override_get_async_db():
+        yield AsyncMock()
+
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_manager_user
     app.dependency_overrides[deps.get_db] = lambda: db_session_mock
+    app.dependency_overrides[deps.get_async_db] = override_get_async_db
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
@@ -44,8 +49,10 @@ def test_get_manager_dashboard(client: TestClient, mocker: MagicMock) -> None:
             employees=[],
         ),
     )
-    mocker.patch(
-        "app.features.reports.report_router.dashboard_service.get_manager_dashboard",
+    mocker.patch.object(
+        DashboardService,
+        "get_manager_dashboard",
+        new_callable=AsyncMock,
         return_value=expected,
     )
 

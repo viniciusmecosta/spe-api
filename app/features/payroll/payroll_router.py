@@ -1,14 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from sqlalchemy.orm import Session
 
 from app.features.payroll.payroll_schemas import (
     PayrollClosureCreate,
     PayrollClosureResponse,
     PayrollReopenCreate,
 )
-from app.features.payroll.payroll_service import payroll_service
+from app.features.payroll.payroll_service import PayrollService
 from app.features.time_records.time_record_schemas import SuccessResponse
 from app.features.users.user_models import User
 from app.shared import deps
@@ -27,9 +26,9 @@ router = APIRouter(responses={**AUTH_RESPONSES})
 )
 async def list_payroll_periods(
         year: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PayrollService, Depends()],
 ) -> list[PayrollClosureResponse]:
-    return payroll_service.list_periods(db, year)
+    return await service.list_periods(year=year)
 
 
 @router.post(
@@ -39,10 +38,11 @@ async def list_payroll_periods(
 async def close_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PayrollService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> PayrollClosureResponse:
-    return payroll_service.close_period(db, period.month, period.year, current_user, background_tasks)
+    return await service.close_period(month=period.month, year=period.year, current_user=current_user,
+                                      background_tasks=background_tasks)
 
 
 @router.post(
@@ -52,11 +52,11 @@ async def close_payroll_period(
 async def reopen_payroll_period(
         period: PayrollReopenCreate,
         background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PayrollService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> SuccessResponse:
-    return payroll_service.reopen_period(
-        db, period.month, period.year, period.observation, current_user, background_tasks
+    return await service.reopen_period(
+        month=period.month, year=period.year, observation=period.observation, current_user=current_user, background_tasks=background_tasks
     )
 
 
@@ -68,7 +68,8 @@ async def reopen_payroll_period(
 async def upload_legacy_report(
         closure_id: int,
         file: Annotated[UploadFile, File(...)],
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PayrollService, Depends()],
 ) -> SuccessResponse:
-    payroll_service.upload_legacy_report(db, closure_id, file.filename or "", file.file.read())
+    await service.upload_legacy_report(closure_id=closure_id, original_filename=file.filename or "",
+                                       file_content=file.file.read())
     return SuccessResponse(status="success", message="Documento legado anexado com sucesso.")

@@ -1,5 +1,5 @@
 from datetime import date, time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.features.users.user_exceptions import (
@@ -12,25 +12,28 @@ from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.features.users.user_work_schedule_service import user_work_schedule_service
 
 
-def test_check_payroll_closure_ok(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_check_payroll_closure_ok(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
-    user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
+    await user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
 
 
-def test_check_payroll_closure_closed(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_check_payroll_closure_closed(db_session_mock, mocker):
     closure = MagicMock()
     closure.is_closed = True
     mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=closure)
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     with pytest.raises(SchedulePayrollClosedError) as exc:
-        user_work_schedule_service.check_payroll_closure(db_session_mock, start_date, end_date)
+        await user_work_schedule_service.check_payroll_closure(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 400
 
 
-def test_check_payroll_closure_year_span(db_session_mock, mocker):
+@pytest.mark.asyncio
+async def test_check_payroll_closure_year_span(db_session_mock, mocker):
     mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
-    user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 11, 1), date(2027, 2, 1))
+    await user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 11, 1), date(2027, 2, 1))
 
 
 def test_apply_schedule_updates_variations():
@@ -91,7 +94,8 @@ def test_handle_schedule_overlap():
     assert exc.value.status_code == 400
 
 
-def test_get_bulk_schedules(db_session_mock):
+@pytest.mark.asyncio
+async def test_get_bulk_schedules(db_session_mock):
     cfg1 = UserWorkScheduleConfig(
         id=1, user_id=1, day_of_week=1, daily_hours=8.0,
         valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
@@ -101,14 +105,15 @@ def test_get_bulk_schedules(db_session_mock):
     query_mock.filter.return_value.all.return_value = [cfg1]
     db_session_mock.query.return_value = query_mock
 
-    res = user_work_schedule_service.get_bulk_schedules(db_session_mock, 9, 2026)
+    res = await user_work_schedule_service.get_bulk_schedules(db_session_mock, 9, 2026)
     assert len(res) == 1
     assert res[0]["valid_from"] == date(2026, 9, 1)
     assert len(res[0]["users"]) == 1
     assert res[0]["users"][0]["user_id"] == 1
 
 
-def test_get_bulk_schedule_found(db_session_mock):
+@pytest.mark.asyncio
+async def test_get_bulk_schedule_found(db_session_mock):
     cfg1 = UserWorkScheduleConfig(
         id=1, user_id=1, day_of_week=1, daily_hours=8.0,
         valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
@@ -118,12 +123,13 @@ def test_get_bulk_schedule_found(db_session_mock):
     query_mock.filter.return_value.all.return_value = [cfg1]
     db_session_mock.query.return_value = query_mock
 
-    res = user_work_schedule_service.get_bulk_schedule(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
+    res = await user_work_schedule_service.get_bulk_schedule(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
     assert res["valid_from"] == date(2026, 9, 1)
     assert len(res["users"]) == 1
 
 
-def test_get_bulk_schedule_not_found(db_session_mock):
+@pytest.mark.asyncio
+async def test_get_bulk_schedule_not_found(db_session_mock):
     query_mock = MagicMock()
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
@@ -131,12 +137,13 @@ def test_get_bulk_schedule_not_found(db_session_mock):
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     with pytest.raises(BulkScheduleNotFoundError) as exc:
-        user_work_schedule_service.get_bulk_schedule(db_session_mock, start_date, end_date)
+        await user_work_schedule_service.get_bulk_schedule(db_session_mock, start_date, end_date)
     assert exc.value.status_code == 404
 
 
-def test_bulk_add_schedules_success(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_success(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     user = User(id=1, name="Test User")
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap")
@@ -155,42 +162,46 @@ def test_bulk_add_schedules_success(db_session_mock, mocker):
         ]
     }
 
-    res = user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+    res = await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert "sucesso" in res["message"]
     db_session_mock.add.assert_called()
 
 
-def test_bulk_add_schedules_missing_dates(db_session_mock):
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_missing_dates(db_session_mock):
     bulk_data = {}
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+        await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_bulk_add_schedules_exceeds_duration(db_session_mock):
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_exceeds_duration(db_session_mock):
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 11, 30),
         "users": []
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+        await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_bulk_add_schedules_no_users(db_session_mock):
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_no_users(db_session_mock):
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 9, 30),
         "users": []
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+        await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=None)
 
     bulk_data = {
@@ -199,12 +210,13 @@ def test_bulk_add_schedules_user_not_found(db_session_mock, mocker):
         "users": [{"user_id": 999, "schedules": []}]
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+        await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     user = User(id=1, name="Test User")
     mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user)
     mocker.patch.object(user_work_schedule_service, "handle_schedule_overlap",
@@ -218,12 +230,13 @@ def test_bulk_add_schedules_overlap_error(db_session_mock, mocker):
         ]
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
+        await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_update_bulk_schedules_success(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_success(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     old_cfg_update = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1),
@@ -253,22 +266,24 @@ def test_update_bulk_schedules_success(db_session_mock, mocker):
         ]
     }
 
-    res = user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30),
+    res = await user_work_schedule_service.update_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30),
                                                            bulk_data, 99)
     assert res["message"] == "Expedientes atualizados com sucesso."
     db_session_mock.delete.assert_called_with(old_cfg_delete)
 
 
-def test_update_bulk_schedules_invalid_dates(db_session_mock):
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_invalid_dates(db_session_mock):
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     empty_data = {}
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, empty_data, 99)
+        await user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, empty_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_update_bulk_schedules_exceeds_duration(db_session_mock):
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_exceeds_duration(db_session_mock):
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     bulk_data = {
@@ -277,12 +292,13 @@ def test_update_bulk_schedules_exceeds_duration(db_session_mock):
         "users": []
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
+        await user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     query_mock = MagicMock()
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
@@ -296,12 +312,13 @@ def test_update_bulk_schedules_user_not_found(db_session_mock, mocker):
         "users": [{"user_id": 999, "schedules": [{"day_of_week": 0}]}]
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
+        await user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1),
                                      valid_until=date(2026, 9, 30))
     query_mock = MagicMock()
@@ -323,12 +340,13 @@ def test_update_bulk_schedules_overlap_error(db_session_mock, mocker):
         ]
     }
     with pytest.raises(BulkScheduleValidationError) as exc:
-        user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
+        await user_work_schedule_service.update_bulk_schedules(db_session_mock, start_date, end_date, bulk_data, 99)
     assert exc.value.status_code == 400
 
 
-def test_delete_bulk_schedules_success(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_delete_bulk_schedules_success(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
 
     old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1),
@@ -337,13 +355,15 @@ def test_delete_bulk_schedules_success(db_session_mock, mocker):
     query_mock.filter.return_value.all.return_value = [old_cfg]
     db_session_mock.query.return_value = query_mock
 
-    res = user_work_schedule_service.delete_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30), 99)
+    res = await user_work_schedule_service.delete_bulk_schedules(db_session_mock, date(2026, 9, 1), date(2026, 9, 30),
+                                                                 99)
     assert "sucesso" in res["message"]
     db_session_mock.delete.assert_called_with(old_cfg)
 
 
-def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
-    mocker.patch.object(user_work_schedule_service, "check_payroll_closure")
+@pytest.mark.asyncio
+async def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     query_mock = MagicMock()
     query_mock.filter.return_value.all.return_value = []
     db_session_mock.query.return_value = query_mock
@@ -351,5 +371,5 @@ def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
     start_date = date(2026, 9, 1)
     end_date = date(2026, 9, 30)
     with pytest.raises(BulkScheduleNotFoundError) as exc:
-        user_work_schedule_service.delete_bulk_schedules(db_session_mock, start_date, end_date, 99)
+        await user_work_schedule_service.delete_bulk_schedules(db_session_mock, start_date, end_date, 99)
     assert exc.value.status_code == 404

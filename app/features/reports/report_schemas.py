@@ -60,12 +60,6 @@ class AdvancedUserReportResponse(BaseModel):
     daily_details: list[DailyReportItem]
 
 
-class MonthlyReportResponse(BaseModel):
-    month: int
-    year: int
-    payroll_data: list[UserPayrollSummary]
-
-
 class DashboardMetricsResponse(BaseModel):
     total_active_employees: int
     pending_adjustments: int

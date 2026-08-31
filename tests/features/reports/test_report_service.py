@@ -2,7 +2,7 @@ import importlib
 import locale
 from collections import defaultdict
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -17,10 +17,6 @@ from app.features.reports.report_exceptions import (
     ReportGlobalPermissionError,
     ReportNotFoundOrIncompleteError,
     ReportUserNotFoundError,
-)
-from app.features.reports.report_schemas import (
-    AdvancedUserReportResponse,
-    UserPayrollSummary,
 )
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
@@ -367,29 +363,32 @@ def test_build_daily_report_item(service):
     assert item.detailed_punches is not None
 
 
-def test_get_history_report_user_not_found(service, mock_db, mock_repo_user):
+@pytest.mark.asyncio
+async def test_get_history_report_user_not_found(service, mock_db, mock_repo_user):
     mock_repo_user.get.return_value = None
     curr_user = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(ReportUserNotFoundError) as exc:
-        service.get_history_report(mock_db, user_id=999, month=1, year=2024, current_user=curr_user)
+        await service.get_history_report(mock_db, user_id=999, month=1, year=2024, current_user=curr_user)
     assert exc.value.status_code == 404
 
 
-def test_get_history_report_future_date(service, mock_db):
+@pytest.mark.asyncio
+async def test_get_history_report_future_date(service, mock_db):
     curr_user = User(id=1, role=UserRole.EMPLOYEE)
     future_year = datetime.now().year + 2
-    res = service.get_history_report(mock_db, user_id=1, month=1, year=future_year, current_user=curr_user)
+    res = await service.get_history_report(mock_db, user_id=1, month=1, year=future_year, current_user=curr_user)
     assert res.total_worked_time == "00:00"
     assert res.days == []
 
 
-def test_get_history_report_success(service, mock_db, mock_repo_user, mock_repo_time_record,
+@pytest.mark.asyncio
+async def test_get_history_report_success(service, mock_db, mock_repo_user, mock_repo_time_record,
                                     mock_repo_holiday, mock_anomaly_service, mock_time_calc_service):
     user = User(id=1, name="Test User", historical_schedules=[])
     mock_repo_user.get.return_value = user
     mock_repo_time_record.get_by_range.return_value = []
     mock_repo_holiday.get_by_month.return_value = []
-    mock_anomaly_service.get_anomalies.return_value = []
+    mock_anomaly_service.get_anomalies = AsyncMock(return_value=[])
 
     period_calc = PeriodTimeResult(
         total_net_worked_seconds=57600.0,
@@ -408,18 +407,19 @@ def test_get_history_report_success(service, mock_db, mock_repo_user, mock_repo_
     mock_time_calc_service.calculate_period_time.return_value = period_calc
 
     curr_user = User(id=1, role=UserRole.EMPLOYEE)
-    res = service.get_history_report(mock_db, user_id=1, month=None, year=None, current_user=curr_user)
+    res = await service.get_history_report(mock_db, user_id=1, month=None, year=None, current_user=curr_user)
     assert res.month == datetime.now().month
     assert res.year == datetime.now().year
     assert res.total_worked_time == "16:00"
     assert len(res.days) >= 1
 
 
-def test_fetch_report_data_database_queries(service, mock_db, mock_repo_time_record, mock_repo_holiday):
+@pytest.mark.asyncio
+async def test_fetch_report_data_database_queries(service, mock_db, mock_repo_time_record, mock_repo_holiday):
     mock_repo_time_record.get_by_range.return_value = ["rec1"]
     mock_repo_holiday.get_by_month.return_value = ["hol1"]
 
-    rec, adj, hol = service._fetch_report_data(
+    rec, adj, hol = await service._fetch_report_data(
         mock_db,
         user_id=1,
         month=1,
@@ -435,8 +435,9 @@ def test_fetch_report_data_database_queries(service, mock_db, mock_repo_time_rec
     assert isinstance(adj, list)
 
 
-def test_fetch_report_data_prefetched(service, mock_db):
-    rec, adj, hol = service._fetch_report_data(
+@pytest.mark.asyncio
+async def test_fetch_report_data_prefetched(service, mock_db):
+    rec, adj, hol = await service._fetch_report_data(
         mock_db,
         user_id=1,
         month=1,
@@ -452,13 +453,15 @@ def test_fetch_report_data_prefetched(service, mock_db):
     assert hol == ["h"]
 
 
-def test_get_advanced_user_report_not_found(service, mock_db, mock_repo_user):
+@pytest.mark.asyncio
+async def test_get_advanced_user_report_not_found(service, mock_db, mock_repo_user):
     mock_repo_user.get.return_value = None
-    res = service.get_advanced_user_report(mock_db, user_id=999, month=1, year=2024)
+    res = await service.get_advanced_user_report(mock_db, user_id=999, month=1, year=2024)
     assert res is None
 
 
-def test_get_advanced_user_report_success(service, mock_db, mock_repo_user, mock_time_calc_service):
+@pytest.mark.asyncio
+async def test_get_advanced_user_report_success(service, mock_db, mock_repo_user, mock_time_calc_service):
     user = User(id=1, name="John Doe", historical_schedules=[])
     mock_repo_user.get.return_value = user
 
@@ -483,7 +486,7 @@ def test_get_advanced_user_report_success(service, mock_db, mock_repo_user, mock
     mock_time_calc_service.calculate_period_time.return_value = period_calc
 
     curr_user = User(id=1, role=UserRole.MAINTAINER)
-    res = service.get_advanced_user_report(mock_db, user_id=1, month=1, year=2024, current_user=curr_user)
+    res = await service.get_advanced_user_report(mock_db, user_id=1, month=1, year=2024, current_user=curr_user)
     assert res is not None
     assert res.summary.user_id == 1
     assert res.summary.absences >= 1
@@ -496,83 +499,6 @@ def test_get_advanced_user_report_success(service, mock_db, mock_repo_user, mock
     assert res.summary.total_missing_hours == 4.0
     assert res.summary.final_balance == -2.0
     assert len(res.daily_details) == 31
-
-
-def test_get_monthly_summary(service, mock_db, mock_repo_holiday, mock_time_calc_service):
-    user1 = User(id=1, name="User One", role=UserRole.EMPLOYEE, historical_schedules=[])
-    user2 = User(id=2, name="User Two", role=UserRole.EMPLOYEE, historical_schedules=[])
-
-    rec1 = TimeRecord(id=10, user_id=1, record_datetime=datetime(2024, 1, 5, 8, 0), record_type=RecordType.ENTRY)
-    adj1 = AdjustmentRequest(id=20, user_id=1, target_date=date(2024, 1, 5))
-
-    class MockQueryRouter:
-        def __init__(self, items):
-            self.items = items
-
-        def options(self, *args, **kwargs):
-            return self
-
-        def filter(self, *args, **kwargs):
-            return self
-
-        def all(self):
-            return self.items
-
-    def fake_query(model):
-        if model == User:
-            return MockQueryRouter([user1, user2])
-        elif model == TimeRecord:
-            return MockQueryRouter([rec1])
-        elif model == AdjustmentRequest:
-            return MockQueryRouter([adj1])
-        return MockQueryRouter([])
-
-    mock_db.query.side_effect = fake_query
-    mock_repo_holiday.get_by_month.return_value = []
-
-    rep1 = AdvancedUserReportResponse(
-        summary=UserPayrollSummary(
-            user_id=1,
-            user_name="User One",
-            total_worked_time="10:00",
-            total_expected_time="10:00",
-            total_worked_minutes=600,
-            total_expected_minutes=600,
-            days_worked=1,
-            absences=0,
-            total_worked_hours=10.0,
-            total_expected_hours=10.0,
-            total_extra_hours=0.0,
-            total_missing_hours=0.0,
-            final_balance=0.0,
-        ),
-        daily_details=[],
-    )
-    rep2 = AdvancedUserReportResponse(
-        summary=UserPayrollSummary(
-            user_id=2,
-            user_name="User Two",
-            total_worked_time="00:00",
-            total_expected_time="00:00",
-            total_worked_minutes=0,
-            total_expected_minutes=0,
-            days_worked=0,
-            absences=0,
-            total_worked_hours=0.0,
-            total_expected_hours=0.0,
-            total_extra_hours=0.0,
-            total_missing_hours=0.0,
-            final_balance=0.0,
-        ),
-        daily_details=[],
-    )
-
-    with patch.object(service, "get_advanced_user_report", side_effect=[rep1, rep2]):
-        res = service.get_monthly_summary(mock_db, month=1, year=2024, employee_ids=[1, 2])
-        assert res.month == 1
-        assert res.year == 2024
-        assert len(res.payroll_data) == 1
-        assert res.payroll_data[0].user_id == 1
 
 
 def test_check_report_permission(service):
@@ -615,66 +541,74 @@ def test_check_user_report_access_forbidden(service):
     assert exc.value.detail == "Acesso bloqueado."
 
 
-def test_get_advanced_user_report_or_404_success(service, mock_db):
+@pytest.mark.asyncio
+async def test_get_advanced_user_report_or_404_success(service, mock_db):
     dummy_rep = MagicMock()
-    with patch.object(service, "get_advanced_user_report", return_value=dummy_rep):
-        assert service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, MagicMock()) == dummy_rep
+    with patch.object(service, "get_advanced_user_report", new_callable=AsyncMock, return_value=dummy_rep):
+        assert await service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, MagicMock()) == dummy_rep
 
 
-def test_get_advanced_user_report_or_404_not_found(service, mock_db):
+@pytest.mark.asyncio
+async def test_get_advanced_user_report_or_404_not_found(service, mock_db):
     dummy_user = MagicMock()
-    with patch.object(service, "get_advanced_user_report", return_value=None):
+    with patch.object(service, "get_advanced_user_report", new_callable=AsyncMock, return_value=None):
         with pytest.raises(ReportNotFoundOrIncompleteError) as exc:
-            service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, dummy_user)
+            await service.get_advanced_user_report_or_404(mock_db, 1, 1, 2024, dummy_user)
         assert exc.value.status_code == 404
 
 
-def test_validate_excel_export_permission_maintainer(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_maintainer(service, mock_db):
     maint = MagicMock(spec=User)
     maint.role = UserRole.MAINTAINER
-    service.validate_excel_export_permission(mock_db, maint, 1, 2024, datetime(2024, 2, 1))
+    await service.validate_excel_export_permission(mock_db, maint, 1, 2024, datetime(2024, 2, 1))
 
 
-def test_validate_excel_export_permission_manager_pending_adjustments(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_manager_pending_adjustments(service, mock_db):
     mgr = MagicMock(spec=User)
     mgr.role = UserRole.MANAGER
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = [AdjustmentRequest()]
     target_date = datetime(2024, 2, 1)
     with pytest.raises(PendingAdjustmentsExistError) as exc_mgr:
-        service.validate_excel_export_permission(mock_db, mgr, 1, 2024, target_date)
+        await service.validate_excel_export_permission(mock_db, mgr, 1, 2024, target_date)
     assert exc_mgr.value.status_code == 400
 
 
-def test_validate_excel_export_permission_manager_no_pending(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_manager_no_pending(service, mock_db):
     mgr = MagicMock(spec=User)
     mgr.role = UserRole.MANAGER
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = []
-    service.validate_excel_export_permission(mock_db, mgr, 1, 2024, datetime(2024, 2, 1))
+    await service.validate_excel_export_permission(mock_db, mgr, 1, 2024, datetime(2024, 2, 1))
 
 
-def test_validate_excel_export_permission_employee_no_export_perm(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_employee_no_export_perm(service, mock_db):
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = False
     target_date = datetime(2024, 2, 1)
     with pytest.raises(ReportExportPermissionError) as exc_emp1:
-        service.validate_excel_export_permission(mock_db, emp, 1, 2024, target_date)
+        await service.validate_excel_export_permission(mock_db, emp, 1, 2024, target_date)
     assert exc_emp1.value.status_code == 403
 
 
-def test_validate_excel_export_permission_employee_wrong_month(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_employee_wrong_month(service, mock_db):
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = True
     now = datetime(2024, 5, 1)
     with pytest.raises(EmployeePreviousMonthOnlyError) as exc_emp2:
-        service.validate_excel_export_permission(mock_db, emp, 1, 2024, now)
+        await service.validate_excel_export_permission(mock_db, emp, 1, 2024, now)
     assert exc_emp2.value.status_code == 400
 
 
-def test_validate_excel_export_permission_employee_unclosed_payroll(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_employee_unclosed_payroll(service, mock_db):
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = True
@@ -682,22 +616,23 @@ def test_validate_excel_export_permission_employee_unclosed_payroll(service, moc
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = []
     with pytest.raises(PayrollNotClosedForReportError) as exc_emp3:
-        service.validate_excel_export_permission(mock_db, emp, 4, 2024, now)
+        await service.validate_excel_export_permission(mock_db, emp, 4, 2024, now)
     assert exc_emp3.value.status_code == 400
 
 
-def test_validate_excel_export_permission_employee_success(service, mock_db):
+@pytest.mark.asyncio
+async def test_validate_excel_export_permission_employee_success(service, mock_db):
     emp = MagicMock(spec=User)
     emp.role = UserRole.EMPLOYEE
     emp.can_export_report = True
     now = datetime(2024, 5, 1)
     mock_db.query.side_effect = None
     mock_db.query.return_value.items = [PayrollClosure(month=4, year=2024, is_closed=True)]
-    service.validate_excel_export_permission(mock_db, emp, 4, 2024, now)
+    await service.validate_excel_export_permission(mock_db, emp, 4, 2024, now)
 
     now_jan = datetime(2024, 1, 15)
     mock_db.query.return_value.items = [PayrollClosure(month=12, year=2023, is_closed=True)]
-    service.validate_excel_export_permission(mock_db, emp, 12, 2023, now_jan)
+    await service.validate_excel_export_permission(mock_db, emp, 12, 2023, now_jan)
 
 
 def test_locale_error_handled():

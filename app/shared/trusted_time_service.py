@@ -69,7 +69,7 @@ class TrustedTimeService:
     def _request_ntp_from_servers(self, client: ntplib.NTPClient) -> ntplib.NTPStats | None:
         for server in ["pool.ntp.br", "pool.ntp.org", "time.google.com"]:
             try:
-                return client.request(server, version=3, timeout=0.5)
+                return client.request(server, version=3, timeout=2.0)
             except Exception:
                 continue
         return None

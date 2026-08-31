@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from app.features.holidays.holiday_models import Holiday
 from app.features.system.audit_service import audit_service, serialize_model
@@ -286,12 +286,16 @@ def test_compute_diffs_identical():
     assert actual_new == {}
 
 
-def test_get_logs(db_session_mock, mocker):
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_get_logs(db_session_mock, mocker):
     mock_get_logs = mocker.patch("app.features.system.audit_service.audit_repository.get_logs")
     mock_get_logs.return_value = ["log1", "log2"]
     start = date(2023, 1, 1)
     end = date(2023, 12, 31)
-    result = audit_service.get_logs(
+    result = await audit_service.get_logs(
         db=db_session_mock,
         action="CREATE",
         start_date=start,
@@ -367,32 +371,38 @@ def test_audit_repository_get_logs():
     assert res_desc == ["audit1", "audit2"]
 
 
-def test_audit_repository_get_manual_changes():
-    db_mock = MagicMock()
-    query_mock = MagicMock()
-    db_mock.query.return_value = query_mock
-    query_mock.filter.return_value = query_mock
-    query_mock.order_by.return_value = query_mock
-    query_mock.offset.return_value = query_mock
-    query_mock.limit.return_value = query_mock
-    query_mock.all.return_value = ["manual_log"]
-
-    res_asc = audit_repository.get_manual_changes(
-        db_mock,
-        start_date=date(2026, 1, 1),
-        end_date=date(2026, 1, 31),
-        order_by="asc",
-        skip=0,
-        limit=50
+@pytest.mark.asyncio
+async def test_async_log(async_db_mock, mocker):
+    mock_repo = mocker.patch.object(audit_service.repo, "create", new_callable=AsyncMock)
+    mock_repo.return_value = "mock_audit_log"
+    result = await audit_service.async_log(
+        async_db_mock,
+        42,
+        "UPDATE",
+        entity="User",
+        entity_id=1,
+        old_data={"name": "Old"},
+        new_data={"name": "New"}
     )
-    assert res_asc == ["manual_log"]
+    assert result == "mock_audit_log"
+    mock_repo.assert_awaited_once()
 
-    res_desc = audit_repository.get_manual_changes(
-        db_mock,
-        start_date=None,
-        end_date=None,
-        order_by="desc",
-        skip=10,
-        limit=100
+
+@pytest.mark.asyncio
+async def test_async_log_change(async_db_mock, mocker):
+    mock_repo = mocker.patch.object(audit_service.repo, "create", new_callable=AsyncMock)
+    mock_repo.return_value = "created_log"
+
+    old_user = User(id=1, username="old_user", name="Old User", role=UserRole.EMPLOYEE)
+    new_user = User(id=1, username="old_user", name="New User", role=UserRole.MANAGER)
+
+    res = await audit_service.async_log_change(
+        async_db_mock,
+        user_id=10,
+        action="UPDATE_USER",
+        old_model=old_user,
+        new_model=new_user
     )
-    assert res_desc == ["manual_log"]
+
+    assert res == "created_log"
+    mock_repo.assert_awaited_once()

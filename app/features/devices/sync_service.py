@@ -2,13 +2,15 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
-import requests
-from fastapi import UploadFile
-from sqlalchemy import exists
+from fastapi import Depends, UploadFile
+from sqlalchemy import exists, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
+import requests
 from app.core.config import settings
 from app.database.session import engine, get_db_session
 from app.features.devices.device_exceptions import (
@@ -18,11 +20,15 @@ from app.features.devices.device_exceptions import (
 )
 from app.features.system.backup_service import backup_service
 from app.features.system.system_models import RoutineLog
+from app.shared import deps
 
 logger = logging.getLogger(__name__)
 
 
 class SyncService:
+    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+        self.db = db
+
     def _check_sqlite_integrity(self, db_path: str) -> bool:
         try:
             conn = sqlite3.connect(db_path)
@@ -79,11 +85,12 @@ class SyncService:
         try:
             with get_db_session() as db_read:
                 current_hour_start = now.replace(minute=0, second=0, microsecond=0)
-                exists_log = db_read.query(exists().where(
+                stmt = select(exists().where(
                     RoutineLog.routine_type == "REMOTE_SYNC_DATABASE",
                     RoutineLog.status == "SUCCESS",
                     RoutineLog.execution_time >= current_hour_start
-                )).scalar()
+                ))
+                exists_log = db_read.scalar(stmt)
                 if exists_log:
                     return
         except SQLAlchemyError:

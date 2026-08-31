@@ -1,14 +1,13 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.orm import Session
 
 from app.features.printers.printer_schemas import (
     PrinterCreate,
     PrinterResponse,
     PrinterUpdate,
 )
-from app.features.printers.printer_service import printer_service
+from app.features.printers.printer_service import PrinterService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -27,12 +26,12 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
     responses={**FORBIDDEN_RESPONSE},
 )
 async def read_printers(
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
 ) -> list[PrinterResponse]:
-    return printer_service.get_all(db, skip=skip, limit=limit)
+    return await service.get_all(skip=skip, limit=limit)
 
 
 @router.get(
@@ -41,10 +40,10 @@ async def read_printers(
 )
 async def read_printer(
         printer_id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return printer_service.get_by_id(db, printer_id=printer_id)
+    return await service.get_by_id(printer_id=printer_id)
 
 
 @router.post(
@@ -54,10 +53,10 @@ async def read_printer(
 )
 async def create_printer(
         printer_in: PrinterCreate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return printer_service.create(db, obj_in=printer_in, current_user_id=current_user.id)
+    return await service.create(obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.patch(
@@ -67,10 +66,10 @@ async def create_printer(
 async def update_printer(
         printer_id: int,
         printer_in: PrinterUpdate,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PrinterResponse:
-    return printer_service.update(db, printer_id=printer_id, obj_in=printer_in, current_user_id=current_user.id)
+    return await service.update(printer_id=printer_id, obj_in=printer_in, current_user_id=current_user.id)
 
 
 @router.delete(
@@ -80,7 +79,7 @@ async def update_printer(
 )
 async def delete_printer(
         printer_id: int,
-        db: Annotated[Session, Depends(deps.get_db)],
+        service: Annotated[PrinterService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> None:
-    printer_service.delete(db, printer_id=printer_id, current_user_id=current_user.id)
+    await service.delete(printer_id=printer_id, current_user_id=current_user.id)

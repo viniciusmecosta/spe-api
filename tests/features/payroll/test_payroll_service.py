@@ -1,5 +1,6 @@
 from datetime import date, datetime
-from unittest.mock import MagicMock, patch, mock_open
+from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, status
@@ -149,13 +150,16 @@ def test_build_period_response_with_closure_no_name():
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_list_periods_past_year(mock_datetime, db_session_mock):
+@pytest.mark.asyncio
+async def test_list_periods_past_year(mock_datetime, async_db_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
-    db_session_mock.query.return_value.items = []
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    async_db_mock.scalars.return_value = mock_scalars
 
-    result = payroll_service.list_periods(db_session_mock, 2023)
+    result = await payroll_service.list_periods(async_db_mock, 2023)
     assert len(result) == 12
     assert result[0]["month"] == 12
     assert result[-1]["month"] == 1
@@ -163,7 +167,8 @@ def test_list_periods_past_year(mock_datetime, db_session_mock):
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_list_periods_current_year(mock_datetime, db_session_mock):
+@pytest.mark.asyncio
+async def test_list_periods_current_year(mock_datetime, async_db_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
@@ -173,9 +178,12 @@ def test_list_periods_current_year(mock_datetime, db_session_mock):
     closure.id = 1
     closure.deleted_at = None
     closure.closed_by = None
-    db_session_mock.query.return_value.items = [closure]
 
-    result = payroll_service.list_periods(db_session_mock, 2024)
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [closure]
+    async_db_mock.scalars.return_value = mock_scalars
+
+    result = await payroll_service.list_periods(async_db_mock, 2024)
     assert len(result) == 5
     assert result[0]["month"] == 5
     assert result[-1]["month"] == 1
@@ -185,19 +193,23 @@ def test_list_periods_current_year(mock_datetime, db_session_mock):
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_list_periods_future_year(mock_datetime, db_session_mock):
+@pytest.mark.asyncio
+async def test_list_periods_future_year(mock_datetime, async_db_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
-    db_session_mock.query.return_value.items = []
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    async_db_mock.scalars.return_value = mock_scalars
 
-    result = payroll_service.list_periods(db_session_mock, 2025)
+    result = await payroll_service.list_periods(async_db_mock, 2025)
     assert len(result) == 0
 
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_list_periods_multiple_closures(mock_datetime, db_session_mock):
+@pytest.mark.asyncio
+async def test_list_periods_multiple_closures(mock_datetime, async_db_mock):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
@@ -217,9 +229,11 @@ def test_list_periods_multiple_closures(mock_datetime, db_session_mock):
     closure2.deleted_at = None
     closure2.closed_by = None
 
-    db_session_mock.query.return_value.items = [closure1, closure2]
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [closure1, closure2]
+    async_db_mock.scalars.return_value = mock_scalars
 
-    result = payroll_service.list_periods(db_session_mock, 2024)
+    result = await payroll_service.list_periods(async_db_mock, 2024)
     assert len(result) == 5
     month_2 = next(r for r in result if r["month"] == 2)
     assert month_2["is_closed"] is True
@@ -227,118 +241,133 @@ def test_list_periods_multiple_closures(mock_datetime, db_session_mock):
     assert len(month_2["history"]) == 3
 
 
-def test_close_period_forbidden(db_session_mock, mock_user_employee, mock_background_tasks):
+@pytest.mark.asyncio
+async def test_close_period_forbidden(async_db_mock, mock_user_employee, mock_background_tasks):
     with pytest.raises(PayrollPermissionError) as exc:
-        payroll_service.close_period(db_session_mock, 1, 2024, mock_user_employee, mock_background_tasks)
+        await payroll_service.close_period(async_db_mock, 1, 2024, mock_user_employee, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_close_period_current_month(mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
+@pytest.mark.asyncio
+async def test_close_period_current_month(mock_datetime, async_db_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
     with pytest.raises(PayrollInvalidPeriodError) as exc:
-        payroll_service.close_period(db_session_mock, 5, 2024, mock_user_manager, mock_background_tasks)
+        await payroll_service.close_period(async_db_mock, 5, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-def test_close_period_future_month(mock_datetime, db_session_mock, mock_user_manager, mock_background_tasks):
+@pytest.mark.asyncio
+async def test_close_period_future_month(mock_datetime, async_db_mock, mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
     with pytest.raises(PayrollInvalidPeriodError) as exc:
-        payroll_service.close_period(db_session_mock, 6, 2024, mock_user_manager, mock_background_tasks)
+        await payroll_service.close_period(async_db_mock, 6, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
-@patch("app.features.payroll.payroll_service.payroll_repository")
-def test_close_period_already_closed(mock_repo, mock_datetime, db_session_mock, mock_user_manager,
-                                     mock_background_tasks):
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_close_period_already_closed(mock_get_by_month, mock_datetime, async_db_mock, mock_user_manager,
+                                           mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
-
-    mock_repo.get_by_month.return_value = MagicMock()
+    mock_get_by_month.return_value = MagicMock()
 
     with pytest.raises(PayrollAlreadyClosedError) as exc:
-        payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+        await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
 @patch("app.features.payroll.payroll_service.settings.TIMEZONE", "UTC")
 @patch("app.features.payroll.payroll_service.datetime")
 @patch("app.features.payroll.payroll_service.dispatch_closure_email_background")
-@patch("app.features.payroll.payroll_service.audit_service")
-@patch("app.features.payroll.payroll_service.payroll_repository")
+@patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.create", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.excel_service")
-def test_close_period_success(mock_excel, mock_repo, mock_audit, mock_dispatch, mock_datetime, db_session_mock,
+@pytest.mark.asyncio
+async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, mock_audit, mock_dispatch,
+                                    mock_datetime, async_db_mock,
                               mock_user_manager, mock_background_tasks):
     mock_now = datetime(2024, 5, 15, tzinfo=ZoneInfo("UTC"))
     mock_datetime.now.return_value = mock_now
 
-    mock_repo.get_by_month.return_value = None
+    mock_get_by_month.return_value = None
     mock_closure = MagicMock(id=99)
-    mock_repo.create.return_value = mock_closure
+    mock_create.return_value = mock_closure
 
-    from io import BytesIO
     mock_excel.generate_excel_report.return_value = BytesIO(b"data")
 
     maintainer = MagicMock(spec=User)
     maintainer.email = "main@test.com"
-    db_session_mock.query.return_value.items = [maintainer]
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [maintainer]
+    async_db_mock.scalars.return_value = mock_scalars
 
     with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        result = payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+        result = await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
 
     assert result == mock_closure
-    mock_repo.create.assert_called_once_with(db_session_mock, month=4, year=2024, user_id=mock_user_manager.id)
-    assert db_session_mock.commit.call_count == 2
-    mock_audit.log_change.assert_called_once_with(
-        db_session_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure
+    mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id)
+    assert async_db_mock.commit.call_count == 2
+    mock_audit.assert_called_once_with(
+        async_db_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure
     )
     mock_background_tasks.add_task.assert_called_once_with(
         mock_dispatch, 4, 2024, mock_user_manager.name, mock_closure.report_path, ["main@test.com"]
     )
 
 
-def test_reopen_period_forbidden(db_session_mock, mock_user_manager, mock_background_tasks):
+@pytest.mark.asyncio
+async def test_reopen_period_forbidden(async_db_mock, mock_user_manager, mock_background_tasks):
     with pytest.raises(PayrollPermissionError) as exc:
-        payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_manager, mock_background_tasks)
+        await payroll_service.reopen_period(async_db_mock, 4, 2024, "Obs", mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-@patch("app.features.payroll.payroll_service.payroll_repository")
-def test_reopen_period_not_found(mock_repo, db_session_mock, mock_user_maintainer, mock_background_tasks):
-    mock_repo.get_by_month.return_value = None
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_reopen_period_not_found(mock_get_by_month, async_db_mock, mock_user_maintainer, mock_background_tasks):
+    mock_get_by_month.return_value = None
 
     with pytest.raises(PayrollNotClosedError) as exc:
-        payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
+        await payroll_service.reopen_period(async_db_mock, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
 @patch("app.features.payroll.payroll_service.dispatch_payroll_email")
-@patch("app.features.payroll.payroll_service.audit_service")
-@patch("app.features.payroll.payroll_service.payroll_repository")
-def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_mock, mock_user_maintainer,
+@patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_reopen_period_success(mock_delete, mock_get_by_month, mock_audit, mock_dispatch, async_db_mock,
+                                     mock_user_maintainer,
                                mock_background_tasks):
     mock_closure = MagicMock(id=99)
-    mock_repo.get_by_month.return_value = mock_closure
+    mock_get_by_month.return_value = mock_closure
 
     maintainer = MagicMock(spec=User)
     maintainer.email = "main@test.com"
-    db_session_mock.query.return_value.items = [maintainer]
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [maintainer]
+    async_db_mock.scalars.return_value = mock_scalars
 
-    result = payroll_service.reopen_period(db_session_mock, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
+    result = await payroll_service.reopen_period(async_db_mock, 4, 2024, "Obs", mock_user_maintainer,
+                                                 mock_background_tasks)
 
     assert result["status"] == "success"
-    mock_repo.delete.assert_called_once_with(db_session_mock, 4, 2024, mock_user_maintainer.id, "Obs")
-    mock_audit.log_change.assert_called_once_with(
-        db_session_mock, mock_user_maintainer.id, "REOPEN",
+    mock_delete.assert_called_once_with(async_db_mock, 4, 2024, mock_user_maintainer.id, "Obs")
+    mock_audit.assert_called_once_with(
+        async_db_mock, mock_user_maintainer.id, "REOPEN",
         entity="PAYROLL_CLOSURE", entity_id=mock_closure.id,
         old_data={"is_closed": True}, new_data={"is_closed": False}
     )
@@ -347,22 +376,29 @@ def test_reopen_period_success(mock_repo, mock_audit, mock_dispatch, db_session_
     )
 
 
-def test_upload_legacy_report_success(db_session_mock, mock_user_maintainer):
+@pytest.mark.asyncio
+async def test_upload_legacy_report_success(async_db_mock, mock_user_maintainer):
     mock_closure = MagicMock(id=1, month=4, year=2024)
-    db_session_mock.query.return_value.get = MagicMock(return_value=mock_closure)
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = mock_closure
+    async_db_mock.scalars.return_value = mock_scalars
 
     with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data")
+        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"data")
 
-    db_session_mock.commit.assert_called_once()
+    async_db_mock.commit.assert_called_once()
     assert mock_closure.report_path.startswith("reports/legacy/folha_ponto_04_2024_")
     assert mock_closure.report_path.endswith(".pdf")
 
 
-def test_upload_legacy_report_not_found(db_session_mock, mock_user_maintainer):
-    db_session_mock.query.return_value.get = MagicMock(return_value=None)
+@pytest.mark.asyncio
+async def test_upload_legacy_report_not_found(async_db_mock, mock_user_maintainer):
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = None
+    async_db_mock.scalars.return_value = mock_scalars
+
     with pytest.raises(PayrollClosureNotFoundError) as exc:
-        payroll_service.upload_legacy_report(db_session_mock, 1, "test.pdf", b"data")
+        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"data")
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
@@ -378,7 +414,6 @@ def test_validate_period_open_closed(mock_repo, db_session_mock):
 @patch("app.features.payroll.payroll_service.payroll_repository")
 def test_validate_period_open_success(mock_repo, db_session_mock):
     mock_repo.get_by_month.return_value = None
-
     payroll_service.validate_period_open(db_session_mock, date(2024, 4, 15))
 
 
@@ -409,10 +444,12 @@ def test_dispatch_closure_email_background_error(mock_log, mock_send):
 
 @patch("app.features.payroll.payroll_service.excel_service.generate_excel_report",
        side_effect=Exception("Excel generation error"))
-@patch("app.features.payroll.payroll_service.payroll_repository")
-def test_close_period_excel_error(mock_repo, mock_gen, db_session_mock, mock_user_manager, mock_background_tasks):
-    mock_repo.get_by_month.return_value = None
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_close_period_excel_error(mock_get_by_month, mock_gen, async_db_mock, mock_user_manager,
+                                        mock_background_tasks):
+    mock_get_by_month.return_value = None
     with pytest.raises(PayrollReportGenerationError) as exc:
-        payroll_service.close_period(db_session_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+        await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
     assert "Excel generation error" in exc.value.detail

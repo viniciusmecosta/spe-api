@@ -26,6 +26,7 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
             .options(
                 selectinload(User.current_schedules_rel),
                 selectinload(User.biometrics),
+                selectinload(User.historical_schedules),
             )
             .where(User.id == user_id)
         )
@@ -46,6 +47,7 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         stmt = select(User).options(
             selectinload(User.current_schedules_rel),
             selectinload(User.biometrics),
+            selectinload(User.historical_schedules),
         )
         if is_active is not None:
             stmt = stmt.where(User.is_active == is_active)
@@ -149,6 +151,34 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
     def __init__(self):
         super().__init__(User)
 
+    async def create(
+            self, db: AsyncSession, *, obj_in: UserCreate | dict[str, Any]
+    ) -> User:
+        if isinstance(obj_in, dict):
+            create_data = dict(obj_in)
+        elif hasattr(obj_in, "model_dump"):
+            create_data = obj_in.model_dump(exclude_unset=True)
+        else:
+            create_data = vars(obj_in)
+
+        create_data.pop("schedules", None)
+        biometrics_in = create_data.pop("biometrics", None)
+
+        if create_data.get("password"):
+            create_data["password_hash"] = get_password_hash(create_data["password"])
+            del create_data["password"]
+
+        db_obj = User(**create_data)
+        db.add(db_obj)
+        await db.flush()
+
+        if biometrics_in is not None:
+            await self._update_biometrics(db, db_obj, biometrics_in)
+
+        await db.commit()
+        refreshed = await self.get(db, db_obj.id)
+        return refreshed if refreshed else db_obj
+
     async def get_by_username(self, db: AsyncSession, username: str) -> User | None:
         stmt = select(User).where(User.username == username)
         result = await db.scalars(stmt)
@@ -160,6 +190,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
             .options(
                 selectinload(User.current_schedules_rel),
                 selectinload(User.biometrics),
+                selectinload(User.historical_schedules),
             )
             .where(User.id == user_id)
         )
@@ -182,6 +213,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         stmt = select(User).options(
             selectinload(User.current_schedules_rel),
             selectinload(User.biometrics),
+            selectinload(User.historical_schedules),
         )
 
         if after_id is not None:
@@ -282,11 +314,15 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
 
         db.add(db_obj)
         await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+        refreshed = await self.get(db, db_obj.id)
+        return refreshed if refreshed else db_obj
 
     async def get_active_employees(self, db: AsyncSession) -> list[User]:
-        stmt = select(User).where(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
+        stmt = select(User).options(
+            selectinload(User.current_schedules_rel),
+            selectinload(User.biometrics),
+            selectinload(User.historical_schedules)
+        ).where(User.is_active.is_(True), User.role == UserRole.EMPLOYEE)
         result = await db.scalars(stmt)
         return list(result.all())
 

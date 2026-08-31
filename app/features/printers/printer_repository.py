@@ -1,9 +1,10 @@
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from app.database.repository import BaseRepository
+from app.database.repository import AsyncBaseRepository, BaseRepository
 from app.features.printers.printer_models import Printer
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 
@@ -30,4 +31,28 @@ class PrinterRepository(BaseRepository[Printer, PrinterCreate, PrinterUpdate]):
         return obj is not None
 
 
+class AsyncPrinterRepository(AsyncBaseRepository[Printer, PrinterCreate, PrinterUpdate]):
+    def __init__(self):
+        super().__init__(Printer)
+
+    async def get_by_id(self, db: AsyncSession, printer_id: int) -> Printer | None:
+        return await super().get(db, printer_id)
+
+    async def get_all(self, db: AsyncSession, skip: int = 0, limit: int = 100) -> list[Printer]:
+        stmt = select(Printer).offset(skip).limit(limit)
+        result = await db.scalars(stmt)
+        return list(result.all())
+
+    async def create(self, db: AsyncSession, *, obj_in: PrinterCreate) -> Printer:
+        return await super().create(db, obj_in=obj_in)
+
+    async def update(self, db: AsyncSession, *, db_obj: Printer, obj_in: PrinterUpdate | dict[str, Any]) -> Printer:
+        return await super().update(db, db_obj=db_obj, obj_in=obj_in)
+
+    async def delete(self, db: AsyncSession, printer_id: int) -> bool:
+        obj = await super().remove(db, id=printer_id)
+        return obj is not None
+
+
 printer_repository = PrinterRepository()
+async_printer_repository = AsyncPrinterRepository()

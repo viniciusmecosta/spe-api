@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -11,6 +11,7 @@ from app.features.devices.device_schemas import (
     ManagerVerifyResponse,
     TimeResponsePayload,
 )
+from app.features.devices.device_service import DeviceService
 from app.main import app
 from app.shared import deps
 from app.shared.enums import DeviceKeyType
@@ -40,8 +41,9 @@ def test_get_device_time_endpoint(client: TestClient, mocker: MagicMock) -> None
         unix=1786718400,
         formatted="14/08/2026 15:30:00",
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_service.get_device_time",
+    mocker.patch.object(
+        DeviceService,
+        "get_device_time",
         return_value=expected_payload,
     )
 
@@ -67,8 +69,10 @@ def test_register_device_punch_endpoint(client: TestClient, mocker: MagicMock) -
             ]
         ),
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_service.process_punch",
+    mocker.patch.object(
+        DeviceService,
+        "process_punch",
+        new_callable=AsyncMock,
         return_value=expected_payload,
     )
 
@@ -87,8 +91,10 @@ def test_verify_manager_access_endpoint(client: TestClient, mocker: MagicMock) -
         is_allowed=True,
         message="Acesso autorizado.",
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_service.verify_manager_access",
+    mocker.patch.object(
+        DeviceService,
+        "verify_manager_access",
+        new_callable=AsyncMock,
         return_value=expected_payload,
     )
 

@@ -1,9 +1,12 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.devices.device_credential_service import (
+    DeviceCredentialService,
+)
 from app.features.devices.device_models import DeviceCredential
 from app.features.users.user_models import User
 from app.main import app
@@ -39,8 +42,10 @@ def test_create_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
         created_at=now,
         updated_at=now,
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_credential_service.create",
+    mocker.patch.object(
+        DeviceCredentialService,
+        "create",
+        new_callable=AsyncMock,
         return_value=mock_dev,
     )
 
@@ -62,8 +67,10 @@ def test_list_credentials_endpoint(client: TestClient, mocker: MagicMock) -> Non
         created_at=now,
         updated_at=now,
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_credential_service.get_all",
+    mocker.patch.object(
+        DeviceCredentialService,
+        "get_all",
+        new_callable=AsyncMock,
         return_value=[mock_dev],
     )
 
@@ -82,8 +89,10 @@ def test_update_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
         created_at=now,
         updated_at=now,
     )
-    mocker.patch(
-        "app.features.devices.device_router.device_credential_service.update",
+    mocker.patch.object(
+        DeviceCredentialService,
+        "update",
+        new_callable=AsyncMock,
         return_value=mock_dev,
     )
 
@@ -96,8 +105,10 @@ def test_update_credential_endpoint(client: TestClient, mocker: MagicMock) -> No
 
 
 def test_delete_credential_endpoint(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.devices.device_router.device_credential_service.delete",
+    mocker.patch.object(
+        DeviceCredentialService,
+        "delete",
+        new_callable=AsyncMock,
         return_value={"status": "success"},
     )
 

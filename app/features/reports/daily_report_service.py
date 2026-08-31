@@ -1,12 +1,16 @@
 import logging
 from datetime import date, datetime
+from typing import Annotated
 
-from sqlalchemy.orm import Session
+from fastapi import Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.reports.template_service import template_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.timesheets.anomaly_service import anomaly_service
 from app.features.users.user_models import User
+from app.shared import deps
 from app.shared.enums import DayOfWeek, RecordType
 from app.utils.formatters import format_short_name
 
@@ -14,7 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 class DailyReportService:
-    def generate_daily_report_html(self, db: Session, target_date: date) -> str:
+    def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
+        self.db = db
+
+    async def generate_daily_report_html(self, db: AsyncSession | None = None, target_date: date | None = None) -> str:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert target_date is not None
         try:
             formatted_date = target_date.strftime("%d/%m/%Y")
             day_name = DayOfWeek(target_date.weekday()).nome
@@ -22,17 +32,19 @@ class DailyReportService:
             start_local = datetime.combine(target_date, datetime.min.time())
             end_local = datetime.combine(target_date, datetime.max.time())
 
-            records = (
-                db.query(TimeRecord, User)
+            stmt = (
+                select(TimeRecord, User)
                 .join(User, TimeRecord.user_id == User.id)
-                .filter(TimeRecord.record_datetime >= start_local)
-                .filter(TimeRecord.record_datetime <= end_local)
-                .filter(TimeRecord.is_ignored == False)
+                .where(TimeRecord.record_datetime >= start_local)
+                .where(TimeRecord.record_datetime <= end_local)
+                .where(TimeRecord.is_ignored == False)
                 .order_by(User.name, TimeRecord.record_datetime)
-                .all()
             )
+            result = await session.execute(stmt)
+            records = result.all()
 
-            anomalies_list = anomaly_service.get_anomalies(db, target_date, target_date)
+            anomalies_list = await anomaly_service.get_anomalies(session, target_date, target_date)
+
             anomalies_descriptions = [f"<strong>{format_short_name(a.user_name)}</strong>: {a.description}" for a
                                       in anomalies_list]
 

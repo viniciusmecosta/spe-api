@@ -1,9 +1,10 @@
 import io
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -20,9 +21,12 @@ def mock_manager_user() -> User:
 
 
 @pytest.fixture
-def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
+def client(mock_manager_user: User) -> TestClient:
+    async def override_get_async_db():
+        yield AsyncMock()
+
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_manager_user
-    app.dependency_overrides[deps.get_db] = lambda: db_session_mock
+    app.dependency_overrides[deps.get_async_db] = override_get_async_db
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
@@ -30,8 +34,10 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 
 def test_get_official_timesheet_user_pdf_success(client: TestClient, mocker: MagicMock) -> None:
     fake_buffer = io.BytesIO(b"%PDF-1.4 fake pdf")
-    mocker.patch(
-        "app.features.timesheets.timesheet_router.timesheet_service.generate_user_timesheet_pdf",
+    mocker.patch.object(
+        TimesheetService,
+        "generate_user_timesheet_pdf",
+        new_callable=AsyncMock,
         return_value=fake_buffer,
     )
 
@@ -49,8 +55,10 @@ def test_get_official_timesheet_user_pdf_future_date(client: TestClient) -> None
 
 def test_get_official_timesheet_all_pdf_success(client: TestClient, mocker: MagicMock) -> None:
     fake_zip = io.BytesIO(b"PK fake zip")
-    mocker.patch(
-        "app.features.timesheets.timesheet_router.timesheet_service.generate_all_timesheets_pdf_zip",
+    mocker.patch.object(
+        TimesheetService,
+        "generate_all_timesheets_pdf_zip",
+        new_callable=AsyncMock,
         return_value=fake_zip,
     )
 

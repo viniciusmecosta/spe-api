@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.features.timesheets.anomaly_service import anomaly_service
@@ -176,9 +176,10 @@ def test_get_expected_entry_time():
     assert entry_time_no_user is None
 
 
+@pytest.mark.asyncio
 @patch("app.features.timesheets.anomaly_service.user_repository")
 @patch("app.features.timesheets.anomaly_service.time_record_repository")
-def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_mock):
+async def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_mock):
     mock_user_repo.get.return_value = MockUser(1)
     mock_tr_repo.get_by_users_and_range.return_value = [
         MockTimeRecord(1, datetime(2023, 1, 1, 8, 0), RecordType.ENTRY),
@@ -188,35 +189,38 @@ def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_mock):
                                 datetime(2023, 1, 1, 18, 0).time())
     db_session_mock.query.return_value.items = [adj]
 
-    anomalies = anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1)
+    anomalies = await anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1)
     assert len(anomalies) == 2
     types = [a.type for a in anomalies]
     assert "LONG_INTERVAL" in types
     assert "UNAPPROVED_EXTRA_TIME" in types
 
 
+@pytest.mark.asyncio
 @patch("app.features.timesheets.anomaly_service.user_repository")
 @patch("app.features.timesheets.anomaly_service.time_record_repository")
-def test_get_anomalies_no_target_users(mock_tr_repo, mock_user_repo, db_session_mock):
+async def test_get_anomalies_no_target_users(mock_tr_repo, mock_user_repo, db_session_mock):
     mock_user_repo.get_active_employees.return_value = []
 
-    anomalies = anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31))
+    anomalies = await anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31))
     assert len(anomalies) == 0
 
 
-def test_get_anomalies_by_month_invalid(db_session_mock):
+@pytest.mark.asyncio
+async def test_get_anomalies_by_month_invalid(db_session_mock):
     with pytest.raises(InvalidMonthOrYearError) as exc_info:
-        anomaly_service.get_anomalies_by_month(db_session_mock, 13, 2023)
+        await anomaly_service.get_anomalies_by_month(db_session_mock, 13, 2023)
     assert exc_info.value.status_code == 400
 
 
-@patch.object(anomaly_service, "get_anomalies")
-def test_get_anomalies_by_month_valid(mock_get_anomalies, db_session_mock):
+@pytest.mark.asyncio
+@patch.object(anomaly_service, "get_anomalies", new_callable=AsyncMock)
+async def test_get_anomalies_by_month_valid(mock_get_anomalies, db_session_mock):
     mock_get_anomalies.return_value = []
 
-    result = anomaly_service.get_anomalies_by_month(db_session_mock, 1, 2023)
+    result = await anomaly_service.get_anomalies_by_month(db_session_mock, 1, 2023)
     assert result == []
     mock_get_anomalies.assert_called_once()
 
-    result = anomaly_service.get_anomalies_by_month(db_session_mock, 1, 2099)
+    result = await anomaly_service.get_anomalies_by_month(db_session_mock, 1, 2099)
     assert result == []

@@ -1,4 +1,11 @@
-from app.features.payroll.payroll_repository import PayrollRepository
+from unittest.mock import MagicMock
+
+import pytest
+from app.features.payroll.payroll_models import PayrollClosure
+from app.features.payroll.payroll_repository import (
+    AsyncPayrollRepository,
+    PayrollRepository,
+)
 
 
 def test_payroll_repository(db_session, normal_user):
@@ -13,8 +20,27 @@ def test_payroll_repository(db_session, normal_user):
     all_res = repo.get_all(db_session, year=2026)
     assert len(all_res) >= 1
 
-    hist = repo.get_history(db_session, 11, 2026)
-    assert len(hist) >= 1
-
     repo.delete(db_session, 11, 2026, user_id=normal_user.id, observation="Reopened test")
     assert repo.get_by_month(db_session, 11, 2026) is None
+
+
+@pytest.mark.asyncio
+async def test_async_payroll_repository(async_db_mock):
+    repo = AsyncPayrollRepository()
+    created = PayrollClosure(id=1, month=11, year=2026, is_closed=True, closed_by_user_id=1)
+
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = created
+    mock_scalars.all.return_value = [created]
+    async_db_mock.scalars.return_value = mock_scalars
+
+    res_create = await repo.create(async_db_mock, month=11, year=2026, user_id=1)
+    assert res_create.month == 11
+
+    res_month = await repo.get_by_month(async_db_mock, 11, 2026)
+    assert res_month.id == 1
+
+    res_all = await repo.get_all(async_db_mock, year=2026)
+    assert len(res_all) == 1
+
+    await repo.delete(async_db_mock, 11, 2026, 1, "observation")

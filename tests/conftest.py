@@ -1,5 +1,5 @@
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine
@@ -9,7 +9,6 @@ from sqlalchemy.pool import StaticPool
 import pytest
 from app.core.config import settings
 from app.database.base import Base
-import app.router
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -90,6 +89,20 @@ def db_session_mock():
     session.scalar.side_effect = lambda *args, **kwargs: qm.scalar()
     session.execute.return_value.scalars.return_value = scalars_mock
     session.execute.return_value.scalar.side_effect = lambda *args, **kwargs: qm.scalar()
+    return session
+
+
+@pytest.fixture
+def async_db_mock():
+    session = MagicMock()
+    session.scalar = AsyncMock()
+    session.scalars = AsyncMock()
+    session.execute = AsyncMock()
+    session.get = AsyncMock()
+    session.delete = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    session.add = MagicMock()
     return session
 
 

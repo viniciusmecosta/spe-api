@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
 import pytest
+from app.features.devices.biometric_service import BiometricService
 from app.features.users.user_models import User
 from app.main import app
 from app.shared import deps
@@ -28,8 +29,10 @@ def client(mock_manager_user: User, db_session_mock: MagicMock) -> TestClient:
 
 
 def test_get_available_sensor_indices(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch(
-        "app.features.devices.device_router.biometric_service.get_available_sensor_indices",
+    mocker.patch.object(
+        BiometricService,
+        "get_available_sensor_indices",
+        new_callable=AsyncMock,
         return_value=[1, 2, 3, 4],
     )
 
