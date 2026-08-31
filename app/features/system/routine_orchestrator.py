@@ -156,8 +156,7 @@ class RoutineOrchestrator:
                 start_date = (last_success + timedelta(days=1)) if last_success else yesterday
                 start_date = min(start_date, yesterday)
 
-                report_text = await asyncio.to_thread(
-                    telegram_service.generate_report_text,
+                report_text = await telegram_service.generate_report_text(
                     db_read, start_date, yesterday
                 )
         except SQLAlchemyError as e:
@@ -352,8 +351,7 @@ class RoutineOrchestrator:
 
         try:
             async with get_async_session_context() as db_read:
-                report_text = await asyncio.to_thread(
-                    telegram_service.generate_report_text,
+                report_text = await telegram_service.generate_report_text(
                     db_read, start_date, end_date, "Relatório Gerencial Manual -"
                 )
         except SQLAlchemyError as e:

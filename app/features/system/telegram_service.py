@@ -3,8 +3,9 @@ from datetime import date, datetime, time
 from typing import Annotated
 
 from fastapi import Depends
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import requests
 from app.core.config import settings
@@ -24,7 +25,7 @@ DATE_FORMAT = "%d/%m/%Y"
 
 
 class TelegramService:
-    def __init__(self, db: Annotated[Session, Depends(deps.get_db)] = None):
+    def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
         self.db = db
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
@@ -76,8 +77,8 @@ class TelegramService:
                              exc_info=False)
             return False
 
-    def generate_report_text(self, db: Session, start_date: date, end_date: date,
-                             title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
+    async def generate_report_text(self, db: AsyncSession, start_date: date, end_date: date,
+                                   title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
         try:
             fmt_start = start_date.strftime(DATE_FORMAT)
             fmt_end = end_date.strftime(DATE_FORMAT)
@@ -92,15 +93,16 @@ class TelegramService:
             start_dt = datetime.combine(start_date, time.min)
             end_dt = datetime.combine(end_date, time.max)
 
-            records = (
-                db.query(TimeRecord, User)
+            stmt = (
+                select(TimeRecord, User)
                 .join(User, TimeRecord.user_id == User.id)
                 .filter(TimeRecord.record_datetime >= start_dt)
                 .filter(TimeRecord.record_datetime <= end_dt)
                 .filter(TimeRecord.is_ignored == False)
                 .order_by(TimeRecord.record_datetime, User.name)
-                .all()
             )
+            result = await db.execute(stmt)
+            records = result.all()
 
             if not records:
                 text += "Sem registros de ponto no período."

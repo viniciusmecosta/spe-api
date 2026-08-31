@@ -62,6 +62,7 @@ def mock_backup_service():
 @pytest.fixture
 def mock_telegram_service():
     with patch("app.features.system.routine_orchestrator.telegram_service") as m:
+        m.generate_report_text = AsyncMock()
         yield m
 
 
