@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -31,20 +31,22 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
     mock_task = mocker.patch.object(RoutineOrchestrator, "execute_manual_backup_telegram")
-    mocker.patch.object(AuditService, "log")
+    mock_audit = mocker.patch.object(AuditService, "async_log", new_callable=AsyncMock)
 
     response = client.post("/api/v1/telegram/manual-backup")
     assert response.status_code == 200
     assert "Telegram" in response.json()["message"]
+    mock_audit.assert_awaited_once()
 
 
 def test_trigger_manual_report_success(client: TestClient, mocker: MagicMock) -> None:
     mock_task = mocker.patch.object(RoutineOrchestrator, "send_manual_report_telegram")
-    mocker.patch.object(AuditService, "log")
+    mock_audit = mocker.patch.object(AuditService, "async_log", new_callable=AsyncMock)
 
     response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-01&end_date=2026-08-05")
     assert response.status_code == 200
     assert "processamento em background" in response.json()["message"]
+    mock_audit.assert_awaited_once()
 
 
 def test_trigger_manual_report_start_after_end(client: TestClient) -> None:

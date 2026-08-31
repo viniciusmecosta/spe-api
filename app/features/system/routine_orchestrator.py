@@ -71,7 +71,8 @@ class RoutineOrchestrator:
                 try:
                     os.remove(p)
                 except OSError as e:
-                    logger.exception(f"Erro ao remover arquivo temporario {p}: {e}")
+                    logger.exception(f"Erro ao remover arquivo temporario {p}: {type(e).__name__} - {e}",
+                                     exc_info=False)
 
     async def _cleanup_backup_files(self, backup_path, sql_path, zip_path):
         await asyncio.to_thread(self._cleanup_backup_files_sync, backup_path, sql_path, zip_path)
@@ -94,12 +95,13 @@ class RoutineOrchestrator:
                                                           status="SUCCESS"):
                     return
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao verificar backup horário Telegram: {e}")
+            logger.exception(f"Erro de banco ao verificar backup horário Telegram: {type(e).__name__} - {e}",
+                             exc_info=False)
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
-            logger.exception('Backup - "Telegram horário" Error')
+            logger.error('Backup - "Telegram horário" Error')
             return
 
         now_str = now_local.strftime('%H:%M')
@@ -123,9 +125,11 @@ class RoutineOrchestrator:
                             execution_time=now_local,
                         )
                     else:
-                        logger.exception('Backup - "Telegram horário" Error')
+                        logger.error('Backup - "Telegram horário" Error')
             except SQLAlchemyError as e:
-                logger.exception(f'Backup - "Telegram horário" DB Error: {e}')
+                logger.exception(
+                    f'Erro de banco ao salvar log de execução do backup horário Telegram: {type(e).__name__} - {e}',
+                    exc_info=False)
         finally:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
@@ -157,7 +161,8 @@ class RoutineOrchestrator:
                     db_read, start_date, yesterday
                 )
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao gerar report gerencial Telegram: {e}")
+            logger.exception(f"Erro de banco ao gerar report gerencial Telegram: {type(e).__name__} - {e}",
+                             exc_info=False)
             return
 
         text_success = await asyncio.to_thread(telegram_service.send_text, report_text)
@@ -183,9 +188,10 @@ class RoutineOrchestrator:
                     execution_time=now_local,
                 )
                 if not text_success:
-                    logger.exception('Relatório - "Telegram diário" Error')
+                    logger.error('Relatório - "Telegram diário" Error')
         except SQLAlchemyError as e:
-            logger.exception(f'Relatório - "Telegram diário" DB Error: {e}')
+            logger.exception(f'Erro de banco ao salvar log do relatório diário Telegram: {type(e).__name__} - {e}',
+                             exc_info=False)
 
     async def _generate_daily_backup_report(self, db_read, start_date, yesterday):
         full_report_html = ""
@@ -241,12 +247,13 @@ class RoutineOrchestrator:
                                                                                                       start_date,
                                                                                                       yesterday)
         except SQLAlchemyError as e:
-            logger.exception(f"Erro check backup diário: {e}")
+            logger.exception(f"Erro de banco ao checar backup diário por email: {type(e).__name__} - {e}",
+                             exc_info=False)
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
-            logger.exception('Backup - "Email diário" Error')
+            logger.error('Backup - "Email diário" Error')
             return
 
         attachments.insert(0, (zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME))
@@ -265,9 +272,10 @@ class RoutineOrchestrator:
                         execution_time=now_local,
                     )
                     if not success:
-                        logger.exception('Backup - "Email diário" Error')
+                        logger.error('Backup - "Email diário" Error')
             except SQLAlchemyError as e:
-                logger.exception(f'Backup - "Email diário" DB Error: {e}')
+                logger.exception(f'Erro de banco ao salvar log de backup diário por email: {type(e).__name__} - {e}',
+                                 exc_info=False)
         finally:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
@@ -284,7 +292,7 @@ class RoutineOrchestrator:
                                                                    status="SUCCESS"):
                     return
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao verificar rotina de limpeza: {e}")
+            logger.exception(f"Erro de banco ao verificar rotina de limpeza: {type(e).__name__} - {e}", exc_info=False)
             return
 
         try:
@@ -301,12 +309,12 @@ class RoutineOrchestrator:
                     details=f"{deleted_count} logs apagados",
                 )
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao limpar routine_logs: {e}")
+            logger.exception(f"Erro de banco ao limpar routine_logs: {type(e).__name__} - {e}", exc_info=False)
 
     async def execute_manual_backup_telegram(self):
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
-            logger.exception('Backup - "Telegram manual" Error')
+            logger.error('Backup - "Telegram manual" Error')
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -332,9 +340,9 @@ class RoutineOrchestrator:
                         execution_time=now_local,
                     )
                     if not success:
-                        logger.exception('Backup - "Telegram manual" Error')
+                        logger.error('Backup - "Telegram manual" Error')
             except SQLAlchemyError as e:
-                logger.exception(f"Erro ao salvar rotina manual: {e}")
+                logger.exception(f"Erro de banco ao salvar rotina manual: {type(e).__name__} - {e}", exc_info=False)
         finally:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
@@ -349,7 +357,7 @@ class RoutineOrchestrator:
                     db_read, start_date, end_date, "Relatório Gerencial Manual -"
                 )
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao buscar report manual: {e}")
+            logger.exception(f"Erro de banco ao buscar report manual: {type(e).__name__} - {e}", exc_info=False)
             return
 
         text_success = await asyncio.to_thread(telegram_service.send_text, report_text)
@@ -376,9 +384,10 @@ class RoutineOrchestrator:
                 )
 
                 if not text_success:
-                    logger.exception('Relatório - "Telegram manual" Error')
+                    logger.error('Relatório - "Telegram manual" Error')
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao salvar rotina de relatorio manual: {e}")
+            logger.exception(f"Erro de banco ao salvar rotina de relatorio manual: {type(e).__name__} - {e}",
+                             exc_info=False)
 
     async def send_manual_backup_email(self, db: AsyncSession | None = None) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
@@ -424,7 +433,7 @@ class RoutineOrchestrator:
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
-            logger.exception('Backup - "Email manual" Error')
+            logger.error('Backup - "Email manual" Error')
             raise BackupGenerationFailedError()
 
         attachments = [(zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME)]
@@ -442,7 +451,7 @@ class RoutineOrchestrator:
         if success:
             return True
         else:
-            logger.exception('Backup - "Email manual" Error')
+            logger.error('Backup - "Email manual" Error')
             raise SMTPConnectionFailedError()
 
 

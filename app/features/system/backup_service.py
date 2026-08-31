@@ -34,7 +34,8 @@ class BackupService:
 
                 return backup_filename
             except sqlite3.Error as e:
-                logger.exception(f"Erro backup SQLite: {e}")
+                logger.exception(f"Erro de banco SQLite ao criar backup seguro: {type(e).__name__} - {e}",
+                                 exc_info=False)
                 return None
 
     def create_sql_dump(self, db_path: str) -> str | None:
@@ -49,7 +50,7 @@ class BackupService:
                 conn.close()
             return sql_filename
         except Exception as e:
-            logger.exception(f"Erro ao gerar dump SQL: {e}")
+            logger.exception(f"Erro ao gerar dump SQL: {type(e).__name__} - {e}", exc_info=False)
             return None
 
     def compress_files(self, files_to_compress: dict[str, str], output_zip_path: str) -> str | None:
@@ -60,7 +61,8 @@ class BackupService:
                         zipf.write(file_path, arcname=arcname)
             return output_zip_path
         except Exception as e:
-            logger.exception(f"Erro ao compactar arquivos para {output_zip_path}: {e}")
+            logger.exception(f"Erro ao compactar arquivos para {output_zip_path}: {type(e).__name__} - {e}",
+                             exc_info=False)
             return None
 
 

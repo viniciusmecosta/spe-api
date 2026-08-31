@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from app.features.holidays.holiday_models import Holiday
 from app.features.system.audit_service import audit_service, serialize_model
@@ -369,3 +369,40 @@ def test_audit_repository_get_logs():
         limit=100
     )
     assert res_desc == ["audit1", "audit2"]
+
+
+@pytest.mark.asyncio
+async def test_async_log(async_db_mock, mocker):
+    mock_repo = mocker.patch.object(audit_service.repo, "create", new_callable=AsyncMock)
+    mock_repo.return_value = "mock_audit_log"
+    result = await audit_service.async_log(
+        async_db_mock,
+        42,
+        "UPDATE",
+        entity="User",
+        entity_id=1,
+        old_data={"name": "Old"},
+        new_data={"name": "New"}
+    )
+    assert result == "mock_audit_log"
+    mock_repo.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_log_change(async_db_mock, mocker):
+    mock_repo = mocker.patch.object(audit_service.repo, "create", new_callable=AsyncMock)
+    mock_repo.return_value = "created_log"
+
+    old_user = User(id=1, username="old_user", name="Old User", role=UserRole.EMPLOYEE)
+    new_user = User(id=1, username="old_user", name="New User", role=UserRole.MANAGER)
+
+    res = await audit_service.async_log_change(
+        async_db_mock,
+        user_id=10,
+        action="UPDATE_USER",
+        old_model=old_user,
+        new_model=new_user
+    )
+
+    assert res == "created_log"
+    mock_repo.assert_awaited_once()

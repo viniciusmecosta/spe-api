@@ -61,9 +61,11 @@ class EmailService:
             server.quit()
             logger.info(f"Payroll email sent successfully for {action} {month:02d}/{year}")
         except smtplib.SMTPException as e:
-            logger.exception(f"Failed to send payroll email (SMTP error): {e}")
+            logger.exception(f"Erro de conexão/autenticação SMTP (Folha de Ponto): {type(e).__name__} - {e}",
+                             exc_info=False)
         except Exception as e:
-            logger.exception(f"Failed to send payroll email: {e}")
+            logger.exception(f"Erro interno ao processar e-mail da Folha de Ponto: {type(e).__name__} - {e}",
+                             exc_info=False)
 
     def send_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
                    period_text: str) -> bool:
@@ -91,7 +93,7 @@ class EmailService:
             return True
 
         except smtplib.SMTPException as e:
-            logger.exception(f"Erro SMTP: {e}")
+            logger.exception(f"Erro de conexão/autenticação SMTP (Backup): {type(e).__name__} - {e}", exc_info=False)
             return False
 
     def _get_sender_address(self) -> str:
@@ -178,4 +180,4 @@ def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, t
     try:
         email_service.send_payroll_email(action, user_name, month, year, None, to_emails)
     except Exception as e:
-        logger.exception(f"Error in dispatch_payroll_email: {e}")
+        logger.exception(f"Erro crítico no despacho de e-mail: {type(e).__name__} - {e}", exc_info=False)

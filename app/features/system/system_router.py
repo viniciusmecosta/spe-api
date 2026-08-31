@@ -72,7 +72,7 @@ async def trigger_manual_backup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Falha ao gerar ou enviar o backup.",
         )
-    audit_svc.log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
+    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
     return {"status": "success", "message": "Backup gerado e enviado com sucesso."}
 
 
@@ -112,7 +112,7 @@ async def trigger_manual_backup_telegram(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     background_tasks.add_task(routine_orch.execute_manual_backup_telegram)
-    audit_svc.log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
+    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
     return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
 
 
@@ -132,8 +132,8 @@ async def trigger_manual_report_telegram(
 ) -> dict[str, str]:
     telegram_svc.validate_manual_report_dates(start_date, end_date)
     background_tasks.add_task(routine_orch.send_manual_report_telegram, start_date, end_date)
-    audit_svc.log(user_id=current_user.id, action="MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
-                  new_data={"start_date": str(start_date), "end_date": str(end_date)})
+    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
+                              new_data={"start_date": str(start_date), "end_date": str(end_date)})
     return {
         "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
     }

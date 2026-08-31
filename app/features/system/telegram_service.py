@@ -1,12 +1,12 @@
-from datetime import date, datetime, time
 import logging
+from datetime import date, datetime, time
 from typing import Annotated
 
 from fastapi import Depends
-import requests
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+import requests
 from app.core.config import settings
 from app.features.system.system_exceptions import (
     TelegramInvalidDateRangeError,
@@ -51,10 +51,10 @@ class TelegramService:
             response = requests.post(url, data=payload, timeout=15)
             is_success = 200 <= response.status_code <= 299
             if not is_success:
-                logger.exception(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
+                logger.error(f"Telegram API Error (Text): Status {response.status_code} - {response.text}")
             return is_success
         except requests.exceptions.RequestException as e:
-            logger.exception(f"Telegram send text error: {e}")
+            logger.exception(f"Erro de conexão ao enviar texto no Telegram: {type(e).__name__} - {e}", exc_info=False)
             return False
 
     def send_document(self, file_path: str, caption: str, filename: str | None = None) -> bool:
@@ -69,10 +69,11 @@ class TelegramService:
                 response = requests.post(url, data=payload, files=files, timeout=40)
             is_success = 200 <= response.status_code <= 299
             if not is_success:
-                logger.exception(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
+                logger.error(f"Telegram API Error (Document): Status {response.status_code} - {response.text}")
             return is_success
         except requests.exceptions.RequestException as e:
-            logger.exception(f"Telegram send document error: {e}")
+            logger.exception(f"Erro de conexão ao enviar documento no Telegram: {type(e).__name__} - {e}",
+                             exc_info=False)
             return False
 
     def generate_report_text(self, db: Session, start_date: date, end_date: date,
@@ -119,7 +120,7 @@ class TelegramService:
 
             return text.strip()
         except (SQLAlchemyError, ValueError) as e:
-            logger.exception(f"Telegram report generation error: {e}")
+            logger.exception(f"Erro ao gerar relatório do Telegram: {type(e).__name__} - {e}", exc_info=False)
             return "Erro interno ao gerar relatório gerencial."
 
     def _group_daily_activity(self, records) -> dict[str, dict[str, list[str]]]:
