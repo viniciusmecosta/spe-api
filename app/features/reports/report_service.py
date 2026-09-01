@@ -34,6 +34,7 @@ from app.features.reports.report_schemas import (
     HistoryPunch,
     HistoryResponse,
     PunchDetail,
+    ReportAdjustmentItem,
     UserPayrollSummary,
 )
 from app.features.time_records.time_record_models import TimeRecord
@@ -49,7 +50,7 @@ from app.features.users.user_repository import (
 )
 from app.shared import deps
 from app.shared import time_calculation_service as time_calc_mod
-from app.shared.enums import AdjustmentStatus, DayOfWeek, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,10 @@ class ReportService:
             holidays: list,
             anomalies: list,
             period_result,
-            is_manager: bool
+            is_manager: bool,
+            schedule: Any | None = None,
+            daily_excess_adj: AdjustmentRequest | None = None,
+            day_adjustments: list[AdjustmentRequest] | None = None,
     ) -> HistoryDay:
         day_records = [r for r in records if r.record_datetime.date() == current]
         day_records.sort(key=lambda x: x.record_datetime)
@@ -143,6 +147,44 @@ class ReportService:
         daily_res = period_result.daily_results[current]
         worked_seconds = daily_res.net_worked_seconds
         abono = period_result.daily_waivers[current]
+
+        accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
+            day_records=day_records,
+            schedule=schedule,
+            daily_excess_adj=daily_excess_adj,
+        )
+        accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
+        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
+        excess_status = daily_excess_adj.status.value if daily_excess_adj else (
+            AdjustmentStatus.PENDING.value if accounted_res.total_excess_seconds > 0 else None
+        )
+        daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
+
+        day_adjustments_list = []
+        for adj in (day_adjustments or []):
+            if isinstance(adj, ReportAdjustmentItem):
+                day_adjustments_list.append(adj)
+            elif isinstance(adj, dict):
+                day_adjustments_list.append(ReportAdjustmentItem(**adj))
+            else:
+                c_at = getattr(adj, 'created_at', None)
+                r_at = getattr(adj, 'reviewed_at', None)
+                day_adjustments_list.append(ReportAdjustmentItem(
+                    id=getattr(adj, 'id', 0),
+                    user_id=getattr(adj, 'user_id', 0),
+                    adjustment_type=getattr(adj, 'adjustment_type', AdjustmentType.OTHER),
+                    record_type=getattr(adj, 'record_type', None),
+                    target_date=getattr(adj, 'target_date', current),
+                    time=getattr(adj, 'time', None),
+                    amount_hours=getattr(adj, 'amount_hours', None),
+                    approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
+                    reason_text=getattr(adj, 'reason_text', None),
+                    status=getattr(adj, 'status', AdjustmentStatus.PENDING),
+                    manager_id=getattr(adj, 'manager_id', None),
+                    manager_comment=getattr(adj, 'manager_comment', None),
+                    created_at=c_at if isinstance(c_at, datetime) else None,
+                    reviewed_at=r_at if isinstance(r_at, datetime) else None,
+                ))
 
         punches = self._build_history_punches(day_records, is_manager)
 
@@ -174,11 +216,16 @@ class ReportService:
             status=status,
             holiday_name=holiday.name if holiday else None,
             worked_time=worked_time_str,
+            accounted_time=accounted_time_str,
             punches=punches,
             has_anomaly=len(anomalies_list) > 0,
             anomalies=anomalies_list,
             abono_hours=abono.amount_hours if abono else None,
-            abono_id=abono.id if abono and is_manager else None
+            abono_id=abono.id if abono and is_manager else None,
+            has_excess=has_excess,
+            excess_status=excess_status,
+            daily_excess_id=daily_excess_id,
+            adjustments=day_adjustments_list,
         )
 
     def _build_detailed_punches(self, day_records: list[TimeRecord], is_maintainer: bool) -> list[PunchDetail]:
@@ -233,7 +280,10 @@ class ReportService:
             holidays: list,
             period_result,
             has_schedule: bool,
-            is_maintainer: bool
+            is_maintainer: bool,
+            schedule: Any | None = None,
+            daily_excess_adj: AdjustmentRequest | None = None,
+            day_adjustments: list[AdjustmentRequest] | None = None,
     ) -> DailyReportItem:
         is_future = current > today_date
         is_today = current == today_date
@@ -264,6 +314,44 @@ class ReportService:
         punches = daily_res.punches
 
         detailed_punches = self._build_detailed_punches(day_records, is_maintainer)
+
+        accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
+            day_records=day_records,
+            schedule=schedule,
+            daily_excess_adj=daily_excess_adj,
+        )
+        accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
+        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
+        excess_status = daily_excess_adj.status.value if daily_excess_adj else (
+            AdjustmentStatus.PENDING.value if accounted_res.total_excess_seconds > 0 else None
+        )
+        daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
+
+        day_adjustments_list = []
+        for adj in (day_adjustments or []):
+            if isinstance(adj, ReportAdjustmentItem):
+                day_adjustments_list.append(adj)
+            elif isinstance(adj, dict):
+                day_adjustments_list.append(ReportAdjustmentItem(**adj))
+            else:
+                c_at = getattr(adj, 'created_at', None)
+                r_at = getattr(adj, 'reviewed_at', None)
+                day_adjustments_list.append(ReportAdjustmentItem(
+                    id=getattr(adj, 'id', 0),
+                    user_id=getattr(adj, 'user_id', 0),
+                    adjustment_type=getattr(adj, 'adjustment_type', AdjustmentType.OTHER),
+                    record_type=getattr(adj, 'record_type', None),
+                    target_date=getattr(adj, 'target_date', current),
+                    time=getattr(adj, 'time', None),
+                    amount_hours=getattr(adj, 'amount_hours', None),
+                    approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
+                    reason_text=getattr(adj, 'reason_text', None),
+                    status=getattr(adj, 'status', AdjustmentStatus.PENDING),
+                    manager_id=getattr(adj, 'manager_id', None),
+                    manager_comment=getattr(adj, 'manager_comment', None),
+                    created_at=c_at if isinstance(c_at, datetime) else None,
+                    reviewed_at=r_at if isinstance(r_at, datetime) else None,
+                ))
 
         day_worked_hours = worked_seconds / 3600.0
         day_expected_hours = expected_seconds / 3600.0
@@ -301,8 +389,13 @@ class ReportService:
             missing_hours=round(day_missing, 2),
             worked_minutes=worked_minutes_int,
             worked_time=self._format_duration(worked_seconds),
+            accounted_time=accounted_time_str,
             expected_time=self._format_duration(expected_seconds),
-            unapproved_extra_time=self._format_duration(unapproved_extra_seconds)
+            unapproved_extra_time=self._format_duration(unapproved_extra_seconds),
+            has_excess=has_excess,
+            excess_status=excess_status,
+            daily_excess_id=daily_excess_id,
+            adjustments=day_adjustments_list,
         )
 
     async def get_history_report(self, db: Any | None = None, user_id: int = 0, month: int | None = None,
@@ -325,7 +418,7 @@ class ReportService:
         if year == now.year and month == now.month:
             end_date = min(end_date, now.date())
         elif datetime(year, month, 1).date() > now.date():
-            return HistoryResponse(month=month, year=year, total_worked_time="00:00", days=[])
+            return HistoryResponse(month=month, year=year, total_worked_time="00:00", total_accounted_time="00:00", days=[])
 
         if hasattr(session, "sync_session"):
             user = await async_user_repository.get(session, user_id)
@@ -380,6 +473,17 @@ class ReportService:
 
         current = start_date
         while current <= end_date:
+            target_day = DayOfWeek.from_date(current)
+            valid_schedules = [
+                s for s in (user.historical_schedules if user else [])
+                if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
+            ]
+            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
+            day_excess = next((adj for adj in all_adjustments if
+                               adj.target_date == current and
+                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
+            day_adjs = [adj for adj in all_adjustments if adj.target_date == current]
+
             history_day = self._build_history_day(
                 current=current,
                 today_date=today_date,
@@ -387,7 +491,10 @@ class ReportService:
                 holidays=holidays,
                 anomalies=anomalies,
                 period_result=period_result,
-                is_manager=is_manager
+                is_manager=is_manager,
+                schedule=day_schedule,
+                daily_excess_adj=day_excess,
+                day_adjustments=day_adjs,
             )
             history_days.append(history_day)
             current += timedelta(days=1)
@@ -396,10 +503,15 @@ class ReportService:
         total_month_hours = total_month_minutes // 60
         month_minutes = total_month_minutes % 60
 
+        total_acc_minutes = int(round(period_result.total_accounted_seconds / 60))
+        total_acc_hours = total_acc_minutes // 60
+        month_acc_mins = total_acc_minutes % 60
+
         return HistoryResponse(
             month=month,
             year=year,
             total_worked_time=f"{total_month_hours:02d}:{month_minutes:02d}",
+            total_accounted_time=f"{total_acc_hours:02d}:{month_acc_mins:02d}",
             days=history_days
         )
 
@@ -499,6 +611,17 @@ class ReportService:
 
         current = start_date
         while current <= end_date:
+            target_day = DayOfWeek.from_date(current)
+            valid_schedules = [
+                s for s in (user.historical_schedules if user else [])
+                if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
+            ]
+            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
+            day_excess = next((adj for adj in all_adjustments if
+                               adj.target_date == current and
+                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
+            day_adjs = [adj for adj in all_adjustments if adj.target_date == current]
+
             item = self._build_daily_report_item(
                 current=current,
                 today_date=today_date,
@@ -506,7 +629,10 @@ class ReportService:
                 holidays=holidays,
                 period_result=period_result,
                 has_schedule=has_schedule,
-                is_maintainer=is_maintainer
+                is_maintainer=is_maintainer,
+                schedule=day_schedule,
+                daily_excess_adj=day_excess,
+                day_adjustments=day_adjs,
             )
             daily_details.append(item)
 
@@ -522,8 +648,10 @@ class ReportService:
             user_name=user.name,
             total_worked_time=self._format_duration(total_worked_seconds),
             total_expected_time=self._format_duration(total_expected_seconds),
+            total_accounted_time=self._format_duration(period_result.total_accounted_seconds),
             total_worked_minutes=int(round(total_worked_seconds / 60)),
             total_expected_minutes=int(round(total_expected_seconds / 60)),
+            total_accounted_minutes=int(round(period_result.total_accounted_seconds / 60)),
             days_worked=days_worked_count,
             absences=absences_count,
             total_worked_hours=round(total_worked_seconds / 3600.0, 2),

@@ -593,7 +593,7 @@ class ExcelService:
         ws_det.append([""])
 
         merges = [2, 3, 13, 2, 2, 2]
-        headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
+        headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Contabilizado"]
 
         ws_det.append([""])
         header_row = ws_det.max_row
@@ -606,10 +606,10 @@ class ExcelService:
         total_trab_real = 0.0
 
         for day in report.daily_details:
-            trab_bruto, extra, trab_liquido = self._build_day_row(ws_det, day, merges)
+            trab_bruto, extra, trab_contabilizado = self._build_day_row(ws_det, day, merges)
             total_trab_bruto += trab_bruto
             total_extra += extra
-            total_trab_real += trab_liquido
+            total_trab_real += trab_contabilizado
 
         ws_det.append([""])
         last_row = ws_det.max_row
@@ -635,8 +635,9 @@ class ExcelService:
         ws_det.append([""])
         last_row = ws_det.max_row
 
-        trab_liquido = self._time_str_to_fraction(day.worked_time)
+        trab_contabilizado = self._time_str_to_fraction(getattr(day, 'accounted_time', '00:00') or day.worked_time or '00:00')
         extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+        trab_liquido = self._time_str_to_fraction(day.worked_time)
         trab_bruto = trab_liquido + extra_nao_aut
 
         texts = [
@@ -645,7 +646,7 @@ class ExcelService:
             punches_str,
             trab_bruto,
             extra_nao_aut,
-            trab_liquido
+            trab_contabilizado
         ]
 
         fill_to_apply = None
@@ -671,7 +672,7 @@ class ExcelService:
         ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
 
-        return trab_bruto, extra_nao_aut, trab_liquido
+        return trab_bruto, extra_nao_aut, trab_contabilizado
 
 
 excel_service = ExcelService()

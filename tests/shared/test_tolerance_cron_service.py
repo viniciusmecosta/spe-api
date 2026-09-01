@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
-from app.shared.enums import AdjustmentType, RecordType
+from app.shared.enums import RecordType
 from app.shared.tolerance_cron_service import ToleranceCronService
 
 
@@ -121,9 +121,7 @@ def test_process_entry_record_diff_greater_than_5_no_adj(tolerance_service, db_s
     now = datetime(2026, 7, 24, 8, 10, tzinfo=tz)
     tolerance_service._process_entry_record(db_session_mock, base_record, now, tz)
     assert base_record.is_verified is True
-    db_session_mock.add.assert_called_once()
-    added = db_session_mock.add.call_args[0][0]
-    assert added.adjustment_type == AdjustmentType.EXTRA_TIME
+    db_session_mock.add.assert_not_called()
 
 
 def test_process_unverified_entries_success(tolerance_service, db_session_mock, base_record, mocker):

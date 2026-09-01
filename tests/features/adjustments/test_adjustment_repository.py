@@ -115,8 +115,7 @@ async def test_async_adjustment_repository(async_db_mock):
 
     created = await repo.create(async_db_mock, user_id=1, obj_in=obj_in)
     assert created.user_id == 1
-    
-    # Restore the behavior expected by the rest of the test
+
     mock_scalars.first.return_value = created
     mock_scalars.all.return_value = [created]
     async_db_mock.scalar.return_value = 1

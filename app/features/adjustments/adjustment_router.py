@@ -12,6 +12,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from app.features.adjustments.adjustment_schemas import (
+    AdjustmentApproveRequest,
     AdjustmentAttachmentResponse,
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
@@ -157,9 +158,14 @@ async def approve_adjustment(
         id: int,
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        comment: Annotated[str | None, Body(embed=True)] = None,
+        body: Annotated[AdjustmentApproveRequest, Body()] = AdjustmentApproveRequest(),
 ) -> AdjustmentRequestResponse:
-    return await service.approve_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
+    return await service.approve_adjustment(
+        request_id=id,
+        manager_id=current_user.id,
+        comment=body.comment,
+        approved_amount_hours=body.approved_amount_hours,
+    )
 
 
 @router.put(

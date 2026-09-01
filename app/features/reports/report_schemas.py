@@ -1,6 +1,28 @@
-from datetime import date
+from datetime import date, datetime
+from datetime import time as dt_time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
+
+
+class ReportAdjustmentItem(BaseModel):
+    id: int
+    user_id: int
+    adjustment_type: AdjustmentType
+    record_type: RecordType | None = None
+    target_date: date
+    time: dt_time | None = None
+    amount_hours: float | None = None
+    approved_amount_hours: float | None = None
+    reason_text: str | None = None
+    status: AdjustmentStatus
+    manager_id: int | None = None
+    manager_comment: str | None = None
+    created_at: datetime | None = None
+    reviewed_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PunchDetail(BaseModel):
@@ -35,8 +57,13 @@ class DailyReportItem(BaseModel):
     missing_hours: float
     worked_minutes: int
     worked_time: str
+    accounted_time: str = "00:00"
     expected_time: str
     unapproved_extra_time: str = "00:00"
+    has_excess: bool = False
+    excess_status: str | None = None
+    daily_excess_id: int | None = None
+    adjustments: list[ReportAdjustmentItem] = []
 
 
 class UserPayrollSummary(BaseModel):
@@ -44,6 +71,7 @@ class UserPayrollSummary(BaseModel):
     user_name: str
     total_worked_time: str
     total_expected_time: str
+    total_accounted_time: str = "00:00"
     total_worked_hours: float = 0.0
     total_expected_hours: float = 0.0
     total_extra_hours: float = 0.0
@@ -51,6 +79,7 @@ class UserPayrollSummary(BaseModel):
     final_balance: float = 0.0
     total_worked_minutes: int = 0
     total_expected_minutes: int = 0
+    total_accounted_minutes: int = 0
     days_worked: int
     absences: int
 
@@ -89,17 +118,23 @@ class HistoryDay(BaseModel):
     status: str
     holiday_name: str | None = None
     worked_time: str
+    accounted_time: str = "00:00"
     punches: list[HistoryPunch]
     has_anomaly: bool
     anomalies: list[str]
     abono_hours: float | None = None
     abono_id: int | None = None
+    has_excess: bool = False
+    excess_status: str | None = None
+    daily_excess_id: int | None = None
+    adjustments: list[ReportAdjustmentItem] = []
 
 
 class HistoryResponse(BaseModel):
     month: int
     year: int
     total_worked_time: str
+    total_accounted_time: str = "00:00"
     days: list[HistoryDay]
 
 

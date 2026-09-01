@@ -336,7 +336,7 @@ async def test_toggle_record_type_success(db_session_mock, mock_time_record_repo
     assert result.is_verified is True
     db_session_mock.add.assert_any_call(result)
     db_session_mock.add.assert_any_call(record)
-    db_session_mock.flush.assert_called_once()
+    assert db_session_mock.flush.called
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(result)
     mock_audit_service.log_change.assert_called_once()
@@ -812,4 +812,45 @@ async def test_trigger_auto_print_disabled(db_session_mock, mocker):
     record = TimeRecord(id=1, user=user)
     await time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
     mock_bg.add_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
+                                                                             mock_payroll_service, mock_audit_service,
+                                                                             mocker):
+    reprocess_mock = mocker.patch.object(time_record_service, "_reprocess_daily_excess", return_value=None)
+
+    dt = datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    create_obj = TimeRecordCreateAdmin(
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=dt,
+        edit_justification="Adicionado pelo admin"
+    )
+    rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY, record_datetime=dt)
+    mock_time_record_repo.create.return_value = rec
+
+    await time_record_service.create_admin_record(db_session_mock, create_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    mock_time_record_repo.get.return_value = rec
+    update_obj = TimeRecordUpdate(
+        record_datetime=datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo(settings.TIMEZONE)),
+        edit_justification="Horario alterado"
+    )
+    await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    delete_obj = TimeRecordDeleteAdmin(edit_justification="Batida indevida")
+    await time_record_service.delete_admin_record(db_session_mock, record_id=1, obj_in=delete_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    admin_user = User(id=2, role=UserRole.MANAGER)
+    await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=admin_user)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+
 

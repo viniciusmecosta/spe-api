@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from app.core.config import settings
 from app.features.devices.sync_service import sync_service
 from app.features.system.routine_orchestrator import routine_orchestrator
-from app.shared.tolerance_cron_service import tolerance_cron_service
+from app.shared.daily_excess_cron_service import daily_excess_cron_service
 
 scheduler = AsyncIOScheduler()
 
@@ -35,8 +35,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(routine_orchestrator.clean_old_logs, trigger=trigger_aligned, id="cleanup_routine_logs",
                       max_instances=1, coalesce=True)
 
-    scheduler.add_job(tolerance_cron_service.process_unverified_entries, trigger=trigger_5min,
-                      id="tolerance_entries_check",
+    scheduler.add_job(daily_excess_cron_service.process_daily_excess, trigger=trigger_aligned,
+                      id="daily_excess_check",
                       max_instances=1, coalesce=True)
 
     if settings.OPERATION_MODE == "EXPORTADOR":

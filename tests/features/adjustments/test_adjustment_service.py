@@ -636,3 +636,51 @@ async def test_revert_adjustment_status_approve(async_db_mock, mocker):
 
     res = await adjustment_service.revert_adjustment_status(async_db_mock, 1, 99, AdjustmentStatus.APPROVED, "motivo")
     assert res.status == AdjustmentStatus.APPROVED
+
+
+@pytest.mark.asyncio
+async def test_create_adjustment_extra_time_blocked(async_db_mock, mocker):
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open", new_callable=AsyncMock)
+    obj_in = AdjustmentRequestCreate(
+        adjustment_type=AdjustmentType.EXTRA_TIME,
+        record_type=RecordType.ENTRY,
+        target_date=date(2026, 8, 1),
+        time=time(18, 0),
+        reason_text="Extra manual"
+    )
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        await adjustment_service.create_adjustment_request(async_db_mock, user_id=1, obj_in=obj_in)
+    assert exc.value.status_code == 400
+    assert "Hora extra manual foi descontinuada" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
+    manager = User(id=99, role=UserRole.MANAGER)
+    request = AdjustmentRequest(
+        id=10,
+        user_id=1,
+        target_date=date(2026, 8, 1),
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        status=AdjustmentStatus.PENDING,
+        amount_hours=2.0,
+    )
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open", new_callable=AsyncMock)
+    mock_update = mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status", new_callable=AsyncMock,
+                               return_value=request)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
+                 new_callable=AsyncMock, return_value=[request])
+
+    res = await adjustment_service.approve_adjustment(
+        async_db_mock,
+        request_id=10,
+        manager_id=99,
+        comment="Aprovado 1h",
+        approved_amount_hours=1.0
+    )
+    assert request.approved_amount_hours == 1.0
+    mock_update.assert_called_once_with(async_db_mock, request, AdjustmentStatus.APPROVED, 99, "Aprovado 1h")

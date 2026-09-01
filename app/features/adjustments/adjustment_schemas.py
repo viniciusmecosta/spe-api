@@ -37,6 +37,11 @@ class AdjustmentWaiverCreate(BaseModel):
     reason_text: str
 
 
+class AdjustmentApproveRequest(BaseModel):
+    comment: str | None = None
+    approved_amount_hours: float | None = None
+
+
 class BulkReprocessExtraTimeRequest(BaseModel):
     start_date: date
     end_date: date
@@ -66,6 +71,7 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     status: AdjustmentStatus
     manager_id: int | None = None
     manager_comment: str | None = None
+    approved_amount_hours: float | None = None
     created_at: datetime
     reviewed_at: datetime | None = None
     attachments: list[AdjustmentAttachmentResponse] = []
@@ -87,6 +93,14 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
                 "tempo_extra_minutos": extra_mins,
                 "horario_batido": actual_time,
                 "horario_esperado": expected
+            }
+        elif self.adjustment_type == AdjustmentType.DAILY_EXCESS:
+            extra_mins = int(self.amount_hours * 60) if self.amount_hours else 0
+            approved_mins = int(self.approved_amount_hours * 60) if self.approved_amount_hours is not None else None
+            info = {
+                "tempo_excedente_minutos": extra_mins,
+                "tempo_aprovado_minutos": approved_mins,
+                "motivo": self.reason_text,
             }
         elif self.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED,
                                       AdjustmentType.DELETE_PUNCH]:

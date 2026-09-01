@@ -27,6 +27,19 @@ class DailyTimeResult:
 
 
 @dataclass
+class DailyAccountedResult:
+    raw_seconds: float
+    excess_work_seconds: float
+    excess_lunch_seconds: float
+    early_return_seconds: float
+    total_excess_seconds: float
+    approved_seconds: float
+    accounted_seconds: float
+    has_schedule: bool
+    has_lunch_rule: bool
+
+
+@dataclass
 class PeriodTimeResult:
     total_net_worked_seconds: float
     total_gross_worked_seconds: float
@@ -40,6 +53,9 @@ class PeriodTimeResult:
     daily_expected_seconds: dict[date, float]
     daily_is_holiday: dict[date, bool]
     daily_waivers: dict[date, AdjustmentRequest | None]
+    total_accounted_seconds: float = 0.0
+    total_excess_seconds: float = 0.0
+    total_approved_excess_seconds: float = 0.0
 
 
 class _DailyProcessState:
@@ -177,6 +193,104 @@ class TimeCalculationService:
 
         return unapproved_extra_seconds
 
+    def calculate_accounted_time(
+            self,
+            day_records: list[TimeRecord],
+            schedule: Any | None,
+            daily_excess_adj: AdjustmentRequest | None = None,
+    ) -> DailyAccountedResult:
+        valid_records = [
+            r for r in day_records
+            if not getattr(r, 'is_ignored', False) and getattr(r, 'deleted_at', None) is None
+        ]
+        sorted_records = sorted(valid_records, key=lambda x: x.record_datetime)
+
+        raw_seconds = 0.0
+        current_entry_dt: datetime | None = None
+
+        for rec in sorted_records:
+            rec_dt = rec.record_datetime.replace(second=0, microsecond=0)
+            if rec.record_type == RecordType.ENTRY:
+                current_entry_dt = rec_dt
+            elif rec.record_type == RecordType.EXIT:
+                if current_entry_dt is not None:
+                    delta = (rec_dt - current_entry_dt).total_seconds()
+                    if 0 <= delta <= 86400:
+                        raw_seconds += delta
+                    current_entry_dt = None
+
+        has_schedule = schedule is not None
+        has_lunch_rule = False
+        excess_lunch = 0.0
+        early_return = 0.0
+
+        if has_schedule and getattr(schedule, 'exit_1', None) and getattr(schedule, 'entry_2', None):
+            has_lunch_rule = True
+            t1 = schedule.exit_1
+            t2 = schedule.entry_2
+            if isinstance(t1, str):
+                p1 = [int(x) for x in t1.split(":")[:2]]
+                t1_secs = p1[0] * 3600 + p1[1] * 60
+            else:
+                t1_secs = t1.hour * 3600 + t1.minute * 60
+
+            if isinstance(t2, str):
+                p2 = [int(x) for x in t2.split(":")[:2]]
+                t2_secs = p2[0] * 3600 + p2[1] * 60
+            else:
+                t2_secs = t2.hour * 3600 + t2.minute * 60
+
+            almoco_estipulado = float(t2_secs - t1_secs)
+
+            first_exit = next((r for r in sorted_records if r.record_type == RecordType.EXIT and r.record_datetime.hour < 15), None)
+            if first_exit:
+                next_entry = next((r for r in sorted_records if r.record_type == RecordType.ENTRY and r.record_datetime > first_exit.record_datetime), None)
+                if next_entry:
+                    exit_dt = first_exit.record_datetime.replace(second=0, microsecond=0)
+                    entry_dt = next_entry.record_datetime.replace(second=0, microsecond=0)
+                    almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
+                else:
+                    almoco_real = 0.0
+            else:
+                almoco_real = 0.0
+
+            excess_lunch = max(0.0, almoco_real - almoco_estipulado)
+            early_return = max(0.0, almoco_estipulado - almoco_real)
+
+        expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
+        net_before_excess = max(0.0, raw_seconds - excess_lunch)
+        excess_work = max(0.0, net_before_excess - expected_seconds) if has_schedule else 0.0
+        total_excess = excess_work + excess_lunch
+
+        approved_seconds = 0.0
+        if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.APPROVED:
+            if daily_excess_adj.approved_amount_hours is None:
+                approved_seconds = total_excess
+            else:
+                approved_seconds = min(total_excess, max(0.0, daily_excess_adj.approved_amount_hours * 3600.0))
+            accounted_seconds = max(0.0, min(raw_seconds, raw_seconds - (total_excess - approved_seconds)))
+        elif daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.REJECTED:
+            approved_seconds = 0.0
+            accounted_seconds = max(0.0, min(raw_seconds, raw_seconds - total_excess))
+        else:
+            approved_seconds = 0.0
+            if has_schedule:
+                accounted_seconds = max(0.0, min(raw_seconds - excess_lunch, expected_seconds))
+            else:
+                accounted_seconds = raw_seconds
+
+        return DailyAccountedResult(
+            raw_seconds=raw_seconds,
+            excess_work_seconds=excess_work,
+            excess_lunch_seconds=excess_lunch,
+            early_return_seconds=early_return,
+            total_excess_seconds=total_excess,
+            approved_seconds=approved_seconds,
+            accounted_seconds=accounted_seconds,
+            has_schedule=has_schedule,
+            has_lunch_rule=has_lunch_rule
+        )
+
     def calculate_period_time(
             self,
             start_date: date,
@@ -184,7 +298,8 @@ class TimeCalculationService:
             records: list[TimeRecord],
             adjustments: list[AdjustmentRequest],
             holidays: list,
-            historical_schedules: list
+            historical_schedules: list,
+            daily_excess_adjs: list[AdjustmentRequest] | None = None,
     ) -> PeriodTimeResult:
 
         has_schedule = bool(historical_schedules)
@@ -195,6 +310,9 @@ class TimeCalculationService:
         total_unapproved = 0.0
         total_extra = 0.0
         total_missing = 0.0
+        total_accounted = 0.0
+        total_excess = 0.0
+        total_approved_excess = 0.0
 
         daily_results = {}
         daily_expected = {}
@@ -210,6 +328,7 @@ class TimeCalculationService:
             daily_is_holiday[current_date] = is_holiday
 
             day_expected_hours = 0.0
+            schedule = None
             if not is_holiday and has_schedule:
                 target_day = DayOfWeek.from_date(current_date)
                 valid_schedules = [
@@ -253,6 +372,18 @@ class TimeCalculationService:
             total_extra += daily_result.extra_seconds
             total_missing += daily_result.missing_seconds
 
+            day_excess = next((adj for adj in (daily_excess_adjs or adjustments or []) if
+                               adj.target_date == current_date and
+                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
+            accounted_res = self.calculate_accounted_time(
+                day_records=day_records,
+                schedule=schedule,
+                daily_excess_adj=day_excess
+            )
+            total_accounted += accounted_res.accounted_seconds
+            total_excess += accounted_res.total_excess_seconds
+            total_approved_excess += accounted_res.approved_seconds
+
             current_date += timedelta(days=1)
 
         return PeriodTimeResult(
@@ -267,7 +398,10 @@ class TimeCalculationService:
             daily_results=daily_results,
             daily_expected_seconds=daily_expected,
             daily_is_holiday=daily_is_holiday,
-            daily_waivers=daily_waivers
+            daily_waivers=daily_waivers,
+            total_accounted_seconds=total_accounted,
+            total_excess_seconds=total_excess,
+            total_approved_excess_seconds=total_approved_excess
         )
 
 

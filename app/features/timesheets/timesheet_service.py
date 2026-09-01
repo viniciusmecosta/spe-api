@@ -119,7 +119,9 @@ class TimesheetService:
         return punches_str
 
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
-                                   table_text_style):
+                                   table_text_style, records: list[TimeRecord] | None = None,
+                                   all_adjustments: list[AdjustmentRequest] | None = None,
+                                   historical_schedules: list | None = None):
         current_date = start_date
         row_index = 1
 
@@ -134,7 +136,23 @@ class TimesheetService:
                 t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
 
             punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
-            worked_time_str = self._format_duration(daily_res.net_worked_seconds)
+
+            day_records = [r for r in (records or []) if r.record_datetime.date() == current_date]
+            valid_schedules = [
+                s for s in (historical_schedules or [])
+                if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+            ]
+            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
+            day_excess = next((adj for adj in (all_adjustments or []) if
+                               adj.target_date == current_date and
+                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
+
+            accounted_res = time_calculation_service.calculate_accounted_time(
+                day_records=day_records,
+                schedule=day_schedule,
+                daily_excess_adj=day_excess,
+            )
+            accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
             unapproved_time_str = self._format_duration(daily_res.unapproved_extra_seconds)
 
             data_table.append([
@@ -142,7 +160,7 @@ class TimesheetService:
                 Paragraph(target_day.abreviado, table_text_style),
                 Paragraph(punches_str, table_text_style),
                 Paragraph(unapproved_time_str, table_text_style),
-                Paragraph(worked_time_str, table_text_style)
+                Paragraph(accounted_time_str, table_text_style)
             ])
 
             current_date += timedelta(days=1)
@@ -481,7 +499,7 @@ class TimesheetService:
             Paragraph("Dia", table_header_style),
             Paragraph("Registros de Ponto", table_header_style),
             Paragraph("Horas Não Aut.", table_header_style),
-            Paragraph("Trab. Líquido", table_header_style)
+            Paragraph("H. Contabilizadas", table_header_style)
         ]]
 
         t_style = [
@@ -502,8 +520,18 @@ class TimesheetService:
             historical_schedules=user.historical_schedules if user else []
         )
 
-        story.append(self._build_daily_records_table(start_date, end_date, period_result, holidays, data_table, t_style,
-                                                     table_text_style))
+        story.append(self._build_daily_records_table(
+            start_date=start_date,
+            end_date=end_date,
+            period_result=period_result,
+            holidays=holidays,
+            data_table=data_table,
+            t_style=t_style,
+            table_text_style=table_text_style,
+            records=records,
+            all_adjustments=all_adjustments,
+            historical_schedules=user.historical_schedules if user else []
+        ))
         story.append(Spacer(1, 10))
 
         total_duration_str = self._format_duration(period_result.total_net_worked_seconds)

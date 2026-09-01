@@ -57,6 +57,7 @@ from app.shared.enums import (
     RecordType,
     UserRole,
 )
+from app.shared.daily_excess_cron_service import daily_excess_cron_service
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import mask_cnpj, mask_cpf
@@ -98,6 +99,59 @@ class TimeRecordService:
             for req in requests:
                 db.delete(req)
             db.flush()
+
+    async def _invalidate_daily_excess_and_unverify(self, db: Any, user_id: int, target_date: datetime.date):
+        stmt = select(AdjustmentRequest).where(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+            AdjustmentRequest.deleted_at.is_(None),
+        )
+        if hasattr(db, "sync_session"):
+            res = await db.scalars(stmt)
+            requests = list(res.all())
+            for req in requests:
+                await db.delete(req)
+        else:
+            requests = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date == target_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                AdjustmentRequest.deleted_at.is_(None),
+            ).all()
+            for req in requests:
+                db.delete(req)
+
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_of_day = datetime.combine(target_date, time.min, tzinfo=tz)
+        end_of_day = datetime.combine(target_date, time.max, tzinfo=tz)
+        if hasattr(db, "sync_session"):
+            rec_stmt = select(TimeRecord).where(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+                TimeRecord.deleted_at.is_(None),
+            )
+            recs = list((await db.scalars(rec_stmt)).all())
+            for r in recs:
+                r.is_verified = False
+            await db.flush()
+        else:
+            recs = db.query(TimeRecord).filter(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+                TimeRecord.deleted_at.is_(None),
+            ).all()
+            for r in recs:
+                r.is_verified = False
+            db.flush()
+
+    async def _reprocess_daily_excess(self, db: Any, user_id: int, target_date: datetime.date):
+        if hasattr(db, "sync_session"):
+            await daily_excess_cron_service.evaluate_user_day_async(db, user_id, target_date)
+        else:
+            daily_excess_cron_service.evaluate_user_day_sync(db, user_id, target_date)
 
     async def _is_first_entry_affected(self, db: Any, user_id: int, target_date: datetime.date,
                                  record_id: int | None = None, new_datetime: datetime | None = None) -> bool:
@@ -272,6 +326,8 @@ class TimeRecordService:
                                                    new_datetime=record.record_datetime):
                 await self._invalidate_extra_time_requests(db, record.user_id, target_date)
 
+        await self._invalidate_daily_excess_and_unverify(db, record.user_id, target_date)
+
     def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
                                is_manager: bool) -> TimeRecord:
         original_id = record.original_record_id if record.original_record_id else record.id
@@ -323,6 +379,7 @@ class TimeRecordService:
         if hasattr(session, "sync_session"):
             await session.flush()
             session.add(record)
+            await self._reprocess_daily_excess(session, record.user_id, record.record_datetime.date())
             await session.commit()
             await session.refresh(new_record)
             await audit_service.async_log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
@@ -330,6 +387,7 @@ class TimeRecordService:
         else:
             session.flush()
             session.add(record)
+            await self._reprocess_daily_excess(session, record.user_id, record.record_datetime.date())
             session.commit()
             session.refresh(new_record)
             audit_service.log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
@@ -352,6 +410,8 @@ class TimeRecordService:
                                              new_datetime=obj_in.record_datetime):
                 await self._invalidate_extra_time_requests(session, obj_in.user_id, obj_in.record_datetime.date())
 
+        await self._invalidate_daily_excess_and_unverify(session, obj_in.user_id, obj_in.record_datetime.date())
+
         if hasattr(session, "sync_session"):
             record = await self.repo.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
                                             record_datetime=obj_in.record_datetime, ip_address=ip_address,
@@ -365,10 +425,14 @@ class TimeRecordService:
         record.is_verified = True
         session.add(record)
         if hasattr(session, "sync_session"):
+            await session.flush()
+            await self._reprocess_daily_excess(session, obj_in.user_id, obj_in.record_datetime.date())
             await session.commit()
             await session.refresh(record)
             await audit_service.async_log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
         else:
+            session.flush()
+            await self._reprocess_daily_excess(session, obj_in.user_id, obj_in.record_datetime.date())
             session.commit()
             session.refresh(record)
             audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
@@ -386,10 +450,14 @@ class TimeRecordService:
                                                    new_datetime=new_dt):
                 await self._invalidate_extra_time_requests(db, record.user_id, new_date)
 
+        await self._invalidate_daily_excess_and_unverify(db, record.user_id, old_date)
+        if new_date != old_date:
+            await self._invalidate_daily_excess_and_unverify(db, record.user_id, new_date)
+
     async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
-                            ip_address: str | None = None, device_name: str | None = None,
-                            platform: str | None = None) -> TimeRecord:
+                             ip_address: str | None = None, device_name: str | None = None,
+                             platform: str | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -428,11 +496,19 @@ class TimeRecordService:
         session.add(new_record)
         session.add(record)
         if hasattr(session, "sync_session"):
+            await session.flush()
+            await self._reprocess_daily_excess(session, record.user_id, old_date)
+            if new_date != old_date:
+                await self._reprocess_daily_excess(session, record.user_id, new_date)
             await session.commit()
             await session.refresh(new_record)
             await audit_service.async_log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
                                                  new_model=new_record)
         else:
+            session.flush()
+            await self._reprocess_daily_excess(session, record.user_id, old_date)
+            if new_date != old_date:
+                await self._reprocess_daily_excess(session, record.user_id, new_date)
             session.commit()
             session.refresh(new_record)
             audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
@@ -460,14 +536,23 @@ class TimeRecordService:
             if await self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(),
                                                    record_id=record.id):
                 await self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
+
+        target_date = record.record_datetime.date()
+        user_id = record.user_id
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
         old_data = serialize_model(record)
         if hasattr(session, "sync_session"):
             await self.repo.delete(session, record_id, manager_id)
+            await session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            await session.commit()
             await audit_service.async_log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                                  new_data={"justification": justification_val})
         else:
             time_record_repository.delete(session, record_id, manager_id)
+            session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            session.commit()
             audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                      new_data={"justification": justification_val})
 

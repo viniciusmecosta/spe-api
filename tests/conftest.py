@@ -9,7 +9,17 @@ from sqlalchemy.pool import StaticPool
 import pytest
 from app.core.config import settings
 from app.database.base import Base
+import app.features.companies.company_models
+import app.features.printers.printer_models
+import app.features.users.user_models
+import app.features.devices.device_models
+import app.features.holidays.holiday_models
+import app.features.payroll.payroll_models
+import app.features.adjustments.adjustment_models
+import app.features.time_records.time_record_models
+import app.features.system.system_models
 from app.features.companies.company_models import Company
+from app.features.printers.printer_models import Printer
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 

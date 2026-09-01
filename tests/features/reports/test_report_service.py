@@ -23,6 +23,7 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared.enums import RecordType, UserRole
 from app.shared.time_calculation_service import (
+    DailyAccountedResult,
     DailyTimeResult,
     PeriodTimeResult,
 )
@@ -60,6 +61,17 @@ def mock_anomaly_service():
 @pytest.fixture
 def mock_time_calc_service():
     with patch("app.shared.time_calculation_service.time_calculation_service") as mock:
+        mock.calculate_accounted_time.return_value = DailyAccountedResult(
+            raw_seconds=28800.0,
+            excess_work_seconds=0.0,
+            excess_lunch_seconds=0.0,
+            early_return_seconds=0.0,
+            total_excess_seconds=0.0,
+            approved_seconds=0.0,
+            accounted_seconds=28800.0,
+            has_schedule=True,
+            has_lunch_rule=False,
+        )
         yield mock
 
 
@@ -262,6 +274,42 @@ def test_build_history_day_scenarios(service):
     assert h_day_abono_emp.status == "Abono"
     assert h_day_abono_emp.abono_hours == 4.0
     assert h_day_abono_emp.abono_id is None
+
+
+def test_build_history_day_with_adjustments(service):
+    from app.shared.enums import AdjustmentStatus, AdjustmentType
+    curr = date(2024, 1, 1)
+    today = date(2024, 1, 15)
+    adj = AdjustmentRequest(
+        id=15,
+        user_id=1,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        target_date=curr,
+        amount_hours=2.0,
+        approved_amount_hours=1.5,
+        status=AdjustmentStatus.APPROVED,
+        reason_text="Excedente detectado"
+    )
+    period_res = MagicMock()
+    period_res.daily_results = {curr: _create_daily_time_result(net_worked_seconds=28800.0)}
+    period_res.daily_waivers = {curr: None}
+
+    h_day = service._build_history_day(
+        current=curr,
+        today_date=today,
+        records=[],
+        holidays=[],
+        anomalies=[],
+        period_result=period_res,
+        is_manager=True,
+        daily_excess_adj=adj,
+        day_adjustments=[adj]
+    )
+    assert len(h_day.adjustments) == 1
+    assert h_day.adjustments[0].id == 15
+    assert h_day.adjustments[0].adjustment_type == AdjustmentType.DAILY_EXCESS
+    assert h_day.adjustments[0].approved_amount_hours == 1.5
+    assert h_day.adjustments[0].status == AdjustmentStatus.APPROVED
 
 
 def test_build_detailed_punches(service):

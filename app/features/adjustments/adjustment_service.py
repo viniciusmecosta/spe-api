@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import Depends, UploadFile
+from fastapi import Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -139,6 +139,12 @@ class AdjustmentService:
         assert obj_in is not None
         await self._validate_period_open(session, obj_in.target_date)
 
+        if obj_in.adjustment_type == AdjustmentType.EXTRA_TIME:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hora extra manual foi descontinuada. O excedente é calculado automaticamente."
+            )
+
         if obj_in.adjustment_type == AdjustmentType.WAIVER:
             await self._validate_waiver_limit(session, user_id, obj_in.target_date, obj_in.amount_hours)
 
@@ -179,7 +185,7 @@ class AdjustmentService:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
         await self._validate_period_open(session, request.target_date)
 
-        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER, AdjustmentType.DAILY_EXCESS]:
             raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -200,7 +206,7 @@ class AdjustmentService:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
         await self._validate_period_open(session, request.target_date)
 
-        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER, AdjustmentType.DAILY_EXCESS]:
             raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
 
         if request.status == AdjustmentStatus.APPROVED:
@@ -268,7 +274,7 @@ class AdjustmentService:
         return attachment
 
     async def approve_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
-                           comment: str | None = None) -> AdjustmentRequest:
+                           comment: str | None = None, approved_amount_hours: float | None = None) -> AdjustmentRequest:
         session = db if db is not None else self.db
         assert session is not None
         request = await self.repo.get(session, request_id)
@@ -279,6 +285,8 @@ class AdjustmentService:
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
+        elif request.adjustment_type == AdjustmentType.DAILY_EXCESS:
+            request.approved_amount_hours = approved_amount_hours
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             await self._execute_adjustment_action(session, request, manager_id)
 
@@ -287,7 +295,7 @@ class AdjustmentService:
         await audit_service.async_log_change(
             session, manager_id, "APPROVE_ADJUSTMENT",
             old_model=old_data, new_model=updated,
-            new_data={"comment": comment} if comment else None
+            new_data={"comment": comment, "approved_amount_hours": approved_amount_hours} if (comment or approved_amount_hours is not None) else None
         )
         enriched = await self._enrich_adjustments_with_records(session, [updated])
         return enriched[0]
@@ -348,7 +356,7 @@ class AdjustmentService:
         return enriched[0]
 
     async def _revert_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
-        if request.adjustment_type in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER]:
+        if request.adjustment_type in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER, AdjustmentType.DAILY_EXCESS]:
             return
 
         if not request.time:
