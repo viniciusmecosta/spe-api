@@ -71,6 +71,7 @@ class UserWorkScheduleService:
         sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
         sch.valid_from = valid_from
         sch.valid_until = valid_until
+        sch.is_daily_excess_enabled = sch_data.get('is_daily_excess_enabled', True)
 
         total_seconds = (
                 self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +

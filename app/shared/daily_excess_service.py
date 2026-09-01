@@ -78,7 +78,7 @@ class DailyExcessService:
         for adj in existing_adjustments:
             await db.delete(adj)
 
-        if schedule and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
+        if schedule and getattr(schedule, 'is_daily_excess_enabled', False) and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
             accounted = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=schedule,
@@ -165,7 +165,7 @@ class DailyExcessService:
         for adj in existing_adjustments:
             db.delete(adj)
 
-        if schedule and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
+        if schedule and getattr(schedule, 'is_daily_excess_enabled', False) and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
             accounted = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=schedule,

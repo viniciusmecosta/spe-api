@@ -61,6 +61,7 @@ class WorkScheduleBase(BaseModel):
     exit_2: time | None = None
     valid_from: date | None = None
     valid_until: date | None = None
+    is_daily_excess_enabled: bool | None = True
 
 
 class WorkSchedule(WorkScheduleBase):
