@@ -78,6 +78,10 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
             .where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.deleted_at.is_(None),
+                ~and_(
+                    AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                    AdjustmentRequest.status == AdjustmentStatus.PENDING
+                )
             )
         )
 
@@ -293,6 +297,10 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             .where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.deleted_at.is_(None),
+                ~and_(
+                    AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                    AdjustmentRequest.status == AdjustmentStatus.PENDING
+                )
             )
         )
 

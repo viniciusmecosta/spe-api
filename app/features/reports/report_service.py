@@ -124,7 +124,12 @@ class ReportService:
             return ""
         return "Falta"
 
-    def _determine_excess_info(self, accounted_res, daily_excess_adj) -> tuple[bool, str | None, int | None]:
+    def _determine_excess_info(self, accounted_res, daily_excess_adj, schedule: Any | None = None,
+                               is_manager: bool = True) -> tuple[bool, str | None, int | None]:
+        is_enabled = bool(schedule and getattr(schedule, "is_daily_excess_enabled", False))
+        if not is_enabled:
+            return False, None, None
+
         has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
         daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
         if daily_excess_adj:
@@ -133,6 +138,10 @@ class ReportService:
             excess_status = AdjustmentStatus.PENDING.value
         else:
             excess_status = None
+
+        if not is_manager and excess_status == AdjustmentStatus.PENDING.value:
+            return False, None, None
+
         return has_excess, excess_status, daily_excess_id
 
     def _to_report_adjustment_item(self, adj: Any, current: date) -> ReportAdjustmentItem:
@@ -159,8 +168,15 @@ class ReportService:
             reviewed_at=r_at if isinstance(r_at, datetime) else None,
         )
 
-    def _build_day_adjustments_list(self, day_adjustments: list | None, current: date) -> list[ReportAdjustmentItem]:
-        return [self._to_report_adjustment_item(adj, current) for adj in (day_adjustments or [])]
+    def _build_day_adjustments_list(self, day_adjustments: list | None, current: date, is_manager: bool = True) -> list[
+        ReportAdjustmentItem]:
+        filtered = []
+        for adj in (day_adjustments or []):
+            item = self._to_report_adjustment_item(adj, current)
+            if not is_manager and item.adjustment_type == AdjustmentType.DAILY_EXCESS and item.status == AdjustmentStatus.PENDING:
+                continue
+            filtered.append(item)
+        return filtered
 
     def _build_history_day(
             self,
@@ -191,9 +207,10 @@ class ReportService:
             daily_excess_adj=daily_excess_adj,
         )
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj)
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
+                                                                                 schedule, is_manager)
 
-        day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current)
+        day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current, is_manager)
         punches = self._build_history_punches(day_records, is_manager)
 
         target_day = DayOfWeek(current.weekday())
@@ -258,20 +275,32 @@ class ReportService:
     def _determine_daily_status(self, is_future: bool, is_holiday: bool, is_weekend: bool, is_waiver: bool,
                                 worked_seconds: float, expected_seconds: float, is_today: bool,
                                 has_schedule: bool) -> str:
-        if is_future:
-            if is_holiday:
-                return "Feriado"
-            return WEEKEND_STATUS if is_weekend else ""
-        if is_waiver:
-            return "Abono"
         if is_holiday:
             return "Feriado"
+        if is_waiver:
+            return "Abono"
+            
+        if is_future:
+            if is_weekend:
+                return WEEKEND_STATUS
+            return ""
+            
         if is_weekend:
-            return "Normal" if worked_seconds > 0 else WEEKEND_STATUS
-        if worked_seconds == 0 and expected_seconds > 0:
-            return "" if is_today else "Falta"
-        if not has_schedule and worked_seconds == 0:
+            if worked_seconds > 0:
+                return "Normal"
+            return WEEKEND_STATUS
+            
+        if worked_seconds > 0:
+            return "Normal"
+            
+        if expected_seconds > 0:
+            if is_today:
+                return ""
+            return "Falta"
+            
+        if not has_schedule:
             return "-"
+            
         return "Normal"
 
     def _compute_daily_hours_and_balance(self, daily_res, expected_seconds: float):
@@ -316,7 +345,8 @@ class ReportService:
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
             day_records=day_records, schedule=schedule, daily_excess_adj=daily_excess_adj
         )
-        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj)
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
+                                                                                 schedule, is_maintainer)
 
         punches = list(daily_res.punches)
         if is_waiver:
@@ -383,20 +413,31 @@ class ReportService:
             ).all()
         return records, holidays, anomalies, all_adjustments
 
+    def _get_schedule_for_date(self, user, current_date, target_day_val):
+        if not user or not user.historical_schedules:
+            return None
+        for s in user.historical_schedules:
+            if s.valid_from <= current_date:
+                if s.valid_until is None or s.valid_until >= current_date:
+                    if s.day_of_week == target_day_val:
+                        return s
+        return None
+
     def _build_history_days_loop(self, start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments):
         history_days = []
+        adjs_by_date = {}
+        excess_by_date = {}
+        for adj in all_adjustments:
+            adjs_by_date.setdefault(adj.target_date, []).append(adj)
+            if adj.adjustment_type == AdjustmentType.DAILY_EXCESS:
+                excess_by_date[adj.target_date] = adj
+                
         current = start_date
         while current <= end_date:
-            target_day = DayOfWeek.from_date(current)
-            valid_schedules = [
-                s for s in (user.historical_schedules if user else [])
-                if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
-            ]
-            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
-            day_excess = next((adj for adj in all_adjustments if
-                               adj.target_date == current and
-                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
-            day_adjs = [adj for adj in all_adjustments if adj.target_date == current]
+            target_day_val = DayOfWeek.from_date(current).value
+            day_schedule = self._get_schedule_for_date(user, current, target_day_val)
+            day_excess = excess_by_date.get(current)
+            day_adjs = adjs_by_date.get(current, [])
 
             history_day = self._build_history_day(
                 current=current,
@@ -482,12 +523,26 @@ class ReportService:
     async def _fetch_report_data(self, db: Any, user_id: int, month: int, year: int,
                            start_dt: datetime, end_dt: datetime,
                            prefetched_records, prefetched_adjustments, prefetched_holidays):
-        if hasattr(db, "sync_session"):
-            all_records = prefetched_records if prefetched_records is not None else await async_time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-            holidays = prefetched_holidays if prefetched_holidays is not None else await async_holiday_repository.get_by_month(db, month, year)
-            if prefetched_adjustments is not None:
-                all_adjustments = prefetched_adjustments
+        all_records = prefetched_records
+        holidays = prefetched_holidays
+        all_adjustments = prefetched_adjustments
+        
+        is_async = hasattr(db, "sync_session")
+
+        if all_records is None:
+            if is_async:
+                all_records = await async_time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
             else:
+                all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+                
+        if holidays is None:
+            if is_async:
+                holidays = await async_holiday_repository.get_by_month(db, month, year)
+            else:
+                holidays = holiday_repository.get_by_month(db, month, year)
+                
+        if all_adjustments is None:
+            if is_async:
                 adj_stmt = select(AdjustmentRequest).where(
                     AdjustmentRequest.user_id == user_id,
                     AdjustmentRequest.target_date >= start_dt.date(),
@@ -496,11 +551,6 @@ class ReportService:
                 )
                 adj_res = await db.scalars(adj_stmt)
                 all_adjustments = list(adj_res.all())
-        else:
-            all_records = prefetched_records if prefetched_records is not None else time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-            holidays = prefetched_holidays if prefetched_holidays is not None else holiday_repository.get_by_month(db, month, year)
-            if prefetched_adjustments is not None:
-                all_adjustments = prefetched_adjustments
             else:
                 all_adjustments = db.query(AdjustmentRequest).filter(
                     AdjustmentRequest.user_id == user_id,
@@ -508,24 +558,27 @@ class ReportService:
                     AdjustmentRequest.target_date <= end_dt.date(),
                     AdjustmentRequest.deleted_at.is_(None)
                 ).all()
+
         return all_records, all_adjustments, holidays
 
     def _build_advanced_daily_details(self, start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments):
         daily_details = []
         days_worked_count = 0
         absences_count = 0
+        
+        adjs_by_date = {}
+        excess_by_date = {}
+        for adj in all_adjustments:
+            adjs_by_date.setdefault(adj.target_date, []).append(adj)
+            if adj.adjustment_type == AdjustmentType.DAILY_EXCESS:
+                excess_by_date[adj.target_date] = adj
+                
         current = start_date
         while current <= end_date:
-            target_day = DayOfWeek.from_date(current)
-            valid_schedules = [
-                s for s in (user.historical_schedules if user else [])
-                if s.valid_from <= current and (s.valid_until is None or s.valid_until >= current)
-            ]
-            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
-            day_excess = next((adj for adj in all_adjustments if
-                               adj.target_date == current and
-                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
-            day_adjs = [adj for adj in all_adjustments if adj.target_date == current]
+            target_day_val = DayOfWeek.from_date(current).value
+            day_schedule = self._get_schedule_for_date(user, current, target_day_val)
+            day_excess = excess_by_date.get(current)
+            day_adjs = adjs_by_date.get(current, [])
 
             item = self._build_daily_report_item(
                 current=current,

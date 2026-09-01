@@ -211,6 +211,12 @@ class TimeRecordService:
             return
         raise ManualPunchUnauthorizedError()
 
+    async def _validate_period_open_helper(self, session: Any, date: datetime.date):
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, date)
+        else:
+            payroll_service.validate_period_open(session, date)
+
     async def _register_manual_punch(self, session: Any, user_id: int, request: Request, record_type: RecordType) -> TimeRecord:
         await self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
@@ -218,15 +224,15 @@ class TimeRecordService:
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
 
+        await self._validate_period_open_helper(session, current_time.date())
+
         if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, current_time.date())
             record = await self.repo.create(
                 session, user_id=user_id, record_type=record_type,
                 record_datetime=current_time, ip_address=ip_address,
                 device_name=device_name, platform=platform,
             )
         else:
-            payroll_service.validate_period_open(session, current_time.date())
             record = time_record_repository.create(
                 session, user_id=user_id, record_type=record_type,
                 record_datetime=current_time, ip_address=ip_address,
@@ -314,10 +320,7 @@ class TimeRecordService:
         if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
 
         new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
         await self._process_toggle_invalidations(session, record, new_type)
@@ -368,10 +371,7 @@ class TimeRecordService:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+        await self._validate_period_open_helper(session, obj_in.record_datetime.date())
 
         if obj_in.record_type == RecordType.ENTRY:
             if await self._is_first_entry_affected(session, obj_in.user_id, obj_in.record_datetime.date(),
@@ -425,14 +425,9 @@ class TimeRecordService:
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-            if obj_in.record_datetime:
-                await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
-            if obj_in.record_datetime:
-                payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
+        if obj_in.record_datetime:
+            await self._validate_period_open_helper(session, obj_in.record_datetime.date())
 
         new_record_type = obj_in.record_type if obj_in.record_type else record.record_type
         new_record_datetime = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
@@ -506,10 +501,7 @@ class TimeRecordService:
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
 
         if record.record_type == RecordType.ENTRY:
             if await self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(),

@@ -684,3 +684,33 @@ async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
     )
     assert request.approved_amount_hours == 1.0
     mock_update.assert_called_once_with(async_db_mock, request, AdjustmentStatus.APPROVED, 99, "Aprovado 1h")
+
+
+@pytest.mark.asyncio
+async def test_revert_adjustment_status_approve_daily_excess(async_db_mock, mocker):
+    request = AdjustmentRequest(
+        id=24,
+        user_id=4,
+        target_date=date(2026, 9, 1),
+        status=AdjustmentStatus.PENDING,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        amount_hours=2.0,
+    )
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
+                 new_callable=AsyncMock)
+    mock_exec = mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._execute_adjustment_action",
+                             new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
+                 new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
+                 new_callable=AsyncMock,
+                 return_value=[request])
+
+    res = await adjustment_service.revert_adjustment_status(async_db_mock, 24, 99, AdjustmentStatus.APPROVED,
+                                                            "Revertendo para aprovado")
+    assert res.id == 24
+    mock_exec.assert_not_called()

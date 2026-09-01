@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import pytest
+from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
 from app.features.timesheets.timesheet_exceptions import (
@@ -13,7 +14,7 @@ from app.features.timesheets.timesheet_exceptions import (
 )
 from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User, UserWorkScheduleConfig
-from app.shared.enums import UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
 
 timesheet_service = TimesheetService()
@@ -76,8 +77,14 @@ def test_build_daily_records_table():
     t_style = []
     styles = getSampleStyleSheet()
     table_text_style = styles['Normal']
+    adj_excess = MagicMock(spec=AdjustmentRequest)
+    adj_excess.target_date = date(2023, 10, 1)
+    adj_excess.adjustment_type = AdjustmentType.DAILY_EXCESS
+    adj_excess.status = AdjustmentStatus.PENDING
+
     t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
-                                                     data_table, t_style, table_text_style)
+                                                     data_table, t_style, table_text_style,
+                                                     all_adjustments=[adj_excess])
     assert t is not None
 
 

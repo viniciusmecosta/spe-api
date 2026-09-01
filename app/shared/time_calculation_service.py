@@ -236,8 +236,11 @@ class TimeCalculationService:
 
     def _compute_accounted_approval(
         self, raw_seconds: float, total_excess: float, excess_lunch: float, expected_seconds: float,
-        has_schedule: bool, daily_excess_adj: AdjustmentRequest | None
+            has_schedule: bool, daily_excess_adj: AdjustmentRequest | None, is_enabled: bool = True
     ) -> tuple[float, float]:
+        if not is_enabled:
+            return 0.0, raw_seconds
+
         if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.APPROVED:
             if daily_excess_adj.approved_amount_hours is None:
                 approved = total_excess
@@ -271,12 +274,14 @@ class TimeCalculationService:
         has_lunch_rule, excess_lunch, early_return = self._compute_lunch_metrics(sorted_records, schedule)
 
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
+        is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False))
+
         net_before_excess = max(0.0, raw_seconds - excess_lunch)
         excess_work = max(0.0, net_before_excess - expected_seconds) if has_schedule else 0.0
         total_excess = excess_work + excess_lunch
 
         approved_seconds, accounted_seconds = self._compute_accounted_approval(
-            raw_seconds, total_excess, excess_lunch, expected_seconds, has_schedule, daily_excess_adj
+            raw_seconds, total_excess, excess_lunch, expected_seconds, has_schedule, daily_excess_adj, is_enabled
         )
 
         return DailyAccountedResult(

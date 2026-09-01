@@ -146,6 +146,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
     mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
+    mock_report.summary.total_accounted_minutes = 100
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
@@ -195,6 +196,7 @@ async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_serv
     mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
+    mock_report.summary.total_accounted_minutes = 100
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
@@ -322,6 +324,7 @@ def test_build_summary_sheet(excel_service):
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
+    mock_report.summary.total_accounted_minutes = 480
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
     mock_day.unapproved_extra_time = '01:00'
@@ -338,6 +341,7 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
+    mock_report.summary.total_accounted_minutes = 480
     mock_day = MagicMock()
     mock_day.worked_time = '01:00'
     mock_day.unapproved_extra_time = '02:00'

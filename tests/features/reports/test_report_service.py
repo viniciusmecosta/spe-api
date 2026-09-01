@@ -21,7 +21,7 @@ from app.features.reports.report_exceptions import (
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
-from app.shared.enums import RecordType, UserRole
+from app.shared.enums import AdjustmentStatus, RecordType, UserRole
 from app.shared.time_calculation_service import (
     DailyAccountedResult,
     DailyTimeResult,
@@ -687,3 +687,47 @@ def test_locale_error_handled():
     with patch("locale.setlocale", side_effect=locale.Error):
         import app.features.reports.report_service
         importlib.reload(app.features.reports.report_service)
+
+
+def test_determine_excess_info_disabled_or_legacy(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600
+
+    # schedule is None
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=None)
+    assert has_excess is False
+    assert status is None
+    assert adj_id is None
+
+    # schedule with is_daily_excess_enabled = False
+    sch_disabled = MagicMock(is_daily_excess_enabled=False)
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_disabled)
+    assert has_excess is False
+    assert status is None
+    assert adj_id is None
+
+    # legacy schedule with is_daily_excess_enabled = None
+    sch_legacy = MagicMock(is_daily_excess_enabled=None)
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_legacy)
+    assert has_excess is False
+    assert status is None
+    assert adj_id is None
+
+
+def test_determine_excess_info_enabled(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600
+
+    sch_enabled = MagicMock(is_daily_excess_enabled=True)
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled)
+    assert has_excess is True
+    assert status == "PENDING"
+    assert adj_id is None
+
+    adj = MagicMock()
+    adj.id = 42
+    adj.status = AdjustmentStatus.APPROVED
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, adj, schedule=sch_enabled)
+    assert has_excess is True
+    assert status == AdjustmentStatus.APPROVED.value
+    assert adj_id == 42

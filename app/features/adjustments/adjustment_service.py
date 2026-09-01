@@ -429,7 +429,8 @@ class AdjustmentService:
 
         elif old_status in [AdjustmentStatus.PENDING,
                             AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
-            if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME]:
+            if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME,
+                                               AdjustmentType.DAILY_EXCESS]:
                 await self._execute_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)

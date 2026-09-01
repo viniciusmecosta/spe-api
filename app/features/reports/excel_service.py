@@ -539,7 +539,7 @@ class ExcelService:
         for user, report in user_reports:
             sum_data = report.summary
 
-            total_real = sum_data.total_worked_minutes / 1440.0
+            total_real = sum_data.total_accounted_minutes / 1440.0
 
             ws_summary.append([""])
             row = ws_summary.max_row
@@ -650,9 +650,10 @@ class ExcelService:
         last_row = ws_det.max_row
 
         trab_contabilizado = self._time_str_to_fraction(getattr(day, 'accounted_time', '00:00') or day.worked_time or '00:00')
-        extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
         trab_liquido = self._time_str_to_fraction(day.worked_time)
-        trab_bruto = trab_liquido + extra_nao_aut
+        extra_nao_aut_legacy = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+        trab_bruto = trab_liquido + extra_nao_aut_legacy
+        extra_nao_aut = max(0.0, trab_bruto - trab_contabilizado)
 
         texts = [
             day.date.strftime("%d/%m/%y"),
