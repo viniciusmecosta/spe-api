@@ -112,7 +112,7 @@ class DashboardService:
 
         month_anomalies = []
         anomalies = await anomaly_service.get_anomalies(
-            session, start_of_month, today_date, current_user.id, ignore_excessive_hours=False
+            session, start_of_month, today_date, current_user.id, ignore_excessive_hours=False, viewer_role=current_user.role
         )
         for a in anomalies:
             month_anomalies.append(AnomalyItem(
@@ -234,7 +234,7 @@ class DashboardService:
                 next_punch_type = "EXIT"
 
         all_anomalies = await anomaly_service.get_anomalies_by_month(
-            session, now.month, now.year, user_id=None, ignore_excessive_hours=False
+            session, now.month, now.year, user_id=None, ignore_excessive_hours=False, viewer_role=current_user.role
         )
         total_system_anomalies = len(all_anomalies)
 
