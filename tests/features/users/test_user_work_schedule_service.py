@@ -373,3 +373,57 @@ async def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
     with pytest.raises(BulkScheduleNotFoundError) as exc:
         await user_work_schedule_service.delete_bulk_schedules(db_session_mock, start_date, end_date, 99)
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
+
+    user_mock = User(id=1, name="Test User")
+    mocker.patch("app.features.users.user_repository.user_repository.get", return_value=user_mock)
+
+    bg_mock = MagicMock()
+    valid_from = date(2026, 8, 1)
+    valid_until = date(2026, 8, 15)
+
+    bulk_data = {
+        "valid_from": valid_from,
+        "valid_until": valid_until,
+        "users": [{"user_id": 1, "schedules": [{"day_of_week": 0, "entry_1": "08:00", "exit_1": "17:00"}]}]
+    }
+
+    await user_work_schedule_service.bulk_add_schedules(
+        db_session_mock,
+        bulk_data=bulk_data,
+        current_user_id=99,
+        background_tasks=bg_mock
+    )
+    bg_mock.add_task.assert_called_once()
+
+    bg_mock.reset_mock()
+    old_cfg = UserWorkScheduleConfig(id=10, user_id=1, day_of_week=0, valid_from=valid_from, valid_until=valid_until)
+    query_mock = MagicMock()
+    query_mock.filter.return_value.all.return_value = [old_cfg]
+    db_session_mock.query.return_value = query_mock
+
+    await user_work_schedule_service.update_bulk_schedules(
+        db_session_mock,
+        old_valid_from=valid_from,
+        old_valid_until=valid_until,
+        bulk_data=bulk_data,
+        current_user_id=99,
+        background_tasks=bg_mock
+    )
+    bg_mock.add_task.assert_called_once()
+
+    bg_mock.reset_mock()
+    await user_work_schedule_service.delete_bulk_schedules(
+        db_session_mock,
+        valid_from=valid_from,
+        valid_until=valid_until,
+        current_user_id=99,
+        background_tasks=bg_mock
+    )
+    bg_mock.add_task.assert_called_once()
+

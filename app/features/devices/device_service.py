@@ -16,6 +16,7 @@ from app.features.devices.device_schemas import (
 from app.features.devices.punch_service import punch_service
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import RecordType, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
@@ -58,6 +59,7 @@ class DeviceService:
             if success and record:
                 if background_tasks:
                     await time_record_service.trigger_auto_print(session, record, background_tasks)
+                    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id, record.record_datetime.date())
 
                 if request is not None and hasattr(request, "state") and record.user and record.user.name:
                     request.state.attempted_user = record.user.name

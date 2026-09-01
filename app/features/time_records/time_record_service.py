@@ -57,7 +57,7 @@ from app.shared.enums import (
     RecordType,
     UserRole,
 )
-from app.shared.daily_excess_cron_service import daily_excess_cron_service
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import mask_cnpj, mask_cpf
@@ -149,9 +149,9 @@ class TimeRecordService:
 
     async def _reprocess_daily_excess(self, db: Any, user_id: int, target_date: datetime.date):
         if hasattr(db, "sync_session"):
-            await daily_excess_cron_service.evaluate_user_day_async(db, user_id, target_date)
+            await daily_excess_service.evaluate_user_day_async(db, user_id, target_date)
         else:
-            daily_excess_cron_service.evaluate_user_day_sync(db, user_id, target_date)
+            daily_excess_service.evaluate_user_day_sync(db, user_id, target_date)
 
     async def _is_first_entry_affected(self, db: Any, user_id: int, target_date: datetime.date,
                                  record_id: int | None = None, new_datetime: datetime | None = None) -> bool:
