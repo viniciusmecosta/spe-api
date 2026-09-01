@@ -276,12 +276,12 @@ class TimeCalculationService:
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
         is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False))
 
-        net_before_excess = max(0.0, raw_seconds - excess_lunch)
+        net_before_excess = raw_seconds
         excess_work = max(0.0, net_before_excess - expected_seconds) if has_schedule else 0.0
-        total_excess = excess_work + excess_lunch
+        total_excess = max(excess_work, early_return)
 
         approved_seconds, accounted_seconds = self._compute_accounted_approval(
-            raw_seconds, total_excess, excess_lunch, expected_seconds, has_schedule, daily_excess_adj, is_enabled
+            raw_seconds, total_excess, early_return, expected_seconds, has_schedule, daily_excess_adj, is_enabled
         )
 
         return DailyAccountedResult(

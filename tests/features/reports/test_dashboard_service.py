@@ -226,9 +226,11 @@ async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_q
 
     report1 = MagicMock()
     report1.summary.total_worked_minutes = 150
+    report1.summary.total_accounted_minutes = 150
 
     report2 = MagicMock()
-    report2.summary.total_worked_minutes = 45
+    report2.summary.total_worked_minutes = 30
+    report2.summary.total_accounted_minutes = 30
 
     mock_get_report.side_effect = [report1, report2]
 

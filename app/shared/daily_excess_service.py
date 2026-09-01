@@ -35,13 +35,13 @@ class DailyExcessService:
         )
         exit_time = last_exit.record_datetime.time() if last_exit else None
 
-        excess_mins_work = int(accounted.excess_work_seconds / 60)
-        excess_mins_lunch = int(accounted.excess_lunch_seconds / 60)
+        excess_mins_early = int(accounted.early_return_seconds / 60)
+        excess_mins_work = int(accounted.total_excess_seconds / 60) - excess_mins_early
         parts = []
         if excess_mins_work > 0:
             parts.append(f"{excess_mins_work}min de jornada excedente")
-        if excess_mins_lunch > 0:
-            parts.append(f"{excess_mins_lunch}min de almoço excedido")
+        if excess_mins_early > 0:
+            parts.append(f"{excess_mins_early}min de almoço adiantado")
         reason = "Excedente automático detectado: " + ", ".join(parts)
         amount_hours = round(accounted.total_excess_seconds / 3600.0, 4)
 

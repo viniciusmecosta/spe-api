@@ -178,7 +178,7 @@ class DashboardService:
         for user in users:
             report = await report_service.get_advanced_user_report(session, user.id, month, year, current_user)
             if report:
-                user_minutes = report.summary.total_worked_minutes
+                user_minutes = report.summary.total_accounted_minutes
                 if user_minutes >= 60:
                     user_hours_rounded = user_minutes // 60
                     employees_data.append(EmployeeHours(
