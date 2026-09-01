@@ -390,7 +390,7 @@ class ReportService:
         if hasattr(session, "sync_session"):
             records = await async_time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
             holidays = await async_holiday_repository.get_by_month(session, month, year)
-            anomalies = await anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive)
+            anomalies = await anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive, ignore_extra_time=True)
             adj_stmt = select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date >= start_date,
@@ -402,7 +402,7 @@ class ReportService:
         else:
             records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
             holidays = holiday_repository.get_by_month(session, month, year)
-            anomalies = anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive)
+            anomalies = anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive, ignore_extra_time=True)
             if hasattr(anomalies, "__await__"):
                 anomalies = await anomalies
             all_adjustments = session.query(AdjustmentRequest).filter(

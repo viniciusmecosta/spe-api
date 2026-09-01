@@ -150,7 +150,7 @@ class AnomalyService:
 
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: list,
                              ignore_excessive_hours: bool = False, day_adjustments: list = None,
-                             expected_entry_time=None, viewer_role: UserRole = None) -> list[AnomalyResponse]:
+                             expected_entry_time=None, viewer_role: UserRole = None, ignore_extra_time: bool = False) -> list[AnomalyResponse]:
         if day_adjustments is None:
             day_adjustments = []
         anomalies = []
@@ -160,8 +160,9 @@ class AnomalyService:
 
         anomalies.extend(self._check_missing_entries_exits(user_id, user_name, current_date, records))
         anomalies.extend(self._check_consecutive_and_long_intervals(user_id, user_name, current_date, records))
-        anomalies.extend(
-            self._check_unapproved_adjustments(user_id, user_name, current_date, day_adjustments, expected_entry_time, viewer_role))
+        if not ignore_extra_time:
+            anomalies.extend(
+                self._check_unapproved_adjustments(user_id, user_name, current_date, day_adjustments, expected_entry_time, viewer_role))
 
         if not ignore_excessive_hours and total_worked_seconds > (10 * 3600):
             fmt_total = self._format_duration(total_worked_seconds)
@@ -207,7 +208,7 @@ class AnomalyService:
                 return schedule.entry_1
         return None
 
-    def _process_user_anomalies(self, uid, user, all_dates, records_map, adj_map, ignore_excessive_hours, viewer_role: UserRole = None):
+    def _process_user_anomalies(self, uid, user, all_dates, records_map, adj_map, ignore_excessive_hours, viewer_role: UserRole = None, ignore_extra_time: bool = False):
         user_anomalies = []
         user_name = user.name if user else "Unknown"
         for rdate in all_dates:
@@ -215,11 +216,11 @@ class AnomalyService:
             day_records = records_map[uid].get(rdate, [])
             day_adjs = adj_map[uid].get(rdate, [])
             day_anomalies = self._check_day_anomalies(uid, user_name, rdate, day_records, ignore_excessive_hours,
-                                                      day_adjs, expected_entry, viewer_role)
+                                                      day_adjs, expected_entry, viewer_role, ignore_extra_time)
             user_anomalies.extend(day_anomalies)
         return user_anomalies
 
-    def _process_all_anomalies(self, target_user_ids, users, records_map, adj_map, ignore_excessive_hours, viewer_role: UserRole = None):
+    def _process_all_anomalies(self, target_user_ids, users, records_map, adj_map, ignore_excessive_hours, viewer_role: UserRole = None, ignore_extra_time: bool = False):
         all_anomalies = []
         user_map = {u.id: u for u in users}
 
@@ -227,7 +228,7 @@ class AnomalyService:
             user = user_map.get(uid)
             all_dates = sorted(set(records_map[uid].keys()).union(adj_map[uid].keys()))
             all_anomalies.extend(
-                self._process_user_anomalies(uid, user, all_dates, records_map, adj_map, ignore_excessive_hours, viewer_role))
+                self._process_user_anomalies(uid, user, all_dates, records_map, adj_map, ignore_excessive_hours, viewer_role, ignore_extra_time))
 
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
@@ -269,7 +270,7 @@ class AnomalyService:
 
     async def get_anomalies(self, db: Any | None = None, start_date: date | None = None, end_date: date | None = None,
                             user_id: int | None = None,
-                      ignore_excessive_hours: bool = False, viewer_role: UserRole = None) -> list[AnomalyResponse]:
+                      ignore_excessive_hours: bool = False, viewer_role: UserRole = None, ignore_extra_time: bool = False) -> list[AnomalyResponse]:
         session = db if db is not None else self.db
         assert session is not None
         assert start_date is not None
