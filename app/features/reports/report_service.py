@@ -124,6 +124,44 @@ class ReportService:
             return ""
         return "Falta"
 
+    def _determine_excess_info(self, accounted_res, daily_excess_adj) -> tuple[bool, str | None, int | None]:
+        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
+        daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
+        if daily_excess_adj:
+            excess_status = daily_excess_adj.status.value
+        elif accounted_res.total_excess_seconds > 0:
+            excess_status = AdjustmentStatus.PENDING.value
+        else:
+            excess_status = None
+        return has_excess, excess_status, daily_excess_id
+
+    def _to_report_adjustment_item(self, adj: Any, current: date) -> ReportAdjustmentItem:
+        if isinstance(adj, ReportAdjustmentItem):
+            return adj
+        if isinstance(adj, dict):
+            return ReportAdjustmentItem(**adj)
+        c_at = getattr(adj, 'created_at', None)
+        r_at = getattr(adj, 'reviewed_at', None)
+        return ReportAdjustmentItem(
+            id=getattr(adj, 'id', 0),
+            user_id=getattr(adj, 'user_id', 0),
+            adjustment_type=getattr(adj, 'adjustment_type', AdjustmentType.OTHER),
+            record_type=getattr(adj, 'record_type', None),
+            target_date=getattr(adj, 'target_date', current),
+            time=getattr(adj, 'time', None),
+            amount_hours=getattr(adj, 'amount_hours', None),
+            approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
+            reason_text=getattr(adj, 'reason_text', None),
+            status=getattr(adj, 'status', AdjustmentStatus.PENDING),
+            manager_id=getattr(adj, 'manager_id', None),
+            manager_comment=getattr(adj, 'manager_comment', None),
+            created_at=c_at if isinstance(c_at, datetime) else None,
+            reviewed_at=r_at if isinstance(r_at, datetime) else None,
+        )
+
+    def _build_day_adjustments_list(self, day_adjustments: list | None, current: date) -> list[ReportAdjustmentItem]:
+        return [self._to_report_adjustment_item(adj, current) for adj in (day_adjustments or [])]
+
     def _build_history_day(
             self,
             current: date,
@@ -141,7 +179,6 @@ class ReportService:
         day_records.sort(key=lambda x: x.record_datetime)
 
         holiday = next((h for h in holidays if h.date == current), None)
-
         day_anomalies = [a for a in anomalies if a.date == current]
 
         daily_res = period_result.daily_results[current]
@@ -154,38 +191,9 @@ class ReportService:
             daily_excess_adj=daily_excess_adj,
         )
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
-        excess_status = daily_excess_adj.status.value if daily_excess_adj else (
-            AdjustmentStatus.PENDING.value if accounted_res.total_excess_seconds > 0 else None
-        )
-        daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj)
 
-        day_adjustments_list = []
-        for adj in (day_adjustments or []):
-            if isinstance(adj, ReportAdjustmentItem):
-                day_adjustments_list.append(adj)
-            elif isinstance(adj, dict):
-                day_adjustments_list.append(ReportAdjustmentItem(**adj))
-            else:
-                c_at = getattr(adj, 'created_at', None)
-                r_at = getattr(adj, 'reviewed_at', None)
-                day_adjustments_list.append(ReportAdjustmentItem(
-                    id=getattr(adj, 'id', 0),
-                    user_id=getattr(adj, 'user_id', 0),
-                    adjustment_type=getattr(adj, 'adjustment_type', AdjustmentType.OTHER),
-                    record_type=getattr(adj, 'record_type', None),
-                    target_date=getattr(adj, 'target_date', current),
-                    time=getattr(adj, 'time', None),
-                    amount_hours=getattr(adj, 'amount_hours', None),
-                    approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
-                    reason_text=getattr(adj, 'reason_text', None),
-                    status=getattr(adj, 'status', AdjustmentStatus.PENDING),
-                    manager_id=getattr(adj, 'manager_id', None),
-                    manager_comment=getattr(adj, 'manager_comment', None),
-                    created_at=c_at if isinstance(c_at, datetime) else None,
-                    reviewed_at=r_at if isinstance(r_at, datetime) else None,
-                ))
-
+        day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current)
         punches = self._build_history_punches(day_records, is_manager)
 
         target_day = DayOfWeek(current.weekday())
@@ -253,24 +261,27 @@ class ReportService:
         if is_future:
             if is_holiday:
                 return "Feriado"
-            elif is_weekend:
-                return WEEKEND_STATUS
-            return ""
+            return WEEKEND_STATUS if is_weekend else ""
         if is_waiver:
             return "Abono"
         if is_holiday:
             return "Feriado"
         if is_weekend:
-            if worked_seconds > 0:
-                return "Normal"
-            return WEEKEND_STATUS
+            return "Normal" if worked_seconds > 0 else WEEKEND_STATUS
         if worked_seconds == 0 and expected_seconds > 0:
-            if is_today:
-                return ""
-            return "Falta"
+            return "" if is_today else "Falta"
         if not has_schedule and worked_seconds == 0:
             return "-"
         return "Normal"
+
+    def _compute_daily_hours_and_balance(self, daily_res, expected_seconds: float):
+        worked_seconds = daily_res.net_worked_seconds
+        day_worked_hours = worked_seconds / 3600.0
+        day_expected_hours = expected_seconds / 3600.0
+        day_extra = daily_res.extra_seconds / 3600.0
+        day_missing = daily_res.missing_seconds / 3600.0
+        day_balance = day_extra - day_missing
+        return worked_seconds, day_worked_hours, day_expected_hours, day_extra, day_missing, day_balance
 
     def _build_daily_report_item(
             self,
@@ -288,154 +299,68 @@ class ReportService:
         is_future = current > today_date
         is_today = current == today_date
 
-        day_records = [r for r in all_records if r.record_datetime.date() == current]
-        day_records.sort(key=lambda x: x.record_datetime)
-
+        day_records = sorted([r for r in all_records if r.record_datetime.date() == current], key=lambda x: x.record_datetime)
         holiday = next((h for h in holidays if h.date == current), None)
-        is_holiday = holiday is not None
         holiday_name = holiday.name if holiday else None
 
         daily_res = period_result.daily_results[current]
         adjustment_day = period_result.daily_waivers[current]
-
         is_waiver = adjustment_day is not None
         adj_id = adjustment_day.id if adjustment_day else None
-        waiver_credit = daily_res.waiver_seconds
-
         target_day = DayOfWeek(current.weekday())
         is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
         expected_seconds = period_result.daily_expected_seconds[current]
-
-        worked_seconds = daily_res.net_worked_seconds
-        unapproved_extra_seconds = daily_res.unapproved_extra_seconds
-        entries = daily_res.entries
-        exits = daily_res.exits
-        punches = daily_res.punches
-
-        detailed_punches = self._build_detailed_punches(day_records, is_maintainer)
+        worked_seconds, day_worked_hours, day_expected_hours, day_extra, day_missing, day_balance = self._compute_daily_hours_and_balance(daily_res, expected_seconds)
 
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-            day_records=day_records,
-            schedule=schedule,
-            daily_excess_adj=daily_excess_adj,
+            day_records=day_records, schedule=schedule, daily_excess_adj=daily_excess_adj
         )
-        accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
-        excess_status = daily_excess_adj.status.value if daily_excess_adj else (
-            AdjustmentStatus.PENDING.value if accounted_res.total_excess_seconds > 0 else None
-        )
-        daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj)
 
-        day_adjustments_list = []
-        for adj in (day_adjustments or []):
-            if isinstance(adj, ReportAdjustmentItem):
-                day_adjustments_list.append(adj)
-            elif isinstance(adj, dict):
-                day_adjustments_list.append(ReportAdjustmentItem(**adj))
-            else:
-                c_at = getattr(adj, 'created_at', None)
-                r_at = getattr(adj, 'reviewed_at', None)
-                day_adjustments_list.append(ReportAdjustmentItem(
-                    id=getattr(adj, 'id', 0),
-                    user_id=getattr(adj, 'user_id', 0),
-                    adjustment_type=getattr(adj, 'adjustment_type', AdjustmentType.OTHER),
-                    record_type=getattr(adj, 'record_type', None),
-                    target_date=getattr(adj, 'target_date', current),
-                    time=getattr(adj, 'time', None),
-                    amount_hours=getattr(adj, 'amount_hours', None),
-                    approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
-                    reason_text=getattr(adj, 'reason_text', None),
-                    status=getattr(adj, 'status', AdjustmentStatus.PENDING),
-                    manager_id=getattr(adj, 'manager_id', None),
-                    manager_comment=getattr(adj, 'manager_comment', None),
-                    created_at=c_at if isinstance(c_at, datetime) else None,
-                    reviewed_at=r_at if isinstance(r_at, datetime) else None,
-                ))
-
-        day_worked_hours = worked_seconds / 3600.0
-        day_expected_hours = expected_seconds / 3600.0
-
-        day_extra = daily_res.extra_seconds / 3600.0
-        day_missing = daily_res.missing_seconds / 3600.0
-        day_balance = day_extra - day_missing
-
-        status = self._determine_daily_status(
-            is_future, is_holiday, is_weekend, is_waiver, worked_seconds, expected_seconds, is_today, has_schedule
-        )
+        punches = list(daily_res.punches)
         if is_waiver:
-            formatted_waiver = self._format_duration(waiver_credit)
+            formatted_waiver = self._format_duration(daily_res.waiver_seconds)
             if formatted_waiver and formatted_waiver != "00:00":
                 punches.append(f"Abono: {formatted_waiver}")
 
-        worked_minutes_int = int(round(worked_seconds / 60))
+        status = self._determine_daily_status(
+            is_future, holiday is not None, is_weekend, is_waiver, worked_seconds, expected_seconds, is_today, has_schedule
+        )
 
         return DailyReportItem(
             date=current,
-            day_name=DayOfWeek(current.weekday()).abreviado,
-            is_holiday=is_holiday,
+            day_name=target_day.abreviado,
+            is_holiday=holiday is not None,
             holiday_name=holiday_name,
             is_weekend=is_weekend,
             status=status,
-            entries=entries,
-            exits=exits,
+            entries=daily_res.entries,
+            exits=daily_res.exits,
             punches=punches,
-            detailed_punches=detailed_punches if is_maintainer else None,
+            detailed_punches=self._build_detailed_punches(day_records, is_maintainer) if is_maintainer else None,
             adjustment_id=adj_id,
             worked_hours=round(day_worked_hours, 2),
             expected_hours=round(day_expected_hours, 2),
             balance_hours=round(day_balance, 2),
             extra_hours=round(day_extra, 2),
             missing_hours=round(day_missing, 2),
-            worked_minutes=worked_minutes_int,
+            worked_minutes=int(round(worked_seconds / 60)),
             worked_time=self._format_duration(worked_seconds),
-            accounted_time=accounted_time_str,
+            accounted_time=self._format_duration(accounted_res.accounted_seconds),
             expected_time=self._format_duration(expected_seconds),
-            unapproved_extra_time=self._format_duration(unapproved_extra_seconds),
+            unapproved_extra_time=self._format_duration(daily_res.unapproved_extra_seconds),
             has_excess=has_excess,
             excess_status=excess_status,
             daily_excess_id=daily_excess_id,
-            adjustments=day_adjustments_list,
+            adjustments=self._build_day_adjustments_list(day_adjustments, current),
         )
 
-    async def get_history_report(self, db: Any | None = None, user_id: int = 0, month: int | None = None,
-                                 year: int | None = None,
-                           current_user: User | None = None) -> HistoryResponse:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert current_user is not None
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        today_date = now.date()
-
-        if not month:
-            month = now.month
-        if not year:
-            year = now.year
-
-        start_date, end_date = self._get_month_range(month, year)
-
-        if year == now.year and month == now.month:
-            end_date = min(end_date, now.date())
-        elif datetime(year, month, 1).date() > now.date():
-            return HistoryResponse(month=month, year=year, total_worked_time="00:00", total_accounted_time="00:00", days=[])
-
-        if hasattr(session, "sync_session"):
-            user = await async_user_repository.get(session, user_id)
-        else:
-            user = user_repository.get(session, user_id)
-        if not user:
-            raise ReportUserNotFoundError(user_id=user_id)
-
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
-        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
-
+    async def _fetch_history_data(self, session, user_id, start_dt, end_dt, start_date, end_date, month, year, ignore_excessive):
         if hasattr(session, "sync_session"):
             records = await async_time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
             holidays = await async_holiday_repository.get_by_month(session, month, year)
-            ignore_excessive = (current_user.id == user_id)
-            anomalies = await anomaly_service.get_anomalies(session, start_date, end_date, user_id,
-                                                            ignore_excessive_hours=ignore_excessive)
+            anomalies = await anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive)
             adj_stmt = select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date >= start_date,
@@ -447,9 +372,7 @@ class ReportService:
         else:
             records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
             holidays = holiday_repository.get_by_month(session, month, year)
-            ignore_excessive = (current_user.id == user_id)
-            anomalies = anomaly_service.get_anomalies(session, start_date, end_date, user_id,
-                                                      ignore_excessive_hours=ignore_excessive)
+            anomalies = anomaly_service.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours=ignore_excessive)
             if hasattr(anomalies, "__await__"):
                 anomalies = await anomalies
             all_adjustments = session.query(AdjustmentRequest).filter(
@@ -458,19 +381,10 @@ class ReportService:
                 AdjustmentRequest.target_date <= end_date,
                 AdjustmentRequest.deleted_at.is_(None)
             ).all()
+        return records, holidays, anomalies, all_adjustments
 
-        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+    def _build_history_days_loop(self, start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments):
         history_days = []
-
-        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=records,
-            adjustments=all_adjustments,
-            holidays=holidays,
-            historical_schedules=user.historical_schedules if user else []
-        )
-
         current = start_date
         while current <= end_date:
             target_day = DayOfWeek.from_date(current)
@@ -498,6 +412,56 @@ class ReportService:
             )
             history_days.append(history_day)
             current += timedelta(days=1)
+        return history_days
+
+    async def get_history_report(self, db: Any | None = None, user_id: int = 0, month: int | None = None,
+                                 year: int | None = None,
+                            current_user: User | None = None) -> HistoryResponse:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        tz = ZoneInfo(settings.TIMEZONE)
+        now = datetime.now(tz)
+        today_date = now.date()
+
+        month = month or now.month
+        year = year or now.year
+
+        start_date, end_date = self._get_month_range(month, year)
+
+        if year == now.year and month == now.month:
+            end_date = min(end_date, now.date())
+        elif datetime(year, month, 1).date() > now.date():
+            return HistoryResponse(month=month, year=year, total_worked_time="00:00", total_accounted_time="00:00", days=[])
+
+        if hasattr(session, "sync_session"):
+            user = await async_user_repository.get(session, user_id)
+        else:
+            user = user_repository.get(session, user_id)
+        if not user:
+            raise ReportUserNotFoundError(user_id=user_id)
+
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        records, holidays, anomalies, all_adjustments = await self._fetch_history_data(
+            session, user_id, start_dt, end_dt, start_date, end_date, month, year, (current_user.id == user_id)
+        )
+
+        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+
+        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=records,
+            adjustments=all_adjustments,
+            holidays=holidays,
+            historical_schedules=user.historical_schedules if user else []
+        )
+
+        history_days = self._build_history_days_loop(
+            start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments
+        )
 
         total_month_minutes = int(round(period_result.total_net_worked_seconds / 60))
         total_month_hours = total_month_minutes // 60
@@ -519,16 +483,8 @@ class ReportService:
                            start_dt: datetime, end_dt: datetime,
                            prefetched_records, prefetched_adjustments, prefetched_holidays):
         if hasattr(db, "sync_session"):
-            if prefetched_records is not None:
-                all_records = prefetched_records
-            else:
-                all_records = await async_time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-
-            if prefetched_holidays is not None:
-                holidays = prefetched_holidays
-            else:
-                holidays = await async_holiday_repository.get_by_month(db, month, year)
-
+            all_records = prefetched_records if prefetched_records is not None else await async_time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+            holidays = prefetched_holidays if prefetched_holidays is not None else await async_holiday_repository.get_by_month(db, month, year)
             if prefetched_adjustments is not None:
                 all_adjustments = prefetched_adjustments
             else:
@@ -541,16 +497,8 @@ class ReportService:
                 adj_res = await db.scalars(adj_stmt)
                 all_adjustments = list(adj_res.all())
         else:
-            if prefetched_records is not None:
-                all_records = prefetched_records
-            else:
-                all_records = time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
-
-            if prefetched_holidays is not None:
-                holidays = prefetched_holidays
-            else:
-                holidays = holiday_repository.get_by_month(db, month, year)
-
+            all_records = prefetched_records if prefetched_records is not None else time_record_repository.get_by_range(db, user_id, start_dt, end_dt)
+            holidays = prefetched_holidays if prefetched_holidays is not None else holiday_repository.get_by_month(db, month, year)
             if prefetched_adjustments is not None:
                 all_adjustments = prefetched_adjustments
             else:
@@ -562,53 +510,10 @@ class ReportService:
                 ).all()
         return all_records, all_adjustments, holidays
 
-    async def get_advanced_user_report(self, db: Any | None = None, user_id: int = 0, month: int = 0, year: int = 0,
-                                 current_user: User | None = None,
-                                 prefetched_records: list[TimeRecord] | None = None,
-                                 prefetched_adjustments: list | None = None,
-                                 prefetched_holidays: list | None = None) -> AdvancedUserReportResponse | None:
-        session = db if db is not None else self.db
-        assert session is not None
-        start_date, end_date = self._get_month_range(month, year)
-        if hasattr(session, "sync_session"):
-            user = await async_user_repository.get(session, user_id)
-        else:
-            user = user_repository.get(session, user_id)
-        if not user:
-            return None
-
-        has_schedule = bool(user.historical_schedules)
-        tz = ZoneInfo(settings.TIMEZONE)
-        today_date = datetime.now(tz).date()
-
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
-        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
-
-        all_records, all_adjustments, holidays = await self._fetch_report_data(
-            session, user_id, month, year, start_dt, end_dt,
-            prefetched_records, prefetched_adjustments, prefetched_holidays
-        )
-
+    def _build_advanced_daily_details(self, start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments):
         daily_details = []
         days_worked_count = 0
         absences_count = 0
-
-        is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
-
-        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=all_records,
-            adjustments=all_adjustments,
-            holidays=holidays,
-            historical_schedules=user.historical_schedules if user else []
-        )
-
-        total_worked_seconds = period_result.total_net_worked_seconds
-        total_expected_seconds = period_result.total_expected_seconds
-        total_extra_hours = period_result.total_extra_seconds / 3600.0
-        total_missing_hours = period_result.total_missing_seconds / 3600.0
-
         current = start_date
         while current <= end_date:
             target_day = DayOfWeek.from_date(current)
@@ -642,6 +547,54 @@ class ReportService:
                 absences_count += 1
 
             current += timedelta(days=1)
+        return daily_details, days_worked_count, absences_count
+
+    async def get_advanced_user_report(self, db: Any | None = None, user_id: int = 0, month: int = 0, year: int = 0,
+                                 current_user: User | None = None,
+                                 prefetched_records: list[TimeRecord] | None = None,
+                                 prefetched_adjustments: list | None = None,
+                                 prefetched_holidays: list | None = None) -> AdvancedUserReportResponse | None:
+        session = db if db is not None else self.db
+        assert session is not None
+        start_date, end_date = self._get_month_range(month, year)
+        if hasattr(session, "sync_session"):
+            user = await async_user_repository.get(session, user_id)
+        else:
+            user = user_repository.get(session, user_id)
+        if not user:
+            return None
+
+        has_schedule = bool(user.historical_schedules)
+        tz = ZoneInfo(settings.TIMEZONE)
+        today_date = datetime.now(tz).date()
+
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        all_records, all_adjustments, holidays = await self._fetch_report_data(
+            session, user_id, month, year, start_dt, end_dt,
+            prefetched_records, prefetched_adjustments, prefetched_holidays
+        )
+
+        is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
+
+        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=all_records,
+            adjustments=all_adjustments,
+            holidays=holidays,
+            historical_schedules=user.historical_schedules if user else []
+        )
+
+        total_worked_seconds = period_result.total_net_worked_seconds
+        total_expected_seconds = period_result.total_expected_seconds
+        total_extra_hours = period_result.total_extra_seconds / 3600.0
+        total_missing_hours = period_result.total_missing_seconds / 3600.0
+
+        daily_details, days_worked_count, absences_count = self._build_advanced_daily_details(
+            start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments
+        )
 
         summary = UserPayrollSummary(
             user_id=user.id,
@@ -686,39 +639,25 @@ class ReportService:
             raise ReportNotFoundOrIncompleteError(user_id=user_id)
         return report
 
-    async def validate_excel_export_permission(
-            self, db: Any | None = None, current_user: User | None = None, month: int = 0, year: int = 0,
-            now: datetime | None = None
-    ) -> None:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert current_user is not None
-        assert now is not None
-        is_maintainer = current_user.role == UserRole.MAINTAINER
-        is_manager = current_user.role == UserRole.MANAGER
+    async def _validate_manager_export_permission(self, session, month: int, year: int) -> None:
+        if hasattr(session, "sync_session"):
+            stmt = select(exists().where(
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+                extract("month", AdjustmentRequest.target_date) == month,
+                extract("year", AdjustmentRequest.target_date) == year,
+            ))
+            pending_adjustments = await session.scalar(stmt)
+        else:
+            pending_adjustments = session.query(exists().where(
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+                extract("month", AdjustmentRequest.target_date) == month,
+                extract("year", AdjustmentRequest.target_date) == year,
+            )).scalar()
 
-        if is_maintainer:
-            return
+        if pending_adjustments:
+            raise PendingAdjustmentsExistError()
 
-        if is_manager:
-            if hasattr(session, "sync_session"):
-                stmt = select(exists().where(
-                    AdjustmentRequest.status == AdjustmentStatus.PENDING,
-                    extract("month", AdjustmentRequest.target_date) == month,
-                    extract("year", AdjustmentRequest.target_date) == year,
-                ))
-                pending_adjustments = await session.scalar(stmt)
-            else:
-                pending_adjustments = session.query(exists().where(
-                    AdjustmentRequest.status == AdjustmentStatus.PENDING,
-                    extract("month", AdjustmentRequest.target_date) == month,
-                    extract("year", AdjustmentRequest.target_date) == year,
-                )).scalar()
-
-            if pending_adjustments:
-                raise PendingAdjustmentsExistError()
-            return
-
+    async def _validate_employee_export_permission(self, session, current_user: User, month: int, year: int, now: datetime) -> None:
         if not current_user.can_export_report:
             raise ReportExportPermissionError()
 
@@ -746,6 +685,21 @@ class ReportService:
 
         if not payroll_closed:
             raise PayrollNotClosedForReportError()
+
+    async def validate_excel_export_permission(
+            self, db: Any | None = None, current_user: User | None = None, month: int = 0, year: int = 0,
+            now: datetime | None = None
+    ) -> None:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert current_user is not None
+        assert now is not None
+        if current_user.role == UserRole.MAINTAINER:
+            return
+        if current_user.role == UserRole.MANAGER:
+            await self._validate_manager_export_permission(session, month, year)
+            return
+        await self._validate_employee_export_permission(session, current_user, month, year, now)
 
 
 report_service = ReportService()

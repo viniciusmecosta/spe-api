@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import uuid
@@ -262,8 +263,11 @@ class AdjustmentService:
         safe_filename = f"{uuid.uuid4()}.{file_ext}"
         file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        def _write_file() -> None:
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+        await asyncio.to_thread(_write_file)
 
         attachment = await self.repo.create_attachment(session, request_id, safe_filename, file.content_type or "")
         await audit_service.async_log_change(

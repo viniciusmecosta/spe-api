@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import uuid
@@ -97,19 +98,26 @@ class CompanyService:
         filename = f"logo_{uuid.uuid4().hex}{ext}"
         full_file_path = os.path.join(settings.UPLOAD_DIR, filename)
 
-        try:
+        def _save_file() -> None:
             with open(full_file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
+
+        try:
+            await asyncio.to_thread(_save_file)
         except Exception as e:
             raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
 
         if existing.logo_path:
             old_full_path = os.path.join(settings.UPLOAD_DIR, existing.logo_path)
-            if os.path.exists(old_full_path):
-                try:
-                    os.remove(old_full_path)
-                except OSError:
-                    pass
+
+            def _delete_old_file() -> None:
+                if os.path.exists(old_full_path):
+                    try:
+                        os.remove(old_full_path)
+                    except OSError:
+                        pass
+
+            await asyncio.to_thread(_delete_old_file)
 
         old_logo = existing.logo_path
         existing.logo_path = filename

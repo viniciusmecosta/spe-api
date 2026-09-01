@@ -193,6 +193,67 @@ class TimeCalculationService:
 
         return unapproved_extra_seconds
 
+    def _compute_raw_seconds(self, sorted_records: list[TimeRecord]) -> float:
+        raw_seconds = 0.0
+        current_entry_dt: datetime | None = None
+        for rec in sorted_records:
+            rec_dt = rec.record_datetime.replace(second=0, microsecond=0)
+            if rec.record_type == RecordType.ENTRY:
+                current_entry_dt = rec_dt
+            elif rec.record_type == RecordType.EXIT and current_entry_dt is not None:
+                delta = (rec_dt - current_entry_dt).total_seconds()
+                if 0 <= delta <= 86400:
+                    raw_seconds += delta
+                current_entry_dt = None
+        return raw_seconds
+
+    def _time_to_seconds(self, t: Any) -> int:
+        if isinstance(t, str):
+            parts = [int(x) for x in t.split(":")[:2]]
+            return parts[0] * 3600 + parts[1] * 60
+        return t.hour * 3600 + t.minute * 60
+
+    def _compute_lunch_metrics(self, sorted_records: list[TimeRecord], schedule: Any | None) -> tuple[bool, float, float]:
+        if not schedule or not getattr(schedule, 'exit_1', None) or not getattr(schedule, 'entry_2', None):
+            return False, 0.0, 0.0
+
+        t1_secs = self._time_to_seconds(schedule.exit_1)
+        t2_secs = self._time_to_seconds(schedule.entry_2)
+        almoco_estipulado = float(t2_secs - t1_secs)
+
+        first_exit = next((r for r in sorted_records if r.record_type == RecordType.EXIT and r.record_datetime.hour < 15), None)
+        almoco_real = 0.0
+        if first_exit:
+            next_entry = next((r for r in sorted_records if r.record_type == RecordType.ENTRY and r.record_datetime > first_exit.record_datetime), None)
+            if next_entry:
+                exit_dt = first_exit.record_datetime.replace(second=0, microsecond=0)
+                entry_dt = next_entry.record_datetime.replace(second=0, microsecond=0)
+                almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
+
+        excess_lunch = max(0.0, almoco_real - almoco_estipulado)
+        early_return = max(0.0, almoco_estipulado - almoco_real)
+        return True, excess_lunch, early_return
+
+    def _compute_accounted_approval(
+        self, raw_seconds: float, total_excess: float, excess_lunch: float, expected_seconds: float,
+        has_schedule: bool, daily_excess_adj: AdjustmentRequest | None
+    ) -> tuple[float, float]:
+        if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.APPROVED:
+            if daily_excess_adj.approved_amount_hours is None:
+                approved = total_excess
+            else:
+                approved = min(total_excess, max(0.0, daily_excess_adj.approved_amount_hours * 3600.0))
+            accounted = max(0.0, min(raw_seconds, raw_seconds - (total_excess - approved)))
+            return approved, accounted
+
+        if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.REJECTED:
+            return 0.0, max(0.0, min(raw_seconds, raw_seconds - total_excess))
+
+        if has_schedule:
+            return 0.0, max(0.0, min(raw_seconds - excess_lunch, expected_seconds))
+
+        return 0.0, raw_seconds
+
     def calculate_accounted_time(
             self,
             day_records: list[TimeRecord],
@@ -204,80 +265,19 @@ class TimeCalculationService:
             if not getattr(r, 'is_ignored', False) and getattr(r, 'deleted_at', None) is None
         ]
         sorted_records = sorted(valid_records, key=lambda x: x.record_datetime)
-
-        raw_seconds = 0.0
-        current_entry_dt: datetime | None = None
-
-        for rec in sorted_records:
-            rec_dt = rec.record_datetime.replace(second=0, microsecond=0)
-            if rec.record_type == RecordType.ENTRY:
-                current_entry_dt = rec_dt
-            elif rec.record_type == RecordType.EXIT:
-                if current_entry_dt is not None:
-                    delta = (rec_dt - current_entry_dt).total_seconds()
-                    if 0 <= delta <= 86400:
-                        raw_seconds += delta
-                    current_entry_dt = None
+        raw_seconds = self._compute_raw_seconds(sorted_records)
 
         has_schedule = schedule is not None
-        has_lunch_rule = False
-        excess_lunch = 0.0
-        early_return = 0.0
-
-        if has_schedule and getattr(schedule, 'exit_1', None) and getattr(schedule, 'entry_2', None):
-            has_lunch_rule = True
-            t1 = schedule.exit_1
-            t2 = schedule.entry_2
-            if isinstance(t1, str):
-                p1 = [int(x) for x in t1.split(":")[:2]]
-                t1_secs = p1[0] * 3600 + p1[1] * 60
-            else:
-                t1_secs = t1.hour * 3600 + t1.minute * 60
-
-            if isinstance(t2, str):
-                p2 = [int(x) for x in t2.split(":")[:2]]
-                t2_secs = p2[0] * 3600 + p2[1] * 60
-            else:
-                t2_secs = t2.hour * 3600 + t2.minute * 60
-
-            almoco_estipulado = float(t2_secs - t1_secs)
-
-            first_exit = next((r for r in sorted_records if r.record_type == RecordType.EXIT and r.record_datetime.hour < 15), None)
-            if first_exit:
-                next_entry = next((r for r in sorted_records if r.record_type == RecordType.ENTRY and r.record_datetime > first_exit.record_datetime), None)
-                if next_entry:
-                    exit_dt = first_exit.record_datetime.replace(second=0, microsecond=0)
-                    entry_dt = next_entry.record_datetime.replace(second=0, microsecond=0)
-                    almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
-                else:
-                    almoco_real = 0.0
-            else:
-                almoco_real = 0.0
-
-            excess_lunch = max(0.0, almoco_real - almoco_estipulado)
-            early_return = max(0.0, almoco_estipulado - almoco_real)
+        has_lunch_rule, excess_lunch, early_return = self._compute_lunch_metrics(sorted_records, schedule)
 
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
         net_before_excess = max(0.0, raw_seconds - excess_lunch)
         excess_work = max(0.0, net_before_excess - expected_seconds) if has_schedule else 0.0
         total_excess = excess_work + excess_lunch
 
-        approved_seconds = 0.0
-        if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.APPROVED:
-            if daily_excess_adj.approved_amount_hours is None:
-                approved_seconds = total_excess
-            else:
-                approved_seconds = min(total_excess, max(0.0, daily_excess_adj.approved_amount_hours * 3600.0))
-            accounted_seconds = max(0.0, min(raw_seconds, raw_seconds - (total_excess - approved_seconds)))
-        elif daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.REJECTED:
-            approved_seconds = 0.0
-            accounted_seconds = max(0.0, min(raw_seconds, raw_seconds - total_excess))
-        else:
-            approved_seconds = 0.0
-            if has_schedule:
-                accounted_seconds = max(0.0, min(raw_seconds - excess_lunch, expected_seconds))
-            else:
-                accounted_seconds = raw_seconds
+        approved_seconds, accounted_seconds = self._compute_accounted_approval(
+            raw_seconds, total_excess, excess_lunch, expected_seconds, has_schedule, daily_excess_adj
+        )
 
         return DailyAccountedResult(
             raw_seconds=raw_seconds,

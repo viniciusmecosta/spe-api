@@ -112,25 +112,41 @@ class AnomalyService:
                                       expected_entry_time, viewer_role: UserRole = None) -> list[AnomalyResponse]:
         anomalies = []
         for adj in day_adjustments:
-            if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
-                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
-                time_to_show = expected_entry_time or adj.time
-                desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
-
-                anomalies.append(AnomalyResponse(
-                    user_id=user_id, user_name=user_name, date=current_date,
-                    type="UNAPPROVED_EXTRA_TIME", description=desc
-                ))
-            elif adj.adjustment_type == AdjustmentType.DAILY_EXCESS and adj.status == AdjustmentStatus.PENDING:
-                if viewer_role in [UserRole.MANAGER, UserRole.MAINTAINER]:
-                    minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
-                    time_to_show = expected_entry_time or adj.time
-                    desc = f"Excedente de jornada automático pendente de aprovação ({minutes} min)."
-                    anomalies.append(AnomalyResponse(
-                        user_id=user_id, user_name=user_name, date=current_date,
-                        type="UNAPPROVED_DAILY_EXCESS", description=desc
-                    ))
+            anom = self._evaluate_adjustment_anomaly(user_id, user_name, current_date, adj, expected_entry_time, viewer_role)
+            if anom:
+                anomalies.append(anom)
         return anomalies
+
+    def _evaluate_adjustment_anomaly(self, user_id: int, user_name: str, current_date: date, adj: AdjustmentRequest,
+                                     expected_entry_time, viewer_role: UserRole = None) -> AnomalyResponse | None:
+        if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+            minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+            time_to_show = expected_entry_time or adj.time
+            desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
+            return AnomalyResponse(
+                user_id=user_id, user_name=user_name, date=current_date,
+                type="UNAPPROVED_EXTRA_TIME", description=desc
+            )
+        if adj.adjustment_type == AdjustmentType.DAILY_EXCESS and adj.status == AdjustmentStatus.PENDING:
+            if viewer_role in [UserRole.MANAGER, UserRole.MAINTAINER]:
+                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+                desc = f"Excedente de jornada automático pendente de aprovação ({minutes} min)."
+                return AnomalyResponse(
+                    user_id=user_id, user_name=user_name, date=current_date,
+                    type="UNAPPROVED_DAILY_EXCESS", description=desc
+                )
+        return None
+
+    def _calculate_worked_seconds(self, records: list) -> float:
+        total = 0.0
+        last_entry = None
+        for r in records:
+            if r.record_type == RecordType.ENTRY:
+                last_entry = r.record_datetime
+            elif r.record_type == RecordType.EXIT and last_entry:
+                total += (r.record_datetime - last_entry).total_seconds()
+                last_entry = None
+        return total
 
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: list,
                              ignore_excessive_hours: bool = False, day_adjustments: list = None,
@@ -140,14 +156,7 @@ class AnomalyService:
         anomalies = []
         records.sort(key=lambda x: x.record_datetime)
 
-        total_worked_seconds = 0.0
-        last_entry = None
-        for r in records:
-            if r.record_type == RecordType.ENTRY:
-                last_entry = r.record_datetime
-            elif r.record_type == RecordType.EXIT and last_entry:
-                total_worked_seconds += (r.record_datetime - last_entry).total_seconds()
-                last_entry = None
+        total_worked_seconds = self._calculate_worked_seconds(records)
 
         anomalies.extend(self._check_missing_entries_exits(user_id, user_name, current_date, records))
         anomalies.extend(self._check_consecutive_and_long_intervals(user_id, user_name, current_date, records))
@@ -223,36 +232,20 @@ class AnomalyService:
         all_anomalies.sort(key=lambda x: x.date, reverse=True)
         return all_anomalies
 
-    async def get_anomalies(self, db: Any | None = None, start_date: date | None = None, end_date: date | None = None,
-                            user_id: int | None = None,
-                      ignore_excessive_hours: bool = False, viewer_role: UserRole = None) -> list[AnomalyResponse]:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert start_date is not None
-        assert end_date is not None
+    async def _fetch_anomaly_users(self, session, user_id: int | None):
         if hasattr(session, "sync_session"):
             if user_id:
                 user = await async_user_repository.get(session, user_id)
-                users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
-            else:
-                users = await async_user_repository.get_active_employees(session)
-        else:
-            if user_id:
-                user = user_repository.get(session, user_id)
-                users = [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
-            else:
-                users = user_repository.get_active_employees(session)
+                return [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+            return await async_user_repository.get_active_employees(session)
+        if user_id:
+            user = user_repository.get(session, user_id)
+            return [user] if user and user.is_active and user.role == UserRole.EMPLOYEE else []
+        return user_repository.get_active_employees(session)
 
-        target_user_ids = [u.id for u in users]
-        if not target_user_ids:
-            return []
-
-        dt_start = datetime.combine(start_date, datetime.min.time())
-        dt_end = datetime.combine(end_date, datetime.max.time())
-
+    async def _fetch_anomaly_records_and_adjs(self, session, target_user_ids, dt_start, dt_end, start_date, end_date):
         if hasattr(session, "sync_session"):
-            records_flat = await async_time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start,
-                                                                                     dt_end)
+            records_flat = await async_time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start, dt_end)
             adj_stmt = select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id.in_(target_user_ids),
                 AdjustmentRequest.target_date >= start_date,
@@ -262,17 +255,36 @@ class AnomalyService:
                 AdjustmentRequest.deleted_at.is_(None),
             )
             adj_res = await session.scalars(adj_stmt)
-            extra_time_adjustments = list(adj_res.all())
-        else:
-            records_flat = time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start, dt_end)
-            extra_time_adjustments = session.query(AdjustmentRequest).filter(
-                AdjustmentRequest.user_id.in_(target_user_ids),
-                AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date,
-                AdjustmentRequest.adjustment_type.in_([AdjustmentType.EXTRA_TIME, AdjustmentType.DAILY_EXCESS]),
-                AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
-                AdjustmentRequest.deleted_at.is_(None)
-            ).all()
+            return records_flat, list(adj_res.all())
+        records_flat = time_record_repository.get_by_users_and_range(session, target_user_ids, dt_start, dt_end)
+        extra_time_adjustments = session.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id.in_(target_user_ids),
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.adjustment_type.in_([AdjustmentType.EXTRA_TIME, AdjustmentType.DAILY_EXCESS]),
+            AdjustmentRequest.status.in_([AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]),
+            AdjustmentRequest.deleted_at.is_(None)
+        ).all()
+        return records_flat, extra_time_adjustments
+
+    async def get_anomalies(self, db: Any | None = None, start_date: date | None = None, end_date: date | None = None,
+                            user_id: int | None = None,
+                      ignore_excessive_hours: bool = False, viewer_role: UserRole = None) -> list[AnomalyResponse]:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert start_date is not None
+        assert end_date is not None
+        users = await self._fetch_anomaly_users(session, user_id)
+        target_user_ids = [u.id for u in users]
+        if not target_user_ids:
+            return []
+
+        dt_start = datetime.combine(start_date, datetime.min.time())
+        dt_end = datetime.combine(end_date, datetime.max.time())
+
+        records_flat, extra_time_adjustments = await self._fetch_anomaly_records_and_adjs(
+            session, target_user_ids, dt_start, dt_end, start_date, end_date
+        )
 
         records_map, adj_map = self._build_data_maps(records_flat, extra_time_adjustments, target_user_ids)
         return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours, viewer_role)

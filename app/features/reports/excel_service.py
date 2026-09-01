@@ -148,14 +148,7 @@ class ExcelService:
 
         raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
-    async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
-                                    employee_ids: list[int] | None = None,
-                              current_user: User | None = None) -> BytesIO:
-        session = db if db is not None else self.db
-        assert session is not None
-        if current_user:
-            self._validate_employee_report_period(current_user, month, year)
-
+    async def _fetch_users_and_company(self, session: Any, employee_ids: list[int] | None):
         if hasattr(session, "sync_session"):
             stmt = select(User).options(selectinload(User.historical_schedules))
             stmt = report_service.apply_employee_filters(stmt, employee_ids)
@@ -167,63 +160,58 @@ class ExcelService:
             query = report_service.apply_employee_filters(query, employee_ids)
             users = query.all()
             company = company_repository.get_current(session)
+        return users, company
 
-        logo_path = None
+    def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:
             full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
             if os.path.exists(full_logo_path):
-                logo_path = full_logo_path
+                return full_logo_path
+        return None
 
-        user_ids = [u.id for u in users]
-        start_date, end_date = report_service.get_month_range(month, year)
-        tz = ZoneInfo(settings.TIMEZONE)
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
-        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
-
+    async def _fetch_batch_data(self, session: Any, user_ids: list[int], start_dt: datetime, end_dt: datetime,
+                                start_date: date, end_date: date, month: int, year: int):
         if hasattr(session, "sync_session"):
-            if user_ids:
-                rec_stmt = select(TimeRecord).options(
-                    selectinload(TimeRecord.editor)
-                ).where(
-                    TimeRecord.user_id.in_(user_ids),
-                    TimeRecord.record_datetime >= start_dt,
-                    TimeRecord.record_datetime <= end_dt,
-                    TimeRecord.deleted_at.is_(None),
-                    TimeRecord.is_ignored.is_(False),
-                )
-                rec_res = await session.scalars(rec_stmt)
-                all_records_batch = list(rec_res.all())
-
-                adj_stmt = select(AdjustmentRequest).where(
-                    AdjustmentRequest.user_id.in_(user_ids),
-                    AdjustmentRequest.target_date >= start_date,
-                    AdjustmentRequest.target_date <= end_date,
-                    AdjustmentRequest.deleted_at.is_(None),
-                )
-                adj_res = await session.scalars(adj_stmt)
-                all_adjustments_batch = list(adj_res.all())
-            else:
-                all_records_batch = []
-                all_adjustments_batch = []
+            if not user_ids:
+                return [], [], await async_holiday_repository.get_by_month(session, month, year)
+            rec_stmt = select(TimeRecord).options(selectinload(TimeRecord.editor)).where(
+                TimeRecord.user_id.in_(user_ids),
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.deleted_at.is_(None),
+                TimeRecord.is_ignored.is_(False),
+            )
+            adj_stmt = select(AdjustmentRequest).where(
+                AdjustmentRequest.user_id.in_(user_ids),
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None),
+            )
+            all_records_batch = list((await session.scalars(rec_stmt)).all())
+            all_adjustments_batch = list((await session.scalars(adj_stmt)).all())
             holidays_batch = await async_holiday_repository.get_by_month(session, month, year)
         else:
+            if not user_ids:
+                return [], [], holiday_repository.get_by_month(session, month, year)
             all_records_batch = session.query(TimeRecord).filter(
                 TimeRecord.user_id.in_(user_ids),
                 TimeRecord.record_datetime >= start_dt,
                 TimeRecord.record_datetime <= end_dt,
                 TimeRecord.deleted_at.is_(None),
                 TimeRecord.is_ignored == False
-            ).all() if user_ids else []
-
+            ).all()
             all_adjustments_batch = session.query(AdjustmentRequest).filter(
                 AdjustmentRequest.user_id.in_(user_ids),
                 AdjustmentRequest.target_date >= start_date,
                 AdjustmentRequest.target_date <= end_date,
                 AdjustmentRequest.deleted_at.is_(None)
-            ).all() if user_ids else []
-
+            ).all()
             holidays_batch = holiday_repository.get_by_month(session, month, year)
+        return all_records_batch, all_adjustments_batch, holidays_batch
 
+    async def _generate_user_reports_list(self, session: Any, users: list[User], month: int, year: int,
+                                          current_user: User | None, all_records_batch: list,
+                                          all_adjustments_batch: list, holidays_batch: list):
         records_by_user = {}
         for r in all_records_batch:
             records_by_user.setdefault(r.user_id, []).append(r)
@@ -242,6 +230,32 @@ class ExcelService:
             )
             if report and report.summary.total_worked_minutes > 0:
                 user_reports.append((user, report))
+        return user_reports
+
+    async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
+                                     employee_ids: list[int] | None = None,
+                               current_user: User | None = None) -> BytesIO:
+        session = db if db is not None else self.db
+        assert session is not None
+        if current_user:
+            self._validate_employee_report_period(current_user, month, year)
+
+        users, company = await self._fetch_users_and_company(session, employee_ids)
+        logo_path = self._resolve_logo_path(company)
+
+        user_ids = [u.id for u in users]
+        start_date, end_date = report_service.get_month_range(month, year)
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        all_records_batch, all_adjustments_batch, holidays_batch = await self._fetch_batch_data(
+            session, user_ids, start_dt, end_dt, start_date, end_date, month, year
+        )
+
+        user_reports = await self._generate_user_reports_list(
+            session, users, month, year, current_user, all_records_batch, all_adjustments_batch, holidays_batch
+        )
 
         wb = Workbook()
         now, _ = trusted_time_service.get_trusted_time()

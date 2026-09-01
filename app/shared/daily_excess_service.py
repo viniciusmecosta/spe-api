@@ -24,6 +24,45 @@ logger = logging.getLogger(__name__)
 
 
 class DailyExcessService:
+    def _create_daily_excess_adjustment(
+        self, user_id: int, target_date: date, day_records: list[TimeRecord], accounted
+    ) -> AdjustmentRequest | None:
+        if accounted.total_excess_seconds <= 0:
+            return None
+        last_exit = next(
+            (r for r in reversed(day_records) if r.record_type == RecordType.EXIT),
+            None
+        )
+        exit_time = last_exit.record_datetime.time() if last_exit else None
+
+        excess_mins_work = int(accounted.excess_work_seconds / 60)
+        excess_mins_lunch = int(accounted.excess_lunch_seconds / 60)
+        parts = []
+        if excess_mins_work > 0:
+            parts.append(f"{excess_mins_work}min de jornada excedente")
+        if excess_mins_lunch > 0:
+            parts.append(f"{excess_mins_lunch}min de almoço excedido")
+        reason = "Excedente automático detectado: " + ", ".join(parts)
+        amount_hours = round(accounted.total_excess_seconds / 3600.0, 4)
+
+        return AdjustmentRequest(
+            user_id=user_id,
+            adjustment_type=AdjustmentType.DAILY_EXCESS,
+            target_date=target_date,
+            time=exit_time,
+            amount_hours=amount_hours,
+            reason_text=reason,
+            status=AdjustmentStatus.PENDING,
+        )
+
+    def _is_excess_applicable(self, schedule: UserWorkScheduleConfig | None, day_records: list) -> bool:
+        return bool(
+            schedule and
+            getattr(schedule, 'is_daily_excess_enabled', False) and
+            getattr(schedule, 'daily_hours', 0) > 0 and
+            day_records
+        )
+
     async def _evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, tz: ZoneInfo):
         payroll_stmt = select(PayrollClosure).where(
             PayrollClosure.month == target_date.month,
@@ -31,8 +70,7 @@ class DailyExcessService:
             PayrollClosure.is_closed.is_(True),
             PayrollClosure.deleted_at.is_(None)
         )
-        payroll_closed = await db.scalar(payroll_stmt)
-        if payroll_closed:
+        if await db.scalar(payroll_stmt):
             logger.info(f"Ignorando avaliacao de excedente: Folha fechada {target_date.month}/{target_date.year} (user_id={user_id})")
             return
 
@@ -42,8 +80,7 @@ class DailyExcessService:
             AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME,
             AdjustmentRequest.deleted_at.is_(None)
         )
-        has_extra_time = await db.scalar(extra_time_stmt)
-        if has_extra_time:
+        if await db.scalar(extra_time_stmt):
             logger.info(f"Ignorando avaliacao de excedente: Ja existe EXTRA_TIME para {target_date} (user_id={user_id})")
             return
 
@@ -78,39 +115,14 @@ class DailyExcessService:
         for adj in existing_adjustments:
             await db.delete(adj)
 
-        if schedule and getattr(schedule, 'is_daily_excess_enabled', False) and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
+        if self._is_excess_applicable(schedule, day_records):
             accounted = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=schedule,
                 daily_excess_adj=None,
             )
-
-            if accounted.total_excess_seconds > 0:
-                last_exit = next(
-                    (r for r in reversed(day_records) if r.record_type == RecordType.EXIT),
-                    None
-                )
-                exit_time = last_exit.record_datetime.time() if last_exit else None
-
-                excess_mins_work = int(accounted.excess_work_seconds / 60)
-                excess_mins_lunch = int(accounted.excess_lunch_seconds / 60)
-                parts = []
-                if excess_mins_work > 0:
-                    parts.append(f"{excess_mins_work}min de jornada excedente")
-                if excess_mins_lunch > 0:
-                    parts.append(f"{excess_mins_lunch}min de almoço excedido")
-                reason = "Excedente automático detectado: " + ", ".join(parts)
-                amount_hours = round(accounted.total_excess_seconds / 3600.0, 4)
-
-                new_adj = AdjustmentRequest(
-                    user_id=user_id,
-                    adjustment_type=AdjustmentType.DAILY_EXCESS,
-                    target_date=target_date,
-                    time=exit_time,
-                    amount_hours=amount_hours,
-                    reason_text=reason,
-                    status=AdjustmentStatus.PENDING,
-                )
+            new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
+            if new_adj:
                 db.add(new_adj)
 
         for r in day_records:
@@ -165,39 +177,14 @@ class DailyExcessService:
         for adj in existing_adjustments:
             db.delete(adj)
 
-        if schedule and getattr(schedule, 'is_daily_excess_enabled', False) and getattr(schedule, 'daily_hours', 0) > 0 and day_records:
+        if self._is_excess_applicable(schedule, day_records):
             accounted = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=schedule,
                 daily_excess_adj=None,
             )
-
-            if accounted.total_excess_seconds > 0:
-                last_exit = next(
-                    (r for r in reversed(day_records) if r.record_type == RecordType.EXIT),
-                    None
-                )
-                exit_time = last_exit.record_datetime.time() if last_exit else None
-
-                excess_mins_work = int(accounted.excess_work_seconds / 60)
-                excess_mins_lunch = int(accounted.excess_lunch_seconds / 60)
-                parts = []
-                if excess_mins_work > 0:
-                    parts.append(f"{excess_mins_work}min de jornada excedente")
-                if excess_mins_lunch > 0:
-                    parts.append(f"{excess_mins_lunch}min de almoço excedido")
-                reason = "Excedente automático detectado: " + ", ".join(parts)
-                amount_hours = round(accounted.total_excess_seconds / 3600.0, 4)
-
-                new_adj = AdjustmentRequest(
-                    user_id=user_id,
-                    adjustment_type=AdjustmentType.DAILY_EXCESS,
-                    target_date=target_date,
-                    time=exit_time,
-                    amount_hours=amount_hours,
-                    reason_text=reason,
-                    status=AdjustmentStatus.PENDING,
-                )
+            new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
+            if new_adj:
                 db.add(new_adj)
 
         for r in day_records:
