@@ -159,8 +159,8 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
         mock_calc.return_value = DailyAccountedResult(
             raw_seconds=39600.0,
             excess_work_seconds=7200.0,
-            excess_lunch_seconds=1800.0,
-            early_return_seconds=0.0,
+            excess_lunch_seconds=0.0,
+            early_return_seconds=1800.0,
             total_excess_seconds=9000.0,
             approved_seconds=0.0,
             accounted_seconds=28800.0,
@@ -175,7 +175,7 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     assert isinstance(new_adj, AdjustmentRequest)
     assert new_adj.amount_hours == 2.5
     assert "120min de jornada excedente" in new_adj.reason_text
-    assert "30min de almoço excedido" in new_adj.reason_text
+    assert "30min de almoço adiantado" in new_adj.reason_text
     assert new_adj.time == dt2.time()
     assert r1.is_verified is True
     assert r2.is_verified is True

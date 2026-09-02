@@ -35,7 +35,7 @@ class DailyExcessService:
         )
         exit_time = last_exit.record_datetime.time() if last_exit else None
 
-        excess_mins_early = int(accounted.early_return_seconds / 60)
+        excess_mins_early = int(min(accounted.total_excess_seconds, accounted.early_return_seconds) / 60)
         excess_mins_work = int(accounted.total_excess_seconds / 60) - excess_mins_early
         parts = []
         if excess_mins_work > 0:

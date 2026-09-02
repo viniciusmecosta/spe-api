@@ -50,6 +50,7 @@ def schedule_factory():
         sched.exit_1 = None
         sched.entry_2 = None
         sched.exit_2 = None
+        sched.is_daily_excess_enabled = False
         return sched
 
     return _factory
@@ -256,7 +257,7 @@ def test_calculate_period_time_schedules_matrix(record_factory, schedule_factory
         hm.date = h
         hol_mocks.append(hm)
 
-    def mock_daily_time(day_records, expected_seconds, waiver_adj, unapproved_extra_adjs, is_excused, has_schedule):
+    def mock_daily_time(day_records, expected_seconds, waiver_adj, unapproved_extra_adjs, is_excused, has_schedule, *args, **kwargs):
         dt = DailyTimeResult(
             raw_worked_seconds=expected_seconds,
             waiver_seconds=0.0,
@@ -318,6 +319,7 @@ def test_calculate_accounted_time_seconds_truncated(record_factory, schedule_fac
     sched.exit_1 = "12:00"
     sched.entry_2 = "13:00"
     sched.exit_2 = "17:00"
+    sched.is_daily_excess_enabled = True
 
     res = time_calculation_service.calculate_accounted_time(
         day_records=[r1, r2, r3, r4],
@@ -336,6 +338,7 @@ def test_calculate_accounted_time_excess_work_pending_cap(record_factory, schedu
     r2 = record_factory(datetime(2026, 8, 1, 18, 0, 0), RecordType.EXIT)
 
     sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.is_daily_excess_enabled = True
 
     res = time_calculation_service.calculate_accounted_time(
         day_records=[r1, r2],
@@ -359,6 +362,7 @@ def test_calculate_accounted_time_excess_lunch(record_factory, schedule_factory)
     sched.exit_1 = "12:00"
     sched.entry_2 = "13:00"
     sched.exit_2 = "17:00"
+    sched.is_daily_excess_enabled = True
 
     res = time_calculation_service.calculate_accounted_time(
         day_records=[r1, r2, r3, r4],
@@ -375,6 +379,7 @@ def test_calculate_accounted_time_approved_full_and_partial(record_factory, sche
     r1 = record_factory(datetime(2026, 8, 1, 8, 0, 0), RecordType.ENTRY)
     r2 = record_factory(datetime(2026, 8, 1, 18, 0, 0), RecordType.EXIT)
     sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.is_daily_excess_enabled = True
 
     adj_partial = adjustment_factory(date(2026, 8, 1), AdjustmentType.DAILY_EXCESS, AdjustmentStatus.APPROVED, 2.0)
     adj_partial.approved_amount_hours = 1.0

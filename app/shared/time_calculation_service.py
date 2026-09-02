@@ -108,7 +108,8 @@ class TimeCalculationService:
             waiver_adj: AdjustmentRequest | None = None,
             unapproved_extra_adjs: list[AdjustmentRequest] | None = None,
             is_excused: bool = False,
-            has_schedule: bool = True
+            has_schedule: bool = True,
+            unapproved_excess_seconds: float = 0.0
     ) -> DailyTimeResult:
 
         raw_worked_seconds, entries, exits, punches, blocks = self._process_records(day_records)
@@ -119,13 +120,14 @@ class TimeCalculationService:
 
         adjusted_worked_seconds = raw_worked_seconds + waiver_seconds
 
-        unapproved_extra_seconds = self._calculate_unapproved_extra(
+        legacy_unapproved = self._calculate_unapproved_extra(
             unapproved_extra_adjs or [], adjusted_worked_seconds
         )
+        unapproved_extra_seconds = min(adjusted_worked_seconds, legacy_unapproved + unapproved_excess_seconds)
 
-        net_worked_seconds = adjusted_worked_seconds - unapproved_extra_seconds
+        net_worked_seconds = max(0.0, adjusted_worked_seconds - unapproved_extra_seconds)
 
-        gross_worked_seconds = net_worked_seconds + unapproved_extra_seconds
+        gross_worked_seconds = adjusted_worked_seconds
 
         extra_seconds = 0.0
         missing_seconds = 0.0
@@ -221,43 +223,50 @@ class TimeCalculationService:
         t2_secs = self._time_to_seconds(schedule.entry_2)
         almoco_estipulado = float(t2_secs - t1_secs)
 
-        first_exit = next((r for r in sorted_records if r.record_type == RecordType.EXIT and r.record_datetime.hour < 15), None)
-        almoco_real = 0.0
-        lunch_recorded = False
-        if first_exit:
-            next_entry = next((r for r in sorted_records if r.record_type == RecordType.ENTRY and r.record_datetime > first_exit.record_datetime), None)
-            if next_entry:
-                exit_dt = first_exit.record_datetime.replace(second=0, microsecond=0)
-                entry_dt = next_entry.record_datetime.replace(second=0, microsecond=0)
-                almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
-                lunch_recorded = True
+        candidate_pairs = []
+        for i, r in enumerate(sorted_records):
+            if r.record_type == RecordType.EXIT:
+                nxt = next((e for e in sorted_records[i + 1:] if e.record_type == RecordType.ENTRY), None)
+                if nxt:
+                    candidate_pairs.append((r, nxt))
 
-        excess_lunch = max(0.0, almoco_real - almoco_estipulado) if lunch_recorded else 0.0
-        early_return = max(0.0, almoco_estipulado - almoco_real) if lunch_recorded else 0.0
+        if not candidate_pairs:
+            return True, 0.0, 0.0
+
+        def distance_to_sched(pair):
+            exit_time = pair[0].record_datetime.time()
+            return abs(self._time_to_seconds(exit_time) - t1_secs)
+
+        best_exit, best_entry = min(candidate_pairs, key=distance_to_sched)
+        exit_dt = best_exit.record_datetime.replace(second=0, microsecond=0)
+        entry_dt = best_entry.record_datetime.replace(second=0, microsecond=0)
+        almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
+
+        excess_lunch = max(0.0, almoco_real - almoco_estipulado)
+        early_return = max(0.0, almoco_estipulado - almoco_real)
         return True, excess_lunch, early_return
 
     def _compute_accounted_approval(
-        self, raw_seconds: float, total_excess: float, excess_lunch: float, expected_seconds: float,
-            has_schedule: bool, daily_excess_adj: AdjustmentRequest | None, is_enabled: bool = True
+        self, raw_seconds: float, total_excess: float, expected_seconds: float,
+        daily_excess_adj: AdjustmentRequest | None, is_enabled: bool = True
     ) -> tuple[float, float]:
         if not is_enabled:
             return 0.0, raw_seconds
+
+        if total_excess <= 0.0:
+            return 0.0, min(raw_seconds, expected_seconds)
 
         if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.APPROVED:
             if daily_excess_adj.approved_amount_hours is None:
                 approved = total_excess
             else:
                 approved = min(total_excess, max(0.0, daily_excess_adj.approved_amount_hours * 3600.0))
-            accounted = max(0.0, min(raw_seconds, raw_seconds - (total_excess - approved)))
+            unapproved = total_excess - approved
+            accounted = max(0.0, raw_seconds - unapproved)
             return approved, accounted
 
-        if daily_excess_adj and daily_excess_adj.status == AdjustmentStatus.REJECTED:
-            return 0.0, max(0.0, min(raw_seconds, raw_seconds - total_excess))
-
-        if has_schedule:
-            return 0.0, max(0.0, min(raw_seconds - excess_lunch, expected_seconds))
-
-        return 0.0, raw_seconds
+        accounted = max(0.0, raw_seconds - total_excess)
+        return 0.0, accounted
 
     def calculate_accounted_time(
             self,
@@ -278,12 +287,11 @@ class TimeCalculationService:
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
         is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False))
 
-        net_before_excess = raw_seconds
-        excess_work = max(0.0, net_before_excess - expected_seconds) if has_schedule else 0.0
-        total_excess = max(excess_work, early_return)
+        excess_work = max(0.0, raw_seconds - expected_seconds) if has_schedule else 0.0
+        total_excess = max(excess_work, early_return) if (has_schedule and is_enabled) else 0.0
 
         approved_seconds, accounted_seconds = self._compute_accounted_approval(
-            raw_seconds, total_excess, early_return, expected_seconds, has_schedule, daily_excess_adj, is_enabled
+            raw_seconds, total_excess, expected_seconds, daily_excess_adj, is_enabled
         )
 
         return DailyAccountedResult(
@@ -361,13 +369,25 @@ class TimeCalculationService:
                                      adj.adjustment_type == AdjustmentType.EXTRA_TIME and
                                      adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]]
 
+            day_excess = next((adj for adj in (daily_excess_adjs or adjustments or []) if
+                               adj.target_date == current_date and
+                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS and
+                               getattr(adj, 'deleted_at', None) is None), None)
+            accounted_res = self.calculate_accounted_time(
+                day_records=day_records,
+                schedule=schedule,
+                daily_excess_adj=day_excess
+            )
+            unapproved_excess = accounted_res.total_excess_seconds - accounted_res.approved_seconds
+
             daily_result = self.calculate_daily_time(
                 day_records=day_records,
                 expected_seconds=day_expected_hours * 3600,
                 waiver_adj=abono,
                 unapproved_extra_adjs=day_unapproved_extras,
                 is_excused=bool(abono),
-                has_schedule=has_schedule
+                has_schedule=has_schedule,
+                unapproved_excess_seconds=unapproved_excess
             )
 
             daily_results[current_date] = daily_result
@@ -379,14 +399,6 @@ class TimeCalculationService:
             total_extra += daily_result.extra_seconds
             total_missing += daily_result.missing_seconds
 
-            day_excess = next((adj for adj in (daily_excess_adjs or adjustments or []) if
-                               adj.target_date == current_date and
-                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
-            accounted_res = self.calculate_accounted_time(
-                day_records=day_records,
-                schedule=schedule,
-                daily_excess_adj=day_excess
-            )
             total_accounted += accounted_res.accounted_seconds
             total_excess += accounted_res.total_excess_seconds
             total_approved_excess += accounted_res.approved_seconds
