@@ -147,10 +147,21 @@ class TimesheetService:
                                adj.target_date == current_date and
                                adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
 
+            abono = next((adj for adj in (all_adjustments or []) if
+                          adj.target_date == current_date and
+                          adj.adjustment_type == AdjustmentType.WAIVER and
+                          adj.status == AdjustmentStatus.APPROVED), None)
+            day_unapproved_extras = [adj for adj in (all_adjustments or []) if
+                                     adj.target_date == current_date and
+                                     adj.adjustment_type == AdjustmentType.EXTRA_TIME and
+                                     adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]]
+
             accounted_res = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=day_schedule,
                 daily_excess_adj=day_excess,
+                waiver_adj=abono,
+                unapproved_extra_adjs=day_unapproved_extras,
             )
             accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
             unapproved_time_str = self._format_duration(daily_res.unapproved_extra_seconds)
@@ -498,8 +509,8 @@ class TimesheetService:
             Paragraph("Data", table_header_style),
             Paragraph("Dia", table_header_style),
             Paragraph("Registros de Ponto", table_header_style),
-            Paragraph("Horas Não Aut.", table_header_style),
-            Paragraph("H. Contabilizadas", table_header_style)
+            Paragraph("Tempo Ñ Aut...", table_header_style),
+            Paragraph("Tempo Contabilizado", table_header_style)
         ]]
 
         t_style = [

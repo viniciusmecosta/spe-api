@@ -201,10 +201,18 @@ class ReportService:
         worked_seconds = daily_res.net_worked_seconds
         abono = period_result.daily_waivers[current]
 
+        day_unapproved_extras = [
+            adj for adj in (day_adjustments or [])
+            if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
+            and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
+        ]
+
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
             day_records=day_records,
             schedule=schedule,
             daily_excess_adj=daily_excess_adj,
+            waiver_adj=abono,
+            unapproved_extra_adjs=day_unapproved_extras,
         )
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
@@ -343,8 +351,18 @@ class ReportService:
         expected_seconds = period_result.daily_expected_seconds[current]
         worked_seconds, day_worked_hours, day_expected_hours, day_extra, day_missing, day_balance = self._compute_daily_hours_and_balance(daily_res, expected_seconds)
 
+        day_unapproved_extras = [
+            adj for adj in (day_adjustments or [])
+            if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
+            and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
+        ]
+
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-            day_records=day_records, schedule=schedule, daily_excess_adj=daily_excess_adj
+            day_records=day_records,
+            schedule=schedule,
+            daily_excess_adj=daily_excess_adj,
+            waiver_adj=adjustment_day,
+            unapproved_extra_adjs=day_unapproved_extras,
         )
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
                                                                                  schedule, is_manager)

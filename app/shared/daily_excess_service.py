@@ -108,10 +108,16 @@ class DailyExcessService:
         adj_stmt = select(AdjustmentRequest).where(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date == target_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
             AdjustmentRequest.deleted_at.is_(None),
         )
-        existing_adjustments = list((await db.scalars(adj_stmt)).all())
+        day_adjustments = list((await db.scalars(adj_stmt)).all())
+        existing_adjustments = [
+            adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
+        ]
+        waiver_adj = next(
+            (adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
+            None
+        )
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments
@@ -129,6 +135,7 @@ class DailyExcessService:
                 day_records=day_records,
                 schedule=schedule,
                 daily_excess_adj=None,
+                waiver_adj=waiver_adj,
             )
             new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
             if new_adj:
@@ -177,12 +184,18 @@ class DailyExcessService:
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= target_date)),
         ).order_by(UserWorkScheduleConfig.valid_from.desc()).first()
 
-        existing_adjustments = db.query(AdjustmentRequest).filter(
+        day_adjustments = db.query(AdjustmentRequest).filter(
             AdjustmentRequest.user_id == user_id,
             AdjustmentRequest.target_date == target_date,
-            AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
             AdjustmentRequest.deleted_at.is_(None),
         ).all()
+        existing_adjustments = [
+            adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
+        ]
+        waiver_adj = next(
+            (adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
+            None
+        )
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments
@@ -200,6 +213,7 @@ class DailyExcessService:
                 day_records=day_records,
                 schedule=schedule,
                 daily_excess_adj=None,
+                waiver_adj=waiver_adj,
             )
             new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
             if new_adj:

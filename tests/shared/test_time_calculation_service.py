@@ -427,3 +427,36 @@ def test_calculate_accounted_time_no_schedule(record_factory):
     assert res.total_excess_seconds == 0.0
     assert res.accounted_seconds == 18000.0
     assert res.has_schedule is False
+
+
+def test_calculate_accounted_time_with_waiver(schedule_factory, adjustment_factory):
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SEGUNDA.value, 8.0)
+    abono = adjustment_factory(date(2026, 5, 11), AdjustmentType.WAIVER, AdjustmentStatus.APPROVED, 5.0)
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[],
+        schedule=sched,
+        waiver_adj=abono,
+    )
+    assert res.raw_seconds == 0.0
+    assert res.accounted_seconds == 18000.0
+
+
+def test_calculate_accounted_time_with_rejected_legacy_extra(record_factory, schedule_factory, adjustment_factory):
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.QUINTA.value, 8.0)
+    sched.is_daily_excess_enabled = False
+
+    r1 = record_factory(datetime(2026, 8, 20, 7, 15, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 20, 16, 11, 0), RecordType.EXIT)
+    raw_seconds = (datetime(2026, 8, 20, 16, 11, 0) - datetime(2026, 8, 20, 7, 15, 0)).total_seconds()
+
+    adj_rejected = adjustment_factory(date(2026, 8, 20), AdjustmentType.EXTRA_TIME, AdjustmentStatus.REJECTED, 0.25)
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        unapproved_extra_adjs=[adj_rejected],
+    )
+    assert res.raw_seconds == raw_seconds
+    assert res.accounted_seconds == raw_seconds - 900.0
+
