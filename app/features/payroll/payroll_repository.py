@@ -1,3 +1,4 @@
+import inspect
 from datetime import datetime
 from typing import Any
 
@@ -42,10 +43,15 @@ class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
         return db_obj
 
     def get_by_month(self, db: Session, month: int, year: int) -> PayrollClosure | None:
-        stmt = select(PayrollClosure).where(
-            PayrollClosure.month == month,
-            PayrollClosure.year == year,
-            PayrollClosure.deleted_at.is_(None),
+        stmt = (
+            select(PayrollClosure)
+            .where(
+                PayrollClosure.month == month,
+                PayrollClosure.year == year,
+                PayrollClosure.deleted_at.is_(None),
+                PayrollClosure.is_closed.is_(True),
+            )
+            .order_by(PayrollClosure.id.desc())
         )
         return db.scalars(stmt).first()
 
@@ -106,13 +112,22 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
         return db_obj
 
     async def get_by_month(self, db: AsyncSession, month: int, year: int) -> PayrollClosure | None:
-        stmt = select(PayrollClosure).where(
-            PayrollClosure.month == month,
-            PayrollClosure.year == year,
-            PayrollClosure.deleted_at.is_(None),
+        stmt = (
+            select(PayrollClosure)
+            .where(
+                PayrollClosure.month == month,
+                PayrollClosure.year == year,
+                PayrollClosure.deleted_at.is_(None),
+                PayrollClosure.is_closed.is_(True),
+            )
+            .order_by(PayrollClosure.id.desc())
         )
-        result = await db.scalars(stmt)
-        return result.first()
+        res = db.scalars(stmt)
+        result = await res if inspect.isawaitable(res) else res
+        if hasattr(result, "first"):
+            first = result.first()
+            return await first if inspect.isawaitable(first) else first
+        return None
 
     async def get_all(self, db: AsyncSession, year: int | None = None) -> list[PayrollClosure]:
         stmt = select(PayrollClosure).where(PayrollClosure.deleted_at.is_(None))

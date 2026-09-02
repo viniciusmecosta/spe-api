@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 
 from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.excel_service import ExcelService
@@ -110,7 +110,7 @@ async def export_monthly_report_excel(
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
         year: Annotated[int | None, Query(ge=2000)] = None,
         employee_ids: Annotated[list[int] | None, Query()] = None,
-) -> StreamingResponse:
+) -> Response:
     report_service.check_report_permission(current_user)
     now = datetime.now()
     if not month:
@@ -120,14 +120,11 @@ async def export_monthly_report_excel(
 
     await report_service.validate_excel_export_permission(current_user=current_user, month=month, year=year, now=now)
 
-    file_stream = await excel_service.generate_excel_report(month=month, year=year, employee_ids=employee_ids,
-                                                            current_user=current_user)
-
-    filename = f"folha_ponto_{month}_{year}.xlsx"
-    return StreamingResponse(
-        file_stream,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    return await excel_service.export_monthly_report(
+        month=month,
+        year=year,
+        employee_ids=employee_ids,
+        current_user=current_user,
     )
 
 

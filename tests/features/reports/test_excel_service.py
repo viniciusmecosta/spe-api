@@ -743,3 +743,50 @@ async def test_insert_header_includes_generated_at_and_metadata(excel_service, d
             found_generated_at = True
             break
     assert found_generated_at
+
+
+@pytest.mark.asyncio
+async def test_export_monthly_report_saved_file(excel_service, tmp_path, async_db_mock):
+    test_file = tmp_path / "folha_saved.xlsx"
+    test_file.write_bytes(b"saved content")
+
+    mock_closure = MagicMock()
+    mock_closure.is_closed = True
+    mock_closure.report_path = str(test_file)
+
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=mock_closure,
+    ), patch.object(excel_service, "generate_excel_report", new_callable=AsyncMock) as mock_gen:
+        resp = await excel_service.export_monthly_report(
+            month=7,
+            year=2026,
+            db=async_db_mock,
+        )
+        assert resp.path == str(test_file)
+        mock_gen.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_export_monthly_report_fallback(excel_service, async_db_mock):
+    fake_stream = BytesIO(b"generated content")
+
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    ), patch.object(
+        excel_service,
+        "generate_excel_report",
+        new_callable=AsyncMock,
+        return_value=fake_stream,
+    ) as mock_gen:
+        resp = await excel_service.export_monthly_report(
+            month=7,
+            year=2026,
+            db=async_db_mock,
+        )
+        mock_gen.assert_called_once()
+        assert resp.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+

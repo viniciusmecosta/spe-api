@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -27,6 +28,7 @@ from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
 )
+from app.features.payroll.payroll_repository import async_payroll_repository
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -231,6 +233,46 @@ class ExcelService:
             if report and report.summary.total_worked_minutes > 0:
                 user_reports.append((user, report))
         return user_reports
+
+    async def export_monthly_report(
+            self,
+            month: int,
+            year: int,
+            employee_ids: list[int] | None = None,
+            current_user: User | None = None,
+            db: Any | None = None,
+    ) -> Response:
+        session = db if db is not None else self.db
+        if not employee_ids and session is not None:
+            closure = await async_payroll_repository.get_by_month(session, month, year)
+            if closure and getattr(closure, "is_closed", None) is True and getattr(closure, "report_path", None):
+                report_path = str(closure.report_path)
+                full_path = (
+                    report_path
+                    if os.path.isabs(report_path)
+                    else os.path.join(settings.UPLOAD_DIR, report_path)
+                )
+                if os.path.exists(full_path) and os.path.isfile(full_path):
+                    filename = f"folha_ponto_{month:02d}_{year}.xlsx"
+                    return FileResponse(
+                        path=full_path,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        filename=filename,
+                    )
+
+        file_stream = await self.generate_excel_report(
+            db=session,
+            month=month,
+            year=year,
+            employee_ids=employee_ids,
+            current_user=current_user,
+        )
+        filename = f"folha_ponto_{month}_{year}.xlsx"
+        return StreamingResponse(
+            file_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
 
     async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
                                      employee_ids: list[int] | None = None,
