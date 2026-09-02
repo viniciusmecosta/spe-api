@@ -223,15 +223,17 @@ class TimeCalculationService:
 
         first_exit = next((r for r in sorted_records if r.record_type == RecordType.EXIT and r.record_datetime.hour < 15), None)
         almoco_real = 0.0
+        lunch_recorded = False
         if first_exit:
             next_entry = next((r for r in sorted_records if r.record_type == RecordType.ENTRY and r.record_datetime > first_exit.record_datetime), None)
             if next_entry:
                 exit_dt = first_exit.record_datetime.replace(second=0, microsecond=0)
                 entry_dt = next_entry.record_datetime.replace(second=0, microsecond=0)
                 almoco_real = max(0.0, (entry_dt - exit_dt).total_seconds())
+                lunch_recorded = True
 
-        excess_lunch = max(0.0, almoco_real - almoco_estipulado)
-        early_return = max(0.0, almoco_estipulado - almoco_real)
+        excess_lunch = max(0.0, almoco_real - almoco_estipulado) if lunch_recorded else 0.0
+        early_return = max(0.0, almoco_estipulado - almoco_real) if lunch_recorded else 0.0
         return True, excess_lunch, early_return
 
     def _compute_accounted_approval(
