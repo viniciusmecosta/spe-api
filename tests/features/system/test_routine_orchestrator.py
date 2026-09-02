@@ -488,3 +488,62 @@ async def test_send_manual_backup_email_send_fails(orchestrator, db_session_mock
         mock_daily_report_service.generate_daily_report_html.return_value = ""
         with pytest.raises(SMTPConnectionFailedError):
             await orchestrator.send_manual_backup_email(db_session_mock)
+
+
+async def test_send_manual_backup_email_attaches_yesterday_and_today_logs(
+        orchestrator, db_session_mock, mock_get_db_session,
+        mock_daily_report_service, mock_backup_service, mock_email_service,
+        mock_os, mock_get_log_path, mock_datetime,
+):
+    with patch.object(settings, 'SMTP_HOST', 'host'), patch.object(settings, 'SMTP_USER', 'user'), patch.object(
+            settings, 'SMTP_PASSWORD', 'pass'):
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [
+            User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
+        db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+        mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
+        mock_email_service.send_email.return_value = True
+        mock_daily_report_service.generate_daily_report_html = AsyncMock(return_value="")
+
+        res = await orchestrator.send_manual_backup_email(db_session_mock)
+        assert res is True
+        call_attachments = mock_email_service.send_email.call_args[0][1]
+        filenames = [att[1] for att in call_attachments]
+        assert "spe.zip" in filenames
+        log_files = [f for f in filenames if f.startswith("log_")]
+        assert len(log_files) == 2
+
+
+async def test_execute_manual_backup_telegram_sends_yesterday_and_today_logs(
+        orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+        mock_backup_service, mock_telegram_service, mock_os, mock_get_log_path,
+):
+    mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
+    mock_telegram_service.send_document.return_value = True
+    await orchestrator.execute_manual_backup_telegram()
+    assert mock_telegram_service.send_document.call_count == 3
+
+
+async def test_run_daily_backup_routine_email_attaches_today_log(
+        orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+        mock_daily_report_service, mock_backup_service, mock_email_service,
+        mock_os, mock_get_log_path,
+):
+    orchestrator._repo.has_routine_run_for_target_date.return_value = False
+    orchestrator._repo.get_last_successful_target_date.return_value = datetime(2023, 10, 14).date()
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [User(email="admin@test.com", role=UserRole.MAINTAINER, is_active=True)]
+    db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
+    mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
+    mock_daily_report_service.generate_daily_report_html = AsyncMock(return_value="<p>Report</p>")
+    mock_email_service.send_email.return_value = True
+
+    with patch.object(settings, "DAILY_REPORT_HOUR", 10):
+        await orchestrator.run_daily_backup_routine_email()
+
+    assert mock_email_service.send_email.called
+    attachments = mock_email_service.send_email.call_args[0][1]
+    filenames = [att[1] for att in attachments]
+    assert "spe.zip" in filenames
+    log_files = [f for f in filenames if f.startswith("log_")]
+    assert len(log_files) >= 2

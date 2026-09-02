@@ -257,6 +257,10 @@ class RoutineOrchestrator:
 
         attachments.insert(0, (zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME))
 
+        today_log_path = get_log_path(today)
+        if await asyncio.to_thread(os.path.exists, today_log_path):
+            attachments.append((today_log_path, f"log_{today.strftime('%d%m%Y')}.log"))
+
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
                                               period_text)
@@ -329,6 +333,18 @@ class RoutineOrchestrator:
                 caption,
                 filename=BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME
             )
+
+            today = now_local.date()
+            yesterday = today - timedelta(days=1)
+            for log_date in [yesterday, today]:
+                log_path = get_log_path(log_date)
+                if await asyncio.to_thread(os.path.exists, log_path):
+                    await asyncio.to_thread(
+                        telegram_service.send_document,
+                        log_path,
+                        f"Log do sistema - {log_date.strftime(DATE_FORMAT)}",
+                        filename=f"log_{log_date.strftime('%d%m%Y')}.log",
+                    )
 
             try:
                 async with get_async_session_context() as db_write:
@@ -436,9 +452,11 @@ class RoutineOrchestrator:
 
         attachments = [(zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME)]
 
-        log_path = get_log_path(yesterday)
-        if await asyncio.to_thread(os.path.exists, log_path):
-            attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
+        today = now_local.date()
+        for log_date in [yesterday, today]:
+            log_path = get_log_path(log_date)
+            if await asyncio.to_thread(os.path.exists, log_path):
+                attachments.append((log_path, f"log_{log_date.strftime('%d%m%Y')}.log"))
 
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,

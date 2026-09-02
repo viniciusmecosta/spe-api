@@ -59,21 +59,16 @@ async def read_audit_logs(
 @backup_router.post(
     "/trigger",
     dependencies=[Depends(deps.get_current_maintainer)],
-    responses={**BAD_REQUEST_RESPONSE},
 )
 async def trigger_manual_backup(
+        background_tasks: BackgroundTasks,
         audit_svc: Annotated[AuditService, Depends()],
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    sent = await routine_orch.send_manual_backup_email()
-    if not sent:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Falha ao gerar ou enviar o backup.",
-        )
+    background_tasks.add_task(routine_orch.send_manual_backup_email)
     await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
-    return {"status": "success", "message": "Backup gerado e enviado com sucesso."}
+    return {"status": "success", "message": "Backup manual por e-mail iniciado em segundo plano."}
 
 
 @routine_logs_router.get(

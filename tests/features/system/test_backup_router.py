@@ -30,7 +30,7 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 
 def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(
+    mock_send = mocker.patch.object(
         RoutineOrchestrator,
         "send_manual_backup_email",
         return_value=True,
@@ -41,17 +41,20 @@ def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) ->
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
-    assert "sucesso" in data["message"]
+    assert "segundo plano" in data["message"]
     mock_audit.assert_awaited_once()
 
 
-def test_trigger_manual_backup_failure(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(
-        RoutineOrchestrator,
-        "send_manual_backup_email",
-        return_value=False,
-    )
+def test_trigger_manual_backup_forbidden_for_employee(db_session_mock: MagicMock) -> None:
+    employee_user = MagicMock(spec=User)
+    employee_user.id = 2
+    employee_user.role = UserRole.EMPLOYEE
+    employee_user.is_active = True
+
+    app.dependency_overrides[deps.get_current_active_user] = lambda: employee_user
+    app.dependency_overrides[deps.get_db] = lambda: db_session_mock
+    client = TestClient(app)
 
     response = client.post("/api/v1/backup/trigger")
-    assert response.status_code == 400
-    assert "Falha ao gerar ou enviar o backup" in response.json()["detail"]
+    assert response.status_code == 403
+    app.dependency_overrides.clear()
