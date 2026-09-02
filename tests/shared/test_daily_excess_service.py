@@ -211,3 +211,98 @@ async def test_evaluate_user_range_bg(excess_service):
 async def test_evaluate_user_range_bg_exception_handled(excess_service):
     with patch("app.shared.daily_excess_service.get_async_session_context", side_effect=Exception("Range Error")):
         await excess_service.evaluate_user_range_bg(10, date(2026, 8, 1), date(2026, 8, 3))
+
+
+@pytest.mark.asyncio
+async def test_evaluate_user_day_async_preserves_reviewed_adjustment_when_overwrite_false(excess_service):
+    tz = ZoneInfo("America/Sao_Paulo")
+    dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
+    approved_adj = AdjustmentRequest(
+        id=99,
+        user_id=10,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        target_date=date(2026, 8, 1),
+        status=AdjustmentStatus.APPROVED,
+    )
+
+    db_mock = AsyncMock()
+    db_mock.sync_session = MagicMock()
+    mock_scalars_recs = MagicMock()
+    mock_scalars_recs.all.return_value = [r1]
+    mock_scalars_adjs = MagicMock()
+    mock_scalars_adjs.all.return_value = [approved_adj]
+
+    db_mock.scalars.side_effect = [mock_scalars_recs, mock_scalars_adjs]
+    db_mock.scalar.side_effect = [None, None, MagicMock()]
+
+    await excess_service.evaluate_user_day_async(db_mock, 10, date(2026, 8, 1), overwrite_reviewed=False)
+
+    db_mock.delete.assert_not_called()
+    db_mock.add.assert_not_called()
+    assert r1.is_verified is True
+
+
+@pytest.mark.asyncio
+async def test_evaluate_user_day_async_overwrites_reviewed_adjustment_when_overwrite_true(excess_service):
+    tz = ZoneInfo("America/Sao_Paulo")
+    dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
+    dt2 = datetime(2026, 8, 1, 18, 0, tzinfo=tz)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
+    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT, is_verified=False)
+    approved_adj = AdjustmentRequest(
+        id=99,
+        user_id=10,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        target_date=date(2026, 8, 1),
+        status=AdjustmentStatus.APPROVED,
+    )
+    schedule = UserWorkScheduleConfig(
+        id=1,
+        user_id=10,
+        day_of_week=DayOfWeek.SABADO.value,
+        daily_hours=8.0,
+        is_daily_excess_enabled=True,
+        valid_from=date(2026, 1, 1),
+        valid_until=None,
+    )
+
+    db_mock = AsyncMock()
+    db_mock.sync_session = MagicMock()
+    mock_scalars_recs = MagicMock()
+    mock_scalars_recs.all.return_value = [r1, r2]
+    mock_scalars_adjs = MagicMock()
+    mock_scalars_adjs.all.return_value = [approved_adj]
+
+    db_mock.scalars.side_effect = [mock_scalars_recs, mock_scalars_adjs]
+    db_mock.scalar.side_effect = [None, None, schedule]
+
+    with patch("app.shared.time_calculation_service.time_calculation_service.calculate_accounted_time") as mock_calc:
+        mock_calc.return_value = DailyAccountedResult(
+            raw_seconds=36000.0,
+            excess_work_seconds=7200.0,
+            excess_lunch_seconds=0.0,
+            early_return_seconds=0.0,
+            total_excess_seconds=7200.0,
+            approved_seconds=0.0,
+            accounted_seconds=28800.0,
+            has_schedule=True,
+            has_lunch_rule=False,
+        )
+        await excess_service.evaluate_user_day_async(db_mock, 10, date(2026, 8, 1), overwrite_reviewed=True)
+
+    db_mock.delete.assert_called_once_with(approved_adj)
+    db_mock.add.assert_called_once()
+    assert r1.is_verified is True
+    assert r2.is_verified is True
+
+
+@pytest.mark.asyncio
+async def test_reprocess_user_ranges_bg(excess_service):
+    db_mock = AsyncMock()
+    with patch("app.shared.daily_excess_service.get_async_session_context") as mock_get_db:
+        mock_get_db.return_value.__aenter__.return_value = db_mock
+        with patch.object(excess_service, "_evaluate_user_day_async") as mock_eval:
+            await excess_service.reprocess_user_ranges_bg([10, 20], date(2026, 8, 1), date(2026, 8, 2), overwrite_reviewed=True)
+            assert mock_eval.call_count == 4
+

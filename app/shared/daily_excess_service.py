@@ -63,7 +63,7 @@ class DailyExcessService:
             day_records
         )
 
-    async def _evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, tz: ZoneInfo):
+    async def _evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, tz: ZoneInfo, overwrite_reviewed: bool = False):
         payroll_stmt = select(PayrollClosure).where(
             PayrollClosure.month == target_date.month,
             PayrollClosure.year == target_date.year,
@@ -112,6 +112,15 @@ class DailyExcessService:
             AdjustmentRequest.deleted_at.is_(None),
         )
         existing_adjustments = list((await db.scalars(adj_stmt)).all())
+        has_reviewed = any(
+            adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
+            for adj in existing_adjustments
+        )
+        if has_reviewed and not overwrite_reviewed:
+            for r in day_records:
+                r.is_verified = True
+            return
+
         for adj in existing_adjustments:
             await db.delete(adj)
 
@@ -128,7 +137,7 @@ class DailyExcessService:
         for r in day_records:
             r.is_verified = True
 
-    def _evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date, tz: ZoneInfo):
+    def _evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date, tz: ZoneInfo, overwrite_reviewed: bool = False):
         payroll_closed = db.query(PayrollClosure).filter(
             PayrollClosure.month == target_date.month,
             PayrollClosure.year == target_date.year,
@@ -174,6 +183,15 @@ class DailyExcessService:
             AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
             AdjustmentRequest.deleted_at.is_(None),
         ).all()
+        has_reviewed = any(
+            adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
+            for adj in existing_adjustments
+        )
+        if has_reviewed and not overwrite_reviewed:
+            for r in day_records:
+                r.is_verified = True
+            return
+
         for adj in existing_adjustments:
             db.delete(adj)
 
@@ -190,13 +208,13 @@ class DailyExcessService:
         for r in day_records:
             r.is_verified = True
 
-    async def evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date):
+    async def evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, overwrite_reviewed: bool = False):
         tz = ZoneInfo(settings.TIMEZONE)
-        await self._evaluate_user_day_async(db, user_id, target_date, tz)
+        await self._evaluate_user_day_async(db, user_id, target_date, tz, overwrite_reviewed=overwrite_reviewed)
 
-    def evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date):
+    def evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date, overwrite_reviewed: bool = False):
         tz = ZoneInfo(settings.TIMEZONE)
-        self._evaluate_user_day_sync(db, user_id, target_date, tz)
+        self._evaluate_user_day_sync(db, user_id, target_date, tz, overwrite_reviewed=overwrite_reviewed)
 
     async def evaluate_user_day_bg(self, user_id: int, target_date: date):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -216,6 +234,24 @@ class DailyExcessService:
                     curr += timedelta(days=1)
         except Exception as e:
             logger.exception(f"Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {e}")
+
+    async def reprocess_user_ranges_bg(
+            self,
+            user_ids: list[int],
+            start_date: date,
+            end_date: date,
+            overwrite_reviewed: bool = False,
+    ):
+        tz = ZoneInfo(settings.TIMEZONE)
+        try:
+            async with get_async_session_context() as db:
+                for uid in user_ids:
+                    curr = start_date
+                    while curr <= end_date:
+                        await self._evaluate_user_day_async(db, uid, curr, tz, overwrite_reviewed=overwrite_reviewed)
+                        curr += timedelta(days=1)
+        except Exception as e:
+            logger.exception(f"Erro ao reprocessar excedente em lote: {e}")
 
 
 daily_excess_service = DailyExcessService()

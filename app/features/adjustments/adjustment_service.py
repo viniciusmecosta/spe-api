@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, UploadFile, status
+from fastapi import BackgroundTasks, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ from app.features.adjustments.adjustment_repository import (
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentWaiverCreate,
-    BulkReprocessExtraTimeRequest,
+    BulkReprocessDailyExcessRequest,
 )
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service, serialize_model
@@ -38,8 +38,8 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
-from app.shared.tolerance_cron_service import tolerance_cron_service
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
 
@@ -474,19 +474,27 @@ class AdjustmentService:
 
         return safe_file_path, filename
 
-    async def reprocess_historical_extra_time(
+    async def reprocess_historical_daily_excess(
             self,
             db: AsyncSession | None = None,
-            request_in: BulkReprocessExtraTimeRequest | None = None,
+            request_in: BulkReprocessDailyExcessRequest | None = None,
+            background_tasks: BackgroundTasks | None = None,
             current_user: User | None = None,
     ) -> dict[str, str]:
         session = db if db is not None else self.db
         assert session is not None
         assert request_in is not None
         assert current_user is not None
+        assert background_tasks is not None
         if current_user.role != UserRole.MAINTAINER:
             raise AdjustmentPermissionError(
                 "Acesso negado. Requer privilégios de Mantenedor.",
+            )
+
+        if request_in.start_date > request_in.end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A data inicial não pode ser maior que a data final.",
             )
 
         curr = request_in.start_date.replace(day=1)
@@ -497,35 +505,29 @@ class AdjustmentService:
             else:
                 curr = curr.replace(month=curr.month + 1)
 
-        if hasattr(session, "sync_session"):
-            await tolerance_cron_service.async_reprocess_historical_entries(
-                db=session,
-                start_date=request_in.start_date,
-                end_date=request_in.end_date,
-                user_ids=request_in.user_ids,
-            )
-        else:
-            tolerance_cron_service.reprocess_historical_entries(
-                db=session,
-                start_date=request_in.start_date,
-                end_date=request_in.end_date,
-                user_ids=request_in.user_ids,
-            )
+        background_tasks.add_task(
+            daily_excess_service.reprocess_user_ranges_bg,
+            request_in.user_ids,
+            request_in.start_date,
+            request_in.end_date,
+            request_in.overwrite_reviewed,
+        )
 
         await audit_service.async_log_change(
             session,
             current_user.id,
             "REPROCESS",
-            entity="EXTRA_TIME",
+            entity="DAILY_EXCESS",
             entity_id=0,
             new_data={
                 "start_date": str(request_in.start_date),
                 "end_date": str(request_in.end_date),
                 "user_ids": request_in.user_ids,
+                "overwrite_reviewed": request_in.overwrite_reviewed,
             },
         )
 
-        return {"status": "success", "message": "Reprocessamento concluído com sucesso."}
+        return {"status": "success", "message": "Reprocessamento de excedente diário iniciado em segundo plano."}
 
 
 adjustment_service = AdjustmentService()

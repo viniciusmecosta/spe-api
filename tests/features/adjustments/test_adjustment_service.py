@@ -21,7 +21,7 @@ from app.features.adjustments.adjustment_models import AdjustmentAttachment, Adj
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentWaiverCreate,
-    BulkReprocessExtraTimeRequest,
+    BulkReprocessDailyExcessRequest,
 )
 from app.features.adjustments.adjustment_service import adjustment_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -94,23 +94,49 @@ async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_reprocess_historical_extra_time_scenarios(async_db_mock, mocker):
+async def test_reprocess_historical_daily_excess_scenarios(async_db_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
-    req_in = BulkReprocessExtraTimeRequest(start_date=date(2025, 12, 1), end_date=date(2026, 1, 1), user_ids=[1])
+    req_in = BulkReprocessDailyExcessRequest(
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 14),
+        user_ids=[1],
+        overwrite_reviewed=True,
+    )
+    bg_mock = MagicMock()
+
     with pytest.raises(AdjustmentPermissionError) as exc1:
-        await adjustment_service.reprocess_historical_extra_time(async_db_mock, req_in, emp)
+        await adjustment_service.reprocess_historical_daily_excess(
+            async_db_mock, req_in, bg_mock, emp
+        )
     assert exc1.value.status_code == 403
 
     maint = User(id=1, role=UserRole.MAINTAINER)
-    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
-                 new_callable=AsyncMock)
-    mocker.patch("app.shared.tolerance_cron_service.tolerance_cron_service.async_reprocess_historical_entries",
-                 new_callable=AsyncMock)
-    mocker.patch("app.shared.tolerance_cron_service.tolerance_cron_service.reprocess_historical_entries")
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
 
-    res = await adjustment_service.reprocess_historical_extra_time(async_db_mock, req_in, maint)
+    invalid_req = BulkReprocessDailyExcessRequest(
+        start_date=date(2026, 8, 15),
+        end_date=date(2026, 8, 1),
+        user_ids=[1],
+    )
+    with pytest.raises(Exception) as exc_date:
+        await adjustment_service.reprocess_historical_daily_excess(
+            async_db_mock, invalid_req, bg_mock, maint
+        )
+    assert "data inicial não pode ser maior" in str(exc_date.value)
+
+    mocker.patch(
+        "app.features.adjustments.adjustment_service.adjustment_service._validate_period_open",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.features.system.audit_service.audit_service.async_log_change",
+        new_callable=AsyncMock,
+    )
+
+    res = await adjustment_service.reprocess_historical_daily_excess(
+        async_db_mock, req_in, bg_mock, maint
+    )
     assert res["status"] == "success"
+    bg_mock.add_task.assert_called_once()
 
 
 @pytest.mark.asyncio

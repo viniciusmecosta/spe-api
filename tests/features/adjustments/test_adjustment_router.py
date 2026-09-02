@@ -102,20 +102,26 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
     assert response.json()["id"] == 2
 
 
-def test_reprocess_historical_extra_time(client: TestClient, mocker: MagicMock) -> None:
+def test_reprocess_historical_daily_excess(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
-        "reprocess_historical_extra_time",
+        "reprocess_historical_daily_excess",
         new_callable=AsyncMock,
-        return_value={"status": "success", "message": "Reprocessamento concluído com sucesso."},
+        return_value={"status": "success", "message": "Reprocessamento de excedente diário iniciado em segundo plano."},
     )
 
     response = client.post(
-        "/api/v1/adjustments/admin/reprocess-extra-time",
-        json={"start_date": "2026-08-01", "end_date": "2026-08-14", "user_ids": [1]},
+        "/api/v1/adjustments/admin/reprocess-daily-excess",
+        json={"start_date": "2026-08-01", "end_date": "2026-08-14", "user_ids": [1], "overwrite_reviewed": True},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
+
+    legacy_response = client.post(
+        "/api/v1/adjustments/admin/reprocess-extra-time",
+        json={"start_date": "2026-08-01", "end_date": "2026-08-14", "user_ids": [1]},
+    )
+    assert legacy_response.status_code in (404, 405)
 
 
 def test_upload_adjustment_attachment(client: TestClient, mocker: MagicMock) -> None:
