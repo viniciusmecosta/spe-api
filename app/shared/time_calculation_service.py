@@ -173,7 +173,7 @@ class TimeCalculationService:
 
         amount = getattr(waiver_adj, 'amount_hours', None) if waiver_adj else None
         if isinstance(amount, (int, float)) and amount > 0:
-            return amount * 3600
+            return round((amount * 3600.0) / 60.0) * 60.0
 
         return 0.0
 
@@ -189,9 +189,10 @@ class TimeCalculationService:
             if not isinstance(amount, (int, float)):
                 continue
             if amount > 24:
-                unapproved_extra_seconds += (amount / 60.0) * 3600
+                raw_sec = (amount / 60.0) * 3600.0
             else:
-                unapproved_extra_seconds += amount * 3600
+                raw_sec = amount * 3600.0
+            unapproved_extra_seconds += round(raw_sec / 60.0) * 60.0
 
         if unapproved_extra_seconds > worked_seconds:
             return worked_seconds
@@ -263,7 +264,8 @@ class TimeCalculationService:
             if daily_excess_adj.approved_amount_hours is None:
                 approved = total_excess
             else:
-                approved = min(total_excess, max(0.0, daily_excess_adj.approved_amount_hours * 3600.0))
+                approved_seconds_raw = daily_excess_adj.approved_amount_hours * 3600.0
+                approved = min(total_excess, max(0.0, round(approved_seconds_raw / 60.0) * 60.0))
             unapproved = total_excess - approved
             accounted = max(0.0, raw_seconds - unapproved)
             return approved, accounted
