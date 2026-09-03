@@ -324,3 +324,13 @@ async def test_verify_manager_access_denied_inactive(async_db_mock: AsyncMock, m
     assert result.is_allowed is False
     assert "Acesso negado" in result.message
     audit_mock.assert_called_once()
+
+
+def test_device_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = device_service.repo
+    try:
+        device_service.repo = custom_repo
+        assert device_service.repo == custom_repo
+    finally:
+        device_service.repo = original_repo

@@ -86,3 +86,13 @@ async def test_delete_holiday_not_found(async_db_mock: AsyncMock, mocker: MagicM
     result = await holiday_service.delete_holiday(async_db_mock, holiday_id=99, current_user_id=1)
     assert result == {"status": "success"}
     delete_mock.assert_not_called()
+
+
+def test_holiday_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = holiday_service.repo
+    try:
+        holiday_service.repo = custom_repo
+        assert holiday_service.repo == custom_repo
+    finally:
+        holiday_service.repo = original_repo

@@ -742,3 +742,43 @@ async def test_revert_adjustment_status_approve_daily_excess(async_db_mock, mock
                                                             "Revertendo para aprovado")
     assert res.id == 24
     mock_exec.assert_not_called()
+
+
+def test_adjustment_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = adjustment_service.repo
+    try:
+        adjustment_service.repo = custom_repo
+        assert adjustment_service.repo == custom_repo
+    finally:
+        adjustment_service.repo = original_repo
+
+
+@pytest.mark.asyncio
+async def test_validate_period_open_sync_fallback(mocker, async_db_mock):
+    from app.features.payroll.payroll_service import PayrollService, payroll_service
+    mocker.patch.object(payroll_service, "validate_period_open")
+    orig_async = getattr(PayrollService, "async_validate_period_open", None)
+    try:
+        delattr(PayrollService, "async_validate_period_open")
+        await adjustment_service._validate_period_open(async_db_mock, date(2026, 8, 1))
+        payroll_service.validate_period_open.assert_called_once()
+    finally:
+        if orig_async is not None:
+            PayrollService.async_validate_period_open = orig_async
+
+
+@pytest.mark.asyncio
+async def test_reprocess_daily_excess_crossing_december(async_db_mock, mocker):
+    from app.features.adjustments.adjustment_schemas import BulkReprocessDailyExcessRequest
+    req = BulkReprocessDailyExcessRequest(
+        user_ids=[1],
+        start_date=date(2026, 12, 15),
+        end_date=date(2027, 1, 10),
+        overwrite_reviewed=False,
+    )
+    mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
+    bg = MagicMock()
+    user = User(id=1, role=UserRole.MAINTAINER)
+    res = await adjustment_service.reprocess_historical_daily_excess(async_db_mock, req, bg, current_user=user)
+    assert "Reprocessamento de excedente" in res["message"]

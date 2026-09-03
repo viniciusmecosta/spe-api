@@ -208,3 +208,78 @@ def test_reprocess_historical_entries_exit_record(tolerance_service, db_session_
     tolerance_service.reprocess_historical_entries(db_session_mock, start_date, end_date, user_ids)
     assert base_record.is_verified is True
     db_session_mock.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_process_entry_record_branches(tolerance_service, base_record, mock_config):
+    from unittest.mock import AsyncMock
+    tz = ZoneInfo("America/Sao_Paulo")
+    now = datetime(2026, 7, 24, 9, 0, tzinfo=tz)
+    async_db = AsyncMock()
+
+    base_record.user.is_tolerance_exempt = True
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+    base_record.user.is_tolerance_exempt = False
+    base_record.is_verified = False
+    async_db.scalar.return_value = None
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+    base_record.is_verified = False
+    other_entry = MagicMock()
+    other_entry.id = 999
+    async_db.scalar.side_effect = [mock_config, other_entry]
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+    base_record.is_verified = False
+    base_record.record_datetime = datetime(2026, 7, 24, 7, 57, tzinfo=tz)
+    async_db.scalar.side_effect = [mock_config, base_record]
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+    base_record.is_verified = False
+    base_record.record_datetime = datetime(2026, 7, 24, 7, 30, tzinfo=tz)
+    async_db.scalar.side_effect = [mock_config, base_record]
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+    base_record.is_verified = False
+    base_record.record_datetime = datetime(2026, 7, 24, 8, 0)
+    async_db.scalar.side_effect = [mock_config, base_record]
+    await tolerance_service.async_process_entry_record(async_db, base_record, now, tz)
+    assert base_record.is_verified is True
+
+
+@pytest.mark.asyncio
+async def test_async_reprocess_historical_entries(tolerance_service, base_record):
+    from unittest.mock import AsyncMock
+    tz = ZoneInfo("America/Sao_Paulo")
+    async_db = AsyncMock()
+
+    exit_record = MagicMock()
+    exit_record.record_type = RecordType.EXIT
+    exit_record.is_verified = False
+
+    base_record.record_type = RecordType.ENTRY
+    base_record.is_verified = False
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [base_record, exit_record]
+    async_db.scalars.return_value = mock_scalars
+
+    mock_config = MagicMock()
+    mock_config.entry_1 = time(8, 0)
+    async_db.scalar.side_effect = [mock_config, base_record]
+
+    await tolerance_service.async_reprocess_historical_entries(
+        db=async_db,
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        user_ids=[1],
+    )
+    assert exit_record.is_verified is True
+    assert base_record.is_verified is True
+    async_db.commit.assert_called_once()

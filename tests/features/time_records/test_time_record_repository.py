@@ -46,6 +46,10 @@ def test_time_record_repository(db_session, normal_user):
     assert len(tl) >= 1
     assert repo.get_timeline(db_session, 99999) == []
 
+    r_obj = repo.create(db_session,
+                        obj_in={"user_id": normal_user.id, "record_type": RecordType.ENTRY, "record_datetime": now})
+    assert r_obj.id is not None
+
     repo.delete(db_session, r1.id, manager_id=normal_user.id)
     assert repo.get(db_session, r1.id) is None
 
@@ -72,6 +76,10 @@ async def test_async_time_record_repository(async_db_mock):
     )
     assert r1.user_id == 1
     assert r1.device_name == "TestDevice"
+
+    r_obj_async = await repo.create(async_db_mock,
+                                    obj_in={"user_id": 1, "record_type": RecordType.ENTRY, "record_datetime": now})
+    assert r_obj_async is not None
 
     rec_get = await repo.get(async_db_mock, 1)
     assert rec_get.id == 1
@@ -101,5 +109,11 @@ async def test_async_time_record_repository(async_db_mock):
     tl = await repo.get_timeline(async_db_mock, 1)
     assert len(tl) == 1
 
+    mock_scalars.first.return_value = None
+    tl_empty = await repo.get_timeline(async_db_mock, 99999)
+    assert tl_empty == []
+    mock_scalars.first.return_value = mock_rec
+
     await repo.delete(async_db_mock, 1, manager_id=1)
     assert mock_rec.is_ignored is True
+

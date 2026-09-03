@@ -360,3 +360,10 @@ async def test_evaluate_user_range_bg_exception_handling(excess_service):
     with patch("app.shared.daily_excess_service.get_async_session_context", side_effect=RuntimeError("DB Boom")):
         await excess_service.evaluate_user_range_bg(10, date(2026, 8, 1), date(2026, 8, 1))
 
+
+def test_evaluate_user_day_sync_payroll_closed(excess_service):
+    sync_db_mock = MagicMock()
+    mock_filter = sync_db_mock.query.return_value.filter.return_value
+    mock_filter.first.return_value = MagicMock()
+    excess_service.evaluate_user_day_sync(sync_db_mock, 10, date(2026, 8, 1))
+    assert mock_filter.first.call_count == 1

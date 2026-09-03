@@ -406,3 +406,13 @@ async def test_async_log_change(async_db_mock, mocker):
 
     assert res == "created_log"
     mock_repo.assert_awaited_once()
+
+
+def test_audit_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = audit_service.repo
+    try:
+        audit_service.repo = custom_repo
+        assert audit_service.repo == custom_repo
+    finally:
+        audit_service.repo = original_repo

@@ -693,25 +693,23 @@ def test_determine_excess_info_disabled_or_legacy(service):
     acc_res = MagicMock()
     acc_res.total_excess_seconds = 3600
 
-    # schedule is None
     has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=None)
     assert has_excess is False
     assert status is None
     assert adj_id is None
 
-    # schedule with is_daily_excess_enabled = False
     sch_disabled = MagicMock(is_daily_excess_enabled=False)
     has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_disabled)
     assert has_excess is False
     assert status is None
     assert adj_id is None
 
-    # legacy schedule with is_daily_excess_enabled = None
     sch_legacy = MagicMock(is_daily_excess_enabled=None)
     has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_legacy)
     assert has_excess is False
     assert status is None
     assert adj_id is None
+
 
 
 def test_determine_excess_info_enabled(service):
@@ -874,3 +872,158 @@ async def test_validate_employee_export_permission_sync(service):
     await service._validate_employee_export_permission(sync_db, user, 7, 2026, datetime(2026, 8, 1))
 
 
+def test_report_service_helper_branches(service):
+    from app.shared.enums import AdjustmentType
+    sched_enabled = MagicMock(is_daily_excess_enabled=True)
+    has_excess, excess_status, daily_id = service._determine_excess_info(None, None, sched_enabled)
+    assert excess_status is None
+    assert daily_id is None
+
+    mock_adj = MagicMock(amount_hours=2.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=1.0)
+    info = service._build_daily_excess_info(
+        accounted_res=None,
+        daily_excess_adj=mock_adj,
+        has_excess=True,
+        excess_status="APPROVED",
+        daily_excess_id=1,
+    )
+    assert info.total_minutes == 120
+    assert info.approved_minutes == 60
+
+    mock_adj_no_appr = MagicMock(amount_hours=1.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=None)
+    info2 = service._build_daily_excess_info(
+        accounted_res=None,
+        daily_excess_adj=mock_adj_no_appr,
+        has_excess=True,
+        excess_status="APPROVED",
+        daily_excess_id=2,
+    )
+    assert info2.approved_minutes == 60
+
+    from app.features.reports.report_schemas import ReportAdjustmentItem
+    item1 = ReportAdjustmentItem(id=1, user_id=1, adjustment_type=AdjustmentType.WAIVER,
+                                 status=AdjustmentStatus.APPROVED, target_date=date(2026, 8, 1))
+    assert service._to_report_adjustment_item(item1, date(2026, 8, 1)) == item1
+
+    dict_adj = {"id": 2, "user_id": 1, "adjustment_type": AdjustmentType.WAIVER, "status": AdjustmentStatus.APPROVED,
+                "target_date": date(2026, 8, 1)}
+    item2 = service._to_report_adjustment_item(dict_adj, date(2026, 8, 1))
+    assert item2.id == 2
+
+    status_normal = service._determine_daily_status(
+        is_future=False,
+        is_holiday=False,
+        is_weekend=False,
+        is_waiver=False,
+        worked_seconds=0.0,
+        expected_seconds=0.0,
+        is_today=False,
+        has_schedule=True,
+    )
+    assert status_normal == "Normal"
+
+    sched = MagicMock()
+    sched.valid_from = date(2026, 8, 1)
+    sched.valid_until = date(2026, 8, 31)
+    sched.day_of_week = 0
+    mock_user = MagicMock()
+    mock_user.historical_schedules = [sched]
+    found_sched = service._get_schedule_for_date(mock_user, date(2026, 8, 3), 0)
+    assert found_sched == sched
+
+
+@pytest.mark.asyncio
+async def test_report_service_async_session_branches(service):
+    from collections import defaultdict
+    from app.shared.enums import AdjustmentType
+    db_mock = AsyncMock()
+    db_mock.sync_session = MagicMock()
+    mock_res = MagicMock()
+    mock_res.all.return_value = []
+    db_mock.scalars.return_value = mock_res
+    db_mock.scalar.return_value = False
+
+    with patch("app.features.reports.report_service.async_time_record_repository.get_by_range", new_callable=AsyncMock,
+               return_value=[]), \
+            patch("app.features.reports.report_service.async_holiday_repository.get_by_month", new_callable=AsyncMock,
+                  return_value=[]), \
+            patch("app.features.reports.report_service.anomaly_service.get_anomalies", new_callable=AsyncMock,
+                  return_value=[]):
+        recs, hols, anoms, adjs = await service._fetch_history_data(
+            db_mock, 1, datetime(2026, 8, 1), datetime(2026, 8, 31), date(2026, 8, 1), date(2026, 8, 31), 8, 2026, False
+        )
+        assert recs == []
+
+    await service._validate_manager_export_permission(db_mock, 8, 2026)
+
+    db_mock.scalar.return_value = True
+    user = User(id=1, role=UserRole.EMPLOYEE, can_export_report=True, historical_schedules=[])
+    await service._validate_employee_export_permission(db_mock, user, 7, 2026, datetime(2026, 8, 1))
+
+    with patch("app.features.reports.report_service.async_user_repository.get", new_callable=AsyncMock,
+               return_value=None):
+        with pytest.raises(Exception):
+            await service.get_history_report(db_mock, 999, 8, 2026, user)
+
+        adv_none = await service.get_advanced_user_report(db_mock, 999, 8, 2026, user)
+        assert adv_none is None
+
+    with patch("app.features.reports.report_service.async_user_repository.get", new_callable=AsyncMock,
+               return_value=user), \
+            patch.object(service, "_fetch_history_data", new_callable=AsyncMock) as mock_fetch, \
+            patch(
+                "app.features.reports.report_service.time_calc_mod.time_calculation_service.calculate_period_time") as mock_calc:
+        adj_excess = MagicMock(
+            target_date=date(2026, 8, 3),
+            adjustment_type=AdjustmentType.DAILY_EXCESS,
+            status=AdjustmentStatus.PENDING,
+            amount_hours=1.0,
+            record_type=None,
+            reason_text=None,
+            manager_comment=None,
+            created_at=None,
+            reviewed_at=None,
+        )
+        mock_fetch.return_value = ([], [], [], [adj_excess])
+        mock_daily = MagicMock()
+        mock_daily.net_worked_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
+        mock_daily.punch_blocks = []
+        mock_period = MagicMock()
+        mock_period.daily_results = defaultdict(lambda: mock_daily)
+        mock_calc.return_value = mock_period
+        hist = await service.get_history_report(db_mock, 1, 8, 2026, user)
+        assert hist.month == 8
+
+
+def test_get_schedule_for_date_no_match(service):
+    sched = MagicMock(valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30), day_of_week="MONDAY")
+    u = MagicMock(historical_schedules=[sched])
+    res = service._get_schedule_for_date(u, date(2026, 8, 1), "MONDAY")
+    assert res is None
+
+
+def test_build_advanced_daily_details_with_excess_adj(service):
+    from app.shared.enums import AdjustmentType, AdjustmentStatus
+    adj_excess = MagicMock(
+        target_date=date(2026, 8, 1),
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+
+        status=AdjustmentStatus.PENDING,
+        amount_hours=1.0,
+        record_type=None,
+        reason_text=None,
+        manager_comment=None,
+        created_at=None,
+        reviewed_at=None,
+    )
+    period_res = MagicMock()
+    mock_daily = MagicMock(net_worked_seconds=0, extra_seconds=0, missing_seconds=0, punch_blocks=[])
+    period_res.daily_results = defaultdict(lambda: mock_daily)
+    u = MagicMock(historical_schedules=[])
+    res, w, a = service._build_advanced_daily_details(
+        date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 2),
+        [], [], period_res, False, False, u, [adj_excess]
+    )
+    assert len(res) == 2

@@ -59,5 +59,9 @@ async def test_async_holiday_repository(async_db_mock):
     by_month = await repo.get_by_month(async_db_mock, 12, 2026)
     assert len(by_month) == 1
 
+    by_month_non_dec = await repo.get_by_month(async_db_mock, 10, 2026)
+    assert len(by_month_non_dec) == 1
+
     await repo.delete(async_db_mock, 1)
     async_db_mock.delete.assert_called_once()
+

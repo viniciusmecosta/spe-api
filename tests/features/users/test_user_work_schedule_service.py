@@ -427,3 +427,38 @@ async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, 
     )
     bg_mock.add_task.assert_called_once()
 
+
+@pytest.mark.asyncio
+async def test_user_work_schedule_service_async_session_branches(mocker):
+    from unittest.mock import AsyncMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mocker.patch("app.features.users.user_work_schedule_service.async_payroll_repository.get_by_month",
+                 new_callable=AsyncMock, return_value=None)
+    await user_work_schedule_service.check_payroll_closure(async_sess, date(2026, 1, 1), date(2026, 1, 31))
+
+    cfg = UserWorkScheduleConfig(id=1, user_id=1, day_of_week=0, valid_from=date(2026, 1, 1),
+                                 valid_until=date(2026, 1, 31))
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [cfg]
+    async_sess.scalars.return_value = mock_scalars
+
+    res_bulk_list = await user_work_schedule_service.get_bulk_schedules(async_sess, month=1, year=2026)
+    assert len(res_bulk_list) == 1
+
+    res_single_bulk = await user_work_schedule_service.get_bulk_schedule(async_sess, date(2026, 1, 1),
+                                                                         date(2026, 1, 31))
+    assert res_single_bulk["valid_from"] == date(2026, 1, 1)
+
+    mocker.patch("app.features.users.user_work_schedule_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
+
+    await user_work_schedule_service.delete_bulk_schedules(
+        async_sess,
+        valid_from=date(2026, 1, 1),
+        valid_until=date(2026, 1, 31),
+        current_user_id=1,
+    )
+    async_sess.commit.assert_called_once()

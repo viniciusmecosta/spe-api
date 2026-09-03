@@ -603,3 +603,83 @@ def test_draw_company_header_and_notes(mocker):
                         cell_texts.append(cell.text)
             assert any('Razão Social:' in t for t in cell_texts)
     assert found_table
+
+
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_async_session(mocker):
+    from unittest.mock import AsyncMock
+    from app.features.companies.company_models import Company
+    from app.shared.time_calculation_service import DailyTimeResult, PeriodTimeResult
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = "Test Async User"
+    mock_user.cpf = "12345678901"
+    mock_user.pis = "12345678901"
+    mock_user.role = UserRole.EMPLOYEE
+    mock_user.historical_schedules = []
+
+    mock_company = MagicMock(spec=Company)
+    mock_company.name = "Test Company"
+    mock_company.cnpj = "12345678901234"
+    mock_company.address = "Test Addr"
+    mock_company.phone = "11987654321"
+    mock_company.logo_path = None
+
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mocker.patch("app.features.timesheets.timesheet_service.async_user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.timesheets.timesheet_service.async_company_repository.get_current",
+                 return_value=mock_company)
+    mocker.patch("app.features.timesheets.timesheet_service.async_time_record_repository.get_by_range", return_value=[])
+    mocker.patch("app.features.timesheets.timesheet_service.async_holiday_repository.get_by_month", return_value=[])
+
+    mock_adj_scalars = MagicMock()
+    mock_adj_scalars.all.return_value = []
+    async_sess.scalars.return_value = mock_adj_scalars
+
+    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_period_time")
+    daily_res = {}
+    daily_hol = {}
+    for d in range(1, 32):
+        dt = date(2023, 10, d)
+        mock_daily = MagicMock(spec=DailyTimeResult)
+        mock_daily.punch_blocks = []
+        mock_daily.net_worked_seconds = 0
+        mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
+        daily_res[dt] = mock_daily
+        daily_hol[dt] = False
+    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period.total_net_worked_seconds = 0
+    mock_period.daily_results = daily_res
+    mock_period.daily_is_holiday = daily_hol
+    mock_calc.return_value = mock_period
+
+    buf = await timesheet_service.generate_user_timesheet_pdf(async_sess, 1, 10, 2023)
+    assert isinstance(buf, io.BytesIO)
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_timesheets_pdf_async_session(mocker):
+    from unittest.mock import AsyncMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = "Batch User"
+
+    mock_users_scalars = MagicMock()
+    mock_users_scalars.all.return_value = [mock_user]
+    async_sess.scalars.return_value = mock_users_scalars
+
+    mocker.patch.object(timesheet_service, "generate_user_timesheet_pdf", new_callable=AsyncMock,
+                        return_value=io.BytesIO(b"fake pdf content"))
+
+    batch_buf = await timesheet_service.generate_all_timesheets_pdf_zip(async_sess, month=10, year=2023,
+                                                                        employee_ids=[1])
+    assert isinstance(batch_buf, io.BytesIO)

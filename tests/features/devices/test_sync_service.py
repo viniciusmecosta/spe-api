@@ -238,3 +238,13 @@ def test_send_database_db_error_on_write(mocker, db_session_mock, sync_get_db_se
     sync_get_db_session.side_effect = None
     sync_get_db_session.return_value = ContextManagerMockErr2()
     sync_service.send_database_to_consumer()
+
+
+def test_sync_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = sync_service.repo
+    try:
+        sync_service.repo = custom_repo
+        assert sync_service.repo == custom_repo
+    finally:
+        sync_service.repo = original_repo

@@ -8,6 +8,7 @@ def test_cnpj_logic_branches():
     assert validate_cnpj_logic("11111111111111") is False
     assert validate_cnpj_logic("00000000000100") is False
     assert validate_cnpj_logic("00000000000191") is True
+    assert validate_cnpj_logic("00000000003700") is True
     assert validate_cnpj_logic("00000000000192") is False
     assert isinstance(validate_cnpj_logic("11222333000181"), bool)
 

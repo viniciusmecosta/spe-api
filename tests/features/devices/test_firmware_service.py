@@ -235,3 +235,13 @@ async def test_get_firmware_file_success_abs(mock_exists, mock_repo, firmware_se
     with patch("os.path.isabs", return_value=True):
         result = await firmware_service.get_firmware_file(async_db_mock, "v1.0.0")
     assert result == "/abs/path"
+
+
+def test_firmware_service_repo_property(firmware_service):
+    custom_repo = MagicMock()
+    original_repo = firmware_service.repo
+    try:
+        firmware_service.repo = custom_repo
+        assert firmware_service.repo == custom_repo
+    finally:
+        firmware_service.repo = original_repo

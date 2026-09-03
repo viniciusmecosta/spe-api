@@ -120,3 +120,13 @@ async def test_delete_device_credential_not_found(async_db_mock: AsyncMock, mock
     with pytest.raises(DeviceCredentialNotFoundError) as exc_info:
         await device_credential_service.delete(async_db_mock, 99, current_user_id=1)
     assert exc_info.value.status_code == 404
+
+
+def test_device_credential_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = device_credential_service.repo
+    try:
+        device_credential_service.repo = custom_repo
+        assert device_credential_service.repo == custom_repo
+    finally:
+        device_credential_service.repo = original_repo

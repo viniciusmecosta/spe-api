@@ -547,3 +547,31 @@ async def test_run_daily_backup_routine_email_attaches_today_log(
     assert "spe.zip" in filenames
     log_files = [f for f in filenames if f.startswith("log_")]
     assert len(log_files) >= 2
+
+
+async def test_routine_orchestrator_environment_dev_and_cleanup_oserror(orchestrator, mock_get_db_session,
+                                                                        db_session_mock):
+    with patch("os.path.exists", return_value=True), patch("os.remove", side_effect=OSError("Permission denied")):
+        orchestrator._cleanup_backup_files_sync("a.bak", "b.sql", "c.zip")
+
+    with patch.object(settings, "ENVIRONMENT", "dev"):
+        res1 = await orchestrator.execute_hourly_backup_telegram()
+        assert res1 is None
+        res2 = await orchestrator.send_managerial_report_telegram()
+        assert res2 is None
+
+    orchestrator.db = None
+    with patch.object(settings, "SMTP_HOST", "smtp.test.com"), \
+            patch.object(settings, "SMTP_USER", "user"), \
+            patch.object(settings, "SMTP_PASSWORD", "pass"), \
+            patch.object(orchestrator, "_fetch_manual_backup_report", new_callable=AsyncMock) as mock_fetch, \
+            patch.object(orchestrator, "_generate_backup_files_zip", new_callable=AsyncMock) as mock_gen, \
+            patch.object(orchestrator, "_build_email_attachments", new_callable=AsyncMock) as mock_att, \
+            patch("app.features.system.routine_orchestrator.email_service.send_email", return_value=True):
+        mock_fetch.return_value = (["admin@test.com"], "html", "period", datetime(2023, 10, 14).date(),
+                                   datetime(2023, 10, 15).date())
+        mock_gen.return_value = ("/tmp/b.bak", None, None)
+        mock_att.return_value = []
+        success = await orchestrator.send_manual_backup_email(db=None)
+        assert success is True
+        mock_fetch.assert_awaited_once_with(db_session_mock)
