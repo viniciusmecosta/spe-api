@@ -79,7 +79,7 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     time_records: list[TimeRecordSimple] = []
 
     def _build_extra_time_info(self) -> dict:
-        extra_mins = int(self.amount_hours * 60) if self.amount_hours else 0
+        extra_mins = int(round(self.amount_hours * 60)) if self.amount_hours else 0
         actual_time = self.time.strftime("%H:%M") if self.time else "--:--"
         expected = "--:--"
         if self.time and self.amount_hours:
@@ -93,8 +93,8 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
         }
 
     def _build_daily_excess_info(self) -> dict:
-        extra_mins = int(self.amount_hours * 60) if self.amount_hours else 0
-        approved_mins = int(self.approved_amount_hours * 60) if self.approved_amount_hours is not None else None
+        extra_mins = int(round(self.amount_hours * 60)) if self.amount_hours else 0
+        approved_mins = int(round(self.approved_amount_hours * 60)) if self.approved_amount_hours is not None else None
         return {
             "tempo_excedente_minutos": extra_mins,
             "tempo_aprovado_minutos": approved_mins,

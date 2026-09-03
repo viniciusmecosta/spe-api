@@ -119,7 +119,7 @@ class AnomalyService:
     def _evaluate_adjustment_anomaly(self, user_id: int, user_name: str, current_date: date, adj: AdjustmentRequest,
                                      expected_entry_time, viewer_role: UserRole = None) -> AnomalyResponse | None:
         if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
-            minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+            minutes = int(round(adj.amount_hours * 60)) if adj.amount_hours else 0
             time_to_show = expected_entry_time or adj.time
             desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
             return AnomalyResponse(
@@ -128,7 +128,7 @@ class AnomalyService:
             )
         if adj.adjustment_type == AdjustmentType.DAILY_EXCESS and adj.status == AdjustmentStatus.PENDING:
             if viewer_role in [UserRole.MANAGER, UserRole.MAINTAINER]:
-                minutes = int(adj.amount_hours * 60) if adj.amount_hours else 0
+                minutes = int(round(adj.amount_hours * 60)) if adj.amount_hours else 0
                 desc = f"Excedente de jornada automático pendente de aprovação ({minutes} min)."
                 return AnomalyResponse(
                     user_id=user_id, user_name=user_name, date=current_date,
@@ -141,9 +141,10 @@ class AnomalyService:
         last_entry = None
         for r in records:
             if r.record_type == RecordType.ENTRY:
-                last_entry = r.record_datetime
+                last_entry = r.record_datetime.replace(second=0, microsecond=0)
             elif r.record_type == RecordType.EXIT and last_entry:
-                total += (r.record_datetime - last_entry).total_seconds()
+                rec_dt = r.record_datetime.replace(second=0, microsecond=0)
+                total += (rec_dt - last_entry).total_seconds()
                 last_entry = None
         return total
 
