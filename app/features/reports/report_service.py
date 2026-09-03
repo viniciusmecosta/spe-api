@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends
 from sqlalchemy import exists, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -125,8 +124,7 @@ class ReportService:
             return ""
         return "Falta"
 
-    def _determine_excess_info(self, accounted_res, daily_excess_adj, schedule: Any | None = None,
-                               is_manager: bool = True) -> tuple[bool, str | None, int | None]:
+    def _determine_excess_info(self, accounted_res, daily_excess_adj, schedule: Any | None = None) -> tuple[bool, str | None, int | None]:
         is_enabled = bool(schedule and getattr(schedule, "is_daily_excess_enabled", False))
         if not is_enabled:
             return False, None, None
@@ -224,13 +222,10 @@ class ReportService:
             reviewed_at=r_at if isinstance(r_at, datetime) else None,
         )
 
-    def _build_day_adjustments_list(self, day_adjustments: list | None, current: date, is_manager: bool = True) -> list[
-        ReportAdjustmentItem]:
+    def _build_day_adjustments_list(self, day_adjustments: list | None, current: date) -> list[ReportAdjustmentItem]:
         filtered = []
         for adj in (day_adjustments or []):
             item = self._to_report_adjustment_item(adj, current)
-            if not is_manager and item.adjustment_type == AdjustmentType.DAILY_EXCESS and item.status == AdjustmentStatus.PENDING:
-                continue
             filtered.append(item)
         return filtered
 
@@ -271,11 +266,10 @@ class ReportService:
             unapproved_extra_adjs=day_unapproved_extras,
         )
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
-                                                                                 schedule, is_manager)
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 
-        day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current, is_manager)
+        day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current)
         punches = self._build_history_punches(day_records, is_manager)
 
         target_day = DayOfWeek(current.weekday())
@@ -391,7 +385,6 @@ class ReportService:
             schedule: Any | None = None,
             daily_excess_adj: AdjustmentRequest | None = None,
             day_adjustments: list[AdjustmentRequest] | None = None,
-            is_manager: bool = True,
     ) -> DailyReportItem:
         is_future = current > today_date
         is_today = current == today_date
@@ -423,8 +416,7 @@ class ReportService:
             waiver_adj=adjustment_day,
             unapproved_extra_adjs=day_unapproved_extras,
         )
-        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
-                                                                                 schedule, is_manager)
+        has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 
         punches = list(daily_res.punches)
@@ -464,7 +456,7 @@ class ReportService:
             daily_excess_id=daily_excess_id,
             excess=excess_info,
             daily_excess=excess_info,
-            adjustments=self._build_day_adjustments_list(day_adjustments, current, is_manager),
+            adjustments=self._build_day_adjustments_list(day_adjustments, current),
         )
 
     async def _fetch_history_data(self, session, user_id, start_dt, end_dt, start_date, end_date, month, year, ignore_excessive):
@@ -642,7 +634,7 @@ class ReportService:
 
         return all_records, all_adjustments, holidays
 
-    def _build_advanced_daily_details(self, start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments, is_manager: bool = True):
+    def _build_advanced_daily_details(self, start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments):
         daily_details = []
         days_worked_count = 0
         absences_count = 0
@@ -672,7 +664,6 @@ class ReportService:
                 schedule=day_schedule,
                 daily_excess_adj=day_excess,
                 day_adjustments=day_adjs,
-                is_manager=is_manager,
             )
             daily_details.append(item)
 
@@ -711,7 +702,6 @@ class ReportService:
             prefetched_records, prefetched_adjustments, prefetched_holidays
         )
 
-        is_manager = current_user is not None and current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
         is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
 
         period_result = time_calc_mod.time_calculation_service.calculate_period_time(
@@ -729,7 +719,7 @@ class ReportService:
         total_missing_hours = period_result.total_missing_seconds / 3600.0
 
         daily_details, days_worked_count, absences_count = self._build_advanced_daily_details(
-            start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments, is_manager=is_manager
+            start_date, end_date, today_date, all_records, holidays, period_result, has_schedule, is_maintainer, user, all_adjustments
         )
 
         summary = UserPayrollSummary(

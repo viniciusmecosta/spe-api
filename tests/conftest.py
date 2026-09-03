@@ -19,7 +19,6 @@ import app.features.adjustments.adjustment_models
 import app.features.time_records.time_record_models
 import app.features.system.system_models
 from app.features.companies.company_models import Company
-from app.features.printers.printer_models import Printer
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 

@@ -110,18 +110,15 @@ async def list_records_for_admin(
 async def create_time_record_admin(
         record_in: TimeRecordCreateAdmin,
         request: Request,
-        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    record = await service.create_admin_record(
+    return await service.create_admin_record(
         obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
-    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id, record.record_datetime.date())
-    return record
 
 
 @router.put(
@@ -132,18 +129,15 @@ async def update_time_record_admin(
         record_id: int,
         record_in: TimeRecordUpdate,
         request: Request,
-        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
     ip_address = get_client_ip(request)
     device_name = get_client_device_name(ip_address, request)
     platform = request.headers.get("X-Platform", "desktop").lower()
-    record = await service.update_admin_record(
+    return await service.update_admin_record(
         record_id=record_id, obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
     )
-    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id, record.record_datetime.date())
-    return record
 
 
 @router.delete(
@@ -153,7 +147,6 @@ async def update_time_record_admin(
 async def delete_time_record_admin(
         record_id: int,
         request_body: TimeRecordDeleteAdmin,
-        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:

@@ -11,13 +11,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.database.session import get_db_session
-from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
 from app.shared import deps
 from app.shared.enums import (
-    AdjustmentStatus,
-    AdjustmentType,
     DayOfWeek,
     RecordType,
 )

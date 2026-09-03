@@ -6,7 +6,6 @@ from fastapi import BackgroundTasks, Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.features.payroll.payroll_repository import (
     async_payroll_repository,

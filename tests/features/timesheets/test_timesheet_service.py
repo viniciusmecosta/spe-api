@@ -403,6 +403,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
 
     mocker.patch('app.features.timesheets.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    assert buffer is not None
     assert len(captured_story) > 10, 'A story deve conter múltiplos elementos (Parágrafos e Tabelas)'
     paragraphs = [item for item in captured_story if isinstance(item, Paragraph)]
     tables = [item for item in captured_story if isinstance(item, Table)]

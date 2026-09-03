@@ -5,9 +5,7 @@ from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
-    HTTPException,
     Query,
-    status,
 )
 
 from app.features.system.audit_service import AuditService

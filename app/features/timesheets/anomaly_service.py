@@ -5,7 +5,6 @@ from typing import Annotated, Any
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_repository import (
@@ -288,11 +287,12 @@ class AnomalyService:
         )
 
         records_map, adj_map = self._build_data_maps(records_flat, extra_time_adjustments, target_user_ids)
-        return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours, viewer_role)
+        return self._process_all_anomalies(target_user_ids, users, records_map, adj_map, ignore_excessive_hours, viewer_role, ignore_extra_time)
 
     async def get_anomalies_by_month(self, db: Any | None = None, month: int = 0, year: int = 0,
                                      user_id: int | None = None,
-                               ignore_excessive_hours: bool = False, viewer_role: UserRole = None) -> list[AnomalyResponse]:
+                               ignore_excessive_hours: bool = False, viewer_role: UserRole = None,
+                               ignore_extra_time: bool = False) -> list[AnomalyResponse]:
         session = db if db is not None else self.db
         assert session is not None
         today = date.today()
@@ -309,7 +309,7 @@ class AnomalyService:
         if start_date > end_date:
             return []
 
-        return await self.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours, viewer_role)
+        return await self.get_anomalies(session, start_date, end_date, user_id, ignore_excessive_hours, viewer_role, ignore_extra_time)
 
 
 anomaly_service = AnomalyService()

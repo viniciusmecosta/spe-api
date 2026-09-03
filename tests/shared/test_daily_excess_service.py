@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -268,6 +268,7 @@ async def test_evaluate_user_day_async_overwrites_reviewed_adjustment_when_overw
     )
 
     db_mock = AsyncMock()
+    db_mock.add = MagicMock()
     db_mock.sync_session = MagicMock()
     mock_scalars_recs = MagicMock()
     mock_scalars_recs.all.return_value = [r1, r2]
@@ -305,4 +306,57 @@ async def test_reprocess_user_ranges_bg(excess_service):
         with patch.object(excess_service, "_evaluate_user_day_async") as mock_eval:
             await excess_service.reprocess_user_ranges_bg([10, 20], date(2026, 8, 1), date(2026, 8, 2), overwrite_reviewed=True)
             assert mock_eval.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_evaluate_user_day_async_legacy_extra_time_ignored(excess_service):
+    db_mock = AsyncMock()
+    db_mock.sync_session = MagicMock()
+    db_mock.scalar.side_effect = [None, MagicMock()]
+    await excess_service.evaluate_user_day_async(db_mock, 10, date(2026, 8, 1))
+    db_mock.scalars.assert_not_called()
+
+
+def test_evaluate_user_day_sync_legacy_extra_time_ignored(excess_service):
+    sync_db_mock = MagicMock()
+    mock_query = sync_db_mock.query.return_value
+    mock_filter = mock_query.filter.return_value
+    mock_filter.first.side_effect = [None, MagicMock()]
+    excess_service.evaluate_user_day_sync(sync_db_mock, 10, date(2026, 8, 1))
+    assert mock_filter.first.call_count == 2
+
+
+def test_evaluate_user_day_sync_reviewed_preserved(excess_service):
+    tz = ZoneInfo("America/Sao_Paulo")
+    dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
+    approved_adj = AdjustmentRequest(
+        id=99,
+        user_id=10,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        target_date=date(2026, 8, 1),
+        status=AdjustmentStatus.APPROVED,
+    )
+    sync_db_mock = MagicMock()
+    mock_filter = sync_db_mock.query.return_value.filter.return_value
+    mock_filter.first.side_effect = [None, None, None, None]
+    mock_order = mock_filter.order_by.return_value
+    mock_order.all.return_value = [r1]
+    mock_filter.all.return_value = [approved_adj]
+
+    excess_service.evaluate_user_day_sync(sync_db_mock, 10, date(2026, 8, 1), overwrite_reviewed=False)
+    assert r1.is_verified is True
+    sync_db_mock.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reprocess_user_ranges_bg_exception_handling(excess_service):
+    with patch("app.shared.daily_excess_service.get_async_session_context", side_effect=RuntimeError("DB Boom")):
+        await excess_service.reprocess_user_ranges_bg([10], date(2026, 8, 1), date(2026, 8, 1))
+
+
+@pytest.mark.asyncio
+async def test_evaluate_user_range_bg_exception_handling(excess_service):
+    with patch("app.shared.daily_excess_service.get_async_session_context", side_effect=RuntimeError("DB Boom")):
+        await excess_service.evaluate_user_range_bg(10, date(2026, 8, 1), date(2026, 8, 1))
 

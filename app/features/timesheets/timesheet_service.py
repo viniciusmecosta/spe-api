@@ -22,7 +22,6 @@ from reportlab.platypus import (
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -164,7 +163,9 @@ class TimesheetService:
                 unapproved_extra_adjs=day_unapproved_extras,
             )
             accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-            unapproved_time_str = self._format_duration(daily_res.unapproved_extra_seconds)
+            unapproved_excess = max(0.0, accounted_res.total_excess_seconds - accounted_res.approved_seconds)
+            unapproved_total = max(daily_res.unapproved_extra_seconds, unapproved_excess)
+            unapproved_time_str = self._format_duration(unapproved_total)
 
             data_table.append([
                 Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),

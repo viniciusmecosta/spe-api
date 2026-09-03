@@ -1,14 +1,13 @@
-from datetime import date, datetime, time, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.features.users.user_models import UserWorkScheduleConfig
 from app.shared.daily_excess_service import DailyExcessService
-from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, RecordType, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, RecordType
 from app.shared.time_calculation_service import TimeCalculationService
 
 
@@ -202,19 +201,13 @@ def test_period_time_unapproved_excess_deducted_from_balance(time_service, sched
     assert period_res.total_accounted_seconds == 28800.0  # 8h contabilizadas
 
 
-def test_report_service_hides_pending_daily_excess_from_employee():
-    """Cenário: report_service._build_day_adjustments_list oculta ajustes DAILY_EXCESS
-    com status PENDING quando is_manager=False."""
+def test_report_service_includes_daily_excess_in_adjustments_list():
     rs = ReportService()
     d = date(2026, 9, 1)
     adj_pending = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.DAILY_EXCESS, status=AdjustmentStatus.PENDING, target_date=d)
     adj_approved = AdjustmentRequest(id=2, adjustment_type=AdjustmentType.DAILY_EXCESS, status=AdjustmentStatus.APPROVED, target_date=d)
 
-    # Visão do funcionário
-    employee_adjs = rs._build_day_adjustments_list([adj_pending, adj_approved], d, is_manager=False)
-    assert len(employee_adjs) == 1
-    assert employee_adjs[0].id == 2  # Apenas o aprovado é visível
-
-    # Visão do gestor
-    manager_adjs = rs._build_day_adjustments_list([adj_pending, adj_approved], d, is_manager=True)
-    assert len(manager_adjs) == 2
+    day_adjs = rs._build_day_adjustments_list([adj_pending, adj_approved], d)
+    assert len(day_adjs) == 2
+    assert day_adjs[0].id == 1
+    assert day_adjs[1].id == 2

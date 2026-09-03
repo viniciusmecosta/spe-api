@@ -738,7 +738,7 @@ def test_determine_excess_info_employee_sees_pending(service):
     acc_res.total_excess_seconds = 3600
     sch_enabled = MagicMock(is_daily_excess_enabled=True)
 
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled, is_manager=False)
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled)
     assert has_excess is True
     assert status == "PENDING"
     assert adj_id is None
@@ -823,4 +823,54 @@ def test_build_daily_excess_info_rejected(service):
     assert res.approved_minutes == 0
     assert res.unapproved_minutes == 60
     assert res.blocked_minutes == 60
+
+
+@pytest.mark.asyncio
+async def test_fetch_report_data_no_prefetched_async(service):
+    db_mock = AsyncMock()
+    db_mock.sync_session = MagicMock()
+    mock_res = MagicMock()
+    mock_res.all.return_value = []
+    db_mock.scalars.return_value = mock_res
+    with patch("app.features.reports.report_service.async_time_record_repository.get_by_range", new_callable=AsyncMock, return_value=[]), \
+         patch("app.features.reports.report_service.async_holiday_repository.get_by_month", new_callable=AsyncMock, return_value=[]):
+        recs, adjs, holidays = await service._fetch_report_data(
+            db_mock, 1, 8, 2026, datetime(2026, 8, 1), datetime(2026, 8, 31, 23, 59, 59), None, None, None
+        )
+        assert recs == []
+        assert adjs == []
+        assert holidays == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_report_data_no_prefetched_sync(service):
+    sync_db = MagicMock()
+    del sync_db.sync_session
+    sync_db.query.return_value.filter.return_value.all.return_value = []
+    with patch("app.features.reports.report_service.time_record_repository.get_by_range", return_value=[]), \
+         patch("app.features.reports.report_service.holiday_repository.get_by_month", return_value=[]):
+        recs, adjs, holidays = await service._fetch_report_data(
+            sync_db, 1, 8, 2026, datetime(2026, 8, 1), datetime(2026, 8, 31, 23, 59, 59), None, None, None
+        )
+        assert recs == []
+        assert adjs == []
+        assert holidays == []
+
+
+@pytest.mark.asyncio
+async def test_validate_manager_export_permission_sync(service):
+    sync_db = MagicMock()
+    del sync_db.sync_session
+    sync_db.query.return_value.scalar.return_value = False
+    await service._validate_manager_export_permission(sync_db, 8, 2026)
+
+
+@pytest.mark.asyncio
+async def test_validate_employee_export_permission_sync(service):
+    sync_db = MagicMock()
+    del sync_db.sync_session
+    sync_db.query.return_value.scalar.return_value = True
+    user = User(id=1, role=UserRole.EMPLOYEE, can_export_report=True)
+    await service._validate_employee_export_permission(sync_db, user, 7, 2026, datetime(2026, 8, 1))
+
 

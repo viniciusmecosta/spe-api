@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 
-from pydantic import BaseModel, ConfigDict, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.features.time_records.time_record_schemas import TimeRecordSimple
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
@@ -39,7 +39,7 @@ class AdjustmentWaiverCreate(BaseModel):
 
 class AdjustmentApproveRequest(BaseModel):
     comment: str | None = None
-    approved_amount_hours: float | None = None
+    approved_amount_hours: float | None = Field(default=None, ge=0)
 
 
 class BulkReprocessDailyExcessRequest(BaseModel):

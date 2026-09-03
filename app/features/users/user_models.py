@@ -12,7 +12,6 @@ from sqlalchemy import (
     Integer,
     String,
     Time,
-    func,
 )
 from sqlalchemy.orm import relationship
 

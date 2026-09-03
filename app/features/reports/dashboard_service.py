@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_repository import (

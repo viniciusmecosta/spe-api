@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 import pytest
 from app.features.adjustments.adjustment_exceptions import (
@@ -117,7 +117,7 @@ async def test_reprocess_historical_daily_excess_scenarios(async_db_mock, mocker
         end_date=date(2026, 8, 1),
         user_ids=[1],
     )
-    with pytest.raises(Exception) as exc_date:
+    with pytest.raises(HTTPException) as exc_date:
         await adjustment_service.reprocess_historical_daily_excess(
             async_db_mock, invalid_req, bg_mock, maint
         )
@@ -678,7 +678,6 @@ async def test_create_adjustment_extra_time_blocked(async_db_mock, mocker):
         time=time(18, 0),
         reason_text="Extra manual"
     )
-    from fastapi import HTTPException
     with pytest.raises(HTTPException) as exc:
         await adjustment_service.create_adjustment_request(async_db_mock, user_id=1, obj_in=obj_in)
     assert exc.value.status_code == 400
@@ -687,7 +686,6 @@ async def test_create_adjustment_extra_time_blocked(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
-    manager = User(id=99, role=UserRole.MANAGER)
     request = AdjustmentRequest(
         id=10,
         user_id=1,
@@ -705,7 +703,7 @@ async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock, return_value=[request])
 
-    res = await adjustment_service.approve_adjustment(
+    await adjustment_service.approve_adjustment(
         async_db_mock,
         request_id=10,
         manager_id=99,
