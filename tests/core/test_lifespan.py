@@ -11,6 +11,7 @@ async def test_lifespan_default():
         job_ids = [job.id for job in scheduler.get_jobs()]
         assert "daily_excess_check" not in job_ids
         assert "tolerance_entries_check" not in job_ids
+        assert "hourly_ntp_sync" in job_ids
 
 
 @pytest.mark.asyncio
@@ -22,4 +23,5 @@ async def test_lifespan_exportador(monkeypatch):
         assert "daily_excess_check" not in job_ids
         assert "tolerance_entries_check" not in job_ids
         assert "hourly_sync_db" in job_ids
+        assert "hourly_ntp_sync" in job_ids
 
