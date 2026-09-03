@@ -5,7 +5,6 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
@@ -57,6 +56,7 @@ from app.shared.enums import (
     RecordType,
     UserRole,
 )
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import mask_cnpj, mask_cpf
@@ -98,6 +98,63 @@ class TimeRecordService:
             for req in requests:
                 db.delete(req)
             db.flush()
+
+    async def _delete_daily_excess_adjustments(self, db: Any, user_id: int, target_date: datetime.date):
+        stmt = select(AdjustmentRequest).where(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date == target_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+            AdjustmentRequest.deleted_at.is_(None),
+        )
+        if hasattr(db, "sync_session"):
+            res = await db.scalars(stmt)
+            for req in res.all():
+                await db.delete(req)
+        else:
+            requests = db.query(AdjustmentRequest).filter(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date == target_date,
+                AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                AdjustmentRequest.deleted_at.is_(None),
+            ).all()
+            for req in requests:
+                db.delete(req)
+
+    async def _unverify_daily_time_records(self, db: Any, user_id: int, target_date: datetime.date):
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_of_day = datetime.combine(target_date, time.min, tzinfo=tz)
+        end_of_day = datetime.combine(target_date, time.max, tzinfo=tz)
+        if hasattr(db, "sync_session"):
+            rec_stmt = select(TimeRecord).where(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+                TimeRecord.deleted_at.is_(None),
+            )
+            recs = (await db.scalars(rec_stmt)).all()
+            for r in recs:
+                r.is_verified = False
+            await db.flush()
+        else:
+            recs = db.query(TimeRecord).filter(
+                TimeRecord.user_id == user_id,
+                TimeRecord.record_datetime >= start_of_day,
+                TimeRecord.record_datetime <= end_of_day,
+                TimeRecord.deleted_at.is_(None),
+            ).all()
+            for r in recs:
+                r.is_verified = False
+            db.flush()
+
+    async def _invalidate_daily_excess_and_unverify(self, db: Any, user_id: int, target_date: datetime.date):
+        await self._delete_daily_excess_adjustments(db, user_id, target_date)
+        await self._unverify_daily_time_records(db, user_id, target_date)
+
+    async def _reprocess_daily_excess(self, db: Any, user_id: int, target_date: datetime.date):
+        if hasattr(db, "sync_session"):
+            await daily_excess_service.evaluate_user_day_async(db, user_id, target_date)
+        else:
+            daily_excess_service.evaluate_user_day_sync(db, user_id, target_date)
 
     async def _is_first_entry_affected(self, db: Any, user_id: int, target_date: datetime.date,
                                  record_id: int | None = None, new_datetime: datetime | None = None) -> bool:
@@ -153,40 +210,32 @@ class TimeRecordService:
             return
         raise ManualPunchUnauthorizedError()
 
-    async def register_entry(self, db: Any | None = None, user_id: int = 0,
-                             request: Request | None = None) -> TimeRecord:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert request is not None
+    async def _validate_period_open_helper(self, session: Any, date: datetime.date):
+        if hasattr(session, "sync_session"):
+            await payroll_service.async_validate_period_open(session, date)
+        else:
+            payroll_service.validate_period_open(session, date)
+
+    async def _register_manual_punch(self, session: Any, user_id: int, request: Request, record_type: RecordType) -> TimeRecord:
         await self._validate_manual_punch_permission(session, user_id, request)
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, current_time.date())
-        else:
-            payroll_service.validate_period_open(session, current_time.date())
+
+        await self._validate_period_open_helper(session, current_time.date())
 
         if hasattr(session, "sync_session"):
             record = await self.repo.create(
-                session,
-                user_id=user_id,
-                record_type=RecordType.ENTRY,
-                record_datetime=current_time,
-                ip_address=ip_address,
-                device_name=device_name,
-                platform=platform,
+                session, user_id=user_id, record_type=record_type,
+                record_datetime=current_time, ip_address=ip_address,
+                device_name=device_name, platform=platform,
             )
         else:
             record = time_record_repository.create(
-                session,
-                user_id=user_id,
-                record_type=RecordType.ENTRY,
-                record_datetime=current_time,
-                ip_address=ip_address,
-                device_name=device_name,
-                platform=platform,
+                session, user_id=user_id, record_type=record_type,
+                record_datetime=current_time, ip_address=ip_address,
+                device_name=device_name, platform=platform,
             )
 
         if not used_ntp:
@@ -205,59 +254,20 @@ class TimeRecordService:
                 audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
                                          new_data={"justification": record.edit_justification})
         return record
+
+    async def register_entry(self, db: Any | None = None, user_id: int = 0,
+                             request: Request | None = None) -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert request is not None
+        return await self._register_manual_punch(session, user_id, request, RecordType.ENTRY)
 
     async def register_exit(self, db: Any | None = None, user_id: int = 0,
                             request: Request | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert request is not None
-        await self._validate_manual_punch_permission(session, user_id, request)
-        current_time, used_ntp = trusted_time_service.get_trusted_time()
-        ip_address = get_client_ip(request)
-        device_name = get_client_device_name(ip_address, request)
-        platform = request.headers.get("X-Platform", "desktop").lower()
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, current_time.date())
-        else:
-            payroll_service.validate_period_open(session, current_time.date())
-
-        if hasattr(session, "sync_session"):
-            record = await self.repo.create(
-                session,
-                user_id=user_id,
-                record_type=RecordType.EXIT,
-                record_datetime=current_time,
-                ip_address=ip_address,
-                device_name=device_name,
-                platform=platform,
-            )
-        else:
-            record = time_record_repository.create(
-                session,
-                user_id=user_id,
-                record_type=RecordType.EXIT,
-                record_datetime=current_time,
-                ip_address=ip_address,
-                device_name=device_name,
-                platform=platform,
-            )
-
-        if not used_ntp:
-            request.state.ntp_error = True
-            record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
-            session.add(record)
-            if hasattr(session, "sync_session"):
-                await session.commit()
-                await session.refresh(record)
-                await audit_service.async_log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD",
-                                                     entity_id=record.id,
-                                                     new_data={"justification": record.edit_justification})
-            else:
-                session.commit()
-                session.refresh(record)
-                audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
-                                         new_data={"justification": record.edit_justification})
-        return record
+        return await self._register_manual_punch(session, user_id, request, RecordType.EXIT)
 
     async def _process_toggle_invalidations(self, db: Any, record: TimeRecord, new_type: RecordType):
         previous_type = record.record_type
@@ -271,6 +281,8 @@ class TimeRecordService:
             if await self._is_first_entry_affected(db, record.user_id, target_date,
                                                    new_datetime=record.record_datetime):
                 await self._invalidate_extra_time_requests(db, record.user_id, target_date)
+
+        await self._invalidate_daily_excess_and_unverify(db, record.user_id, target_date)
 
     def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
                                is_manager: bool) -> TimeRecord:
@@ -307,10 +319,7 @@ class TimeRecordService:
         if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
 
         new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
         await self._process_toggle_invalidations(session, record, new_type)
@@ -320,21 +329,40 @@ class TimeRecordService:
         new_record = self._create_toggled_record(record, new_type, current_user, is_manager)
 
         session.add(new_record)
+        await self._commit_and_audit_toggle_record(session, current_user.id, old_data, new_record, record)
+        return new_record
+
+    async def _commit_and_audit_toggle_record(self, session: Any, user_id: int, old_data: dict, new_record: TimeRecord, record: TimeRecord):
         if hasattr(session, "sync_session"):
             await session.flush()
             session.add(record)
+            await self._reprocess_daily_excess(session, record.user_id, record.record_datetime.date())
             await session.commit()
             await session.refresh(new_record)
-            await audit_service.async_log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
+            await audit_service.async_log_change(session, user_id, "TOGGLE_RECORD", old_model=old_data,
                                                  new_model=new_record)
         else:
             session.flush()
             session.add(record)
+            await self._reprocess_daily_excess(session, record.user_id, record.record_datetime.date())
             session.commit()
             session.refresh(new_record)
-            audit_service.log_change(session, current_user.id, "TOGGLE_RECORD", old_model=old_data,
+            audit_service.log_change(session, user_id, "TOGGLE_RECORD", old_model=old_data,
                                      new_model=new_record)
-        return new_record
+
+    async def _commit_and_audit_admin_create(self, session: Any, manager_id: int, record: TimeRecord, user_id: int, target_date: datetime.date):
+        if hasattr(session, "sync_session"):
+            await session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            await session.commit()
+            await session.refresh(record)
+            await audit_service.async_log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
+        else:
+            session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            session.commit()
+            session.refresh(record)
+            audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
 
     async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
                                   manager_id: int = 0, ip_address: str = "",
@@ -342,15 +370,14 @@ class TimeRecordService:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+        await self._validate_period_open_helper(session, obj_in.record_datetime.date())
 
         if obj_in.record_type == RecordType.ENTRY:
             if await self._is_first_entry_affected(session, obj_in.user_id, obj_in.record_datetime.date(),
                                              new_datetime=obj_in.record_datetime):
                 await self._invalidate_extra_time_requests(session, obj_in.user_id, obj_in.record_datetime.date())
+
+        await self._invalidate_daily_excess_and_unverify(session, obj_in.user_id, obj_in.record_datetime.date())
 
         if hasattr(session, "sync_session"):
             record = await self.repo.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
@@ -364,14 +391,7 @@ class TimeRecordService:
         record.edit_justification = obj_in.edit_justification
         record.is_verified = True
         session.add(record)
-        if hasattr(session, "sync_session"):
-            await session.commit()
-            await session.refresh(record)
-            await audit_service.async_log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
-        else:
-            session.commit()
-            session.refresh(record)
-            audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
+        await self._commit_and_audit_admin_create(session, manager_id, record, obj_in.user_id, obj_in.record_datetime.date())
         return record
 
     async def _handle_admin_update_invalidations(self, db: Any, record: TimeRecord, obj_in: TimeRecordUpdate,
@@ -386,10 +406,14 @@ class TimeRecordService:
                                                    new_datetime=new_dt):
                 await self._invalidate_extra_time_requests(db, record.user_id, new_date)
 
+        await self._invalidate_daily_excess_and_unverify(db, record.user_id, old_date)
+        if new_date != old_date:
+            await self._invalidate_daily_excess_and_unverify(db, record.user_id, new_date)
+
     async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
-                            ip_address: str | None = None, device_name: str | None = None,
-                            platform: str | None = None) -> TimeRecord:
+                             ip_address: str | None = None, device_name: str | None = None,
+                             platform: str | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -400,14 +424,9 @@ class TimeRecordService:
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-            if obj_in.record_datetime:
-                await payroll_service.async_validate_period_open(session, obj_in.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
-            if obj_in.record_datetime:
-                payroll_service.validate_period_open(session, obj_in.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
+        if obj_in.record_datetime:
+            await self._validate_period_open_helper(session, obj_in.record_datetime.date())
 
         new_record_type = obj_in.record_type if obj_in.record_type else record.record_type
         new_record_datetime = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
@@ -427,17 +446,47 @@ class TimeRecordService:
                                 created_at=get_local_time(), is_verified=True)
         session.add(new_record)
         session.add(record)
+        await self._commit_and_audit_admin_update(session, manager_id, old_data, new_record, record.user_id, old_date, new_date)
+        return new_record
+
+    async def _commit_and_audit_admin_update(self, session: Any, manager_id: int, old_data: dict,
+                                            new_record: TimeRecord, user_id: int, old_date: datetime.date,
+                                            new_date: datetime.date):
         if hasattr(session, "sync_session"):
+            await session.flush()
+            await self._reprocess_daily_excess(session, user_id, old_date)
+            if new_date != old_date:
+                await self._reprocess_daily_excess(session, user_id, new_date)
             await session.commit()
             await session.refresh(new_record)
             await audit_service.async_log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
                                                  new_model=new_record)
         else:
+            session.flush()
+            await self._reprocess_daily_excess(session, user_id, old_date)
+            if new_date != old_date:
+                await self._reprocess_daily_excess(session, user_id, new_date)
             session.commit()
             session.refresh(new_record)
             audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
                                      new_model=new_record)
-        return new_record
+
+    async def _commit_and_audit_admin_delete(self, session: Any, manager_id: int, old_data: dict,
+                                            user_id: int, target_date: datetime.date, justification: str):
+        if hasattr(session, "sync_session"):
+            await self.repo.delete(session, old_data.get("id"), manager_id)
+            await session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            await session.commit()
+            await audit_service.async_log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+                                                 new_data={"justification": justification})
+        else:
+            time_record_repository.delete(session, old_data.get("id"), manager_id)
+            session.flush()
+            await self._reprocess_daily_excess(session, user_id, target_date)
+            session.commit()
+            audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
+                                     new_data={"justification": justification})
 
     async def delete_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0):
@@ -451,25 +500,18 @@ class TimeRecordService:
         if not record:
             raise TimeRecordNotFoundError(record_id=record_id)
 
-        if hasattr(session, "sync_session"):
-            await payroll_service.async_validate_period_open(session, record.record_datetime.date())
-        else:
-            payroll_service.validate_period_open(session, record.record_datetime.date())
+        await self._validate_period_open_helper(session, record.record_datetime.date())
 
         if record.record_type == RecordType.ENTRY:
             if await self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(),
                                                    record_id=record.id):
                 await self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
+
+        target_date = record.record_datetime.date()
+        user_id = record.user_id
         justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
         old_data = serialize_model(record)
-        if hasattr(session, "sync_session"):
-            await self.repo.delete(session, record_id, manager_id)
-            await audit_service.async_log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
-                                                 new_data={"justification": justification_val})
-        else:
-            time_record_repository.delete(session, record_id, manager_id)
-            audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
-                                     new_data={"justification": justification_val})
+        await self._commit_and_audit_admin_delete(session, manager_id, old_data, user_id, target_date, justification_val)
 
     async def _determine_punch_type(self, db: Any, user_id: int, timestamp: datetime) -> RecordType:
         if hasattr(db, "sync_session"):

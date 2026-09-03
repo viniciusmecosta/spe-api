@@ -226,9 +226,11 @@ async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_q
 
     report1 = MagicMock()
     report1.summary.total_worked_minutes = 150
+    report1.summary.total_accounted_minutes = 150
 
     report2 = MagicMock()
-    report2.summary.total_worked_minutes = 45
+    report2.summary.total_worked_minutes = 30
+    report2.summary.total_accounted_minutes = 30
 
     mock_get_report.side_effect = [report1, report2]
 
@@ -333,3 +335,73 @@ async def test_get_manager_dashboard_empty_records(mock_datetime, mock_team_hour
 
     assert response.next_punch_type == "ENTRY"
     assert len(response.today_punches) == 0
+
+
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.async_adjustment_repository.count_pending", new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.async_time_record_repository.count_unique_users_in_range",
+       new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.async_time_record_repository.get_by_range", new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.async_time_record_repository.count_records_in_range",
+       new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies", new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.anomaly_service.get_anomalies_by_month", new_callable=AsyncMock)
+@patch("app.features.reports.dashboard_service.trusted_time_service.get_trusted_time")
+async def test_dashboard_async_session_branches(
+        mock_trusted_time,
+        mock_anom_month,
+        mock_anom,
+        mock_count_records,
+        mock_get_by_range,
+        mock_count_unique,
+        mock_count_pending,
+        mock_get_adv_report,
+):
+    from app.shared.enums import UserRole
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    fixed_now = datetime(2026, 7, 15, 10, 0, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    mock_trusted_time.return_value = (fixed_now, False)
+
+    async_sess.scalar.return_value = 10
+    mock_count_pending.return_value = 2
+    mock_count_unique.return_value = 8
+
+    res_metrics = await dashboard_service.get_dashboard_metrics(async_sess)
+    assert res_metrics.total_active_employees == 10
+    assert res_metrics.pending_adjustments == 2
+    assert res_metrics.employees_present_today == 8
+
+    mock_user = User(id=1, name="Employee User", role=UserRole.EMPLOYEE, data_nascimento=date(1990, 7, 10))
+    rec = MagicMock()
+    rec.id = 1
+    rec.short_id = "r1"
+    rec.record_datetime = fixed_now
+    rec.record_type = RecordType.ENTRY
+    mock_get_by_range.return_value = [rec]
+    mock_anom.return_value = []
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [mock_user]
+    async_sess.scalars.return_value = mock_scalars
+
+    res_my = await dashboard_service.get_my_dashboard(async_sess, mock_user)
+    assert res_my.full_name == "Employee User"
+    assert len(res_my.today_punches) == 1
+    assert len(res_my.aniversariantes_do_mes) == 1
+
+    mock_rep = MagicMock()
+    mock_rep.summary.total_accounted_minutes = 120
+    mock_get_adv_report.return_value = mock_rep
+
+    res_team = await dashboard_service.get_team_worked_hours(async_sess, 7, 2026, mock_user)
+    assert res_team.month == 7
+    assert len(res_team.employees) == 1
+
+    mock_count_records.return_value = 20
+    mock_anom_month.return_value = []
+    res_mgr = await dashboard_service.get_manager_dashboard(async_sess, mock_user)
+    assert res_mgr.full_name == "Employee User"
+    assert res_mgr.today_total_punches == 20

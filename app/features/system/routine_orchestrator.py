@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -257,6 +257,10 @@ class RoutineOrchestrator:
 
         attachments.insert(0, (zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME))
 
+        today_log_path = get_log_path(today)
+        if await asyncio.to_thread(os.path.exists, today_log_path):
+            attachments.append((today_log_path, f"log_{today.strftime('%d%m%Y')}.log"))
+
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
                                               period_text)
@@ -310,6 +314,17 @@ class RoutineOrchestrator:
         except SQLAlchemyError as e:
             logger.exception(f"Erro de banco ao limpar routine_logs: {type(e).__name__} - {e}", exc_info=False)
 
+    async def _send_system_logs_telegram(self, yesterday: date, today: date):
+        for log_date in [yesterday, today]:
+            log_path = get_log_path(log_date)
+            if await asyncio.to_thread(os.path.exists, log_path):
+                await asyncio.to_thread(
+                    telegram_service.send_document,
+                    log_path,
+                    f"Log do sistema - {log_date.strftime(DATE_FORMAT)}",
+                    filename=f"log_{log_date.strftime('%d%m%Y')}.log",
+                )
+
     async def execute_manual_backup_telegram(self):
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
@@ -329,6 +344,10 @@ class RoutineOrchestrator:
                 caption,
                 filename=BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME
             )
+
+            today = now_local.date()
+            yesterday = today - timedelta(days=1)
+            await self._send_system_logs_telegram(yesterday, today)
 
             try:
                 async with get_async_session_context() as db_write:
@@ -387,58 +406,50 @@ class RoutineOrchestrator:
             logger.exception(f"Erro de banco ao salvar rotina de relatorio manual: {type(e).__name__} - {e}",
                              exc_info=False)
 
+    async def _fetch_manual_backup_report(self, session: AsyncSession) -> tuple[list[str], str, str, date, date]:
+        stmt = select(User).where(User.role == UserRole.MAINTAINER, User.is_active == True, User.email.isnot(None))
+        res = await session.scalars(stmt)
+        maintainers = res.all()
+        to_emails = [m.email for m in maintainers if m.email]
+        if not to_emails:
+            raise NoMaintainersWithEmailError()
+
+        tz = ZoneInfo(settings.TIMEZONE)
+        now_local = datetime.now(tz).replace(tzinfo=None)
+        today = now_local.date()
+        yesterday = today - timedelta(days=1)
+
+        full_report_html = await daily_report_service.generate_daily_report_html(session, yesterday)
+        period_text = f"Abaixo está o relatório do dia {yesterday.strftime(DATE_FORMAT)}:"
+        return to_emails, full_report_html, period_text, yesterday, today
+
+    async def _build_email_attachments(self, backup_file: str, is_zip: bool, yesterday: date, today: date) -> list[tuple[str, str]]:
+        filename = BACKUP_ZIP_FILENAME if is_zip else BACKUP_DB_FILENAME
+        attachments = [(backup_file, filename)]
+        for log_date in [yesterday, today]:
+            log_path = get_log_path(log_date)
+            if await asyncio.to_thread(os.path.exists, log_path):
+                attachments.append((log_path, f"log_{log_date.strftime('%d%m%Y')}.log"))
+        return attachments
+
     async def send_manual_backup_email(self, db: AsyncSession | None = None) -> bool:
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             raise EmailNotConfiguredError()
 
         session = db if db is not None else self.db
         if session is not None:
-            stmt = select(User).where(User.role == UserRole.MAINTAINER, User.is_active == True, User.email.isnot(None))
-            res = await session.scalars(stmt)
-            maintainers = res.all()
-            to_emails = [m.email for m in maintainers if m.email]
-
-            if not to_emails:
-                raise NoMaintainersWithEmailError()
-
-            tz = ZoneInfo(settings.TIMEZONE)
-            now = datetime.now(tz)
-            now_local = now.replace(tzinfo=None)
-            yesterday = now_local.date() - timedelta(days=1)
-
-            full_report_html = await daily_report_service.generate_daily_report_html(session, yesterday)
-            fmt_start = yesterday.strftime(DATE_FORMAT)
-            period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+            to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(session)
         else:
             async with get_async_session_context() as bg_session:
-                stmt = select(User).where(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                          User.email.isnot(None))
-                res = await bg_session.scalars(stmt)
-                maintainers = res.all()
-                to_emails = [m.email for m in maintainers if m.email]
-
-                if not to_emails:
-                    raise NoMaintainersWithEmailError()
-
-                tz = ZoneInfo(settings.TIMEZONE)
-                now = datetime.now(tz)
-                now_local = now.replace(tzinfo=None)
-                yesterday = now_local.date() - timedelta(days=1)
-
-                full_report_html = await daily_report_service.generate_daily_report_html(bg_session, yesterday)
-                fmt_start = yesterday.strftime(DATE_FORMAT)
-                period_text = f"Abaixo está o relatório do dia {fmt_start}:"
+                to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(bg_session)
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
         if not backup_path:
             logger.error('Backup - "Email manual" Error')
             raise BackupGenerationFailedError()
 
-        attachments = [(zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME)]
-
-        log_path = get_log_path(yesterday)
-        if await asyncio.to_thread(os.path.exists, log_path):
-            attachments.append((log_path, f"log_{yesterday.strftime('%d%m%Y')}.log"))
+        backup_file = zip_path or backup_path
+        attachments = await self._build_email_attachments(backup_file, bool(zip_path), yesterday, today)
 
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
@@ -446,11 +457,11 @@ class RoutineOrchestrator:
         finally:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
-        if success:
-            return True
-        else:
+        if not success:
             logger.error('Backup - "Email manual" Error')
             raise SMTPConnectionFailedError()
+
+        return True
 
 
 routine_orchestrator = RoutineOrchestrator()

@@ -51,6 +51,20 @@ def test_daily_rotating_file_handler(tmp_path):
     handler.backup_count = 0
     handler._cleanup_old_logs()
 
+    from unittest.mock import patch
+    with patch.object(handler, "_open", side_effect=Exception("open err")):
+        if os.path.exists(handler.baseFilename):
+            os.remove(handler.baseFilename)
+        handler._check_and_reopen_stream_if_deleted()
+    handler.stream = handler._open()
+
+    handler._try_delete_old_log_file(log_dir, "bad_name.log", datetime.now(ZoneInfo(settings.TIMEZONE)))
+
+    empty_dir = os.path.join(log_dir, "empty_dir")
+    os.makedirs(empty_dir, exist_ok=True)
+    with patch("os.rmdir", side_effect=OSError("rmdir fail")):
+        handler._remove_empty_dirs()
+
     handler.close()
 
 

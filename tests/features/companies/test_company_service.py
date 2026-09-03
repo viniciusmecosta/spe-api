@@ -219,3 +219,13 @@ async def test_upload_logo_success_old_logo_remove_oserror(mocker, async_db_mock
 
     assert result.logo_path.endswith(".png")
     mock_remove.assert_called_once()
+
+
+def test_company_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = company_service.repo
+    try:
+        company_service.repo = custom_repo
+        assert company_service.repo == custom_repo
+    finally:
+        company_service.repo = original_repo

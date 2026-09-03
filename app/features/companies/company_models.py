@@ -14,7 +14,9 @@ class Company(Base):
     phone = Column(String, nullable=True)
     logo_path = Column(String, nullable=True)
     auto_print_receipt = Column(Boolean, default=False, nullable=False)
-    default_printer_id = Column(Integer, ForeignKey("printers.id"), nullable=True)
+    default_printer_id = Column(Integer,
+                                ForeignKey("printers.id", use_alter=True, name="fk_companies_default_printer_id"),
+                                nullable=True)
 
     printers = relationship("Printer", back_populates="company", foreign_keys="Printer.company_id")
     default_printer = relationship("Printer", foreign_keys=[default_printer_id])

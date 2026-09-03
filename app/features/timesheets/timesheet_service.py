@@ -22,7 +22,6 @@ from reportlab.platypus import (
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -50,7 +49,7 @@ from app.features.users.user_repository import (
     user_repository,
 )
 from app.shared import deps
-from app.shared.enums import DayOfWeek, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 from app.shared.time_calculation_service import time_calculation_service
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -118,8 +117,33 @@ class TimesheetService:
             return f"{punches_str}   <font color='#94A3B8'>|</font>   {abono_str}" if punches_str != "-" else abono_str
         return punches_str
 
+    def _get_daily_adjustments(self, current_date, all_adjustments):
+        day_excess = None
+        abono = None
+        day_extra_time_adjs = []
+        for adj in (all_adjustments or []):
+            if adj.target_date == current_date:
+                if adj.adjustment_type == AdjustmentType.DAILY_EXCESS:
+                    day_excess = adj
+                elif adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED:
+                    abono = adj
+                elif adj.adjustment_type == AdjustmentType.EXTRA_TIME:
+                    day_extra_time_adjs.append(adj)
+        return day_excess, abono, day_extra_time_adjs
+
+    def _get_daily_schedule(self, current_date, target_day, historical_schedules):
+        valid_schedules = [
+            s for s in (historical_schedules or [])
+            if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+        ]
+        return next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
+
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
-                                   table_text_style):
+                                   table_text_style, records: list[TimeRecord] | None = None,
+                                   all_adjustments: list[AdjustmentRequest] | None = None,
+                                   historical_schedules: list | None = None):
+        tz = ZoneInfo(settings.TIMEZONE)
+        today = datetime.now(tz).date()
         current_date = start_date
         row_index = 1
 
@@ -130,25 +154,57 @@ class TimesheetService:
             target_day = DayOfWeek.from_date(current_date)
             is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
-            if is_weekend:
+            day_records = [r for r in (records or []) if r.record_datetime.date() == current_date]
+            day_schedule = self._get_daily_schedule(current_date, target_day, historical_schedules)
+            day_excess, abono, day_extra_time_adjs = self._get_daily_adjustments(current_date, all_adjustments)
+
+            expected_seconds = getattr(period_result, 'daily_expected_seconds', {}).get(current_date, 0.0)
+            if not expected_seconds and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
+                expected_seconds = float(day_schedule.daily_hours * 3600.0)
+
+            is_absence = (
+                not is_weekend
+                and not is_holiday
+                and abono is None
+                and expected_seconds > 0
+                and len(day_records) == 0
+                and current_date <= today
+            )
+
+            if is_holiday:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEF3C7")))
+            elif is_absence:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEE2E2")))
+            elif is_weekend:
                 t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
 
             punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
-            worked_time_str = self._format_duration(daily_res.net_worked_seconds)
-            unapproved_time_str = self._format_duration(daily_res.unapproved_extra_seconds)
+            if is_absence and (not punches_str or punches_str == "-"):
+                punches_str = "<font color='#991B1B'><b>Falta</b></font>"
+
+            accounted_res = time_calculation_service.calculate_accounted_time(
+                day_records=day_records,
+                schedule=day_schedule,
+                daily_excess_adj=day_excess,
+                waiver_adj=abono,
+                extra_time_adjs=day_extra_time_adjs,
+            )
+            accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
+            unapproved_total = daily_res.unapproved_extra_seconds
+            unapproved_time_str = self._format_duration(unapproved_total)
 
             data_table.append([
-                Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
+                Paragraph(current_date.strftime("%d/%m"), table_text_style),
                 Paragraph(target_day.abreviado, table_text_style),
                 Paragraph(punches_str, table_text_style),
                 Paragraph(unapproved_time_str, table_text_style),
-                Paragraph(worked_time_str, table_text_style)
+                Paragraph(accounted_time_str, table_text_style)
             ])
 
             current_date += timedelta(days=1)
             row_index += 1
 
-        t = Table(data_table, colWidths=[65, 65, 215, 95, 95])
+        t = Table(data_table, colWidths=[45, 45, 205, 120, 120])
         t.setStyle(TableStyle(t_style))
         return t
 
@@ -480,8 +536,8 @@ class TimesheetService:
             Paragraph("Data", table_header_style),
             Paragraph("Dia", table_header_style),
             Paragraph("Registros de Ponto", table_header_style),
-            Paragraph("Horas Não Aut.", table_header_style),
-            Paragraph("Trab. Líquido", table_header_style)
+            Paragraph("Horas Não Autorizadas", table_header_style),
+            Paragraph("Horas Contabilizadas", table_header_style)
         ]]
 
         t_style = [
@@ -502,16 +558,40 @@ class TimesheetService:
             historical_schedules=user.historical_schedules if user else []
         )
 
-        story.append(self._build_daily_records_table(start_date, end_date, period_result, holidays, data_table, t_style,
-                                                     table_text_style))
+        story.append(self._build_daily_records_table(
+            start_date=start_date,
+            end_date=end_date,
+            period_result=period_result,
+            holidays=holidays,
+            data_table=data_table,
+            t_style=t_style,
+            table_text_style=table_text_style,
+            records=records,
+            all_adjustments=all_adjustments,
+            historical_schedules=user.historical_schedules if user else []
+        ))
         story.append(Spacer(1, 10))
 
         total_duration_str = self._format_duration(period_result.total_net_worked_seconds)
+        total_accounted_str = self._format_duration(period_result.total_accounted_seconds)
+        total_extra_hours = period_result.total_extra_seconds / 3600.0
+        total_missing_hours = period_result.total_missing_seconds / 3600.0
+        final_balance = round(total_extra_hours - total_missing_hours, 2)
+        balance_sign = "+" if final_balance > 0.0 else ""
+        
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
-             Paragraph(total_duration_str, header_style)]
+             Paragraph(total_duration_str, header_style)],
+            [Paragraph("<b>Total de Horas Contabilizadas:</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
+             Paragraph(total_accounted_str, header_style)],
+            [Paragraph("<b>Saldo de Horas (Extras - Faltas):</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
+             Paragraph(f"{balance_sign}{final_balance:.2f} h", header_style)]
         ]
         sum_table = Table(summary_info, colWidths=[175, 360])
         sum_table.setStyle(TableStyle([

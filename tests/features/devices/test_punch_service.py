@@ -97,3 +97,11 @@ async def test_process_biometric_punch_value_error(async_db_mock, mocker):
     success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1)
     assert not success
     assert msg == "Erro Interno"
+
+
+def test_punch_service_repo_property():
+    mock_repo = MagicMock()
+    punch_service.repo = mock_repo
+    assert punch_service.repo == mock_repo
+    punch_service.repo = None
+    assert punch_service.repo is not None

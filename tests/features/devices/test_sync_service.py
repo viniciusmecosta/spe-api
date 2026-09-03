@@ -10,7 +10,9 @@ from app.features.devices.device_exceptions import (
     SyncDatabaseCorruptedError,
     SyncDatabaseReceiveError,
 )
+from app.core.config import settings
 from app.features.devices.sync_service import sync_service
+
 
 
 @pytest.fixture
@@ -238,3 +240,21 @@ def test_send_database_db_error_on_write(mocker, db_session_mock, sync_get_db_se
     sync_get_db_session.side_effect = None
     sync_get_db_session.return_value = ContextManagerMockErr2()
     sync_service.send_database_to_consumer()
+
+
+def test_trigger_hourly_backup_after_sync_already_exists(mocker):
+    mocker.patch.object(settings, "OPERATION_MODE", "EXPORTADOR")
+    mocker.patch.object(settings, "CONSUMER_SERVER_URL", "http://server")
+    mocker.patch.object(settings, "CONSUMER_API_KEY", "key")
+    mock_session = MagicMock()
+    mock_session.scalar.return_value = 1
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__.return_value = mock_session
+    mock_ctx.__exit__.return_value = None
+    mocker.patch("app.features.devices.sync_service.get_db_session", return_value=mock_ctx)
+    backup_mock = mocker.patch("app.features.devices.sync_service.backup_service.create_safe_backup")
+    sync_service.send_database_to_consumer()
+    backup_mock.assert_not_called()
+
+
+

@@ -18,7 +18,7 @@ class AdjustmentNotFoundError(DomainException):
 class InvalidAdjustmentTypeError(DomainException):
     def __init__(self, adjustment_type: str | None = None, detail: str | None = None):
         if detail is None:
-            detail = f"Não é possível excluir um ajuste do tipo '{adjustment_type}'. Apenas EXTRA_TIME e WAIVER são permitidos." if adjustment_type else "Apenas ajustes do tipo EXTRA_TIME e WAIVER podem ser excluídos."
+            detail = f"Não é possível excluir um ajuste do tipo '{adjustment_type}'. Apenas EXTRA_TIME, WAIVER e DAILY_EXCESS são permitidos." if adjustment_type else "Apenas ajustes do tipo EXTRA_TIME, WAIVER e DAILY_EXCESS podem ser excluídos."
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
 
 

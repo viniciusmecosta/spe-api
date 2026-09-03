@@ -12,7 +12,6 @@ from sqlalchemy import (
     Integer,
     String,
     Time,
-    func,
 )
 from sqlalchemy.orm import relationship
 
@@ -38,6 +37,7 @@ class UserWorkScheduleConfig(Base):
     exit_2 = Column(Time, nullable=True)
     valid_from = Column(Date, nullable=False)
     valid_until = Column(Date, nullable=True)
+    is_daily_excess_enabled = Column(Boolean, nullable=True, default=True)
 
     user = relationship("User", back_populates="historical_schedules")
 

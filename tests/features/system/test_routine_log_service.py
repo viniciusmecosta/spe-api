@@ -56,3 +56,22 @@ async def test_get_logs_defaults(db_session_mock):
             skip=0,
             limit=100
         )
+
+
+def test_routine_log_service_repo_property():
+    from unittest.mock import MagicMock
+    mock_repo = MagicMock()
+    service = RoutineLogService(repo=mock_repo)
+    assert service.repo == mock_repo
+
+
+@pytest.mark.asyncio
+async def test_get_logs_async_session():
+    from unittest.mock import AsyncMock, MagicMock
+    mock_repo = AsyncMock()
+    mock_repo.get_logs = AsyncMock(return_value=["log_async"])
+    service = RoutineLogService(repo=mock_repo)
+    session = AsyncMock()
+    session.sync_session = MagicMock()
+    res = await service.get_logs(db=session)
+    assert res == ["log_async"]

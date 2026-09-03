@@ -72,6 +72,7 @@ class AdjustmentType(str, enum.Enum):
     DELETE_PUNCH = "DELETE_PUNCH"
     WAIVER = "WAIVER"
     EXTRA_TIME = "EXTRA_TIME"
+    DAILY_EXCESS = "DAILY_EXCESS"
     OTHER = "OTHER"
 
 

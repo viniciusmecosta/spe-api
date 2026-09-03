@@ -406,3 +406,23 @@ async def test_async_log_change(async_db_mock, mocker):
 
     assert res == "created_log"
     mock_repo.assert_awaited_once()
+
+
+def test_audit_service_repo_property():
+    from app.features.system.audit_service import AuditService
+    from app.features.system.system_repository import async_audit_repository
+    assert audit_service.repo == async_audit_repository
+    custom_repo = MagicMock()
+    svc = AuditService(repo=custom_repo)
+    assert svc.repo == custom_repo
+
+
+
+@pytest.mark.asyncio
+async def test_audit_service_get_logs_async(mocker):
+    async_sess = MagicMock()
+    async_sess.sync_session = MagicMock()
+    mocker.patch.object(audit_service.repo, "get_logs", new_callable=AsyncMock, return_value=[])
+    res = await audit_service.get_logs(async_sess, action="LOGIN")
+    assert res == []
+

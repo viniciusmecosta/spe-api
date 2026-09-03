@@ -146,6 +146,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
     mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
+    mock_report.summary.total_accounted_minutes = 100
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
@@ -195,6 +196,7 @@ async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_serv
     mock_report_service.get_month_range.return_value = (datetime(2023, 5, 1).date(), datetime(2023, 5, 31).date())
     mock_report = MagicMock()
     mock_report.summary.total_worked_minutes = 100
+    mock_report.summary.total_accounted_minutes = 100
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
@@ -322,6 +324,7 @@ def test_build_summary_sheet(excel_service):
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
+    mock_report.summary.total_accounted_minutes = 480
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
     mock_day.unapproved_extra_time = '01:00'
@@ -338,6 +341,7 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     mock_report.summary.user_name = 'Test User'
     mock_report.summary.days_worked = 1
     mock_report.summary.total_worked_minutes = 480
+    mock_report.summary.total_accounted_minutes = 480
     mock_day = MagicMock()
     mock_day.worked_time = '01:00'
     mock_day.unapproved_extra_time = '02:00'
@@ -739,3 +743,83 @@ async def test_insert_header_includes_generated_at_and_metadata(excel_service, d
             found_generated_at = True
             break
     assert found_generated_at
+
+
+@pytest.mark.asyncio
+async def test_export_monthly_report_saved_file(excel_service, tmp_path, async_db_mock):
+    test_file = tmp_path / "folha_saved.xlsx"
+    test_file.write_bytes(b"saved content")
+
+    mock_closure = MagicMock()
+    mock_closure.is_closed = True
+    mock_closure.report_path = str(test_file)
+
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=mock_closure,
+    ), patch.object(excel_service, "generate_excel_report", new_callable=AsyncMock) as mock_gen:
+        resp = await excel_service.export_monthly_report(
+            month=7,
+            year=2026,
+            db=async_db_mock,
+        )
+        assert resp.path == str(test_file)
+        mock_gen.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_export_monthly_report_fallback(excel_service, async_db_mock):
+    fake_stream = BytesIO(b"generated content")
+
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    ), patch.object(
+        excel_service,
+        "generate_excel_report",
+        new_callable=AsyncMock,
+        return_value=fake_stream,
+    ) as mock_gen:
+        resp = await excel_service.export_monthly_report(
+            month=7,
+            year=2026,
+            db=async_db_mock,
+        )
+        mock_gen.assert_called_once()
+        assert resp.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.mark.asyncio
+async def test_excel_service_fetch_data_branches(excel_service, async_db_mock):
+    from datetime import date
+    mock_res = MagicMock()
+    mock_res.all.return_value = []
+    async_db_mock.scalars.return_value = mock_res
+    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock, return_value=None):
+        users, comp = await excel_service._fetch_users_and_company(async_db_mock, None)
+        assert users == []
+
+    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock, return_value=[]):
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            async_db_mock, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            async_db_mock, [1], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+    sync_session = MagicMock(spec=["query"])
+    with patch("app.features.reports.excel_service.holiday_repository.get_by_month", return_value=[]):
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            sync_session, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+

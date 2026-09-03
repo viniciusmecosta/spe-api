@@ -161,3 +161,61 @@ async def test_verify_consumer_api_key_success(db_session):
     consumer = await verify_consumer_api_key(req, raw_key, db_session)
     assert consumer.name == "Servidor Dep"
     assert req.state.device_name == "Servidor Dep"
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_async_db_awaitable(normal_user):
+    from unittest.mock import AsyncMock
+    async_db = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.first.return_value = normal_user
+    async_db.scalars = AsyncMock(return_value=mock_res)
+    with patch("jwt.decode", return_value={"sub": str(normal_user.id)}):
+        u = await get_current_user(async_db, "token")
+        assert u.id == normal_user.id
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_legacy_sync_query(normal_user):
+    sync_db = MagicMock()
+    del sync_db.scalars
+    sync_db.query.return_value.options.return_value.filter.return_value.first.return_value = normal_user
+    with patch("jwt.decode", return_value={"sub": str(normal_user.id)}):
+        u = await get_current_user(sync_db, "token")
+        assert u.id == normal_user.id
+
+
+@pytest.mark.asyncio
+async def test_verify_keys_async_and_sync():
+    from unittest.mock import AsyncMock
+    from app.features.devices.device_models import DeviceCredential
+    dev = DeviceCredential(name="D1", api_key_hash="hash", key_type=DeviceKeyType.DEVICE, is_active=True)
+    req = MagicMock()
+
+    async_db = AsyncMock()
+    mock_res = MagicMock()
+    mock_res.first.return_value = dev
+    async_db.scalars = AsyncMock(return_value=mock_res)
+    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
+        res = await verify_device_api_key(req, "key", async_db)
+        assert res == dev
+
+    sync_db = MagicMock()
+    del sync_db.scalars
+    sync_db.query.return_value.filter.return_value.first.return_value = dev
+    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
+        res = await verify_device_api_key(req, "key", sync_db)
+        assert res == dev
+
+    consumer = DeviceCredential(name="C1", api_key_hash="hash", key_type=DeviceKeyType.CONSUMER, is_active=True)
+    mock_res_c = MagicMock()
+    mock_res_c.first.return_value = consumer
+    async_db.scalars = AsyncMock(return_value=mock_res_c)
+    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
+        res_c = await verify_consumer_api_key(req, "key", async_db)
+        assert res_c == consumer
+
+    sync_db.query.return_value.filter.return_value.first.return_value = consumer
+    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
+        res_cs = await verify_consumer_api_key(req, "key", sync_db)
+        assert res_cs == consumer

@@ -35,9 +35,14 @@ def test_main_sqlalchemy_error():
             main()
 
 
+import sys
+
+
 def test_initial_data_module_main():
     mock_db = MagicMock()
     with patch("app.database.session.get_db_session") as mock_get_db, \
             patch("app.features.users.user_repository.user_repository.get_by_username", return_value=MagicMock()):
         mock_get_db.return_value.__enter__.return_value = mock_db
-        runpy.run_module("app.initial_data", run_name="__main__")
+        with patch.dict(sys.modules):
+            sys.modules.pop("app.initial_data", None)
+            runpy.run_module("app.initial_data", run_name="__main__", alter_sys=True)

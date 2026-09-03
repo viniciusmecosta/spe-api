@@ -1,12 +1,13 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from typing import Annotated, Any, Dict, List
 
-from fastapi import Depends
+from fastapi import BackgroundTasks, Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.features.payroll.payroll_repository import (
     async_payroll_repository,
@@ -25,6 +26,7 @@ from app.features.users.user_repository import (
     user_repository,
 )
 from app.shared import deps
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import DayOfWeek
 
 
@@ -40,13 +42,13 @@ class UserWorkScheduleService:
         if not t_obj:
             return None
         if isinstance(t_obj, time):
-            return datetime.combine(date.today(), t_obj)
+            return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), t_obj)
         if isinstance(t_obj, str):
             try:
                 parts = t_obj.split(':')
                 if len(parts) >= 2:
                     sec = int(parts[2]) if len(parts) > 2 else 0
-                    return datetime.combine(date.today(), time(int(parts[0]), int(parts[1]), sec))
+                    return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), time(int(parts[0]), int(parts[1]), sec))
             except (ValueError, IndexError):
                 return None
         return None
@@ -70,6 +72,7 @@ class UserWorkScheduleService:
         sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
         sch.valid_from = valid_from
         sch.valid_until = valid_until
+        sch.is_daily_excess_enabled = sch_data.get('is_daily_excess_enabled', True)
 
         total_seconds = (
                 self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
@@ -95,7 +98,7 @@ class UserWorkScheduleService:
         start_year = valid_from.year
         start_month = valid_from.month
 
-        end_date = valid_until if valid_until else date.today()
+        end_date = valid_until if valid_until else datetime.now(ZoneInfo(settings.TIMEZONE)).date()
         end_year = end_date.year
         end_month = end_date.month
 
@@ -230,7 +233,52 @@ class UserWorkScheduleService:
             self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
             new_schedules.append(new_sch)
 
-    async def bulk_add_schedules(self, db: Any | None = None, bulk_data: dict = None, current_user_id: int = 0):
+    async def _query_schedule_configs(self, session: Any, valid_from: date, valid_until: date) -> list[UserWorkScheduleConfig]:
+        stmt = select(UserWorkScheduleConfig).where(
+            UserWorkScheduleConfig.valid_from == valid_from,
+            UserWorkScheduleConfig.valid_until == valid_until
+        )
+        if hasattr(session, "sync_session"):
+            return list((await session.scalars(stmt)).all())
+        return session.query(UserWorkScheduleConfig).filter(
+            UserWorkScheduleConfig.valid_from == valid_from,
+            UserWorkScheduleConfig.valid_until == valid_until
+        ).all()
+
+    async def _delete_schedule_configs(self, session: Any, configs: list[UserWorkScheduleConfig]) -> None:
+        for cfg in configs:
+            if hasattr(session, "delete"):
+                if hasattr(session, "sync_session"):
+                    await session.delete(cfg)
+                else:
+                    session.delete(cfg)
+
+    async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str, old_data: dict = None, new_data: dict = None):
+        if hasattr(session, "sync_session"):
+            await session.flush()
+            await audit_service.async_log_change(
+                session, current_user_id, action,
+                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+                old_data=old_data, new_data=new_data
+            )
+        else:
+            session.flush()
+            audit_service.log_change(
+                session, current_user_id, action,
+                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
+                old_data=old_data, new_data=new_data
+            )
+
+    def _dispatch_user_ranges_bg(self, background_tasks: BackgroundTasks | None, user_ids: list[int], start_eval: date, end_eval: date):
+        if not background_tasks or start_eval > end_eval:
+            return
+        valid_uids = [u for u in user_ids if u]
+        if valid_uids:
+            background_tasks.add_task(daily_excess_service.reprocess_user_ranges_bg, valid_uids, start_eval, end_eval)
+
+    async def bulk_add_schedules(self, db: Any | None = None, bulk_data: dict = None,
+                                  current_user_id: int = 0,
+                                  background_tasks: BackgroundTasks | None = None):
         session = db if db is not None else self.db
         assert session is not None
         valid_from = bulk_data.get('valid_from')
@@ -243,26 +291,29 @@ class UserWorkScheduleService:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
         users_input = bulk_data.get('users', [])
-
         if not users_input:
             raise BulkScheduleValidationError("Nenhum usuário informado.")
+
+        await self.check_payroll_closure(session, valid_from, valid_until)
 
         errors = []
         new_schedules = []
 
-        await self.check_payroll_closure(session, valid_from, valid_until)
+        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
+        if hasattr(session, "sync_session"):
+            res = await session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+        else:
+            res = session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
 
         for user_data in users_input:
             uid = user_data.get('user_id')
-            if hasattr(session, "sync_session"):
-                user = await async_user_repository.get(session, uid)
-            else:
-                user = user_repository.get(session, uid)
+            user = users_map.get(uid)
             if not user:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
-            self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors,
-                                               new_schedules)
+            self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors, new_schedules)
 
         if errors:
             raise BulkScheduleValidationError(errors)
@@ -270,23 +321,12 @@ class UserWorkScheduleService:
         for sch in new_schedules:
             session.add(sch)
 
-        if hasattr(session, "sync_session"):
-            await session.commit()
-            await audit_service.async_log_change(
-                session, current_user_id, "CREATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                new_data={"valid_from": str(valid_from), "valid_until": str(valid_until),
-                          "bulk_data": jsonable_encoder(bulk_data)}
-            )
-        else:
-            session.commit()
-            audit_service.log_change(
-                session, current_user_id, "CREATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                new_data={"valid_from": str(valid_from), "valid_until": str(valid_until),
-                          "bulk_data": jsonable_encoder(bulk_data)}
-            )
+        await self._commit_and_audit_bulk(
+            session, current_user_id, "CREATE",
+            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+        )
 
+        self._dispatch_user_ranges_bg(background_tasks, [u.get('user_id') for u in users_input], valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
     @staticmethod
@@ -298,9 +338,41 @@ class UserWorkScheduleService:
                 incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
         return incoming_map
 
+    async def _collect_update_actions(self, session: Any, users_input: list[dict], existing_map: dict, new_valid_from: date, new_valid_until: date):
+        to_update, to_create, errors = [], [], []
+        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
+        if hasattr(session, "sync_session"):
+            res = await session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+        else:
+            res = session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            user = users_map.get(uid)
+            if not user:
+                errors.append(f"Usuário com ID {uid} não encontrado.")
+                continue
+
+            for sch_data in user_data.get('schedules', []):
+                dow = sch_data.get('day_of_week')
+                cfg = existing_map.get((uid, dow))
+                try:
+                    if cfg:
+                        self.handle_schedule_overlap(user, dow, new_valid_from, new_valid_until, ignore_id=cfg.id)
+                        to_update.append((cfg, sch_data))
+                    else:
+                        self.handle_schedule_overlap(user, dow, new_valid_from, new_valid_until)
+                        to_create.append((user, sch_data))
+                except ScheduleOverlapError as e:
+                    errors.append(f"Usuário {user.name}: {str(e)}")
+        return to_update, to_create, errors
+
     async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
                                     old_valid_until: date = None, bulk_data: dict = None,
-                                    current_user_id: int = 0):
+                                    current_user_id: int = 0,
+                                    background_tasks: BackgroundTasks | None = None):
         session = db if db is not None else self.db
         assert session is not None
         new_valid_from = bulk_data.get('valid_from')
@@ -315,160 +387,64 @@ class UserWorkScheduleService:
         await self.check_payroll_closure(session, old_valid_from, old_valid_until)
         await self.check_payroll_closure(session, new_valid_from, new_valid_until)
 
-        stmt = select(UserWorkScheduleConfig).where(
-            UserWorkScheduleConfig.valid_from == old_valid_from,
-            UserWorkScheduleConfig.valid_until == old_valid_until
-        )
-        if hasattr(session, "sync_session"):
-            old_configs = list((await session.scalars(stmt)).all())
-        else:
-            old_configs = session.query(UserWorkScheduleConfig).filter(
-                UserWorkScheduleConfig.valid_from == old_valid_from,
-                UserWorkScheduleConfig.valid_until == old_valid_until
-            ).all()
-
+        old_configs = await self._query_schedule_configs(session, old_valid_from, old_valid_until)
         existing_map = {(cfg.user_id, cfg.day_of_week): cfg for cfg in old_configs}
-        incoming_map = self._build_incoming_schedule_map(bulk_data.get('users', []))
+        users_input = bulk_data.get('users', [])
+        incoming_map = self._build_incoming_schedule_map(users_input)
 
-        errors = []
-        to_delete = []
-        to_update = []
-        to_create = []
-
-        await self._map_bulk_updates(session, existing_map, incoming_map, to_delete, to_update, to_create, errors)
+        to_delete = [cfg for key, cfg in existing_map.items() if key not in incoming_map]
+        to_update, to_create, errors = await self._collect_update_actions(session, users_input, existing_map, new_valid_from, new_valid_until)
 
         if errors:
             raise BulkScheduleValidationError(errors)
 
-        return await self._apply_bulk_updates_db(session, to_delete, to_update, to_create, new_valid_from,
-                                                 new_valid_until, errors,
-                                           old_valid_from, old_valid_until, bulk_data, current_user_id)
-
-    async def _map_bulk_updates(self, db, existing_map, incoming_map, to_delete, to_update, to_create, errors):
-        for key, old_cfg in existing_map.items():
-            if key not in incoming_map:
-                to_delete.append(old_cfg)
-            else:
-                to_update.append((old_cfg, incoming_map[key]))
-        for key, new_data in incoming_map.items():
-            if key not in existing_map:
-                uid, _ = key
-                if hasattr(db, "sync_session"):
-                    user = await async_user_repository.get(db, uid)
-                else:
-                    user = user_repository.get(db, uid)
-                if not user:
-                    errors.append(f"Usuário com ID {uid} não encontrado.")
-                    continue
-                to_create.append((user, new_data))
-
-    async def _validate_bulk_overlap(self, db, to_update, to_create, new_valid_from, new_valid_until, errors):
-        for old_cfg, new_data in to_update:
-            if hasattr(db, "sync_session"):
-                user = await async_user_repository.get(db, old_cfg.user_id)
-            else:
-                user = user_repository.get(db, old_cfg.user_id)
-            try:
-                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until,
-                                             ignore_id=old_cfg.id)
-            except (ScheduleOverlapError, Exception):
-                day_name = DayOfWeek(new_data.get('day_of_week')).nome
-                errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
-
-        for user, new_data in to_create:
-            try:
-                self.handle_schedule_overlap(user, new_data.get('day_of_week'), new_valid_from, new_valid_until)
-            except (ScheduleOverlapError, Exception):
-                day_name = DayOfWeek(new_data.get('day_of_week')).nome
-                errors.append(f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente.")
-
-    async def _apply_bulk_updates_db(self, db, to_delete, to_update, to_create, new_valid_from, new_valid_until, errors,
-                               old_valid_from, old_valid_until, bulk_data, current_user_id):
-        await self._validate_bulk_overlap(db, to_update, to_create, new_valid_from, new_valid_until, errors)
-
-        if errors:
-            raise BulkScheduleValidationError(errors)
-
-        for cfg in to_delete:
-            if hasattr(db, "delete"):
-                if hasattr(db, "sync_session"):
-                    await db.delete(cfg)
-                else:
-                    db.delete(cfg)
+        await self._delete_schedule_configs(session, to_delete)
 
         for cfg, new_data in to_update:
             self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
-            db.add(cfg)
+            session.add(cfg)
 
         for user, new_data in to_create:
             new_sch = UserWorkScheduleConfig(user_id=user.id)
             self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
-            db.add(new_sch)
+            session.add(new_sch)
 
-        if hasattr(db, "sync_session"):
-            await db.commit()
-            await audit_service.async_log_change(
-                db, current_user_id, "UPDATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
-                new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until),
-                          "bulk_data": jsonable_encoder(bulk_data)}
-            )
-        else:
-            db.commit()
-            audit_service.log_change(
-                db, current_user_id, "UPDATE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
-                new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until),
-                          "bulk_data": jsonable_encoder(bulk_data)}
-            )
+        await self._commit_and_audit_bulk(
+            session, current_user_id, "UPDATE",
+            old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
+            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+        )
 
+        all_uids = list({u[0] for u in existing_map.keys()} | {u.get('user_id') for u in users_input if u.get('user_id')})
+        self._dispatch_user_ranges_bg(
+            background_tasks, all_uids,
+            min(old_valid_from, new_valid_from),
+            min(max(old_valid_until, new_valid_until), datetime.now(ZoneInfo(settings.TIMEZONE)).date())
+        )
         return {"message": "Expedientes atualizados com sucesso."}
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date = None, valid_until: date = None,
-                                    current_user_id: int = 0):
+                                    current_user_id: int = 0,
+                                    background_tasks: BackgroundTasks | None = None):
         session = db if db is not None else self.db
         assert session is not None
         await self.check_payroll_closure(session, valid_from, valid_until)
 
-        stmt = select(UserWorkScheduleConfig).where(
-            UserWorkScheduleConfig.valid_from == valid_from,
-            UserWorkScheduleConfig.valid_until == valid_until
-        )
-        if hasattr(session, "sync_session"):
-            configs = list((await session.scalars(stmt)).all())
-        else:
-            configs = session.query(UserWorkScheduleConfig).filter(
-                UserWorkScheduleConfig.valid_from == valid_from,
-                UserWorkScheduleConfig.valid_until == valid_until
-            ).all()
-
+        configs = await self._query_schedule_configs(session, valid_from, valid_until)
         if not configs:
             raise BulkScheduleNotFoundError(valid_from=valid_from, valid_until=valid_until)
 
         count = len(configs)
-        for cfg in configs:
-            if hasattr(session, "sync_session"):
-                await session.delete(cfg)
-            else:
-                session.delete(cfg)
+        all_uids = list({cfg.user_id for cfg in configs})
 
-        if hasattr(session, "sync_session"):
-            await session.commit()
-            await audit_service.async_log_change(
-                session, current_user_id, "DELETE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
-            )
-        else:
-            session.commit()
-            audit_service.log_change(
-                session, current_user_id, "DELETE",
-                entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
-                old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
-            )
+        await self._delete_schedule_configs(session, configs)
 
+        await self._commit_and_audit_bulk(
+            session, current_user_id, "DELETE",
+            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
+        )
+
+        self._dispatch_user_ranges_bg(background_tasks, all_uids, valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{count} registros removidos com sucesso."}
 
 

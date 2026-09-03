@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import logging
 import os
@@ -195,8 +196,11 @@ class PayrollService:
             filename = f"folha_ponto_{month:02d}_{year}_{timestamp}.xlsx"
             file_path = os.path.join(reports_dir, filename)
 
-            with open(file_path, "wb") as f:
-                f.write(attachment.getvalue())
+            def _write_report():
+                with open(file_path, "wb") as f:
+                    f.write(attachment.getvalue())
+
+            await asyncio.to_thread(_write_report)
         except Exception as e:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
             raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
@@ -311,8 +315,11 @@ class PayrollService:
         filename = f"folha_ponto_{closure.month:02d}_{closure.year}_{timestamp}{ext}"
         file_path = os.path.join(legacy_dir, filename)
 
-        with open(file_path, "wb") as f:
-            f.write(file_content)
+        def _write_legacy():
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+
+        await asyncio.to_thread(_write_legacy)
 
         closure.report_path = f"reports/legacy/{filename}"
         await session.commit()

@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.features.printers.printer_exceptions import PrinterNotFoundError
@@ -76,3 +76,13 @@ async def test_printer_service_delete(async_db_mock, mocker):
 
     await printer_service.delete(async_db_mock, 1, current_user_id=1)
     mock_delete.assert_called_once_with(async_db_mock, printer_id=1)
+
+
+def test_printer_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = printer_service.repo
+    try:
+        printer_service.repo = custom_repo
+        assert printer_service.repo == custom_repo
+    finally:
+        printer_service.repo = original_repo

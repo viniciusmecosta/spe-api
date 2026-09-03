@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.users.user_models import User
@@ -62,6 +62,7 @@ async def get_bulk_schedule_by_dates(
 )
 async def add_bulk_schedules(
     schedule_in: BulkWorkScheduleCreate,
+    background_tasks: BackgroundTasks,
         db: Annotated[AsyncSession, Depends(deps.get_async_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
         service: Annotated[UserWorkScheduleService, Depends()] = None,
@@ -71,6 +72,7 @@ async def add_bulk_schedules(
         db=db,
         bulk_data=schedule_in.model_dump(exclude_unset=True),
         current_user_id=current_user.id,
+        background_tasks=background_tasks,
     )
 
 
@@ -82,6 +84,7 @@ async def update_bulk_schedules(
     valid_from: date,
     valid_until: date,
     schedule_in: BulkWorkScheduleCreate,
+    background_tasks: BackgroundTasks,
         db: Annotated[AsyncSession, Depends(deps.get_async_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
         service: Annotated[UserWorkScheduleService, Depends()] = None,
@@ -93,6 +96,7 @@ async def update_bulk_schedules(
         old_valid_until=valid_until,
         bulk_data=schedule_in.model_dump(exclude_unset=True),
         current_user_id=current_user.id,
+        background_tasks=background_tasks,
     )
 
 
@@ -103,6 +107,7 @@ async def update_bulk_schedules(
 async def delete_bulk_schedules(
     valid_from: date,
     valid_until: date,
+    background_tasks: BackgroundTasks,
         db: Annotated[AsyncSession, Depends(deps.get_async_db)],
     current_user: Annotated[User, Depends(deps.get_current_manager)],
         service: Annotated[UserWorkScheduleService, Depends()] = None,
@@ -113,4 +118,6 @@ async def delete_bulk_schedules(
         valid_from=valid_from,
         valid_until=valid_until,
         current_user_id=current_user.id,
+        background_tasks=background_tasks,
     )
+

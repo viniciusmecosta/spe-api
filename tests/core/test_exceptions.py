@@ -68,7 +68,36 @@ def test_setup_exception_handlers():
     def raise_general():
         raise RuntimeError("General exception")
 
+    @test_app.get("/uploads/file.pdf")
+    def raise_upload_404():
+        raise StarletteHTTPException(status_code=404, detail="Not Found")
+
+    from pydantic import BaseModel
+    class ValidationItem(BaseModel):
+        num: int
+
+    @test_app.post("/test-validation")
+    def test_val(item: ValidationItem):
+        return item
+
+    from app.core.exceptions import DomainException
+    @test_app.get("/error-domain")
+    def raise_domain():
+        raise DomainException(detail="Erro de dominio customizado", status_code=400)
+
     client = TestClient(test_app, raise_server_exceptions=False)
+
+    res = client.get("/error-domain")
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Erro de dominio customizado"
+
+    res = client.get("/uploads/file.pdf")
+    assert res.status_code == 404
+    assert "documento ou arquivo solicitado" in res.json()["detail"]
+
+    res = client.post("/test-validation", json={"num": "abc"})
+    assert res.status_code == 422
+    assert "invalid_params" in res.json()
 
     res = client.get("/error-500")
     assert res.status_code == 500

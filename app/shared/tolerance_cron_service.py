@@ -11,13 +11,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.database.session import get_db_session
-from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
 from app.shared import deps
 from app.shared.enums import (
-    AdjustmentStatus,
-    AdjustmentType,
     DayOfWeek,
     RecordType,
 )
@@ -76,29 +73,6 @@ class ToleranceCronService:
             record.is_verified = True
         else:
             if now >= official_datetime:
-                extra_minutes = diff_minutes
-                amount_hours = extra_minutes / 60.0
-
-                existing_adjustment = db.query(AdjustmentRequest).filter(
-                    AdjustmentRequest.user_id == record.user_id,
-                    AdjustmentRequest.target_date == record_date,
-                    AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME
-                ).first()
-
-                if not existing_adjustment:
-                    adjustment = AdjustmentRequest(
-                        user_id=record.user_id,
-                        adjustment_type=AdjustmentType.EXTRA_TIME,
-                        record_type=RecordType.ENTRY,
-                        target_date=record_date,
-                        time=record_dt.time(),
-                        amount_hours=amount_hours,
-                        reason_text=f"Tempo extra não aprovado ({int(extra_minutes)} minutos) - horário de entrada: {config.entry_1.strftime('%H:%M')}",
-                        status=AdjustmentStatus.PENDING,
-                        created_at=now
-                    )
-                    db.add(adjustment)
-
                 record.is_verified = True
 
     async def async_process_entry_record(self, db: AsyncSession, record: TimeRecord, now: datetime, tz: ZoneInfo):
@@ -150,30 +124,6 @@ class ToleranceCronService:
             record.is_verified = True
         else:
             if now >= official_datetime:
-                extra_minutes = diff_minutes
-                amount_hours = extra_minutes / 60.0
-
-                adj_stmt = select(AdjustmentRequest).where(
-                    AdjustmentRequest.user_id == record.user_id,
-                    AdjustmentRequest.target_date == record_date,
-                    AdjustmentRequest.adjustment_type == AdjustmentType.EXTRA_TIME
-                )
-                existing_adjustment = await db.scalar(adj_stmt)
-
-                if not existing_adjustment:
-                    adjustment = AdjustmentRequest(
-                        user_id=record.user_id,
-                        adjustment_type=AdjustmentType.EXTRA_TIME,
-                        record_type=RecordType.ENTRY,
-                        target_date=record_date,
-                        time=record_dt.time(),
-                        amount_hours=amount_hours,
-                        reason_text=f"Tempo extra não aprovado ({int(extra_minutes)} minutos) - horário de entrada: {config.entry_1.strftime('%H:%M')}",
-                        status=AdjustmentStatus.PENDING,
-                        created_at=now
-                    )
-                    db.add(adjustment)
-
                 record.is_verified = True
 
     def process_unverified_entries(self):

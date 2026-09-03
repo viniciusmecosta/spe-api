@@ -49,6 +49,7 @@ class AdjustmentRequest(Base):
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    approved_amount_hours = Column(Float, nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")

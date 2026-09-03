@@ -224,3 +224,69 @@ async def test_get_anomalies_by_month_valid(mock_get_anomalies, db_session_mock)
 
     result = await anomaly_service.get_anomalies_by_month(db_session_mock, 1, 2099)
     assert result == []
+
+
+def test_create_unapproved_adjustment_anomaly_daily_excess():
+    adj = MockAdjustmentRequest(
+        1,
+        date(2023, 1, 1),
+        AdjustmentType.DAILY_EXCESS,
+        AdjustmentStatus.PENDING,
+        1.5,
+        None,
+    )
+    res_mgr = anomaly_service._evaluate_adjustment_anomaly(
+        1,
+        "User 1",
+        date(2023, 1, 1),
+        adj,
+        expected_entry_time=None,
+        viewer_role=UserRole.MANAGER,
+    )
+    assert res_mgr is not None
+    assert res_mgr.type == "UNAPPROVED_DAILY_EXCESS"
+    assert "90 min" in res_mgr.description
+
+    res_emp = anomaly_service._evaluate_adjustment_anomaly(
+        1,
+        "User 1",
+        date(2023, 1, 1),
+        adj,
+        expected_entry_time=None,
+        viewer_role=UserRole.EMPLOYEE,
+    )
+    assert res_emp is None
+
+
+@pytest.mark.asyncio
+@patch("app.features.timesheets.anomaly_service.async_user_repository")
+@patch("app.features.timesheets.anomaly_service.async_time_record_repository")
+async def test_get_anomalies_async_session(mock_tr_repo, mock_user_repo):
+    from unittest.mock import AsyncMock, MagicMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    user = MockUser(1)
+    mock_user_repo.get = AsyncMock(return_value=user)
+    mock_user_repo.get_active_employees = AsyncMock(return_value=[user])
+    mock_tr_repo.get_by_users_and_range = AsyncMock(return_value=[])
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = []
+    async_sess.scalars.return_value = mock_scalars
+
+    res_with_user = await anomaly_service.get_anomalies(
+        async_sess,
+        date(2023, 1, 1),
+        date(2023, 1, 31),
+        user_id=1,
+    )
+    assert isinstance(res_with_user, list)
+
+    res_all = await anomaly_service.get_anomalies(
+        async_sess,
+        date(2023, 1, 1),
+        date(2023, 1, 31),
+        user_id=None,
+    )
+    assert isinstance(res_all, list)

@@ -74,5 +74,24 @@ async def test_async_device_repositories(async_db_mock):
     fw = await fw_repo.create(async_db_mock, version="1.0.0", file_path="/tmp/fw.bin")
     assert fw.version == "1.0.0"
 
+    fw_obj = await fw_repo.create(async_db_mock, obj_in=fw)
+    assert fw_obj.version == "1.0.0"
+
+    assert await fw_repo.get_by_version(async_db_mock, "1.0.0") == created
+    assert await fw_repo.get_latest(async_db_mock) == created
+    assert len(await fw_repo.get_all(async_db_mock)) == 1
+
     bio_repo = AsyncBiometricRepository()
     assert await bio_repo.get_by_sensor_index(async_db_mock, 1) == created
+    assert await bio_repo.get_manager_with_biometric(async_db_mock) == created
+
+    await cred_repo.update(async_db_mock, db_obj=created, obj_in=DeviceCredentialUpdate(name="Async Updated"))
+    async_db_mock.get.return_value = created
+    await cred_repo.delete(async_db_mock, 1)
+
+
+def test_firmware_repository_create_obj_in(db_session):
+    from app.features.devices.device_models import Firmware
+    repo = FirmwareRepository()
+    fw = repo.create(db_session, obj_in=Firmware(version="8.8.8", file_path="/tmp/fw8.bin"))
+    assert fw.version == "8.8.8"

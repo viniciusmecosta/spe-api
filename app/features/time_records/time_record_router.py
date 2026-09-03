@@ -16,6 +16,7 @@ from app.features.time_records.time_record_schemas import (
 from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.shared import deps
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.openapi_responses import (
     BAD_REQUEST_RESPONSE,
     CRUD_RESPONSES,
@@ -41,6 +42,7 @@ async def register_entry(
 ) -> TimeRecordResponse:
     record = await service.register_entry(user_id=current_user.id, request=request)
     await service.trigger_auto_print(record=record, background_tasks=background_tasks)
+    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, current_user.id, record.record_datetime.date())
     return record
 
 
@@ -57,6 +59,7 @@ async def register_exit(
 ) -> TimeRecordResponse:
     record = await service.register_exit(user_id=current_user.id, request=request)
     await service.trigger_auto_print(record=record, background_tasks=background_tasks)
+    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, current_user.id, record.record_datetime.date())
     return record
 
 
@@ -66,10 +69,13 @@ async def register_exit(
 )
 async def toggle_record_type(
         id: int,
+        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    return await service.toggle_record_type(record_id=id, current_user=current_user)
+    record = await service.toggle_record_type(record_id=id, current_user=current_user)
+    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id, record.record_datetime.date())
+    return record
 
 
 @router.get("/my")
@@ -146,6 +152,7 @@ async def delete_time_record_admin(
 ) -> SuccessResponse:
     await service.delete_admin_record(record_id=record_id, obj_in=request_body, manager_id=current_user.id)
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
+
 
 
 @router.get(

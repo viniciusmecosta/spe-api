@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -12,11 +13,12 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from app.features.adjustments.adjustment_schemas import (
+    AdjustmentApproveRequest,
     AdjustmentAttachmentResponse,
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
     AdjustmentWaiverCreate,
-    BulkReprocessExtraTimeRequest,
+    BulkReprocessDailyExcessRequest,
 )
 from app.features.adjustments.adjustment_service import AdjustmentService
 from app.features.users.user_models import User
@@ -60,16 +62,21 @@ async def waive_absence_admin(
 
 
 @router.post(
-    "/admin/reprocess-extra-time",
+    "/admin/reprocess-daily-excess",
     status_code=status.HTTP_200_OK,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
-async def reprocess_historical_extra_time(
-        request_in: BulkReprocessExtraTimeRequest,
+async def reprocess_historical_daily_excess(
+        request_in: BulkReprocessDailyExcessRequest,
+        background_tasks: BackgroundTasks,
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> dict[str, str]:
-    return await service.reprocess_historical_extra_time(request_in=request_in, current_user=current_user)
+    return await service.reprocess_historical_daily_excess(
+        request_in=request_in,
+        background_tasks=background_tasks,
+        current_user=current_user,
+    )
 
 
 @router.post(
@@ -157,9 +164,14 @@ async def approve_adjustment(
         id: int,
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        comment: Annotated[str | None, Body(embed=True)] = None,
+        body: Annotated[AdjustmentApproveRequest, Body()] = AdjustmentApproveRequest(),
 ) -> AdjustmentRequestResponse:
-    return await service.approve_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
+    return await service.approve_adjustment(
+        request_id=id,
+        manager_id=current_user.id,
+        comment=body.comment,
+        approved_amount_hours=body.approved_amount_hours,
+    )
 
 
 @router.put(

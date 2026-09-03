@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends
 from sqlalchemy import extract, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_repository import (
@@ -112,7 +112,7 @@ class DashboardService:
 
         month_anomalies = []
         anomalies = await anomaly_service.get_anomalies(
-            session, start_of_month, today_date, current_user.id, ignore_excessive_hours=False
+            session, start_of_month, today_date, current_user.id, ignore_excessive_hours=False, viewer_role=current_user.role
         )
         for a in anomalies:
             month_anomalies.append(AnomalyItem(
@@ -178,7 +178,7 @@ class DashboardService:
         for user in users:
             report = await report_service.get_advanced_user_report(session, user.id, month, year, current_user)
             if report:
-                user_minutes = report.summary.total_worked_minutes
+                user_minutes = report.summary.total_accounted_minutes
                 if user_minutes >= 60:
                     user_hours_rounded = user_minutes // 60
                     employees_data.append(EmployeeHours(
@@ -234,7 +234,7 @@ class DashboardService:
                 next_punch_type = "EXIT"
 
         all_anomalies = await anomaly_service.get_anomalies_by_month(
-            session, now.month, now.year, user_id=None, ignore_excessive_hours=False
+            session, now.month, now.year, user_id=None, ignore_excessive_hours=False, viewer_role=current_user.role
         )
         total_system_anomalies = len(all_anomalies)
 

@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.features.system.system_repository import (
     AsyncRoutineLogRepository,

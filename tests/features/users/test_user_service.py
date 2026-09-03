@@ -312,3 +312,8 @@ def test_format_name(user_service):
     assert user_service._format_name("") == ""
     assert user_service._format_name("   ") == "   "
     assert user_service._format_name(None) is None
+
+
+def test_extract_data_dict(user_service):
+    res = user_service._extract_data({"key": "val"})
+    assert res == {"key": "val"}

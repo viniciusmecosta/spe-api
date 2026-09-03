@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 import pytest
 from app.features.adjustments.adjustment_exceptions import (
@@ -21,7 +21,7 @@ from app.features.adjustments.adjustment_models import AdjustmentAttachment, Adj
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentWaiverCreate,
-    BulkReprocessExtraTimeRequest,
+    BulkReprocessDailyExcessRequest,
 )
 from app.features.adjustments.adjustment_service import adjustment_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -94,23 +94,49 @@ async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_reprocess_historical_extra_time_scenarios(async_db_mock, mocker):
+async def test_reprocess_historical_daily_excess_scenarios(async_db_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
-    req_in = BulkReprocessExtraTimeRequest(start_date=date(2025, 12, 1), end_date=date(2026, 1, 1), user_ids=[1])
+    req_in = BulkReprocessDailyExcessRequest(
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 14),
+        user_ids=[1],
+        overwrite_reviewed=True,
+    )
+    bg_mock = MagicMock()
+
     with pytest.raises(AdjustmentPermissionError) as exc1:
-        await adjustment_service.reprocess_historical_extra_time(async_db_mock, req_in, emp)
+        await adjustment_service.reprocess_historical_daily_excess(
+            async_db_mock, req_in, bg_mock, emp
+        )
     assert exc1.value.status_code == 403
 
     maint = User(id=1, role=UserRole.MAINTAINER)
-    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
-                 new_callable=AsyncMock)
-    mocker.patch("app.shared.tolerance_cron_service.tolerance_cron_service.async_reprocess_historical_entries",
-                 new_callable=AsyncMock)
-    mocker.patch("app.shared.tolerance_cron_service.tolerance_cron_service.reprocess_historical_entries")
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
 
-    res = await adjustment_service.reprocess_historical_extra_time(async_db_mock, req_in, maint)
+    invalid_req = BulkReprocessDailyExcessRequest(
+        start_date=date(2026, 8, 15),
+        end_date=date(2026, 8, 1),
+        user_ids=[1],
+    )
+    with pytest.raises(HTTPException) as exc_date:
+        await adjustment_service.reprocess_historical_daily_excess(
+            async_db_mock, invalid_req, bg_mock, maint
+        )
+    assert "data inicial não pode ser maior" in str(exc_date.value)
+
+    mocker.patch(
+        "app.features.adjustments.adjustment_service.adjustment_service._validate_period_open",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.features.system.audit_service.audit_service.async_log_change",
+        new_callable=AsyncMock,
+    )
+
+    res = await adjustment_service.reprocess_historical_daily_excess(
+        async_db_mock, req_in, bg_mock, maint
+    )
     assert res["status"] == "success"
+    bg_mock.add_task.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -182,10 +208,12 @@ async def test_create_manager_waiver(async_db_mock, mocker):
                  new_callable=AsyncMock,
                  return_value=[AdjustmentRequest(id=1)])
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mock_eval = mocker.patch("app.features.adjustments.adjustment_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
 
     obj_in = AdjustmentWaiverCreate(user_id=1, target_date=date(2023, 10, 1), amount_hours=8.0, reason_text="teste")
     res = await adjustment_service.create_manager_waiver(async_db_mock, obj_in, 99)
     assert res.id == 1
+    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
 
 
 @pytest.mark.asyncio
@@ -216,7 +244,7 @@ async def test_delete_adjustment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_adjustment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
+    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
                                 status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -228,12 +256,14 @@ async def test_approve_adjustment(async_db_mock, mocker):
                  new_callable=AsyncMock,
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mock_eval = mocker.patch("app.features.adjustments.adjustment_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
 
     res = await adjustment_service.approve_adjustment(async_db_mock, 1, 99)
     assert res.status == AdjustmentStatus.APPROVED
+    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
 
 
 @pytest.mark.asyncio
@@ -636,3 +666,119 @@ async def test_revert_adjustment_status_approve(async_db_mock, mocker):
 
     res = await adjustment_service.revert_adjustment_status(async_db_mock, 1, 99, AdjustmentStatus.APPROVED, "motivo")
     assert res.status == AdjustmentStatus.APPROVED
+
+
+@pytest.mark.asyncio
+async def test_create_adjustment_extra_time_blocked(async_db_mock, mocker):
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open", new_callable=AsyncMock)
+    obj_in = AdjustmentRequestCreate(
+        adjustment_type=AdjustmentType.EXTRA_TIME,
+        record_type=RecordType.ENTRY,
+        target_date=date(2026, 8, 1),
+        time=time(18, 0),
+        reason_text="Extra manual"
+    )
+    with pytest.raises(HTTPException) as exc:
+        await adjustment_service.create_adjustment_request(async_db_mock, user_id=1, obj_in=obj_in)
+    assert exc.value.status_code == 400
+    assert "Hora extra manual foi descontinuada" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
+    request = AdjustmentRequest(
+        id=10,
+        user_id=1,
+        target_date=date(2026, 8, 1),
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        status=AdjustmentStatus.PENDING,
+        amount_hours=2.0,
+    )
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open", new_callable=AsyncMock)
+    mock_update = mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status", new_callable=AsyncMock,
+                               return_value=request)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
+                 new_callable=AsyncMock, return_value=[request])
+
+    await adjustment_service.approve_adjustment(
+        async_db_mock,
+        request_id=10,
+        manager_id=99,
+        comment="Aprovado 1h",
+        approved_amount_hours=1.0
+    )
+    assert request.approved_amount_hours == 1.0
+    mock_update.assert_called_once_with(async_db_mock, request, AdjustmentStatus.APPROVED, 99, "Aprovado 1h")
+
+
+@pytest.mark.asyncio
+async def test_revert_adjustment_status_approve_daily_excess(async_db_mock, mocker):
+    request = AdjustmentRequest(
+        id=24,
+        user_id=4,
+        target_date=date(2026, 9, 1),
+        status=AdjustmentStatus.PENDING,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        amount_hours=2.0,
+    )
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
+                 new_callable=AsyncMock)
+    mock_exec = mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._execute_adjustment_action",
+                             new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
+                 new_callable=AsyncMock,
+                 return_value=request)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
+                 new_callable=AsyncMock,
+                 return_value=[request])
+
+    res = await adjustment_service.revert_adjustment_status(async_db_mock, 24, 99, AdjustmentStatus.APPROVED,
+                                                            "Revertendo para aprovado")
+    assert res.id == 24
+    mock_exec.assert_not_called()
+
+
+def test_adjustment_service_repo_property():
+    custom_repo = MagicMock()
+    original_repo = adjustment_service.repo
+    try:
+        adjustment_service.repo = custom_repo
+        assert adjustment_service.repo == custom_repo
+    finally:
+        adjustment_service.repo = original_repo
+
+
+@pytest.mark.asyncio
+async def test_validate_period_open_sync_fallback(mocker, async_db_mock):
+    from app.features.payroll.payroll_service import PayrollService, payroll_service
+    mocker.patch.object(payroll_service, "validate_period_open")
+    orig_async = getattr(PayrollService, "async_validate_period_open", None)
+    try:
+        delattr(PayrollService, "async_validate_period_open")
+        await adjustment_service._validate_period_open(async_db_mock, date(2026, 8, 1))
+        payroll_service.validate_period_open.assert_called_once()
+    finally:
+        if orig_async is not None:
+            PayrollService.async_validate_period_open = orig_async
+
+
+@pytest.mark.asyncio
+async def test_reprocess_daily_excess_crossing_december(async_db_mock, mocker):
+    from app.features.adjustments.adjustment_schemas import BulkReprocessDailyExcessRequest
+    req = BulkReprocessDailyExcessRequest(
+        user_ids=[1],
+        start_date=date(2026, 12, 15),
+        end_date=date(2027, 1, 10),
+        overwrite_reviewed=False,
+    )
+    mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
+    bg = MagicMock()
+    user = User(id=1, role=UserRole.MAINTAINER)
+    res = await adjustment_service.reprocess_historical_daily_excess(async_db_mock, req, bg, current_user=user)
+    assert "Reprocessamento de excedente" in res["message"]

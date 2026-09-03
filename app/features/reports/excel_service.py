@@ -1,12 +1,13 @@
 import os
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -15,7 +16,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -27,6 +28,7 @@ from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
 )
+from app.features.payroll.payroll_repository import async_payroll_repository
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -148,14 +150,7 @@ class ExcelService:
 
         raise EmployeeInvalidReportPeriodError(period=f"{month:02d}/{year}")
 
-    async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
-                                    employee_ids: list[int] | None = None,
-                              current_user: User | None = None) -> BytesIO:
-        session = db if db is not None else self.db
-        assert session is not None
-        if current_user:
-            self._validate_employee_report_period(current_user, month, year)
-
+    async def _fetch_users_and_company(self, session: Any, employee_ids: list[int] | None):
         if hasattr(session, "sync_session"):
             stmt = select(User).options(selectinload(User.historical_schedules))
             stmt = report_service.apply_employee_filters(stmt, employee_ids)
@@ -167,63 +162,58 @@ class ExcelService:
             query = report_service.apply_employee_filters(query, employee_ids)
             users = query.all()
             company = company_repository.get_current(session)
+        return users, company
 
-        logo_path = None
+    def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:
             full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
             if os.path.exists(full_logo_path):
-                logo_path = full_logo_path
+                return full_logo_path
+        return None
 
-        user_ids = [u.id for u in users]
-        start_date, end_date = report_service.get_month_range(month, year)
-        tz = ZoneInfo(settings.TIMEZONE)
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
-        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
-
+    async def _fetch_batch_data(self, session: Any, user_ids: list[int], start_dt: datetime, end_dt: datetime,
+                                start_date: date, end_date: date, month: int, year: int):
         if hasattr(session, "sync_session"):
-            if user_ids:
-                rec_stmt = select(TimeRecord).options(
-                    selectinload(TimeRecord.editor)
-                ).where(
-                    TimeRecord.user_id.in_(user_ids),
-                    TimeRecord.record_datetime >= start_dt,
-                    TimeRecord.record_datetime <= end_dt,
-                    TimeRecord.deleted_at.is_(None),
-                    TimeRecord.is_ignored.is_(False),
-                )
-                rec_res = await session.scalars(rec_stmt)
-                all_records_batch = list(rec_res.all())
-
-                adj_stmt = select(AdjustmentRequest).where(
-                    AdjustmentRequest.user_id.in_(user_ids),
-                    AdjustmentRequest.target_date >= start_date,
-                    AdjustmentRequest.target_date <= end_date,
-                    AdjustmentRequest.deleted_at.is_(None),
-                )
-                adj_res = await session.scalars(adj_stmt)
-                all_adjustments_batch = list(adj_res.all())
-            else:
-                all_records_batch = []
-                all_adjustments_batch = []
+            if not user_ids:
+                return [], [], await async_holiday_repository.get_by_month(session, month, year)
+            rec_stmt = select(TimeRecord).options(selectinload(TimeRecord.editor)).where(
+                TimeRecord.user_id.in_(user_ids),
+                TimeRecord.record_datetime >= start_dt,
+                TimeRecord.record_datetime <= end_dt,
+                TimeRecord.deleted_at.is_(None),
+                TimeRecord.is_ignored.is_(False),
+            )
+            adj_stmt = select(AdjustmentRequest).where(
+                AdjustmentRequest.user_id.in_(user_ids),
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None),
+            )
+            all_records_batch = list((await session.scalars(rec_stmt)).all())
+            all_adjustments_batch = list((await session.scalars(adj_stmt)).all())
             holidays_batch = await async_holiday_repository.get_by_month(session, month, year)
         else:
+            if not user_ids:
+                return [], [], holiday_repository.get_by_month(session, month, year)
             all_records_batch = session.query(TimeRecord).filter(
                 TimeRecord.user_id.in_(user_ids),
                 TimeRecord.record_datetime >= start_dt,
                 TimeRecord.record_datetime <= end_dt,
                 TimeRecord.deleted_at.is_(None),
                 TimeRecord.is_ignored == False
-            ).all() if user_ids else []
-
+            ).all()
             all_adjustments_batch = session.query(AdjustmentRequest).filter(
                 AdjustmentRequest.user_id.in_(user_ids),
                 AdjustmentRequest.target_date >= start_date,
                 AdjustmentRequest.target_date <= end_date,
                 AdjustmentRequest.deleted_at.is_(None)
-            ).all() if user_ids else []
-
+            ).all()
             holidays_batch = holiday_repository.get_by_month(session, month, year)
+        return all_records_batch, all_adjustments_batch, holidays_batch
 
+    async def _generate_user_reports_list(self, session: Any, users: list[User], month: int, year: int,
+                                          current_user: User | None, all_records_batch: list,
+                                          all_adjustments_batch: list, holidays_batch: list):
         records_by_user = {}
         for r in all_records_batch:
             records_by_user.setdefault(r.user_id, []).append(r)
@@ -242,6 +232,72 @@ class ExcelService:
             )
             if report and report.summary.total_worked_minutes > 0:
                 user_reports.append((user, report))
+        return user_reports
+
+    async def export_monthly_report(
+            self,
+            month: int,
+            year: int,
+            employee_ids: list[int] | None = None,
+            current_user: User | None = None,
+            db: Any | None = None,
+    ) -> Response:
+        session = db if db is not None else self.db
+        if not employee_ids and session is not None:
+            closure = await async_payroll_repository.get_by_month(session, month, year)
+            if closure and getattr(closure, "is_closed", None) is True and getattr(closure, "report_path", None):
+                report_path = str(closure.report_path)
+                full_path = (
+                    report_path
+                    if os.path.isabs(report_path)
+                    else os.path.join(settings.UPLOAD_DIR, report_path)
+                )
+                if os.path.exists(full_path) and os.path.isfile(full_path):
+                    filename = f"folha_ponto_{month:02d}_{year}.xlsx"
+                    return FileResponse(
+                        path=full_path,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        filename=filename,
+                    )
+
+        file_stream = await self.generate_excel_report(
+            db=session,
+            month=month,
+            year=year,
+            employee_ids=employee_ids,
+            current_user=current_user,
+        )
+        filename = f"folha_ponto_{month}_{year}.xlsx"
+        return StreamingResponse(
+            file_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    async def generate_excel_report(self, db: Any | None = None, month: int = 0, year: int = 0,
+                                     employee_ids: list[int] | None = None,
+                               current_user: User | None = None) -> BytesIO:
+        session = db if db is not None else self.db
+        assert session is not None
+        if current_user:
+            self._validate_employee_report_period(current_user, month, year)
+
+        users, company = await self._fetch_users_and_company(session, employee_ids)
+        logo_path = self._resolve_logo_path(company)
+
+        user_ids = [u.id for u in users]
+        start_date, end_date = report_service.get_month_range(month, year)
+        tz = ZoneInfo(settings.TIMEZONE)
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
+        end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
+
+        all_records_batch, all_adjustments_batch, holidays_batch = await self._fetch_batch_data(
+            session, user_ids, start_dt, end_dt, start_date, end_date, month, year
+        )
+
+        user_reports = await self._generate_user_reports_list(
+            session, users, month, year, current_user, all_records_batch, all_adjustments_batch, holidays_batch
+        )
 
         wb = Workbook()
         now, _ = trusted_time_service.get_trusted_time()
@@ -525,7 +581,7 @@ class ExcelService:
         for user, report in user_reports:
             sum_data = report.summary
 
-            total_real = sum_data.total_worked_minutes / 1440.0
+            total_real = sum_data.total_accounted_minutes / 1440.0
 
             ws_summary.append([""])
             row = ws_summary.max_row
@@ -593,7 +649,7 @@ class ExcelService:
         ws_det.append([""])
 
         merges = [2, 3, 13, 2, 2, 2]
-        headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Líquido"]
+        headers_det = ["Data", "Dia Semana", "Registros", "Trab. Bruto", "Extra Ñ Aut.", "Trab. Contabilizado"]
 
         ws_det.append([""])
         header_row = ws_det.max_row
@@ -606,10 +662,10 @@ class ExcelService:
         total_trab_real = 0.0
 
         for day in report.daily_details:
-            trab_bruto, extra, trab_liquido = self._build_day_row(ws_det, day, merges)
+            trab_bruto, extra, trab_contabilizado = self._build_day_row(ws_det, day, merges)
             total_trab_bruto += trab_bruto
             total_extra += extra
-            total_trab_real += trab_liquido
+            total_trab_real += trab_contabilizado
 
         ws_det.append([""])
         last_row = ws_det.max_row
@@ -635,9 +691,11 @@ class ExcelService:
         ws_det.append([""])
         last_row = ws_det.max_row
 
+        trab_contabilizado = self._time_str_to_fraction(getattr(day, 'accounted_time', '00:00') or day.worked_time or '00:00')
         trab_liquido = self._time_str_to_fraction(day.worked_time)
-        extra_nao_aut = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
-        trab_bruto = trab_liquido + extra_nao_aut
+        extra_nao_aut_legacy = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
+        trab_bruto = trab_liquido + extra_nao_aut_legacy
+        extra_nao_aut = max(0.0, trab_bruto - trab_contabilizado)
 
         texts = [
             day.date.strftime("%d/%m/%y"),
@@ -645,7 +703,7 @@ class ExcelService:
             punches_str,
             trab_bruto,
             extra_nao_aut,
-            trab_liquido
+            trab_contabilizado
         ]
 
         fill_to_apply = None
@@ -671,7 +729,7 @@ class ExcelService:
         ws_det.cell(row=last_row, column=21).number_format = TIME_FORMAT
         ws_det.cell(row=last_row, column=23).number_format = TIME_FORMAT
 
-        return trab_bruto, extra_nao_aut, trab_liquido
+        return trab_bruto, extra_nao_aut, trab_contabilizado
 
 
 excel_service = ExcelService()

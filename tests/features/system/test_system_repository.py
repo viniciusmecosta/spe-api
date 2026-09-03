@@ -169,3 +169,56 @@ async def test_async_routine_log_repository(async_db_mock):
     async_db_mock.execute.return_value = del_res
     deleted = await repo.delete_older_than(async_db_mock, datetime(2026, 1, 1))
     assert deleted == 3
+
+
+def test_routine_log_repository_db_variants():
+    repo = RoutineLogRepository()
+
+    mock_db_scalars = MagicMock(spec=["scalars", "scalar"])
+    mock_db_scalars.scalar.return_value = True
+    assert repo.has_routine_run_for_target_date(mock_db_scalars, "SYNC", date(2026, 1, 1)) is True
+    assert repo.has_hourly_routine_run(mock_db_scalars, "SYNC", datetime(2026, 1, 1)) is True
+
+    mock_db_scalars.scalar.return_value = date(2026, 1, 1)
+    assert repo.get_last_successful_target_date(mock_db_scalars, "SYNC") == date(2026, 1, 1)
+
+    mock_db_query = MagicMock(spec=["query"])
+    query_mock = MagicMock()
+    query_mock.filter.return_value = query_mock
+    query_mock.order_by.return_value = query_mock
+    query_mock.offset.return_value = query_mock
+    query_mock.limit.return_value = query_mock
+    query_mock.all.return_value = ["log"]
+    mock_db_query.query.return_value = query_mock
+
+    logs_asc = repo.get_logs(
+        mock_db_query,
+        routine_type="SYNC",
+        status="SUCCESS",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 12, 31),
+        order_by="asc",
+    )
+    assert logs_asc == ["log"]
+
+    logs_desc = repo.get_logs(
+        mock_db_query,
+        order_by="desc",
+    )
+    assert logs_desc == ["log"]
+
+    audit_repo = AuditRepository()
+    audit_asc = audit_repo.get_logs(
+        mock_db_query,
+        action="CREATE",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 12, 31),
+        order_by="asc",
+    )
+    assert audit_asc == ["log"]
+
+    audit_desc = audit_repo.get_logs(
+        mock_db_query,
+        order_by="desc",
+    )
+    assert audit_desc == ["log"]

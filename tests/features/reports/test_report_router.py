@@ -145,3 +145,87 @@ def test_get_user_detailed_report(client: TestClient, mocker: MagicMock) -> None
     response = client.get("/api/v1/reports/user/1")
     assert response.status_code == 200
     assert response.json()["summary"]["user_name"] == "Funcionario"
+
+
+def test_export_monthly_report_excel_from_saved_file(client: TestClient, mocker: MagicMock, tmp_path) -> None:
+    test_file = tmp_path / "folha_ponto_07_2026_saved.xlsx"
+    test_file.write_bytes(b"saved excel content from closed payroll")
+
+    mock_closure = MagicMock()
+    mock_closure.is_closed = True
+    mock_closure.report_path = str(test_file)
+
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=mock_closure,
+    )
+    mock_generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026")
+    assert response.status_code == 200
+    assert response.content == b"saved excel content from closed payroll"
+    assert "folha_ponto_07_2026.xlsx" in response.headers.get("content-disposition", "")
+    mock_generate.assert_not_called()
+
+
+def test_export_monthly_report_excel_saved_file_missing_falls_back(client: TestClient, mocker: MagicMock) -> None:
+    fake_stream = io.BytesIO(b"dynamically generated excel")
+    mock_closure = MagicMock()
+    mock_closure.is_closed = True
+    mock_closure.report_path = "/non/existent/path/folha.xlsx"
+
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=mock_closure,
+    )
+    mock_generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock, return_value=fake_stream)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026")
+    assert response.status_code == 200
+    assert response.content == b"dynamically generated excel"
+    mock_generate.assert_called_once()
+
+
+def test_export_monthly_report_excel_with_employee_ids_skips_saved_file(client: TestClient, mocker: MagicMock, tmp_path) -> None:
+    test_file = tmp_path / "folha_ponto_07_2026_saved.xlsx"
+    test_file.write_bytes(b"saved company excel")
+
+    mock_closure = MagicMock()
+    mock_closure.is_closed = True
+    mock_closure.report_path = str(test_file)
+
+    fake_stream = io.BytesIO(b"dynamically filtered excel")
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mock_get_closure = mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=mock_closure,
+    )
+    mock_generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock, return_value=fake_stream)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids=1&employee_ids=2")
+    assert response.status_code == 200
+    assert response.content == b"dynamically filtered excel"
+    mock_get_closure.assert_not_called()
+    mock_generate.assert_called_once()
+
+
+def test_export_monthly_report_excel_reopened_payroll_falls_back(client: TestClient, mocker: MagicMock) -> None:
+    fake_stream = io.BytesIO(b"dynamically generated for reopened")
+
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    mock_generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock, return_value=fake_stream)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026")
+    assert response.status_code == 200
+    assert response.content == b"dynamically generated for reopened"
+    mock_generate.assert_called_once()

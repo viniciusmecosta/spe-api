@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import shutil
@@ -80,8 +81,11 @@ class FirmwareService:
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
         relative_file_path = os.path.relpath(absolute_file_path, ROOT_DIR)
 
-        with open(absolute_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        def _save_upload():
+            with open(absolute_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+        await asyncio.to_thread(_save_upload)
 
         firmware = await self.repo.create(session, version=version, file_path=relative_file_path)
         await audit_service.async_log_change(session, current_user_id, "UPLOAD", new_model=firmware)
@@ -103,8 +107,11 @@ class FirmwareService:
         absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
         relative_file_path = os.path.relpath(absolute_file_path, ROOT_DIR)
 
-        with open(absolute_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        def _save_update():
+            with open(absolute_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+
+        await asyncio.to_thread(_save_update)
 
         firmware = await self.repo.create(session, version=version, file_path=relative_file_path)
         await audit_service.async_log_change(session, current_user_id, "UPDATE", old_model=firmware_old,

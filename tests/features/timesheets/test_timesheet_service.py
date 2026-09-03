@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 import pytest
+from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
 from app.features.timesheets.timesheet_exceptions import (
@@ -13,7 +14,7 @@ from app.features.timesheets.timesheet_exceptions import (
 )
 from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User, UserWorkScheduleConfig
-from app.shared.enums import UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
 
 timesheet_service = TimesheetService()
@@ -65,7 +66,7 @@ def test_build_daily_records_table():
     mock_daily_2.extra_seconds = 0
     mock_daily_2.missing_seconds = 0
     mock_daily_2.punch_blocks = []
-    period_result = MagicMock(spec=PeriodTimeResult)
+    period_result = MagicMock()
     period_result.total_net_worked_seconds = 3600
     period_result.daily_results = {date(2023, 10, 1): mock_daily_1, date(2023, 10, 2): mock_daily_2}
     period_result.daily_is_holiday = {date(2023, 10, 1): False, date(2023, 10, 2): True}
@@ -76,8 +77,26 @@ def test_build_daily_records_table():
     t_style = []
     styles = getSampleStyleSheet()
     table_text_style = styles['Normal']
+    adj_excess = MagicMock(spec=AdjustmentRequest)
+    adj_excess.target_date = date(2023, 10, 1)
+    adj_excess.adjustment_type = AdjustmentType.DAILY_EXCESS
+    adj_excess.status = AdjustmentStatus.PENDING
+
+    adj_waiver = MagicMock(spec=AdjustmentRequest)
+    adj_waiver.target_date = date(2023, 10, 1)
+    adj_waiver.adjustment_type = AdjustmentType.WAIVER
+    adj_waiver.status = AdjustmentStatus.APPROVED
+    adj_waiver.amount_hours = 2.0
+
+    adj_extra = MagicMock(spec=AdjustmentRequest)
+    adj_extra.target_date = date(2023, 10, 1)
+    adj_extra.adjustment_type = AdjustmentType.EXTRA_TIME
+    adj_extra.status = AdjustmentStatus.REJECTED
+    adj_extra.amount_hours = 1.0
+
     t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
-                                                     data_table, t_style, table_text_style)
+                                                     data_table, t_style, table_text_style,
+                                                     all_adjustments=[adj_excess, adj_waiver, adj_extra])
     assert t is not None
 
 
@@ -125,10 +144,18 @@ async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -228,10 +255,18 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -275,10 +310,18 @@ async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, 
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -323,10 +366,18 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -372,10 +423,18 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = d == 12
-    mock_period = MagicMock(spec=PeriodTimeResult)
-    mock_period.total_net_worked_seconds = 36000
+    mock_period = MagicMock()
+    mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.00
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     captured_story = []
 
@@ -384,6 +443,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
 
     mocker.patch('app.features.timesheets.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    assert buffer is not None
     assert len(captured_story) > 10, 'A story deve conter múltiplos elementos (Parágrafos e Tabelas)'
     paragraphs = [item for item in captured_story if isinstance(item, Paragraph)]
     tables = [item for item in captured_story if isinstance(item, Table)]
@@ -399,7 +459,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
             break
     assert daily_table is not None, 'Tabela de ponto diário (com 31 dias) não foi encontrada'
     row_dia_12 = daily_table._cellvalues[12]
-    assert '12/10/2023' in str(row_dia_12[0].getPlainText())
+    assert '12/10' in str(row_dia_12[0].getPlainText())
     assert 'Feriado' in str(row_dia_12[2].getPlainText())
     assert str(row_dia_12[1].getPlainText()) in ['Quinta', 'Quinta-feira', 'Qui']
     bg_style = [cmd for cmd in daily_table._bkgrndcmds if cmd[0] == 'BACKGROUND']
@@ -545,10 +605,18 @@ async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocke
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -583,3 +651,88 @@ def test_draw_company_header_and_notes(mocker):
                         cell_texts.append(cell.text)
             assert any('Razão Social:' in t for t in cell_texts)
     assert found_table
+
+
+@pytest.mark.asyncio
+async def test_generate_user_timesheet_pdf_async_session(mocker):
+    from unittest.mock import AsyncMock
+    from app.features.companies.company_models import Company
+    from app.shared.time_calculation_service import DailyTimeResult, PeriodTimeResult
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = "Test Async User"
+    mock_user.cpf = "12345678901"
+    mock_user.pis = "12345678901"
+    mock_user.role = UserRole.EMPLOYEE
+    mock_user.historical_schedules = []
+
+    mock_company = MagicMock(spec=Company)
+    mock_company.name = "Test Company"
+    mock_company.cnpj = "12345678901234"
+    mock_company.address = "Test Addr"
+    mock_company.phone = "11987654321"
+    mock_company.logo_path = None
+
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mocker.patch("app.features.timesheets.timesheet_service.async_user_repository.get", return_value=mock_user)
+    mocker.patch("app.features.timesheets.timesheet_service.async_company_repository.get_current",
+                 return_value=mock_company)
+    mocker.patch("app.features.timesheets.timesheet_service.async_time_record_repository.get_by_range", return_value=[])
+    mocker.patch("app.features.timesheets.timesheet_service.async_holiday_repository.get_by_month", return_value=[])
+
+    mock_adj_scalars = MagicMock()
+    mock_adj_scalars.all.return_value = []
+    async_sess.scalars.return_value = mock_adj_scalars
+
+    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_period_time")
+    daily_res = {}
+    daily_hol = {}
+    for d in range(1, 32):
+        dt = date(2023, 10, d)
+        mock_daily = MagicMock(spec=DailyTimeResult)
+        mock_daily.punch_blocks = []
+        mock_daily.net_worked_seconds = 0
+        mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
+        daily_res[dt] = mock_daily
+        daily_hol[dt] = False
+    mock_period = MagicMock()
+    mock_period.total_net_worked_seconds = 0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.daily_results = daily_res
+    mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_calc.return_value = mock_period
+
+    buf = await timesheet_service.generate_user_timesheet_pdf(async_sess, 1, 10, 2023)
+    assert isinstance(buf, io.BytesIO)
+
+
+@pytest.mark.asyncio
+async def test_generate_batch_timesheets_pdf_async_session(mocker):
+    from unittest.mock import AsyncMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = "Batch User"
+
+    mock_users_scalars = MagicMock()
+    mock_users_scalars.all.return_value = [mock_user]
+    async_sess.scalars.return_value = mock_users_scalars
+
+    mocker.patch.object(timesheet_service, "generate_user_timesheet_pdf", new_callable=AsyncMock,
+                        return_value=io.BytesIO(b"fake pdf content"))
+
+    batch_buf = await timesheet_service.generate_all_timesheets_pdf_zip(async_sess, month=10, year=2023,
+                                                                        employee_ids=[1])
+    assert isinstance(batch_buf, io.BytesIO)

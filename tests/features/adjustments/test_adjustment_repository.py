@@ -1,10 +1,3 @@
-
-import app.features.time_records.time_record_models
-import app.features.printers.printer_models
-import app.features.holidays.holiday_models
-import app.features.payroll.payroll_models
-import app.features.devices.device_models
-import app.database.base
 from datetime import date
 from unittest.mock import MagicMock
 
@@ -13,8 +6,6 @@ from app.features.adjustments.adjustment_repository import (
     AdjustmentRepository,
     AsyncAdjustmentRepository,
 )
-import app.features.printers.printer_models
-import app.features.companies.company_models
 from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate
 from app.shared.enums import AdjustmentStatus, AdjustmentType
 
@@ -115,15 +106,16 @@ async def test_async_adjustment_repository(async_db_mock):
 
     created = await repo.create(async_db_mock, user_id=1, obj_in=obj_in)
     assert created.user_id == 1
-    
-    # Restore the behavior expected by the rest of the test
+
     mock_scalars.first.return_value = created
     mock_scalars.all.return_value = [created]
     async_db_mock.scalar.return_value = 1
 
     assert await repo.get(async_db_mock, 1) == created
     assert len(await repo.get_all_by_user(async_db_mock, 1, month=8, year=2026, status="PENDING")) == 1
+    assert len(await repo.get_all_by_user(async_db_mock, 1, year=2026, status="NOT_PENDING")) == 1
     assert len(await repo.get_all(async_db_mock, month=8, year=2026, status="NOT_PENDING")) == 1
+    assert len(await repo.get_all(async_db_mock, year=2026, status="APPROVED")) == 1
     assert await repo.count_pending(async_db_mock, from_date=date(2026, 1, 1)) == 1
     assert len(await repo.get_waivers_by_user_and_date(async_db_mock, 1, date(2026, 8, 1))) == 1
 

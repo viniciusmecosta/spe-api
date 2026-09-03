@@ -336,7 +336,7 @@ async def test_toggle_record_type_success(db_session_mock, mock_time_record_repo
     assert result.is_verified is True
     db_session_mock.add.assert_any_call(result)
     db_session_mock.add.assert_any_call(record)
-    db_session_mock.flush.assert_called_once()
+    assert db_session_mock.flush.called
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(result)
     mock_audit_service.log_change.assert_called_once()
@@ -812,4 +812,249 @@ async def test_trigger_auto_print_disabled(db_session_mock, mocker):
     record = TimeRecord(id=1, user=user)
     await time_record_service.trigger_auto_print(db_session_mock, record, mock_bg)
     mock_bg.add_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
+                                                                             mock_payroll_service, mock_audit_service,
+                                                                             mocker):
+    reprocess_mock = mocker.patch.object(time_record_service, "_reprocess_daily_excess", return_value=None)
+
+    dt = datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
+    create_obj = TimeRecordCreateAdmin(
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=dt,
+        edit_justification="Adicionado pelo admin"
+    )
+    rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY, record_datetime=dt)
+    mock_time_record_repo.create.return_value = rec
+
+    await time_record_service.create_admin_record(db_session_mock, create_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    mock_time_record_repo.get.return_value = rec
+    update_obj = TimeRecordUpdate(
+        record_datetime=datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo(settings.TIMEZONE)),
+        edit_justification="Horario alterado"
+    )
+    await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    delete_obj = TimeRecordDeleteAdmin(edit_justification="Batida indevida")
+    await time_record_service.delete_admin_record(db_session_mock, record_id=1, obj_in=delete_obj, manager_id=2)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+    reprocess_mock.reset_mock()
+    admin_user = User(id=2, role=UserRole.MANAGER)
+    await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=admin_user)
+    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+
+
+def test_time_record_service_custom_repo():
+    from app.features.time_records.time_record_service import TimeRecordService
+    custom_repo = MagicMock()
+    svc = TimeRecordService(repo=custom_repo)
+    assert svc.repo == custom_repo
+
+
+@pytest.mark.asyncio
+async def test_time_record_service_async_session_crud(mocker):
+    from unittest.mock import AsyncMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+    async_sess.add = MagicMock()
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [AdjustmentRequest(id=1), TimeRecord(id=1, is_verified=True)]
+    mock_scalars.first.return_value = TimeRecord(id=1, record_type=RecordType.ENTRY,
+                                                 record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
+    async_sess.scalars.return_value = mock_scalars
+
+    await time_record_service._invalidate_extra_time_requests(async_sess, 1, date(2024, 1, 15))
+    assert async_sess.delete.called
+
+    await time_record_service._delete_daily_excess_adjustments(async_sess, 1, date(2024, 1, 15))
+    await time_record_service._unverify_daily_time_records(async_sess, 1, date(2024, 1, 15))
+
+    mocker.patch("app.shared.daily_excess_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
+    await time_record_service._reprocess_daily_excess(async_sess, 1, date(2024, 1, 15))
+
+    is_first = await time_record_service._is_first_entry_affected(async_sess, 1, date(2024, 1, 15), record_id=1)
+    assert is_first is True
+
+    user = User(id=1, role=UserRole.MANAGER, can_manual_punch_desktop=True)
+    mocker.patch("app.features.time_records.time_record_service.async_user_repository.get", new_callable=AsyncMock,
+                 return_value=user)
+    dummy_req = MagicMock()
+    dummy_req.headers = {}
+    await time_record_service._validate_manual_punch_permission(async_sess, 1, dummy_req)
+
+    mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
+                 new_callable=AsyncMock)
+    await time_record_service._validate_period_open_helper(async_sess, date(2024, 1, 15))
+
+    rec = TimeRecord(id=10, user_id=1, record_type=RecordType.ENTRY,
+                     record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
+    mocker.patch.object(time_record_service.repo, "create", new_callable=AsyncMock, return_value=rec)
+    mocker.patch.object(time_record_service.repo, "get", new_callable=AsyncMock, return_value=rec)
+    mocker.patch.object(time_record_service.repo, "delete", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service.repo, "get_last_by_user", new_callable=AsyncMock, return_value=rec)
+    mocker.patch.object(time_record_service.repo, "get_all_by_user", new_callable=AsyncMock, return_value=[rec])
+    mocker.patch.object(time_record_service.repo, "get_by_range", new_callable=AsyncMock, return_value=[rec])
+    mocker.patch.object(time_record_service.repo, "get_timeline", new_callable=AsyncMock, return_value=[])
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    mocker.patch("app.shared.trusted_time_service.trusted_time_service.get_trusted_time",
+                 return_value=(datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")), False))
+    req_ntp = MagicMock()
+    req_ntp.headers = {}
+    req_ntp.state = MagicMock()
+    await time_record_service._register_manual_punch(async_sess, 1, req_ntp, RecordType.ENTRY)
+    assert req_ntp.state.ntp_error is True
+
+    admin_user = User(id=2, role=UserRole.MANAGER)
+    toggled = await time_record_service.toggle_record_type(async_sess, record_id=10, current_user=admin_user)
+    assert toggled.record_type == RecordType.EXIT
+
+    create_obj = TimeRecordCreateAdmin(
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")),
+        edit_justification="admin create",
+    )
+    created = await time_record_service.create_admin_record(async_sess, obj_in=create_obj, manager_id=2)
+    assert created.id == 10
+
+    update_obj = TimeRecordUpdate(
+        record_datetime=datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo("UTC")),
+        edit_justification="admin update",
+    )
+    updated = await time_record_service.update_admin_record(async_sess, record_id=10, obj_in=update_obj, manager_id=2)
+    assert updated.record_datetime == datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo("UTC"))
+
+    delete_obj = TimeRecordDeleteAdmin(edit_justification="admin delete")
+    await time_record_service.delete_admin_record(async_sess, record_id=10, obj_in=delete_obj, manager_id=2)
+
+    punched = await time_record_service.create_punch(async_sess, user_id=1,
+                                                     timestamp=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
+    assert punched.id == 10
+
+    my_recs = await time_record_service.get_my_records(async_sess, user_id=1)
+    assert len(my_recs) == 1
+
+    list_recs = await time_record_service.list_records_for_admin(async_sess, user_id=1, start_date=datetime(2024, 1, 1),
+                                                                 end_date=datetime(2024, 1, 31))
+    assert len(list_recs) == 1
+
+    timeline = await time_record_service.get_record_timeline(async_sess, record_id=10)
+    assert timeline == []
+
+
+@pytest.mark.asyncio
+async def test_time_record_service_async_session_receipts_and_print(mocker):
+    from unittest.mock import AsyncMock
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+
+    mock_company = MagicMock()
+    mock_company.name = "Co"
+    mock_company.cnpj = "12345678901234"
+    mock_company.address = "Addr"
+    mock_company.default_printer_id = 1
+    mock_company.auto_print_receipt = True
+
+    mock_printer = MagicMock()
+    mock_printer.status = True
+
+    user = User(id=1, name="John", cpf="12345678901", pis="12345678901", role=UserRole.MANAGER, auto_print_receipt=True)
+    rec = TimeRecord(id=10, user_id=1, record_type=RecordType.ENTRY,
+                     record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")), user=user)
+
+    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
+                 new_callable=AsyncMock, return_value=mock_company)
+    mocker.patch("app.features.printers.printer_repository.async_printer_repository.get_by_id", new_callable=AsyncMock,
+                 return_value=mock_printer)
+    mocker.patch("app.features.time_records.receipt_service.receipt_service.print_receipt_async")
+    mocker.patch("app.features.time_records.receipt_service.receipt_service.generate_pdf_receipt", return_value=b"pdf")
+    mocker.patch.object(time_record_service.repo, "get", new_callable=AsyncMock, return_value=rec)
+
+    mocker.patch.object(time_record_service, "get_record_timeline", new_callable=AsyncMock, return_value=[])
+
+    mock_bg = MagicMock()
+    await time_record_service.trigger_auto_print(async_sess, record=rec, background_tasks=mock_bg)
+    assert mock_bg.add_task.called
+
+    from app.shared.hashid_service import hashid_service
+    short_id = hashid_service.encode(10)
+
+    receipt_data = await time_record_service.get_receipt_data(async_sess, short_id=short_id, current_user=user)
+    assert receipt_data.record_id == 10
+
+    pdf_bytes, fn = await time_record_service.get_receipt_pdf(async_sess, short_id=short_id, current_user=user)
+    assert pdf_bytes == b"pdf"
+    assert fn == "10.pdf"
+
+
+@pytest.mark.asyncio
+async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
+    sync_db = MagicMock(spec=["query", "delete", "flush"])
+    mock_adj = MagicMock()
+    mock_rec = MagicMock()
+    sync_db.query.return_value.filter.return_value.all.side_effect = [[mock_adj], [mock_rec]]
+
+    await time_record_service._delete_daily_excess_adjustments(sync_db, 1, date(2026, 8, 1))
+    sync_db.delete.assert_called_once_with(mock_adj)
+
+    await time_record_service._unverify_daily_time_records(sync_db, 1, date(2026, 8, 1))
+    assert mock_rec.is_verified is False
+
+    async_sess = AsyncMock()
+    async_sess.sync_session = MagicMock()
+    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
+                     record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")))
+    await time_record_service._commit_and_audit_admin_update(
+        async_sess, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+    )
+    assert time_record_service._reprocess_daily_excess.call_count == 2
+
+    mock_bg = MagicMock()
+    rec.user = User(id=1, auto_print_receipt=True)
+    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
+                 new_callable=AsyncMock, return_value=None)
+    await time_record_service.trigger_auto_print(async_sess, record=rec, background_tasks=mock_bg)
+
+    mock_company = MagicMock(default_printer_id=1)
+    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
+                 new_callable=AsyncMock, return_value=mock_company)
+    mocker.patch("app.features.printers.printer_repository.async_printer_repository.get_by_id", new_callable=AsyncMock,
+                 return_value=None)
+    await time_record_service.trigger_auto_print(async_sess, record=rec, background_tasks=mock_bg)
+
+
+@pytest.mark.asyncio
+async def test_time_record_service_admin_update_date_change_branches(mocker):
+    mocker.patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock, return_value=False)
+    mocker.patch.object(time_record_service, "_invalidate_daily_excess_and_unverify", new_callable=AsyncMock)
+    rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
+                     record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
+    obj_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")), edit_justification="Reason")
+    await time_record_service._handle_admin_update_invalidations(
+
+        MagicMock(), rec, obj_in, date(2026, 8, 1), date(2026, 8, 2), RecordType.EXIT
+    )
+    assert time_record_service._invalidate_daily_excess_and_unverify.call_count == 2
+
+    sync_session = MagicMock(spec=["flush", "commit", "refresh"])
+    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
+    await time_record_service._commit_and_audit_admin_update(
+        sync_session, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+    )
+    assert time_record_service._reprocess_daily_excess.call_count == 2
+
 

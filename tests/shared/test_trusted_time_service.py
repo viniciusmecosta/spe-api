@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from zoneinfo import ZoneInfo
 
+import pytest
 from app.core.config import settings
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -117,5 +118,33 @@ def test_get_trusted_time_cache_expired():
         mock_client_instance.request.return_value = mock_response
 
         time_result, is_trusted = trusted_time_service.get_trusted_time()
+        if trusted_time_service._sync_thread:
+            trusted_time_service._sync_thread.join(timeout=2.0)
         mock_ntp.assert_called_once()
         assert is_trusted is True
+
+
+def test_get_trusted_time_background_sync_already_running():
+    trusted_time_service.reset_ntp_cache()
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    trusted_time_service._last_ntp_sync = now_utc - timedelta(hours=2)
+    trusted_time_service._ntp_offset = 5.0
+    trusted_time_service._is_syncing = True
+    with patch("ntplib.NTPClient") as mock_ntp:
+        time_result, is_trusted = trusted_time_service.get_trusted_time()
+        mock_ntp.assert_not_called()
+        assert is_trusted is True
+
+
+@pytest.mark.asyncio
+async def test_sync_ntp_async():
+    trusted_time_service.reset_ntp_cache()
+    with patch("ntplib.NTPClient") as mock_ntp:
+        mock_client_instance = mock_ntp.return_value
+        mock_response = MagicMock()
+        mock_response.tx_time = 1627819200.0
+        mock_client_instance.request.return_value = mock_response
+
+        await trusted_time_service.sync_ntp_async()
+        mock_ntp.assert_called_once()
+        assert trusted_time_service._ntp_offset is not None

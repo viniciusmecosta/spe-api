@@ -44,3 +44,7 @@ def test_get_client_device_name_cases():
 
     with patch("socket.gethostbyaddr", side_effect=Exception("err")):
         assert _resolve_device_name_from_ip("192.168.1.100") == ""
+
+    mock_req_lh = MagicMock()
+    mock_req_lh.headers = {"X-Device-Name": "localhost"}
+    assert get_client_device_name(None, mock_req_lh) == "Desconhecido"

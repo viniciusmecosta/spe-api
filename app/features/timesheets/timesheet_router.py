@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from app.features.timesheets.anomaly_service import AnomalyService
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
+from app.shared.enums import UserRole
 from app.features.timesheets.timesheet_service import TimesheetService
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -69,7 +70,7 @@ async def get_all_anomalies(
         year: int,
         service: Annotated[AnomalyService, Depends()],
 ) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year)
+    return await service.get_anomalies_by_month(month=month, year=year, viewer_role=UserRole.MANAGER)
 
 
 @anomalies_router.get(
@@ -82,4 +83,4 @@ async def get_user_anomalies(
         year: int,
         service: Annotated[AnomalyService, Depends()],
 ) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year, user_id=user_id)
+    return await service.get_anomalies_by_month(month=month, year=year, user_id=user_id, viewer_role=UserRole.MANAGER)

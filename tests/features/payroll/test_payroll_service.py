@@ -453,3 +453,21 @@ async def test_close_period_excel_error(mock_get_by_month, mock_gen, async_db_mo
         await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
     assert "Excel generation error" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_async_validate_period_open_success_and_closed():
+    from datetime import date
+    from app.features.payroll.payroll_exceptions import PayrollPeriodClosedError
+    mock_db = AsyncMock()
+
+    with patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
+               new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = None
+        await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
+
+        mock_get.return_value = MagicMock()
+        async def _run_payroll():
+            await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
+        with pytest.raises(PayrollPeriodClosedError):
+            await _run_payroll()

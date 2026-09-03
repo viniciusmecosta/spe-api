@@ -15,6 +15,8 @@ def record_factory():
         rec = MagicMock(spec=TimeRecord)
         rec.record_datetime = dt
         rec.record_type = record_type
+        rec.is_ignored = False
+        rec.deleted_at = None
         return rec
 
     return _factory
@@ -29,6 +31,8 @@ def adjustment_factory():
         adj.adjustment_type = adj_type
         adj.status = status
         adj.amount_hours = hours
+        adj.approved_amount_hours = None
+        adj.deleted_at = None
         return adj
 
     return _factory
@@ -42,6 +46,11 @@ def schedule_factory():
         sched.valid_until = valid_until
         sched.day_of_week = day
         sched.daily_hours = hours
+        sched.entry_1 = None
+        sched.exit_1 = None
+        sched.entry_2 = None
+        sched.exit_2 = None
+        sched.is_daily_excess_enabled = False
         return sched
 
     return _factory
@@ -187,7 +196,7 @@ def test_calculate_daily_time_matrix(record_factory, adjustment_factory, monkeyp
         day_records=[],
         expected_seconds=expected_sec,
         waiver_adj=waiver,
-        unapproved_extra_adjs=[unapproved] if unapproved else [],
+        extra_time_adjs=[unapproved] if unapproved else [],
         is_excused=bool(waiver),
         has_schedule=has_schedule
     )
@@ -248,7 +257,7 @@ def test_calculate_period_time_schedules_matrix(record_factory, schedule_factory
         hm.date = h
         hol_mocks.append(hm)
 
-    def mock_daily_time(day_records, expected_seconds, waiver_adj, unapproved_extra_adjs, is_excused, has_schedule):
+    def mock_daily_time(day_records, expected_seconds, waiver_adj, extra_time_adjs, is_excused, has_schedule, *args, **kwargs):
         dt = DailyTimeResult(
             raw_worked_seconds=expected_seconds,
             waiver_seconds=0.0,
@@ -297,3 +306,156 @@ def test_calculate_period_time_pure_logic(record_factory, schedule_factory, adju
     assert res.total_extra_seconds == 7200.0
     assert res.total_missing_seconds == 0.0
     assert res.final_balance_seconds == 7200.0
+
+
+def test_calculate_accounted_time_seconds_truncated(record_factory, schedule_factory):
+    r1 = record_factory(datetime(2026, 8, 1, 8, 0, 45), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 1, 12, 0, 30), RecordType.EXIT)
+    r3 = record_factory(datetime(2026, 8, 1, 13, 0, 15), RecordType.ENTRY)
+    r4 = record_factory(datetime(2026, 8, 1, 17, 0, 59), RecordType.EXIT)
+
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.entry_1 = "08:00"
+    sched.exit_1 = "12:00"
+    sched.entry_2 = "13:00"
+    sched.exit_2 = "17:00"
+    sched.is_daily_excess_enabled = True
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2, r3, r4],
+        schedule=sched,
+        daily_excess_adj=None
+    )
+    assert res.raw_seconds == 28800.0
+    assert res.excess_lunch_seconds == 0.0
+    assert res.excess_work_seconds == 0.0
+    assert res.total_excess_seconds == 0.0
+    assert res.accounted_seconds == 28800.0
+
+
+def test_calculate_accounted_time_excess_work_pending_cap(record_factory, schedule_factory):
+    r1 = record_factory(datetime(2026, 8, 1, 8, 0, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 1, 18, 0, 0), RecordType.EXIT)
+
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.is_daily_excess_enabled = True
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        daily_excess_adj=None
+    )
+    assert res.raw_seconds == 36000.0
+    assert res.excess_work_seconds == 7200.0
+    assert res.total_excess_seconds == 7200.0
+    assert res.accounted_seconds == 28800.0
+
+
+def test_calculate_accounted_time_excess_lunch(record_factory, schedule_factory):
+    r1 = record_factory(datetime(2026, 8, 1, 8, 0, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 1, 12, 0, 0), RecordType.EXIT)
+    r3 = record_factory(datetime(2026, 8, 1, 13, 30, 0), RecordType.ENTRY)
+    r4 = record_factory(datetime(2026, 8, 1, 18, 0, 0), RecordType.EXIT)
+
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.entry_1 = "08:00"
+    sched.exit_1 = "12:00"
+    sched.entry_2 = "13:00"
+    sched.exit_2 = "17:00"
+    sched.is_daily_excess_enabled = True
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2, r3, r4],
+        schedule=sched,
+        daily_excess_adj=None
+    )
+    assert res.raw_seconds == 30600.0
+    assert res.excess_lunch_seconds == 1800.0
+    assert res.total_excess_seconds == 1800.0
+    assert res.accounted_seconds == 28800.0
+
+
+def test_calculate_accounted_time_approved_full_and_partial(record_factory, schedule_factory, adjustment_factory):
+    r1 = record_factory(datetime(2026, 8, 1, 8, 0, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 1, 18, 0, 0), RecordType.EXIT)
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SABADO.value, 8.0)
+    sched.is_daily_excess_enabled = True
+
+    adj_partial = adjustment_factory(date(2026, 8, 1), AdjustmentType.DAILY_EXCESS, AdjustmentStatus.APPROVED, 2.0)
+    adj_partial.approved_amount_hours = 1.0
+
+    res_partial = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        daily_excess_adj=adj_partial
+    )
+    assert res_partial.approved_seconds == 3600.0
+    assert res_partial.accounted_seconds == 32400.0
+
+    adj_full = adjustment_factory(date(2026, 8, 1), AdjustmentType.DAILY_EXCESS, AdjustmentStatus.APPROVED, 2.0)
+    adj_full.approved_amount_hours = None
+
+    res_full = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        daily_excess_adj=adj_full
+    )
+    assert res_full.approved_seconds == 7200.0
+    assert res_full.accounted_seconds == 36000.0
+
+    adj_rejected = adjustment_factory(date(2026, 8, 1), AdjustmentType.DAILY_EXCESS, AdjustmentStatus.REJECTED, 2.0)
+    res_rejected = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        daily_excess_adj=adj_rejected
+    )
+    assert res_rejected.approved_seconds == 0.0
+    assert res_rejected.accounted_seconds == 28800.0
+
+
+
+def test_calculate_accounted_time_no_schedule(record_factory):
+    r1 = record_factory(datetime(2026, 8, 1, 8, 0, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 1, 13, 0, 0), RecordType.EXIT)
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=None,
+        daily_excess_adj=None
+    )
+    assert res.raw_seconds == 18000.0
+    assert res.total_excess_seconds == 0.0
+    assert res.accounted_seconds == 18000.0
+    assert res.has_schedule is False
+
+
+def test_calculate_accounted_time_with_waiver(schedule_factory, adjustment_factory):
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.SEGUNDA.value, 8.0)
+    abono = adjustment_factory(date(2026, 5, 11), AdjustmentType.WAIVER, AdjustmentStatus.APPROVED, 5.0)
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[],
+        schedule=sched,
+        waiver_adj=abono,
+    )
+    assert res.raw_seconds == 0.0
+    assert res.accounted_seconds == 18000.0
+
+
+def test_calculate_accounted_time_with_rejected_legacy_extra(record_factory, schedule_factory, adjustment_factory):
+    sched = schedule_factory(date(2026, 1, 1), None, DayOfWeek.QUINTA.value, 8.0)
+    sched.is_daily_excess_enabled = False
+
+    r1 = record_factory(datetime(2026, 8, 20, 7, 15, 0), RecordType.ENTRY)
+    r2 = record_factory(datetime(2026, 8, 20, 16, 11, 0), RecordType.EXIT)
+    raw_seconds = (datetime(2026, 8, 20, 16, 11, 0) - datetime(2026, 8, 20, 7, 15, 0)).total_seconds()
+
+    adj_rejected = adjustment_factory(date(2026, 8, 20), AdjustmentType.EXTRA_TIME, AdjustmentStatus.REJECTED, 0.25)
+
+    res = time_calculation_service.calculate_accounted_time(
+        day_records=[r1, r2],
+        schedule=sched,
+        extra_time_adjs=[adj_rejected],
+    )
+    assert res.raw_seconds == raw_seconds
+    assert res.accounted_seconds == raw_seconds - 900.0
