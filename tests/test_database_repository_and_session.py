@@ -146,9 +146,11 @@ async def test_get_async_session_context_rollback_on_error():
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
     mock_ctx.__aexit__ = AsyncMock(return_value=None)
     with patch("app.database.session.AsyncSessionLocal", return_value=mock_ctx):
-        with pytest.raises(ValueError):
+        async def _run():
             async with get_async_session_context() as s:
                 raise ValueError("Oops")
+        with pytest.raises(ValueError):
+            await _run()
         mock_session.rollback.assert_called_once()
 
 
@@ -182,8 +184,9 @@ async def test_get_async_db_normal_and_error():
     with patch("app.database.session.AsyncSessionLocal", return_value=mock_ctx):
         gen_err = get_async_db()
         await anext(gen_err)
+        exc = RuntimeError("Db Fail")
         with pytest.raises(RuntimeError):
-            await gen_err.athrow(RuntimeError("Db Fail"))
+            await gen_err.athrow(exc)
         mock_session.rollback.assert_called_once()
 
 

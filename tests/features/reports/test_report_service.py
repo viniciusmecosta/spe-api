@@ -5,6 +5,7 @@ from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
@@ -962,7 +963,7 @@ async def test_report_service_async_session_branches(service):
 
     with patch("app.features.reports.report_service.async_user_repository.get", new_callable=AsyncMock,
                return_value=None):
-        with pytest.raises(Exception):
+        with pytest.raises(ReportUserNotFoundError):
             await service.get_history_report(db_mock, 999, 8, 2026, user)
 
         adv_none = await service.get_advanced_user_report(db_mock, 999, 8, 2026, user)

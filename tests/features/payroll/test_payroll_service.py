@@ -467,5 +467,7 @@ async def test_async_validate_period_open_success_and_closed():
         await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
 
         mock_get.return_value = MagicMock()
-        with pytest.raises(PayrollPeriodClosedError):
+        async def _run_payroll():
             await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
+        with pytest.raises(PayrollPeriodClosedError):
+            await _run_payroll()

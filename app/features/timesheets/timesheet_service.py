@@ -117,6 +117,27 @@ class TimesheetService:
             return f"{punches_str}   <font color='#94A3B8'>|</font>   {abono_str}" if punches_str != "-" else abono_str
         return punches_str
 
+    def _get_daily_adjustments(self, current_date, all_adjustments):
+        day_excess = None
+        abono = None
+        day_extra_time_adjs = []
+        for adj in (all_adjustments or []):
+            if adj.target_date == current_date:
+                if adj.adjustment_type == AdjustmentType.DAILY_EXCESS:
+                    day_excess = adj
+                elif adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED:
+                    abono = adj
+                elif adj.adjustment_type == AdjustmentType.EXTRA_TIME:
+                    day_extra_time_adjs.append(adj)
+        return day_excess, abono, day_extra_time_adjs
+
+    def _get_daily_schedule(self, current_date, target_day, historical_schedules):
+        valid_schedules = [
+            s for s in (historical_schedules or [])
+            if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+        ]
+        return next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
+
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
                                    table_text_style, records: list[TimeRecord] | None = None,
                                    all_adjustments: list[AdjustmentRequest] | None = None,
@@ -134,25 +155,11 @@ class TimesheetService:
             is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
             day_records = [r for r in (records or []) if r.record_datetime.date() == current_date]
-            valid_schedules = [
-                s for s in (historical_schedules or [])
-                if s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
-            ]
-            day_schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
-            day_excess = next((adj for adj in (all_adjustments or []) if
-                               adj.target_date == current_date and
-                               adj.adjustment_type == AdjustmentType.DAILY_EXCESS), None)
-
-            abono = next((adj for adj in (all_adjustments or []) if
-                          adj.target_date == current_date and
-                          adj.adjustment_type == AdjustmentType.WAIVER and
-                          adj.status == AdjustmentStatus.APPROVED), None)
-            day_extra_time_adjs = [adj for adj in (all_adjustments or []) if
-                                     adj.target_date == current_date and
-                                     adj.adjustment_type == AdjustmentType.EXTRA_TIME]
+            day_schedule = self._get_daily_schedule(current_date, target_day, historical_schedules)
+            day_excess, abono, day_extra_time_adjs = self._get_daily_adjustments(current_date, all_adjustments)
 
             expected_seconds = getattr(period_result, 'daily_expected_seconds', {}).get(current_date, 0.0)
-            if expected_seconds == 0.0 and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
+            if not expected_seconds and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
                 expected_seconds = float(day_schedule.daily_hours * 3600.0)
 
             is_absence = (
@@ -183,7 +190,6 @@ class TimesheetService:
                 extra_time_adjs=day_extra_time_adjs,
             )
             accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
-            unapproved_excess = max(0.0, accounted_res.total_excess_seconds - accounted_res.approved_seconds)
             unapproved_total = daily_res.unapproved_extra_seconds
             unapproved_time_str = self._format_duration(unapproved_total)
 
@@ -571,7 +577,7 @@ class TimesheetService:
         total_extra_hours = period_result.total_extra_seconds / 3600.0
         total_missing_hours = period_result.total_missing_seconds / 3600.0
         final_balance = round(total_extra_hours - total_missing_hours, 2)
-        balance_sign = "+" if final_balance > 0 else "" if final_balance == 0 else ""
+        balance_sign = "+" if final_balance > 0.0 else ""
         
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",

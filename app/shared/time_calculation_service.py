@@ -299,7 +299,7 @@ class TimeCalculationService:
         has_lunch_rule, excess_lunch, early_return = self._compute_lunch_metrics(sorted_records, schedule)
 
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
-        has_legacy_extra = any(adj for adj in (extra_time_adjs or []))
+        has_legacy_extra = any(extra_time_adjs or [])
         is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False) and not has_legacy_extra)
 
         excess_work = max(0.0, adjusted_seconds - expected_seconds) if has_schedule else 0.0

@@ -91,9 +91,9 @@ class TrustedTimeService:
                     self._last_ntp_sync = now_utc_locked
                 else:
                     raise NTPException("NTP_FAILED")
-        except Exception as e:
+        except Exception:
             import logging
-            logging.error(f"Failed to sync NTP: {e}")
+            logging.exception("Failed to sync NTP")
             with self._ntp_lock:
                 self._ntp_offset = None
                 self._last_ntp_sync = now_utc_locked
