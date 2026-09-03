@@ -1,5 +1,7 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from typing import Annotated, Any, Dict, List
 
 from fastapi import BackgroundTasks, Depends
@@ -40,13 +42,13 @@ class UserWorkScheduleService:
         if not t_obj:
             return None
         if isinstance(t_obj, time):
-            return datetime.combine(date.today(), t_obj)
+            return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), t_obj)
         if isinstance(t_obj, str):
             try:
                 parts = t_obj.split(':')
                 if len(parts) >= 2:
                     sec = int(parts[2]) if len(parts) > 2 else 0
-                    return datetime.combine(date.today(), time(int(parts[0]), int(parts[1]), sec))
+                    return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), time(int(parts[0]), int(parts[1]), sec))
             except (ValueError, IndexError):
                 return None
         return None
@@ -96,7 +98,7 @@ class UserWorkScheduleService:
         start_year = valid_from.year
         start_month = valid_from.month
 
-        end_date = valid_until if valid_until else date.today()
+        end_date = valid_until if valid_until else datetime.now(ZoneInfo(settings.TIMEZONE)).date()
         end_year = end_date.year
         end_month = end_date.month
 
@@ -253,14 +255,14 @@ class UserWorkScheduleService:
 
     async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str, old_data: dict = None, new_data: dict = None):
         if hasattr(session, "sync_session"):
-            await session.commit()
+            await session.flush()
             await audit_service.async_log_change(
                 session, current_user_id, action,
                 entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
                 old_data=old_data, new_data=new_data
             )
         else:
-            session.commit()
+            session.flush()
             audit_service.log_change(
                 session, current_user_id, action,
                 entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
@@ -270,9 +272,9 @@ class UserWorkScheduleService:
     def _dispatch_user_ranges_bg(self, background_tasks: BackgroundTasks | None, user_ids: list[int], start_eval: date, end_eval: date):
         if not background_tasks or start_eval > end_eval:
             return
-        for uid in user_ids:
-            if uid:
-                background_tasks.add_task(daily_excess_service.evaluate_user_range_bg, uid, start_eval, end_eval)
+        valid_uids = [u for u in user_ids if u]
+        if valid_uids:
+            background_tasks.add_task(daily_excess_service.reprocess_user_ranges_bg, valid_uids, start_eval, end_eval)
 
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: dict = None,
                                   current_user_id: int = 0,
@@ -297,9 +299,17 @@ class UserWorkScheduleService:
         errors = []
         new_schedules = []
 
+        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
+        if hasattr(session, "sync_session"):
+            res = await session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+        else:
+            res = session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+
         for user_data in users_input:
             uid = user_data.get('user_id')
-            user = await async_user_repository.get(session, uid) if hasattr(session, "sync_session") else user_repository.get(session, uid)
+            user = users_map.get(uid)
             if not user:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
@@ -316,7 +326,7 @@ class UserWorkScheduleService:
             new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, [u.get('user_id') for u in users_input], valid_from, min(valid_until, date.today()))
+        self._dispatch_user_ranges_bg(background_tasks, [u.get('user_id') for u in users_input], valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
     @staticmethod
@@ -330,9 +340,17 @@ class UserWorkScheduleService:
 
     async def _collect_update_actions(self, session: Any, users_input: list[dict], existing_map: dict, new_valid_from: date, new_valid_until: date):
         to_update, to_create, errors = [], [], []
+        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
+        if hasattr(session, "sync_session"):
+            res = await session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+        else:
+            res = session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+
         for user_data in users_input:
             uid = user_data.get('user_id')
-            user = await async_user_repository.get(session, uid) if hasattr(session, "sync_session") else user_repository.get(session, uid)
+            user = users_map.get(uid)
             if not user:
                 errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
@@ -401,7 +419,7 @@ class UserWorkScheduleService:
         self._dispatch_user_ranges_bg(
             background_tasks, all_uids,
             min(old_valid_from, new_valid_from),
-            min(max(old_valid_until, new_valid_until), date.today())
+            min(max(old_valid_until, new_valid_until), datetime.now(ZoneInfo(settings.TIMEZONE)).date())
         )
         return {"message": "Expedientes atualizados com sucesso."}
 
@@ -426,7 +444,7 @@ class UserWorkScheduleService:
             old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, all_uids, valid_from, min(valid_until, date.today()))
+        self._dispatch_user_ranges_bg(background_tasks, all_uids, valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{count} registros removidos com sucesso."}
 
 

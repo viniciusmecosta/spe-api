@@ -247,6 +247,7 @@ class DailyExcessService:
                 curr = start_date
                 while curr <= end_date:
                     await self._evaluate_user_day_async(db, user_id, curr, tz)
+                    await db.commit()
                     curr += timedelta(days=1)
         except Exception as e:
             logger.exception(f"Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {e}")
@@ -265,6 +266,7 @@ class DailyExcessService:
                     curr = start_date
                     while curr <= end_date:
                         await self._evaluate_user_day_async(db, uid, curr, tz, overwrite_reviewed=overwrite_reviewed)
+                        await db.commit()
                         curr += timedelta(days=1)
         except Exception as e:
             logger.exception(f"Erro ao reprocessar excedente em lote: {e}")

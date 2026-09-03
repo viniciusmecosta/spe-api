@@ -17,7 +17,7 @@ class TrustedTimeService:
     def __init__(self) -> None:
         self._ntp_offset: float | None = None
         self._last_ntp_sync: datetime | None = None
-        self._ntp_lock = threading.Lock()
+        self._ntp_lock = threading.RLock()
         self._is_syncing: bool = False
         self._sync_thread: threading.Thread | None = None
 
@@ -84,14 +84,19 @@ class TrustedTimeService:
         try:
             client = ntplib.NTPClient()
             response = self._request_ntp_from_servers(client)
-            if response:
-                utc_ntp = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
-                self._ntp_offset = (utc_ntp - now_utc_locked).total_seconds()
+            with self._ntp_lock:
+                if response:
+                    utc_ntp = datetime.fromtimestamp(response.tx_time, ZoneInfo("UTC"))
+                    self._ntp_offset = (utc_ntp - now_utc_locked).total_seconds()
+                    self._last_ntp_sync = now_utc_locked
+                else:
+                    raise NTPException("NTP_FAILED")
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to sync NTP: {e}")
+            with self._ntp_lock:
+                self._ntp_offset = None
                 self._last_ntp_sync = now_utc_locked
-            else:
-                raise NTPException("NTP_FAILED")
-        except Exception:
-            self._last_ntp_sync = now_utc_locked
 
     def _request_ntp_from_servers(self, client: ntplib.NTPClient) -> ntplib.NTPStats | None:
         for server in ["pool.ntp.br", "pool.ntp.org", "time.google.com"]:
