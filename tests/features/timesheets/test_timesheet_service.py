@@ -419,7 +419,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
             break
     assert daily_table is not None, 'Tabela de ponto diário (com 31 dias) não foi encontrada'
     row_dia_12 = daily_table._cellvalues[12]
-    assert '12/10/2023' in str(row_dia_12[0].getPlainText())
+    assert '12/10' in str(row_dia_12[0].getPlainText())
     assert 'Feriado' in str(row_dia_12[2].getPlainText())
     assert str(row_dia_12[1].getPlainText()) in ['Quinta', 'Quinta-feira', 'Qui']
     bg_style = [cmd for cmd in daily_table._bkgrndcmds if cmd[0] == 'BACKGROUND']

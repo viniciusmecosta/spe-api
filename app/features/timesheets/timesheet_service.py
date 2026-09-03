@@ -121,6 +121,8 @@ class TimesheetService:
                                    table_text_style, records: list[TimeRecord] | None = None,
                                    all_adjustments: list[AdjustmentRequest] | None = None,
                                    historical_schedules: list | None = None):
+        tz = ZoneInfo(settings.TIMEZONE)
+        today = datetime.now(tz).date()
         current_date = start_date
         row_index = 1
 
@@ -130,11 +132,6 @@ class TimesheetService:
             holiday_obj = next((h for h in holidays if h.date == current_date), None)
             target_day = DayOfWeek.from_date(current_date)
             is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
-
-            if is_weekend:
-                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
-
-            punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
 
             day_records = [r for r in (records or []) if r.record_datetime.date() == current_date]
             valid_schedules = [
@@ -155,6 +152,30 @@ class TimesheetService:
                                      adj.adjustment_type == AdjustmentType.EXTRA_TIME and
                                      adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]]
 
+            expected_seconds = getattr(period_result, 'daily_expected_seconds', {}).get(current_date, 0.0)
+            if expected_seconds == 0.0 and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
+                expected_seconds = float(day_schedule.daily_hours * 3600.0)
+
+            is_absence = (
+                not is_weekend
+                and not is_holiday
+                and abono is None
+                and expected_seconds > 0
+                and len(day_records) == 0
+                and current_date <= today
+            )
+
+            if is_holiday:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEF3C7")))
+            elif is_absence:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEE2E2")))
+            elif is_weekend:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
+
+            punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
+            if is_absence and (not punches_str or punches_str == "-"):
+                punches_str = "<font color='#991B1B'><b>Falta</b></font>"
+
             accounted_res = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
                 schedule=day_schedule,
@@ -168,7 +189,7 @@ class TimesheetService:
             unapproved_time_str = self._format_duration(unapproved_total)
 
             data_table.append([
-                Paragraph(current_date.strftime("%d/%m/%Y"), table_text_style),
+                Paragraph(current_date.strftime("%d/%m"), table_text_style),
                 Paragraph(target_day.abreviado, table_text_style),
                 Paragraph(punches_str, table_text_style),
                 Paragraph(unapproved_time_str, table_text_style),
@@ -178,7 +199,7 @@ class TimesheetService:
             current_date += timedelta(days=1)
             row_index += 1
 
-        t = Table(data_table, colWidths=[65, 65, 215, 95, 95])
+        t = Table(data_table, colWidths=[45, 45, 205, 120, 120])
         t.setStyle(TableStyle(t_style))
         return t
 
@@ -510,8 +531,8 @@ class TimesheetService:
             Paragraph("Data", table_header_style),
             Paragraph("Dia", table_header_style),
             Paragraph("Registros de Ponto", table_header_style),
-            Paragraph("Tempo Ñ Aut...", table_header_style),
-            Paragraph("Tempo Contabilizado", table_header_style)
+            Paragraph("Horas Não Autorizadas", table_header_style),
+            Paragraph("Horas Contabilizadas", table_header_style)
         ]]
 
         t_style = [
