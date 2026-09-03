@@ -38,6 +38,24 @@ class PunchDetail(BaseModel):
     edit_justification: str | None = None
 
 
+class DailyExcessInfo(BaseModel):
+    has_excess: bool = True
+    status: str | None = None
+    daily_excess_id: int | None = None
+    total_minutes: int = 0
+    total_time: str = "00:00"
+    total_hours: float = 0.0
+    approved_minutes: int = 0
+    approved_time: str = "00:00"
+    approved_hours: float = 0.0
+    unapproved_minutes: int = 0
+    unapproved_time: str = "00:00"
+    unapproved_hours: float = 0.0
+    blocked_minutes: int = 0
+    blocked_time: str = "00:00"
+    blocked_hours: float = 0.0
+
+
 class DailyReportItem(BaseModel):
     date: date
     day_name: str
@@ -63,6 +81,8 @@ class DailyReportItem(BaseModel):
     has_excess: bool = False
     excess_status: str | None = None
     daily_excess_id: int | None = None
+    excess: DailyExcessInfo | None = None
+    daily_excess: DailyExcessInfo | None = None
     adjustments: list[ReportAdjustmentItem] = []
 
 
@@ -127,6 +147,8 @@ class HistoryDay(BaseModel):
     has_excess: bool = False
     excess_status: str | None = None
     daily_excess_id: int | None = None
+    excess: DailyExcessInfo | None = None
+    daily_excess: DailyExcessInfo | None = None
     adjustments: list[ReportAdjustmentItem] = []
 
 

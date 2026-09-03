@@ -82,9 +82,21 @@ def test_build_daily_records_table():
     adj_excess.adjustment_type = AdjustmentType.DAILY_EXCESS
     adj_excess.status = AdjustmentStatus.PENDING
 
+    adj_waiver = MagicMock(spec=AdjustmentRequest)
+    adj_waiver.target_date = date(2023, 10, 1)
+    adj_waiver.adjustment_type = AdjustmentType.WAIVER
+    adj_waiver.status = AdjustmentStatus.APPROVED
+    adj_waiver.amount_hours = 2.0
+
+    adj_extra = MagicMock(spec=AdjustmentRequest)
+    adj_extra.target_date = date(2023, 10, 1)
+    adj_extra.adjustment_type = AdjustmentType.EXTRA_TIME
+    adj_extra.status = AdjustmentStatus.REJECTED
+    adj_extra.amount_hours = 1.0
+
     t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
                                                      data_table, t_style, table_text_style,
-                                                     all_adjustments=[adj_excess])
+                                                     all_adjustments=[adj_excess, adj_waiver, adj_extra])
     assert t is not None
 
 

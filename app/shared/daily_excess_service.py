@@ -115,7 +115,8 @@ class DailyExcessService:
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
         waiver_adj = next(
-            (adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
+            (adj for adj in day_adjustments if
+             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
             None
         )
         has_reviewed = any(
@@ -193,7 +194,8 @@ class DailyExcessService:
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
         waiver_adj = next(
-            (adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
+            (adj for adj in day_adjustments if
+             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
             None
         )
         has_reviewed = any(

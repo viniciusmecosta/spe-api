@@ -50,7 +50,7 @@ from app.features.users.user_repository import (
     user_repository,
 )
 from app.shared import deps
-from app.shared.enums import AdjustmentType, DayOfWeek, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 from app.shared.time_calculation_service import time_calculation_service
 from app.shared.trusted_time_service import trusted_time_service
 

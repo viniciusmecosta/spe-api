@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo

@@ -459,4 +459,3 @@ def test_calculate_accounted_time_with_rejected_legacy_extra(record_factory, sch
     )
     assert res.raw_seconds == raw_seconds
     assert res.accounted_seconds == raw_seconds - 900.0
-

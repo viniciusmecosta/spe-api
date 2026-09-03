@@ -208,10 +208,12 @@ async def test_create_manager_waiver(async_db_mock, mocker):
                  new_callable=AsyncMock,
                  return_value=[AdjustmentRequest(id=1)])
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mock_eval = mocker.patch("app.features.adjustments.adjustment_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
 
     obj_in = AdjustmentWaiverCreate(user_id=1, target_date=date(2023, 10, 1), amount_hours=8.0, reason_text="teste")
     res = await adjustment_service.create_manager_waiver(async_db_mock, obj_in, 99)
     assert res.id == 1
+    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
 
 
 @pytest.mark.asyncio
@@ -242,7 +244,7 @@ async def test_delete_adjustment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_adjustment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
+    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
                                 status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -254,12 +256,14 @@ async def test_approve_adjustment(async_db_mock, mocker):
                  new_callable=AsyncMock,
                  return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    mock_eval = mocker.patch("app.features.adjustments.adjustment_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
                  return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
 
     res = await adjustment_service.approve_adjustment(async_db_mock, 1, 99)
     assert res.status == AdjustmentStatus.APPROVED
+    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
 
 
 @pytest.mark.asyncio

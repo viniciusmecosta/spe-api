@@ -29,6 +29,7 @@ from app.features.reports.report_exceptions import (
 )
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
+    DailyExcessInfo,
     DailyReportItem,
     HistoryDay,
     HistoryPunch,
@@ -130,19 +131,74 @@ class ReportService:
         if not is_enabled:
             return False, None, None
 
-        has_excess = bool(accounted_res.total_excess_seconds > 0 or (daily_excess_adj is not None))
+        total_secs = getattr(accounted_res, 'total_excess_seconds', 0.0) or 0.0
+        has_excess = bool(total_secs > 0 or (daily_excess_adj is not None))
         daily_excess_id = daily_excess_adj.id if daily_excess_adj else None
         if daily_excess_adj:
             excess_status = daily_excess_adj.status.value
-        elif accounted_res.total_excess_seconds > 0:
+        elif total_secs > 0:
             excess_status = AdjustmentStatus.PENDING.value
         else:
             excess_status = None
 
-        if not is_manager and excess_status == AdjustmentStatus.PENDING.value:
-            return False, None, None
-
         return has_excess, excess_status, daily_excess_id
+
+    def _build_daily_excess_info(
+            self,
+            accounted_res: Any,
+            daily_excess_adj: Any,
+            has_excess: bool,
+            excess_status: str | None,
+            daily_excess_id: int | None,
+    ) -> DailyExcessInfo | None:
+        if not has_excess:
+            return None
+
+        total_sec = float(getattr(accounted_res, 'total_excess_seconds', 0.0) or 0.0)
+        if total_sec <= 0.0 and daily_excess_adj:
+            amount = getattr(daily_excess_adj, 'amount_hours', 0.0)
+            if isinstance(amount, (int, float)):
+                total_sec = float(amount * 3600.0)
+
+        approved_sec = float(getattr(accounted_res, 'approved_seconds', 0.0) or 0.0)
+        if approved_sec <= 0.0 and daily_excess_adj and getattr(daily_excess_adj, 'status', None) == AdjustmentStatus.APPROVED:
+            appr_amount = getattr(daily_excess_adj, 'approved_amount_hours', None)
+            if isinstance(appr_amount, (int, float)):
+                approved_sec = min(total_sec, max(0.0, float(appr_amount * 3600.0)))
+            elif total_sec > 0:
+                approved_sec = total_sec
+
+        unapproved_sec = max(0.0, total_sec - approved_sec)
+
+        total_min = int(round(total_sec / 60))
+        approved_min = int(round(approved_sec / 60))
+        unapproved_min = int(round(unapproved_sec / 60))
+
+        total_hrs = round(total_sec / 3600.0, 2)
+        approved_hrs = round(approved_sec / 3600.0, 2)
+        unapproved_hrs = round(unapproved_sec / 3600.0, 2)
+
+        total_time_str = self._format_duration(total_sec)
+        approved_time_str = self._format_duration(approved_sec)
+        unapproved_time_str = self._format_duration(unapproved_sec)
+
+        return DailyExcessInfo(
+            has_excess=True,
+            status=excess_status,
+            daily_excess_id=daily_excess_id,
+            total_minutes=total_min,
+            total_time=total_time_str,
+            total_hours=total_hrs,
+            approved_minutes=approved_min,
+            approved_time=approved_time_str,
+            approved_hours=approved_hrs,
+            unapproved_minutes=unapproved_min,
+            unapproved_time=unapproved_time_str,
+            unapproved_hours=unapproved_hrs,
+            blocked_minutes=unapproved_min,
+            blocked_time=unapproved_time_str,
+            blocked_hours=unapproved_hrs,
+        )
 
     def _to_report_adjustment_item(self, adj: Any, current: date) -> ReportAdjustmentItem:
         if isinstance(adj, ReportAdjustmentItem):
@@ -204,7 +260,7 @@ class ReportService:
         day_unapproved_extras = [
             adj for adj in (day_adjustments or [])
             if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
-            and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
+               and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
         ]
 
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
@@ -217,6 +273,7 @@ class ReportService:
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
                                                                                  schedule, is_manager)
+        excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 
         day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current, is_manager)
         punches = self._build_history_punches(day_records, is_manager)
@@ -258,6 +315,8 @@ class ReportService:
             has_excess=has_excess,
             excess_status=excess_status,
             daily_excess_id=daily_excess_id,
+            excess=excess_info,
+            daily_excess=excess_info,
             adjustments=day_adjustments_list,
         )
 
@@ -354,7 +413,7 @@ class ReportService:
         day_unapproved_extras = [
             adj for adj in (day_adjustments or [])
             if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
-            and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
+               and getattr(adj, 'status', None) in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
         ]
 
         accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
@@ -366,6 +425,7 @@ class ReportService:
         )
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj,
                                                                                  schedule, is_manager)
+        excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 
         punches = list(daily_res.punches)
         if is_waiver:
@@ -402,6 +462,8 @@ class ReportService:
             has_excess=has_excess,
             excess_status=excess_status,
             daily_excess_id=daily_excess_id,
+            excess=excess_info,
+            daily_excess=excess_info,
             adjustments=self._build_day_adjustments_list(day_adjustments, current, is_manager),
         )
 

@@ -731,3 +731,96 @@ def test_determine_excess_info_enabled(service):
     assert has_excess is True
     assert status == AdjustmentStatus.APPROVED.value
     assert adj_id == 42
+
+
+def test_determine_excess_info_employee_sees_pending(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600
+    sch_enabled = MagicMock(is_daily_excess_enabled=True)
+
+    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled, is_manager=False)
+    assert has_excess is True
+    assert status == "PENDING"
+    assert adj_id is None
+
+
+def test_build_daily_excess_info_no_excess(service):
+    acc_res = MagicMock()
+    res = service._build_daily_excess_info(acc_res, None, False, None, None)
+    assert res is None
+
+
+def test_build_daily_excess_info_pending_60m(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600.0
+    acc_res.approved_seconds = 0.0
+
+    res = service._build_daily_excess_info(acc_res, None, True, "PENDING", None)
+    assert res is not None
+    assert res.has_excess is True
+    assert res.status == "PENDING"
+    assert res.daily_excess_id is None
+    assert res.total_minutes == 60
+    assert res.total_time == "01:00"
+    assert res.total_hours == 1.0
+    assert res.approved_minutes == 0
+    assert res.approved_time == "00:00"
+    assert res.approved_hours == 0.0
+    assert res.unapproved_minutes == 60
+    assert res.unapproved_time == "01:00"
+    assert res.unapproved_hours == 1.0
+    assert res.blocked_minutes == 60
+    assert res.blocked_time == "01:00"
+    assert res.blocked_hours == 1.0
+
+
+def test_build_daily_excess_info_partial_approved(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600.0
+    acc_res.approved_seconds = 1800.0
+
+    adj = MagicMock()
+    adj.id = 10
+    adj.status = AdjustmentStatus.APPROVED
+    adj.amount_hours = 1.0
+    adj.approved_amount_hours = 0.5
+
+    res = service._build_daily_excess_info(acc_res, adj, True, "APPROVED", 10)
+    assert res is not None
+    assert res.has_excess is True
+    assert res.status == "APPROVED"
+    assert res.daily_excess_id == 10
+    assert res.total_minutes == 60
+    assert res.total_time == "01:00"
+    assert res.approved_minutes == 30
+    assert res.approved_time == "00:30"
+    assert res.approved_hours == 0.5
+    assert res.unapproved_minutes == 30
+    assert res.unapproved_time == "00:30"
+    assert res.unapproved_hours == 0.5
+    assert res.blocked_minutes == 30
+    assert res.blocked_time == "00:30"
+    assert res.blocked_hours == 0.5
+
+
+def test_build_daily_excess_info_rejected(service):
+    acc_res = MagicMock()
+    acc_res.total_excess_seconds = 3600.0
+    acc_res.approved_seconds = 0.0
+
+    adj = MagicMock()
+    adj.id = 11
+    adj.status = AdjustmentStatus.REJECTED
+    adj.amount_hours = 1.0
+    adj.approved_amount_hours = None
+
+    res = service._build_daily_excess_info(acc_res, adj, True, "REJECTED", 11)
+    assert res is not None
+    assert res.has_excess is True
+    assert res.status == "REJECTED"
+    assert res.daily_excess_id == 11
+    assert res.total_minutes == 60
+    assert res.approved_minutes == 0
+    assert res.unapproved_minutes == 60
+    assert res.blocked_minutes == 60
+
