@@ -66,7 +66,7 @@ def test_build_daily_records_table():
     mock_daily_2.extra_seconds = 0
     mock_daily_2.missing_seconds = 0
     mock_daily_2.punch_blocks = []
-    period_result = MagicMock(spec=PeriodTimeResult)
+    period_result = MagicMock()
     period_result.total_net_worked_seconds = 3600
     period_result.daily_results = {date(2023, 10, 1): mock_daily_1, date(2023, 10, 2): mock_daily_2}
     period_result.daily_is_holiday = {date(2023, 10, 1): False, date(2023, 10, 2): True}
@@ -144,10 +144,18 @@ async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -247,10 +255,18 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -294,10 +310,18 @@ async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, 
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -342,10 +366,18 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -391,10 +423,18 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = d == 12
-    mock_period = MagicMock(spec=PeriodTimeResult)
-    mock_period.total_net_worked_seconds = 36000
+    mock_period = MagicMock()
+    mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.00
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     captured_story = []
 
@@ -565,10 +605,18 @@ async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocke
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 3600
+    mock_period.total_accounted_seconds = 3600
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -653,10 +701,15 @@ async def test_generate_user_timesheet_pdf_async_session(mocker):
         mock_daily.missing_seconds = 0
         daily_res[dt] = mock_daily
         daily_hol[dt] = False
-    mock_period = MagicMock(spec=PeriodTimeResult)
+    mock_period = MagicMock()
     mock_period.total_net_worked_seconds = 0
+    mock_period.total_accounted_seconds = getattr(mock_period, 'total_accounted_seconds', 0.0)
+    mock_period.total_extra_seconds = 0.0
+    mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 
     buf = await timesheet_service.generate_user_timesheet_pdf(async_sess, 1, 10, 2023)

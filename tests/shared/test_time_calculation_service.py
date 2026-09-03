@@ -196,7 +196,7 @@ def test_calculate_daily_time_matrix(record_factory, adjustment_factory, monkeyp
         day_records=[],
         expected_seconds=expected_sec,
         waiver_adj=waiver,
-        unapproved_extra_adjs=[unapproved] if unapproved else [],
+        extra_time_adjs=[unapproved] if unapproved else [],
         is_excused=bool(waiver),
         has_schedule=has_schedule
     )
@@ -257,7 +257,7 @@ def test_calculate_period_time_schedules_matrix(record_factory, schedule_factory
         hm.date = h
         hol_mocks.append(hm)
 
-    def mock_daily_time(day_records, expected_seconds, waiver_adj, unapproved_extra_adjs, is_excused, has_schedule, *args, **kwargs):
+    def mock_daily_time(day_records, expected_seconds, waiver_adj, extra_time_adjs, is_excused, has_schedule, *args, **kwargs):
         dt = DailyTimeResult(
             raw_worked_seconds=expected_seconds,
             waiver_seconds=0.0,
@@ -455,7 +455,7 @@ def test_calculate_accounted_time_with_rejected_legacy_extra(record_factory, sch
     res = time_calculation_service.calculate_accounted_time(
         day_records=[r1, r2],
         schedule=sched,
-        unapproved_extra_adjs=[adj_rejected],
+        extra_time_adjs=[adj_rejected],
     )
     assert res.raw_seconds == raw_seconds
     assert res.accounted_seconds == raw_seconds - 900.0

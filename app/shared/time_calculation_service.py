@@ -107,7 +107,7 @@ class TimeCalculationService:
             day_records: list[TimeRecord],
             expected_seconds: float,
             waiver_adj: AdjustmentRequest | None = None,
-            unapproved_extra_adjs: list[AdjustmentRequest] | None = None,
+            extra_time_adjs: list[AdjustmentRequest] | None = None,
             is_excused: bool = False,
             has_schedule: bool = True,
             unapproved_excess_seconds: float = 0.0
@@ -122,7 +122,7 @@ class TimeCalculationService:
         adjusted_worked_seconds = raw_worked_seconds + waiver_seconds
 
         legacy_unapproved = self._calculate_unapproved_extra(
-            unapproved_extra_adjs or [], adjusted_worked_seconds
+            extra_time_adjs or [], adjusted_worked_seconds
         )
         unapproved_extra_seconds = min(adjusted_worked_seconds, legacy_unapproved + unapproved_excess_seconds)
 
@@ -179,12 +179,14 @@ class TimeCalculationService:
 
     def _calculate_unapproved_extra(
             self,
-            unapproved_extra_adjs: list[AdjustmentRequest],
+            extra_time_adjs: list[AdjustmentRequest],
             worked_seconds: float
     ) -> float:
         unapproved_extra_seconds = 0.0
 
-        for adj in unapproved_extra_adjs:
+        for adj in extra_time_adjs:
+            if getattr(adj, 'status', None) not in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
+                continue
             amount = getattr(adj, 'amount_hours', None)
             if not isinstance(amount, (int, float)):
                 continue
@@ -279,7 +281,7 @@ class TimeCalculationService:
             schedule: Any | None,
             daily_excess_adj: AdjustmentRequest | None = None,
             waiver_adj: AdjustmentRequest | None = None,
-            unapproved_extra_adjs: list[AdjustmentRequest] | None = None,
+            extra_time_adjs: list[AdjustmentRequest] | None = None,
     ) -> DailyAccountedResult:
         valid_records = [
             r for r in day_records
@@ -291,13 +293,14 @@ class TimeCalculationService:
         waiver_seconds = self._calculate_waiver(waiver_adj, is_excused=bool(waiver_adj))
         adjusted_seconds = raw_seconds + waiver_seconds
 
-        legacy_unapproved = self._calculate_unapproved_extra(unapproved_extra_adjs or [], adjusted_seconds)
+        legacy_unapproved = self._calculate_unapproved_extra(extra_time_adjs or [], adjusted_seconds)
 
         has_schedule = schedule is not None
         has_lunch_rule, excess_lunch, early_return = self._compute_lunch_metrics(sorted_records, schedule)
 
         expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
-        is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False))
+        has_legacy_extra = any(adj for adj in (extra_time_adjs or []))
+        is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False) and not has_legacy_extra)
 
         excess_work = max(0.0, adjusted_seconds - expected_seconds) if has_schedule else 0.0
         total_excess = max(excess_work, early_return) if (has_schedule and is_enabled) else 0.0
@@ -379,10 +382,10 @@ class TimeCalculationService:
 
             daily_waivers[current_date] = abono
 
-            day_unapproved_extras = [adj for adj in adjustments if
+            day_extra_time_adjs = [adj for adj in adjustments if
                                      adj.target_date == current_date and
                                      adj.adjustment_type == AdjustmentType.EXTRA_TIME and
-                                     adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]]
+                                     getattr(adj, 'deleted_at', None) is None]
 
             day_excess = next((adj for adj in (daily_excess_adjs or adjustments or []) if
                                adj.target_date == current_date and
@@ -393,7 +396,7 @@ class TimeCalculationService:
                 schedule=schedule,
                 daily_excess_adj=day_excess,
                 waiver_adj=abono,
-                unapproved_extra_adjs=day_unapproved_extras,
+                extra_time_adjs=day_extra_time_adjs,
             )
             unapproved_excess = accounted_res.total_excess_seconds - accounted_res.approved_seconds
 
@@ -401,7 +404,7 @@ class TimeCalculationService:
                 day_records=day_records,
                 expected_seconds=day_expected_hours * 3600,
                 waiver_adj=abono,
-                unapproved_extra_adjs=day_unapproved_extras,
+                extra_time_adjs=day_extra_time_adjs,
                 is_excused=bool(abono),
                 has_schedule=has_schedule,
                 unapproved_excess_seconds=unapproved_excess

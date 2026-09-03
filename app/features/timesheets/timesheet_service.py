@@ -147,10 +147,9 @@ class TimesheetService:
                           adj.target_date == current_date and
                           adj.adjustment_type == AdjustmentType.WAIVER and
                           adj.status == AdjustmentStatus.APPROVED), None)
-            day_unapproved_extras = [adj for adj in (all_adjustments or []) if
+            day_extra_time_adjs = [adj for adj in (all_adjustments or []) if
                                      adj.target_date == current_date and
-                                     adj.adjustment_type == AdjustmentType.EXTRA_TIME and
-                                     adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]]
+                                     adj.adjustment_type == AdjustmentType.EXTRA_TIME]
 
             expected_seconds = getattr(period_result, 'daily_expected_seconds', {}).get(current_date, 0.0)
             if expected_seconds == 0.0 and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
@@ -181,11 +180,11 @@ class TimesheetService:
                 schedule=day_schedule,
                 daily_excess_adj=day_excess,
                 waiver_adj=abono,
-                unapproved_extra_adjs=day_unapproved_extras,
+                extra_time_adjs=day_extra_time_adjs,
             )
             accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
             unapproved_excess = max(0.0, accounted_res.total_excess_seconds - accounted_res.approved_seconds)
-            unapproved_total = max(daily_res.unapproved_extra_seconds, unapproved_excess)
+            unapproved_total = daily_res.unapproved_extra_seconds
             unapproved_time_str = self._format_duration(unapproved_total)
 
             data_table.append([
@@ -568,11 +567,25 @@ class TimesheetService:
         story.append(Spacer(1, 10))
 
         total_duration_str = self._format_duration(period_result.total_net_worked_seconds)
+        total_accounted_str = self._format_duration(period_result.total_accounted_seconds)
+        total_extra_hours = period_result.total_extra_seconds / 3600.0
+        total_missing_hours = period_result.total_missing_seconds / 3600.0
+        final_balance = round(total_extra_hours - total_missing_hours, 2)
+        balance_sign = "+" if final_balance > 0 else "" if final_balance == 0 else ""
+        
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
-             Paragraph(total_duration_str, header_style)]
+             Paragraph(total_duration_str, header_style)],
+            [Paragraph("<b>Total de Horas Contabilizadas:</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
+             Paragraph(total_accounted_str, header_style)],
+            [Paragraph("<b>Saldo de Horas (Extras - Faltas):</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
+             Paragraph(f"{balance_sign}{final_balance:.2f} h", header_style)]
         ]
         sum_table = Table(summary_info, colWidths=[175, 360])
         sum_table.setStyle(TableStyle([
