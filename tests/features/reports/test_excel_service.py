@@ -790,3 +790,36 @@ async def test_export_monthly_report_fallback(excel_service, async_db_mock):
         mock_gen.assert_called_once()
         assert resp.media_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+
+@pytest.mark.asyncio
+async def test_excel_service_fetch_data_branches(excel_service, async_db_mock):
+    from datetime import date
+    mock_res = MagicMock()
+    mock_res.all.return_value = []
+    async_db_mock.scalars.return_value = mock_res
+    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock, return_value=None):
+        users, comp = await excel_service._fetch_users_and_company(async_db_mock, None)
+        assert users == []
+
+    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock, return_value=[]):
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            async_db_mock, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            async_db_mock, [1], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+    sync_session = MagicMock(spec=["query"])
+    with patch("app.features.reports.excel_service.holiday_repository.get_by_month", return_value=[]):
+        recs, adjs, hols = await excel_service._fetch_batch_data(
+            sync_session, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
+            date(2026, 8, 1), date(2026, 8, 31), 8, 2026
+        )
+        assert recs == []
+
+

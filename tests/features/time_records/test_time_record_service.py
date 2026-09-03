@@ -1034,3 +1034,27 @@ async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
     mocker.patch("app.features.printers.printer_repository.async_printer_repository.get_by_id", new_callable=AsyncMock,
                  return_value=None)
     await time_record_service.trigger_auto_print(async_sess, record=rec, background_tasks=mock_bg)
+
+
+@pytest.mark.asyncio
+async def test_time_record_service_admin_update_date_change_branches(mocker):
+    mocker.patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock, return_value=False)
+    mocker.patch.object(time_record_service, "_invalidate_daily_excess_and_unverify", new_callable=AsyncMock)
+    rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
+                     record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
+    obj_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")), edit_justification="Reason")
+    await time_record_service._handle_admin_update_invalidations(
+
+        MagicMock(), rec, obj_in, date(2026, 8, 1), date(2026, 8, 2), RecordType.EXIT
+    )
+    assert time_record_service._invalidate_daily_excess_and_unverify.call_count == 2
+
+    sync_session = MagicMock(spec=["flush", "commit", "refresh"])
+    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.log_change")
+    await time_record_service._commit_and_audit_admin_update(
+        sync_session, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+    )
+    assert time_record_service._reprocess_daily_excess.call_count == 2
+
+
