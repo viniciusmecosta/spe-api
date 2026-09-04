@@ -5,7 +5,7 @@ from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.database.session import get_async_db
 from app.features.devices.device_models import UserBiometric
@@ -72,7 +72,6 @@ class PunchService:
                 new_record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
                 session.add(new_record)
                 await session.commit()
-                await session.refresh(new_record)
 
                 await audit_service.async_log_change(
                     session,
@@ -83,7 +82,15 @@ class PunchService:
                     new_data={"justification": new_record.edit_justification}
                 )
 
-            return True, "Ponto Registrado", new_record
+            stmt_record = (
+                select(new_record.__class__)
+                .options(joinedload(new_record.__class__.user))
+                .where(new_record.__class__.id == new_record.id)
+            )
+            result = await session.scalars(stmt_record)
+            loaded_record = result.first()
+
+            return True, "Ponto Registrado", loaded_record
 
         except (SQLAlchemyError, ValueError) as e:
             logger.exception(f"Erro ao processar punch: {e}")
