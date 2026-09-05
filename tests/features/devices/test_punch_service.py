@@ -39,11 +39,22 @@ async def test_process_biometric_punch_blocked(async_db_mock):
 @pytest.mark.asyncio
 async def test_process_biometric_punch_success_ntp(async_db_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
-    _setup_scalars_mock(async_db_mock, return_value=bio)
-    mocker.patch("app.features.devices.punch_service.trusted_time_service.get_trusted_time",
-                 return_value=(datetime(2023, 10, 1), True))
-    mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
-                 return_value=TimeRecord(id=1))
+    record = TimeRecord(id=1)
+
+    bio_scalars = MagicMock()
+    bio_scalars.first.return_value = bio
+    record_scalars = MagicMock()
+    record_scalars.first.return_value = record
+    async_db_mock.scalars.side_effect = [bio_scalars, record_scalars]
+
+    mocker.patch(
+        "app.features.devices.punch_service.trusted_time_service.get_trusted_time",
+        return_value=(datetime(2023, 10, 1), True),
+    )
+    mocker.patch(
+        "app.features.time_records.time_record_service.time_record_service.create_punch",
+        return_value=record,
+    )
 
     success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1, "127.0.0.1")
     assert success
@@ -54,32 +65,63 @@ async def test_process_biometric_punch_success_ntp(async_db_mock, mocker):
 @pytest.mark.asyncio
 async def test_process_biometric_punch_success_no_ntp_with_request(async_db_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
-    _setup_scalars_mock(async_db_mock, return_value=bio)
-    mocker.patch("app.features.devices.punch_service.trusted_time_service.get_trusted_time",
-                 return_value=(datetime(2023, 10, 1), False))
-    mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
-                 return_value=TimeRecord(id=1))
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    record = TimeRecord(id=1)
+
+    bio_scalars = MagicMock()
+    bio_scalars.first.return_value = bio
+    record_scalars = MagicMock()
+    record_scalars.first.return_value = record
+    async_db_mock.scalars.side_effect = [bio_scalars, record_scalars]
+
+    mocker.patch(
+        "app.features.devices.punch_service.trusted_time_service.get_trusted_time",
+        return_value=(datetime(2023, 10, 1), False),
+    )
+    mocker.patch(
+        "app.features.time_records.time_record_service.time_record_service.create_punch",
+        return_value=record,
+    )
+    mocker.patch(
+        "app.features.system.audit_service.audit_service.async_log_change",
+        new_callable=AsyncMock,
+    )
 
     req = MagicMock()
     success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1, request=req)
+
     assert success
     assert req.state.ntp_error is True
+    assert record.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
     assert rec.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
 
 
 @pytest.mark.asyncio
 async def test_process_biometric_punch_success_no_ntp_no_request(async_db_mock, mocker):
     bio = UserBiometric(id=1, user=User(id=1, is_active=True))
-    _setup_scalars_mock(async_db_mock, return_value=bio)
-    mocker.patch("app.features.devices.punch_service.trusted_time_service.get_trusted_time",
-                 return_value=(datetime(2023, 10, 1), False))
-    mocker.patch("app.features.time_records.time_record_service.time_record_service.create_punch",
-                 return_value=TimeRecord(id=1))
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+    record = TimeRecord(id=1)
+
+    bio_scalars = MagicMock()
+    bio_scalars.first.return_value = bio
+    record_scalars = MagicMock()
+    record_scalars.first.return_value = record
+    async_db_mock.scalars.side_effect = [bio_scalars, record_scalars]
+
+    mocker.patch(
+        "app.features.devices.punch_service.trusted_time_service.get_trusted_time",
+        return_value=(datetime(2023, 10, 1), False),
+    )
+    mocker.patch(
+        "app.features.time_records.time_record_service.time_record_service.create_punch",
+        return_value=record,
+    )
+    mocker.patch(
+        "app.features.system.audit_service.audit_service.async_log_change",
+        new_callable=AsyncMock,
+    )
 
     success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1)
     assert success
+    assert record.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
     assert rec.edit_justification == "Registro feito com a hora local do servidor (Falha no NTP)."
 
 
@@ -97,6 +139,32 @@ async def test_process_biometric_punch_value_error(async_db_mock, mocker):
     success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1)
     assert not success
     assert msg == "Erro Interno"
+
+
+@pytest.mark.asyncio
+async def test_process_biometric_punch_refetch_returns_none(async_db_mock, mocker):
+    bio = UserBiometric(id=1, user=User(id=1, is_active=True))
+    record = TimeRecord(id=1)
+
+    bio_scalars = MagicMock()
+    bio_scalars.first.return_value = bio
+    none_scalars = MagicMock()
+    none_scalars.first.return_value = None
+    async_db_mock.scalars.side_effect = [bio_scalars, none_scalars]
+
+    mocker.patch(
+        "app.features.devices.punch_service.trusted_time_service.get_trusted_time",
+        return_value=(datetime(2023, 10, 1), True),
+    )
+    mocker.patch(
+        "app.features.time_records.time_record_service.time_record_service.create_punch",
+        return_value=record,
+    )
+
+    success, msg, rec = await punch_service.process_biometric_punch(async_db_mock, 1)
+    assert success
+    assert msg == "Ponto Registrado"
+    assert rec is None
 
 
 def test_punch_service_repo_property():

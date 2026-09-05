@@ -1,14 +1,14 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
-from app.core.config import settings
 from typing import Annotated, Any, Dict, List
+from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
@@ -21,10 +21,6 @@ from app.features.users.user_exceptions import (
     SchedulePayrollClosedError,
 )
 from app.features.users.user_models import User, UserWorkScheduleConfig
-from app.features.users.user_repository import (
-    async_user_repository,
-    user_repository,
-)
 from app.shared import deps
 from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import DayOfWeek
@@ -119,19 +115,92 @@ class UserWorkScheduleService:
                 current_month = 1
                 current_year += 1
 
-    def handle_schedule_overlap(self, user: User, day_of_week: int, valid_from: date, valid_until: date,
-                                ignore_id: int = None):
-        for sch in user.historical_schedules:
-            if ignore_id and sch.id == ignore_id:
+    async def check_schedule_overlap(
+            self,
+            session: Any,
+            user_id: int,
+            day_of_week: int,
+            valid_from: date,
+            valid_until: date,
+            ignore_id: int | None = None,
+    ) -> None:
+        new_end = valid_until if valid_until else date.max
+        stmt = select(UserWorkScheduleConfig).where(
+            UserWorkScheduleConfig.user_id == user_id,
+            UserWorkScheduleConfig.day_of_week == day_of_week,
+            UserWorkScheduleConfig.valid_from <= new_end,
+            or_(
+                UserWorkScheduleConfig.valid_until.is_(None),
+                UserWorkScheduleConfig.valid_until >= valid_from,
+            ),
+        )
+        if ignore_id is not None:
+            stmt = stmt.where(UserWorkScheduleConfig.id != ignore_id)
+
+        if hasattr(session, "sync_session"):
+            existing = (await session.scalars(stmt)).first()
+        else:
+            existing = session.scalars(stmt).first()
+
+        if existing:
+            raise ScheduleOverlapError()
+
+    async def _process_users_bulk_add(self, session, users_input, valid_from, valid_until, users_map):
+        errors = []
+        new_schedules = []
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            user = users_map.get(uid)
+            if not user:
+                errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
-            if sch.day_of_week != day_of_week:
+            for sch_data_dict in user_data.get('schedules', []):
+                day_of_week = sch_data_dict.get('day_of_week')
+                day_name = DayOfWeek(day_of_week).nome
+                try:
+                    await self.check_schedule_overlap(session, uid, day_of_week, valid_from, valid_until)
+                except ScheduleOverlapError:
+                    errors.append(
+                        f"Usuário {user.name} (ID: {uid}) - {day_name}: Já existe um expediente vigente para esse dia informado."
+                    )
+                    continue
+                new_sch = UserWorkScheduleConfig(user_id=uid)
+                self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
+                new_schedules.append(new_sch)
+        return errors, new_schedules
+
+    async def _collect_update_actions(self, session: Any, users_input: list[dict], existing_map: dict,
+                                      new_valid_from: date, new_valid_until: date):
+        to_update, to_create, errors = [], [], []
+        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
+        if hasattr(session, "sync_session"):
+            res = await session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+        else:
+            res = session.execute(select(User).where(User.id.in_(uids)))
+            users_map = {u.id: u for u in res.scalars().all()}
+
+        for user_data in users_input:
+            uid = user_data.get('user_id')
+            user = users_map.get(uid)
+            if not user:
+                errors.append(f"Usuário com ID {uid} não encontrado.")
                 continue
 
-            sch_end = sch.valid_until if sch.valid_until else date.max
-            new_end = valid_until if valid_until else date.max
-
-            if sch.valid_from <= new_end and sch_end >= valid_from:
-                raise ScheduleOverlapError()
+            for sch_data in user_data.get('schedules', []):
+                dow = sch_data.get('day_of_week')
+                cfg = existing_map.get((uid, dow))
+                try:
+                    if cfg:
+                        await self.check_schedule_overlap(session, uid, dow, new_valid_from, new_valid_until,
+                                                          ignore_id=cfg.id)
+                        to_update.append((cfg, sch_data))
+                    else:
+                        await self.check_schedule_overlap(session, uid, dow, new_valid_from, new_valid_until)
+                        to_create.append((user, sch_data))
+                except ScheduleOverlapError as e:
+                    errors.append(f"Usuário {user.name}: {str(e)}")
+        return to_update, to_create, errors
 
     @staticmethod
     def _extract_schedule_item(cfg: UserWorkScheduleConfig) -> dict:
@@ -219,20 +288,6 @@ class UserWorkScheduleService:
             "users": self._format_users_schedule_list(users_dict)
         }
 
-    def _process_single_user_bulk_add(self, user, schedules_in, valid_from, valid_until, errors, new_schedules):
-        for sch_data_dict in schedules_in:
-            day_of_week = sch_data_dict.get('day_of_week')
-            day_name = DayOfWeek(day_of_week).nome
-            try:
-                self.handle_schedule_overlap(user, day_of_week, valid_from, valid_until)
-            except (ScheduleOverlapError, Exception):
-                errors.append(
-                    f"Usuário {user.name} (ID: {user.id}) - {day_name}: Já existe um expediente vigente para esse dia informado.")
-                continue
-            new_sch = UserWorkScheduleConfig(user_id=user.id)
-            self._apply_schedule_updates(new_sch, sch_data_dict, valid_from, valid_until)
-            new_schedules.append(new_sch)
-
     async def _query_schedule_configs(self, session: Any, valid_from: date, valid_until: date) -> list[UserWorkScheduleConfig]:
         stmt = select(UserWorkScheduleConfig).where(
             UserWorkScheduleConfig.valid_from == valid_from,
@@ -247,11 +302,10 @@ class UserWorkScheduleService:
 
     async def _delete_schedule_configs(self, session: Any, configs: list[UserWorkScheduleConfig]) -> None:
         for cfg in configs:
-            if hasattr(session, "delete"):
-                if hasattr(session, "sync_session"):
-                    await session.delete(cfg)
-                else:
-                    session.delete(cfg)
+            if hasattr(session, "sync_session"):
+                await session.delete(cfg)
+            else:
+                session.delete(cfg)
 
     async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str, old_data: dict = None, new_data: dict = None):
         if hasattr(session, "sync_session"):
@@ -296,9 +350,6 @@ class UserWorkScheduleService:
 
         await self.check_payroll_closure(session, valid_from, valid_until)
 
-        errors = []
-        new_schedules = []
-
         uids = [u.get('user_id') for u in users_input if u.get('user_id')]
         if hasattr(session, "sync_session"):
             res = await session.execute(select(User).where(User.id.in_(uids)))
@@ -307,13 +358,8 @@ class UserWorkScheduleService:
             res = session.execute(select(User).where(User.id.in_(uids)))
             users_map = {u.id: u for u in res.scalars().all()}
 
-        for user_data in users_input:
-            uid = user_data.get('user_id')
-            user = users_map.get(uid)
-            if not user:
-                errors.append(f"Usuário com ID {uid} não encontrado.")
-                continue
-            self._process_single_user_bulk_add(user, user_data.get('schedules', []), valid_from, valid_until, errors, new_schedules)
+        errors, new_schedules = await self._process_users_bulk_add(session, users_input, valid_from, valid_until,
+                                                                   users_map)
 
         if errors:
             raise BulkScheduleValidationError(errors)
@@ -337,37 +383,6 @@ class UserWorkScheduleService:
             for sch_data_dict in user_data.get('schedules', []):
                 incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
         return incoming_map
-
-    async def _collect_update_actions(self, session: Any, users_input: list[dict], existing_map: dict, new_valid_from: date, new_valid_until: date):
-        to_update, to_create, errors = [], [], []
-        uids = [u.get('user_id') for u in users_input if u.get('user_id')]
-        if hasattr(session, "sync_session"):
-            res = await session.execute(select(User).where(User.id.in_(uids)))
-            users_map = {u.id: u for u in res.scalars().all()}
-        else:
-            res = session.execute(select(User).where(User.id.in_(uids)))
-            users_map = {u.id: u for u in res.scalars().all()}
-
-        for user_data in users_input:
-            uid = user_data.get('user_id')
-            user = users_map.get(uid)
-            if not user:
-                errors.append(f"Usuário com ID {uid} não encontrado.")
-                continue
-
-            for sch_data in user_data.get('schedules', []):
-                dow = sch_data.get('day_of_week')
-                cfg = existing_map.get((uid, dow))
-                try:
-                    if cfg:
-                        self.handle_schedule_overlap(user, dow, new_valid_from, new_valid_until, ignore_id=cfg.id)
-                        to_update.append((cfg, sch_data))
-                    else:
-                        self.handle_schedule_overlap(user, dow, new_valid_from, new_valid_until)
-                        to_create.append((user, sch_data))
-                except ScheduleOverlapError as e:
-                    errors.append(f"Usuário {user.name}: {str(e)}")
-        return to_update, to_create, errors
 
     async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
                                     old_valid_until: date = None, bulk_data: dict = None,
