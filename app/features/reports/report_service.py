@@ -97,6 +97,8 @@ class ReportService:
                 "short_id": rec.short_id,
                 "time": rec.record_datetime.strftime("%H:%M"),
                 "record_type": rec.record_type.value,
+                "original_record_id": rec.original_record_id,
+                "is_ignored": bool(rec.is_ignored),
             }
             if is_manager:
                 punch_data.update({
@@ -328,7 +330,9 @@ class ReportService:
                 platform=rec.platform,
                 biometric_id=rec.biometric_id,
                 edited_by=rec.editor_name,
-                edit_justification=rec.edit_justification if rec.edit_justification else None
+                edit_justification=rec.edit_justification if rec.edit_justification else None,
+                original_record_id=rec.original_record_id,
+                is_ignored=bool(rec.is_ignored),
             ))
         return detailed_punches
 
