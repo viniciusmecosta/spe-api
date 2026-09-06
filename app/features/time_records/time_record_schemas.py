@@ -17,6 +17,7 @@ class TimeRecordBase(BaseModel):
     ip_address: str | None = None
     device_name: str | None = None
     platform: str | None = None
+    biometric_id: int | None = None
 
 
 class TimeRecordCreate(BaseModel):

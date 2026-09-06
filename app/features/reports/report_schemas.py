@@ -36,6 +36,8 @@ class PunchDetail(BaseModel):
     biometric_id: int | None = None
     edited_by: str | None = None
     edit_justification: str | None = None
+    original_record_id: int | None = None
+    is_ignored: bool = False
 
 
 class DailyExcessInfo(BaseModel):
@@ -127,6 +129,8 @@ class HistoryPunch(BaseModel):
     biometric_id: int | None = None
     edited_by: str | None = None
     edit_justification: str | None = None
+    original_record_id: int | None = None
+    is_ignored: bool = False
 
 
 class HistoryDay(BaseModel):
