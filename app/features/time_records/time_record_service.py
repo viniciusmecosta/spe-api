@@ -538,12 +538,14 @@ class TimeRecordService:
 
     async def create_punch(self, db: Any | None = None, user_id: int = 0, timestamp: datetime | None = None,
                            ip_address: str = "",
-                     biometric_id: int | None = None, platform: str = "desktop") -> TimeRecord:
+                     biometric_id: int | None = None, platform: str = "desktop",
+                     device_name: str | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert timestamp is not None
         record_type = await self._determine_punch_type(session, user_id, timestamp)
-        device_name = get_client_device_name(ip_address)
+        if not device_name:
+            device_name = get_client_device_name(ip_address)
         if hasattr(session, "sync_session"):
             return await self.repo.create(
                 session,

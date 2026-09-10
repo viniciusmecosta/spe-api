@@ -54,13 +54,21 @@ class PunchService:
 
             server_time, used_ntp = trusted_time_service.get_trusted_time()
 
+            device_name = None
+            if request:
+                if hasattr(request, "state"):
+                    device_name = getattr(request.state, "device_name", None)
+                if not device_name:
+                    device_name = request.headers.get("X-Device-Name")
+
             new_record = time_record_service.create_punch(
                 session,
                 user_id=user.id,
                 timestamp=server_time,
                 ip_address=ip_address if ip_address else "0.0.0.0",
                 biometric_id=biometric.id,
-                platform="IOT"
+                platform="IOT",
+                device_name=device_name,
             )
             if hasattr(new_record, "__await__"):
                 new_record = await new_record

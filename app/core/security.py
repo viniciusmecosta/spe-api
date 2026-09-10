@@ -55,29 +55,26 @@ def _resolve_device_name_from_ip(ip: str) -> str:
             return socket.gethostname()
         except Exception:
             return ""
-    else:
-        try:
-            socket.setdefaulttimeout(1.5)
-            host_info = socket.gethostbyaddr(ip)
-            if host_info and host_info[0]:
-                return host_info[0].split('.')[0]
-        except Exception:
-            return ""
     return ""
 
 
-def get_client_device_name(ip: str, request: Request | None = None) -> str:
+def get_client_device_name(ip: str | None = None, request: Request | None = None) -> str:
     device_name = ""
 
-    if request:
-        device_name = request.headers.get("X-Device-Name", "")
-        if device_name.lower() == "localhost":
+    if request is not None:
+        if hasattr(request, "state"):
+            state_name = getattr(request.state, "device_name", "")
+            if isinstance(state_name, str) and state_name:
+                device_name = state_name
+        if not device_name and hasattr(request, "headers"):
+            device_name = request.headers.get("X-Device-Name", "")
+        if isinstance(device_name, str) and device_name.lower() == "localhost":
             device_name = ""
 
     if not device_name and ip:
         device_name = _resolve_device_name_from_ip(ip)
 
-    if not device_name or device_name.lower() == "localhost":
+    if not device_name or (isinstance(device_name, str) and device_name.lower() == "localhost"):
         device_name = "Desconhecido"
 
     return device_name[:255]
