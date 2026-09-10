@@ -70,7 +70,7 @@ async def add_bulk_schedules(
     svc = service if service is not None else user_work_schedule_service
     return await svc.bulk_add_schedules(
         db=db,
-        bulk_data=schedule_in.model_dump(exclude_unset=True),
+        bulk_data=schedule_in,
         current_user_id=current_user.id,
         background_tasks=background_tasks,
     )
@@ -94,7 +94,7 @@ async def update_bulk_schedules(
         db=db,
         old_valid_from=valid_from,
         old_valid_until=valid_until,
-        bulk_data=schedule_in.model_dump(exclude_unset=True),
+        bulk_data=schedule_in,
         current_user_id=current_user.id,
         background_tasks=background_tasks,
     )

@@ -831,19 +831,16 @@ def test_resolve_logo_path(excel_service, mocker):
 
     comp = MagicMock(logo_path="logo.png")
 
-    # Caso 1: existe no public
     mocker.patch("os.path.exists", side_effect=lambda p: "public" in p)
     path = excel_service._resolve_logo_path(comp)
     assert path is not None
     assert "public/logo.png" in path
 
-    # Caso 2: não existe no public, mas existe no legacy
     mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
     path_legacy = excel_service._resolve_logo_path(comp)
     assert path_legacy is not None
     assert "public" not in path_legacy
 
-    # Caso 3: não existe em nenhum lugar
     mocker.patch("os.path.exists", return_value=False)
     assert excel_service._resolve_logo_path(comp) is None
 

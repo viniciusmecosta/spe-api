@@ -33,14 +33,12 @@ def test_get_client_device_name_cases():
     res = get_client_device_name("127.0.0.1", req)
     assert isinstance(res, str)
 
-    # Test request.state.device_name precedence
     req_with_state = MagicMock(spec=Request)
     req_with_state.state = MagicMock()
     req_with_state.state.device_name = "Device-From-State"
     req_with_state.headers.get.side_effect = lambda k, d="": "HeaderDevice" if k == "X-Device-Name" else d
     assert get_client_device_name("192.168.1.50", req_with_state) == "Device-From-State"
 
-    # Test request.headers["X-Device-Name"] when state is empty
     req_header_only = MagicMock(spec=Request)
     req_header_only.state = MagicMock()
     req_header_only.state.device_name = ""
@@ -53,7 +51,6 @@ def test_get_client_device_name_cases():
     with patch("socket.gethostname", return_value="my-machine"):
         assert _resolve_device_name_from_ip("127.0.0.1") == "my-machine"
 
-    # Remote IP resolution returns empty immediately without blocking
     assert _resolve_device_name_from_ip("192.168.1.100") == ""
 
     mock_req_lh = MagicMock()

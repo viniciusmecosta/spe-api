@@ -235,7 +235,6 @@ async def test_upload_logo_success_old_logo_in_legacy_path(mocker, async_db_mock
     mocker.patch("shutil.copyfileobj")
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
 
-    # public não existe, legacy existe
     mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
     mock_remove = mocker.patch("os.remove")
 
@@ -270,7 +269,40 @@ def test_company_service_repo_property():
     custom_repo = MagicMock()
     original_repo = company_service.repo
     try:
-        company_service.repo = custom_repo
+        device_repo = custom_repo
+        company_service.repo = device_repo
         assert company_service.repo == custom_repo
     finally:
         company_service.repo = original_repo
+
+
+@pytest.mark.asyncio
+async def test_company_service_with_base_url(mocker, async_db_mock):
+    existing = Company(id=1, name="Company", cnpj="11222333000181", address="Rua Teste, 123", logo_path="logo.png")
+    mocker.patch.object(company_service.repo, "get_current", new_callable=AsyncMock,
+                        side_effect=[existing, None, existing, existing])
+    mocker.patch.object(company_service.repo, "create", new_callable=AsyncMock, return_value=existing)
+    mocker.patch.object(company_service.repo, "update", new_callable=AsyncMock, return_value=existing)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    res_get = await company_service.get_company(async_db_mock, base_url="https://api.test.com")
+    assert res_get.logo_path == "https://api.test.com/uploads/logo.png"
+
+    create_in = CompanyCreate(name="New", cnpj="11222333000181", address="Rua Teste, 123")
+    res_create = await company_service.create_company(async_db_mock, obj_in=create_in, current_user_id=1,
+                                                      base_url="https://api.test.com")
+    assert res_create.logo_path == "https://api.test.com/uploads/logo.png"
+
+    update_in = CompanyUpdate(name="Updated")
+    res_update = await company_service.update_company(async_db_mock, obj_in=update_in, current_user_id=1,
+                                                      base_url="https://api.test.com")
+    assert res_update.logo_path == "https://api.test.com/uploads/logo.png"
+
+    file_mock = MagicMock(spec=UploadFile)
+    file_mock.filename = "new.png"
+    file_mock.file = MagicMock()
+    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("shutil.copyfileobj")
+    mocker.patch("os.path.exists", return_value=False)
+    res_upload = await company_service.upload_logo(async_db_mock, file_mock, 10, base_url="https://api.test.com")
+    assert "https://api.test.com/uploads/" in res_upload.logo_path

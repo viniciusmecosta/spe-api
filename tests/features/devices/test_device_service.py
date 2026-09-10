@@ -334,3 +334,52 @@ def test_device_service_repo_property():
         assert device_service.repo == custom_repo
     finally:
         device_service.repo = original_repo
+
+
+@pytest.mark.asyncio
+async def test_process_punch_with_payload_and_request_ip(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
+    mock_record = MagicMock()
+    mock_record.user.name = "Test User"
+    mock_record.record_datetime = datetime(2026, 8, 14, 8, 30, 0)
+    mock_record.record_type = RecordType.ENTRY
+
+    mocker.patch(
+        "app.features.devices.device_service.punch_service.process_biometric_punch",
+        new_callable=AsyncMock,
+        return_value=(True, "Sucesso", mock_record),
+    )
+    mocker.patch("app.features.devices.device_service.time_record_service.trigger_auto_print")
+
+    mock_req = MagicMock()
+    mock_req.client.host = "10.0.0.1"
+    mock_req.headers = {}
+    mock_req.state = MagicMock()
+    bg_mock = MagicMock()
+
+    payload_mock = MagicMock(sensor_index=42)
+
+    result = await device_service.process_punch(
+        db=async_db_mock,
+        request=mock_req,
+        background_tasks=bg_mock,
+        payload=payload_mock,
+    )
+    assert result.led == "green"
+
+
+@pytest.mark.asyncio
+async def test_verify_manager_access_with_payload_and_device(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
+    mocker.patch.object(device_service.repo, "get_manager_with_biometric", new_callable=AsyncMock, return_value=[])
+    audit_mock = mocker.patch("app.features.devices.device_service.audit_service.async_log_change",
+                              new_callable=AsyncMock)
+
+    payload_mock = MagicMock(sensor_index=7)
+    device_mock = MagicMock(id=99)
+
+    result = await device_service.verify_manager_access(
+        db=async_db_mock,
+        payload=payload_mock,
+        device=device_mock,
+    )
+    assert result.is_allowed is True
+    audit_mock.assert_called_once()

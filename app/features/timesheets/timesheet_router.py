@@ -5,9 +5,9 @@ from fastapi.responses import StreamingResponse
 
 from app.features.timesheets.anomaly_service import AnomalyService
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
-from app.shared.enums import UserRole
 from app.features.timesheets.timesheet_service import TimesheetService
 from app.shared import deps
+from app.shared.enums import UserRole
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,
     BAD_REQUEST_RESPONSE,
@@ -29,7 +29,6 @@ async def get_official_timesheet_user_pdf(
         year: Annotated[int, Query(ge=2000)],
         service: Annotated[TimesheetService, Depends()],
 ) -> StreamingResponse:
-    service.validate_date_not_future(month, year)
     pdf_buffer = await service.generate_user_timesheet_pdf(user_id=user_id, month=month, year=year)
     filename = f"espelho_ponto_{user_id}_{month:02d}_{year}.pdf"
     return StreamingResponse(
@@ -50,7 +49,6 @@ async def get_official_timesheet_all_pdf(
         service: Annotated[TimesheetService, Depends()],
         employee_ids: Annotated[list[int] | None, Query()] = None,
 ) -> StreamingResponse:
-    service.validate_date_not_future(month, year)
     zip_buffer = await service.generate_all_timesheets_pdf_zip(month=month, year=year, employee_ids=employee_ids)
     filename = f"espelhos_ponto_lote_{month:02d}_{year}.zip"
 

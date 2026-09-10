@@ -535,7 +535,6 @@ class ReportService:
                             current_user: User | None = None) -> HistoryResponse:
         session = db if db is not None else self.db
         assert session is not None
-        assert current_user is not None
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         today_date = now.date()
@@ -556,6 +555,11 @@ class ReportService:
             user = user_repository.get(session, user_id)
         if not user:
             raise ReportUserNotFoundError(user_id=user_id)
+
+        if current_user is not None:
+            self.check_user_report_access(
+                current_user, user_id, detail="Sem permissão para acessar o histórico deste usuário."
+            )
 
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
@@ -756,13 +760,19 @@ class ReportService:
             raise ReportAccessDeniedError(user_id=user_id, detail=detail)
 
     async def get_advanced_user_report_or_404(
-            self, db: Any | None = None, user_id: int = 0, month: int = 0, year: int = 0,
+            self, db: Any | None = None, user_id: int = 0, month: int | None = None, year: int | None = None,
             current_user: User | None = None
     ) -> AdvancedUserReportResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
-        report = await self.get_advanced_user_report(session, user_id, month, year, current_user)
+        self.check_user_report_access(
+            current_user, user_id, detail="Sem permissão para ver relatório de outros usuários."
+        )
+        now = datetime.now()
+        month_val = month if month else now.month
+        year_val = year if year else now.year
+        report = await self.get_advanced_user_report(session, user_id, month_val, year_val, current_user)
         if not report:
             raise ReportNotFoundOrIncompleteError(user_id=user_id)
         return report

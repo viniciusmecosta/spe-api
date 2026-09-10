@@ -420,6 +420,7 @@ class TimesheetService:
 
     async def generate_user_timesheet_pdf(self, db: Any | None = None, user_id: int = 0, month: int = 0,
                                           year: int = 0) -> io.BytesIO:
+        self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(session, "sync_session"):
@@ -659,6 +660,7 @@ class TimesheetService:
 
     async def generate_all_timesheets_pdf_zip(self, db: Any | None = None, month: int = 0, year: int = 0,
                                         employee_ids: list[int] | None = None) -> io.BytesIO:
+        self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
         tz = ZoneInfo(settings.TIMEZONE)

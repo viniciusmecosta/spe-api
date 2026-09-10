@@ -64,9 +64,11 @@ async def trigger_manual_backup(
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    background_tasks.add_task(routine_orch.send_manual_backup_email)
-    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
-    return {"status": "success", "message": "Backup manual por e-mail iniciado em segundo plano."}
+    return await routine_orch.trigger_manual_backup_email(
+        background_tasks=background_tasks,
+        current_user=current_user,
+        audit_svc=audit_svc,
+    )
 
 
 @routine_logs_router.get(
@@ -104,9 +106,11 @@ async def trigger_manual_backup_telegram(
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    background_tasks.add_task(routine_orch.execute_manual_backup_telegram)
-    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM", entity_id=0)
-    return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
+    return await routine_orch.trigger_manual_backup_telegram(
+        background_tasks=background_tasks,
+        current_user=current_user,
+        audit_svc=audit_svc,
+    )
 
 
 @telegram_actions_router.post(
@@ -123,11 +127,11 @@ async def trigger_manual_report_telegram(
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    telegram_svc.validate_manual_report_dates(start_date, end_date)
-    background_tasks.add_task(routine_orch.send_manual_report_telegram, start_date, end_date)
-    await audit_svc.async_log(user_id=current_user.id, action="MANUAL_REPORT_TELEGRAM", entity="SYSTEM", entity_id=0,
-                              new_data={"start_date": str(start_date), "end_date": str(end_date)})
-    return {
-        "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
-    }
-
+    return await routine_orch.trigger_manual_report_telegram(
+        background_tasks=background_tasks,
+        start_date=start_date,
+        end_date=end_date,
+        current_user=current_user,
+        audit_svc=audit_svc,
+        telegram_svc=telegram_svc,
+    )

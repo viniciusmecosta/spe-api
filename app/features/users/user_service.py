@@ -105,22 +105,35 @@ class UserService:
         )
         return user
 
+    async def update_user_me(
+            self,
+            current_user: User,
+            user_in: Any,
+    ) -> User:
+        update_data = self._extract_data(user_in)
+        return await self.update_user(
+            user_id=current_user.id,
+            user_in=update_data,
+            current_user_id=current_user.id,
+        )
+
     async def get_multi(
         self,
             after_id: int | None = None,
         limit: int = 100,
         is_active: bool | None = None,
-        role: str | None = None,
+            role: str | UserRole | None = None,
         search: str | None = None,
         order_by: str = "id",
         order_direction: str = "asc",
     ) -> list[User]:
+        role_value = role.value if isinstance(role, UserRole) else role
         return await self.repository.get_multi(
             self.db,
             after_id=after_id,
             limit=limit,
             is_active=is_active,
-            role=role,
+            role=role_value,
             search=search,
             order_by=order_by,
             order_direction=order_direction,

@@ -160,7 +160,12 @@ class PayrollService:
             year: int = 0,
             current_user: User | None = None,
             background_tasks: BackgroundTasks | None = None,
+            *,
+            period: Any = None,
     ):
+        if period is not None:
+            month = period.month
+            year = period.year
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
@@ -236,7 +241,13 @@ class PayrollService:
             observation: str = "",
             current_user: User | None = None,
             background_tasks: BackgroundTasks | None = None,
+            *,
+            period: Any = None,
     ):
+        if period is not None:
+            month = period.month
+            year = period.year
+            observation = period.observation
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
@@ -299,7 +310,12 @@ class PayrollService:
             closure_id: int = 0,
             original_filename: str = "",
             file_content: bytes = b"",
-    ):
+            upload_file: Any = None,
+    ) -> dict[str, str]:
+        if upload_file is not None:
+            original_filename = upload_file.filename or ""
+            file_content = await upload_file.read()
+
         session = db if db is not None else self.db
         assert session is not None
         stmt = select(PayrollClosure).where(PayrollClosure.id == closure_id)
@@ -323,6 +339,7 @@ class PayrollService:
 
         closure.report_path = f"reports/legacy/{filename}"
         await session.commit()
+        return {"status": "success", "message": "Documento legado anexado com sucesso."}
 
     async def get_report_file_path(
             self,

@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.features.reports.dashboard_service import dashboard_service
 from app.features.reports.report_schemas import DashboardMetricsResponse, TeamHoursResponse
 from app.features.users.user_models import User
-from app.shared.enums import RecordType
+from app.shared.enums import RecordType, UserRole
 
 
 @pytest.fixture
@@ -212,7 +212,7 @@ async def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_truste
 @pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
 async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
-    current_user = User(id=1, name="Admin")
+    current_user = User(id=1, name="Admin", role=UserRole.MANAGER)
 
     user1 = MagicMock()
     user1.id = 2
@@ -250,7 +250,7 @@ async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_q
 @pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
 async def test_get_team_worked_hours_no_report(mock_get_report, db_session_mock, mock_db_query):
-    current_user = User(id=1, name="Admin")
+    current_user = User(id=1, name="Admin", role=UserRole.MANAGER)
 
     user1 = MagicMock()
     user1.id = 2
@@ -374,7 +374,8 @@ async def test_dashboard_async_session_branches(
     assert res_metrics.pending_adjustments == 2
     assert res_metrics.employees_present_today == 8
 
-    mock_user = User(id=1, name="Employee User", role=UserRole.EMPLOYEE, data_nascimento=date(1990, 7, 10))
+    mock_user = User(id=1, name="Employee User", role=UserRole.EMPLOYEE, can_export_report=True,
+                     data_nascimento=date(1990, 7, 10))
     rec = MagicMock()
     rec.id = 1
     rec.short_id = "r1"
@@ -405,3 +406,25 @@ async def test_dashboard_async_session_branches(
     res_mgr = await dashboard_service.get_manager_dashboard(async_sess, mock_user)
     assert res_mgr.full_name == "Employee User"
     assert res_mgr.today_total_punches == 20
+
+
+@pytest.mark.asyncio
+async def test_dashboard_permissions(db_session_mock, mock_db_query):
+    from app.features.reports.report_exceptions import ReportGlobalPermissionError
+
+    unauthorized_user = User(id=1, role=UserRole.EMPLOYEE, can_export_report=False)
+    authorized_user = User(id=2, role=UserRole.MANAGER)
+
+    with pytest.raises(ReportGlobalPermissionError):
+        await dashboard_service.get_dashboard_metrics(db_session_mock, current_user=unauthorized_user)
+
+    with pytest.raises(ReportGlobalPermissionError):
+        await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user=unauthorized_user)
+
+    with patch.object(dashboard_service, "get_dashboard_metrics", wraps=dashboard_service.get_dashboard_metrics):
+        with patch("app.features.reports.dashboard_service.adjustment_repository.count_pending", return_value=1), \
+                patch("app.features.reports.dashboard_service.time_record_repository.count_unique_users_in_range",
+                      return_value=4):
+            mock_db_query["filter"].count.return_value = 5
+            metrics = await dashboard_service.get_dashboard_metrics(db_session_mock, current_user=authorized_user)
+            assert metrics.total_active_employees == 5

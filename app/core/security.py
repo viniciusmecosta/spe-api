@@ -58,16 +58,23 @@ def _resolve_device_name_from_ip(ip: str) -> str:
     return ""
 
 
+def _get_device_name_from_request(request: Request) -> str:
+    if hasattr(request, "state"):
+        state_name = getattr(request.state, "device_name", "")
+        if isinstance(state_name, str) and state_name:
+            return state_name
+    if hasattr(request, "headers"):
+        header_name = request.headers.get("X-Device-Name", "")
+        if isinstance(header_name, str) and header_name:
+            return header_name
+    return ""
+
+
 def get_client_device_name(ip: str | None = None, request: Request | None = None) -> str:
     device_name = ""
 
     if request is not None:
-        if hasattr(request, "state"):
-            state_name = getattr(request.state, "device_name", "")
-            if isinstance(state_name, str) and state_name:
-                device_name = state_name
-        if not device_name and hasattr(request, "headers"):
-            device_name = request.headers.get("X-Device-Name", "")
+        device_name = _get_device_name_from_request(request)
         if isinstance(device_name, str) and device_name.lower() == "localhost":
             device_name = ""
 

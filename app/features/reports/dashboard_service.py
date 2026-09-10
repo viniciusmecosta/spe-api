@@ -42,7 +42,10 @@ class DashboardService:
     def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
         self.db = db
 
-    async def get_dashboard_metrics(self, db: Any | None = None) -> DashboardMetricsResponse:
+    async def get_dashboard_metrics(self, db: Any | None = None,
+                                    current_user: User | None = None) -> DashboardMetricsResponse:
+        if current_user:
+            report_service.check_report_permission(current_user)
         session = db if db is not None else self.db
         assert session is not None
         tz = ZoneInfo(settings.TIMEZONE)
@@ -153,11 +156,15 @@ class DashboardService:
             server_time_formatted=now.strftime("%d/%m/%Y %H:%M:%S")
         )
 
-    async def get_team_worked_hours(self, db: Any | None = None, month: int = 0, year: int = 0,
+    async def get_team_worked_hours(self, db: Any | None = None, month: int | None = None, year: int | None = None,
                                     current_user: User | None = None) -> TeamHoursResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
+        report_service.check_report_permission(current_user)
+        now = datetime.now()
+        month_val = month if month else now.month
+        year_val = year if year else now.year
         if hasattr(session, "sync_session"):
             stmt = select(User).options(selectinload(User.historical_schedules)).where(
                 User.role == UserRole.EMPLOYEE,
@@ -176,7 +183,7 @@ class DashboardService:
         team_total_minutes = 0
 
         for user in users:
-            report = await report_service.get_advanced_user_report(session, user.id, month, year, current_user)
+            report = await report_service.get_advanced_user_report(session, user.id, month_val, year_val, current_user)
             if report:
                 user_minutes = report.summary.total_accounted_minutes
                 if user_minutes >= 60:
@@ -192,8 +199,8 @@ class DashboardService:
         t_hours = team_total_minutes // 60
 
         return TeamHoursResponse(
-            month=month,
-            year=year,
+            month=month_val,
+            year=year_val,
             team_total_hours=float(t_hours),
             team_formatted_time=f"{t_hours}h",
             employees=employees_data

@@ -2,7 +2,7 @@ from datetime import datetime, time
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends, Request
+from fastapi import BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,13 +50,13 @@ from app.features.users.user_repository import (
     user_repository,
 )
 from app.shared import deps
+from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import (
     AdjustmentStatus,
     AdjustmentType,
     RecordType,
     UserRole,
 )
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.hashid_service import hashid_service
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import mask_cnpj, mask_cpf
@@ -256,18 +256,28 @@ class TimeRecordService:
         return record
 
     async def register_entry(self, db: Any | None = None, user_id: int = 0,
-                             request: Request | None = None) -> TimeRecord:
+                             request: Request | None = None,
+                             background_tasks: BackgroundTasks | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert request is not None
-        return await self._register_manual_punch(session, user_id, request, RecordType.ENTRY)
+        record = await self._register_manual_punch(session, user_id, request, RecordType.ENTRY)
+        if background_tasks is not None:
+            await self.trigger_auto_print(record=record, background_tasks=background_tasks)
+            background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, user_id, record.record_datetime.date())
+        return record
 
     async def register_exit(self, db: Any | None = None, user_id: int = 0,
-                            request: Request | None = None) -> TimeRecord:
+                            request: Request | None = None,
+                            background_tasks: BackgroundTasks | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert request is not None
-        return await self._register_manual_punch(session, user_id, request, RecordType.EXIT)
+        record = await self._register_manual_punch(session, user_id, request, RecordType.EXIT)
+        if background_tasks is not None:
+            await self.trigger_auto_print(record=record, background_tasks=background_tasks)
+            background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, user_id, record.record_datetime.date())
+        return record
 
     async def _process_toggle_invalidations(self, db: Any, record: TimeRecord, new_type: RecordType):
         previous_type = record.record_type
@@ -303,7 +313,8 @@ class TimeRecordService:
         )
 
     async def toggle_record_type(self, db: Any | None = None, record_id: int = 0,
-                                 current_user: User | None = None) -> TimeRecord:
+                                 current_user: User | None = None,
+                                 background_tasks: BackgroundTasks | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None
@@ -330,6 +341,9 @@ class TimeRecordService:
 
         session.add(new_record)
         await self._commit_and_audit_toggle_record(session, current_user.id, old_data, new_record, record)
+        if background_tasks is not None:
+            background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, new_record.user_id,
+                                      new_record.record_datetime.date())
         return new_record
 
     async def _commit_and_audit_toggle_record(self, session: Any, user_id: int, old_data: dict, new_record: TimeRecord, record: TimeRecord):
@@ -364,9 +378,38 @@ class TimeRecordService:
             session.refresh(record)
             audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
 
+    def _resolve_admin_metadata(
+            self,
+            request: Request | None,
+            ip_address: str | None,
+            device_name: str | None,
+            platform: str | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        if request is None:
+            return ip_address, device_name, platform
+        resolved_ip = ip_address or get_client_ip(request)
+        resolved_device = device_name or get_client_device_name(resolved_ip, request)
+        header_plat = request.headers.get("X-Platform", "").lower()
+        resolved_platform = header_plat if header_plat else platform
+        return resolved_ip, resolved_device, resolved_platform
+
+    async def _get_record_by_id(self, session: Any, record_id: int) -> TimeRecord:
+        if hasattr(session, "sync_session"):
+            record = await self.repo.get(session, record_id)
+        else:
+            record = time_record_repository.get(session, record_id)
+        if not record:
+            raise TimeRecordNotFoundError(record_id=record_id)
+        return record
+
     async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
                                   manager_id: int = 0, ip_address: str = "",
-                            device_name: str | None = None, platform: str = "WEB_ADMIN") -> TimeRecord:
+                                  device_name: str | None = None, platform: str = "WEB_ADMIN",
+                                  request: Request | None = None) -> TimeRecord:
+        resolved_ip, device_name, resolved_platform = self._resolve_admin_metadata(request, ip_address, device_name,
+                                                                                   platform)
+        ip_address = resolved_ip if resolved_ip else ""
+        platform = resolved_platform if resolved_platform else platform
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -410,19 +453,42 @@ class TimeRecordService:
         if new_date != old_date:
             await self._invalidate_daily_excess_and_unverify(db, record.user_id, new_date)
 
+    def _build_updated_admin_record(
+            self,
+            record: TimeRecord,
+            obj_in: TimeRecordUpdate,
+            manager_id: int,
+            ip_address: str | None,
+            device_name: str | None,
+            platform: str | None,
+            new_record_type: RecordType,
+            new_record_datetime: datetime,
+    ) -> TimeRecord:
+        return TimeRecord(
+            user_id=record.user_id,
+            record_type=new_record_type,
+            record_datetime=new_record_datetime,
+            ip_address=ip_address,
+            device_name=device_name if device_name else "",
+            platform=platform,
+            biometric_id=None,
+            edited_by=manager_id,
+            edit_justification=obj_in.edit_justification,
+            original_record_id=record.original_record_id if record.original_record_id else record.id,
+            created_at=get_local_time(),
+            is_verified=True,
+        )
+
     async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
-                             ip_address: str | None = None, device_name: str | None = None,
-                             platform: str | None = None) -> TimeRecord:
+                                  ip_address: str | None = None, device_name: str | None = None,
+                                  platform: str | None = None,
+                                  request: Request | None = None) -> TimeRecord:
+        ip_address, device_name, platform = self._resolve_admin_metadata(request, ip_address, device_name, platform)
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
-        if hasattr(session, "sync_session"):
-            record = await self.repo.get(session, record_id)
-        else:
-            record = time_record_repository.get(session, record_id)
-        if not record:
-            raise TimeRecordNotFoundError(record_id=record_id)
+        record = await self._get_record_by_id(session, record_id)
 
         await self._validate_period_open_helper(session, record.record_datetime.date())
         if obj_in.record_datetime:
@@ -438,12 +504,9 @@ class TimeRecordService:
 
         old_data = serialize_model(record)
         record.is_ignored = True
-        new_record = TimeRecord(user_id=record.user_id, record_type=new_record_type,
-                                record_datetime=new_record_datetime, ip_address=ip_address,
-                                device_name=device_name if device_name else "", platform=platform, biometric_id=None,
-                                edited_by=manager_id, edit_justification=obj_in.edit_justification,
-                                original_record_id=record.original_record_id if record.original_record_id else record.id,
-                                created_at=get_local_time(), is_verified=True)
+        new_record = self._build_updated_admin_record(
+            record, obj_in, manager_id, ip_address, device_name, platform, new_record_type, new_record_datetime
+        )
         session.add(new_record)
         session.add(record)
         await self._commit_and_audit_admin_update(session, manager_id, old_data, new_record, record.user_id, old_date, new_date)
@@ -488,28 +551,62 @@ class TimeRecordService:
             audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                      new_data={"justification": justification})
 
-    async def delete_admin_record(self, db: Any | None = None, record_id: int = 0,
-                                  obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0):
-        session = db if db is not None else self.db
-        assert session is not None
-        assert obj_in is not None
-        if hasattr(session, "sync_session"):
-            record = await self.repo.get(session, record_id)
-        else:
-            record = time_record_repository.get(session, record_id)
-        if not record:
-            raise TimeRecordNotFoundError(record_id=record_id)
+    def _extract_delete_justification(
+            self,
+            justification: str | None,
+            request_body: TimeRecordDeleteAdmin | None,
+            obj_in: TimeRecordDeleteAdmin | None,
+    ) -> str | None:
+        if justification and justification.strip():
+            return justification.strip()
+        if request_body and request_body.edit_justification and request_body.edit_justification.strip():
+            return request_body.edit_justification.strip()
+        if obj_in and obj_in.edit_justification and obj_in.edit_justification.strip():
+            return obj_in.edit_justification.strip()
+        return None
 
-        await self._validate_period_open_helper(session, record.record_datetime.date())
+    def _resolve_delete_obj_in(
+            self,
+            validate_justification: bool,
+            justification: str | None,
+            request_body: TimeRecordDeleteAdmin | None,
+            obj_in: TimeRecordDeleteAdmin | None,
+    ) -> TimeRecordDeleteAdmin:
+        if not validate_justification:
+            assert obj_in is not None
+            return obj_in
 
+        justification_val = self._extract_delete_justification(justification, request_body, obj_in)
+        if not justification_val:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Justificativa de exclusão é obrigatória.",
+            )
+        return TimeRecordDeleteAdmin(edit_justification=justification_val)
+
+    async def _handle_delete_invalidations(self, session: Any, record: TimeRecord) -> None:
         if record.record_type == RecordType.ENTRY:
             if await self._is_first_entry_affected(session, record.user_id, record.record_datetime.date(),
                                                    record_id=record.id):
                 await self._invalidate_extra_time_requests(session, record.user_id, record.record_datetime.date())
 
+    async def delete_admin_record(self, db: Any | None = None, record_id: int = 0,
+                                  obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0,
+                                  justification: str | None = None,
+                                  request_body: TimeRecordDeleteAdmin | None = None,
+                                  validate_justification: bool = False):
+        session = db if db is not None else self.db
+        assert session is not None
+
+        resolved_obj_in = self._resolve_delete_obj_in(validate_justification, justification, request_body, obj_in)
+        record = await self._get_record_by_id(session, record_id)
+
+        await self._validate_period_open_helper(session, record.record_datetime.date())
+        await self._handle_delete_invalidations(session, record)
+
         target_date = record.record_datetime.date()
         user_id = record.user_id
-        justification_val = obj_in.edit_justification if obj_in.edit_justification else ""
+        justification_val = resolved_obj_in.edit_justification if resolved_obj_in.edit_justification else ""
         old_data = serialize_model(record)
         await self._commit_and_audit_admin_delete(session, manager_id, old_data, user_id, target_date, justification_val)
 

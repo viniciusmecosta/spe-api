@@ -104,3 +104,26 @@ async def test_authenticate_success(async_db_mock: AsyncMock, mocker: MagicMock)
     token = await auth_service.authenticate("manager", "goodpass")
     assert token.access_token == "prod_token"
     assert token.token_type == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_with_form_data_and_request(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
+    user = MagicMock(spec=User)
+    user.id = 1
+    user.name = "Manager User"
+    user.role = UserRole.MANAGER
+    user.password_hash = "hashed"
+    user.is_active = True
+    mocker.patch("app.features.auth.auth_service.async_user_repository.get_by_username", new_callable=AsyncMock,
+                 return_value=user)
+    mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
+    mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=True)
+    mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="prod_token")
+    mocker.patch("app.features.auth.auth_service.audit_service.async_log", new_callable=AsyncMock)
+    auth_service = AuthService(async_db_mock)
+
+    form_data = MagicMock(username="manager", password="goodpass")
+    mock_request = MagicMock()
+    token = await auth_service.authenticate(form_data=form_data, request=mock_request)
+    assert token.access_token == "prod_token"
+    assert mock_request.state.attempted_user == "manager"

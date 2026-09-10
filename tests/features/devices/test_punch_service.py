@@ -289,3 +289,8 @@ async def test_process_biometric_punch_header_overrides_state(async_db_mock, moc
         platform="IOT",
         device_name="Header-Custom-Device",
     )
+
+
+def test_extract_device_name_fallback_none():
+    res = punch_service._extract_device_name(object())
+    assert res is None

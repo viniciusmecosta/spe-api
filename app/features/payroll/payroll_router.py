@@ -43,8 +43,11 @@ async def close_payroll_period(
         service: Annotated[PayrollService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PayrollClosureResponse:
-    return await service.close_period(month=period.month, year=period.year, current_user=current_user,
-                                      background_tasks=background_tasks)
+    return await service.close_period(
+        period=period,
+        current_user=current_user,
+        background_tasks=background_tasks,
+    )
 
 
 @router.post(
@@ -58,7 +61,9 @@ async def reopen_payroll_period(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:
     return await service.reopen_period(
-        month=period.month, year=period.year, observation=period.observation, current_user=current_user, background_tasks=background_tasks
+        period=period,
+        current_user=current_user,
+        background_tasks=background_tasks,
     )
 
 
@@ -90,6 +95,8 @@ async def upload_legacy_report(
         file: Annotated[UploadFile, File(...)],
         service: Annotated[PayrollService, Depends()],
 ) -> SuccessResponse:
-    await service.upload_legacy_report(closure_id=closure_id, original_filename=file.filename or "",
-                                       file_content=file.file.read())
+    await service.upload_legacy_report(
+        closure_id=closure_id,
+        upload_file=file,
+    )
     return SuccessResponse(status="success", message="Documento legado anexado com sucesso.")

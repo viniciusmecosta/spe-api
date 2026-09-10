@@ -40,12 +40,11 @@ async def read_users(
         ] = "id",
         order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "asc",
 ) -> list[UserResponse]:
-    role_value = role.value if role else None
     return await user_service.get_multi(
         after_id=after_id,
         limit=limit,
         is_active=is_active,
-        role=role_value,
+        role=role,
         search=search,
         order_by=order_by,
         order_direction=order_direction,
@@ -74,11 +73,9 @@ async def update_user_me(
         user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> UserResponse:
-    update_data = UserUpdate(**user_in.model_dump(exclude_unset=True))
-    return await user_service.update_user(
-        user_id=current_user.id,
-        user_in=update_data,
-        current_user_id=current_user.id,
+    return await user_service.update_user_me(
+        current_user=current_user,
+        user_in=user_in,
     )
 
 

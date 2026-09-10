@@ -1,9 +1,8 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request, Response, status
 
-from app.core.security import get_client_device_name, get_client_ip
 from app.features.time_records.time_record_schemas import (
     ReceiptResponse,
     SuccessResponse,
@@ -16,7 +15,6 @@ from app.features.time_records.time_record_schemas import (
 from app.features.time_records.time_record_service import TimeRecordService
 from app.features.users.user_models import User
 from app.shared import deps
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.openapi_responses import (
     BAD_REQUEST_RESPONSE,
     CRUD_RESPONSES,
@@ -40,10 +38,9 @@ async def register_entry(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = await service.register_entry(user_id=current_user.id, request=request)
-    await service.trigger_auto_print(record=record, background_tasks=background_tasks)
-    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, current_user.id, record.record_datetime.date())
-    return record
+    return await service.register_entry(
+        user_id=current_user.id, request=request, background_tasks=background_tasks
+    )
 
 
 @router.post(
@@ -57,10 +54,9 @@ async def register_exit(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = await service.register_exit(user_id=current_user.id, request=request)
-    await service.trigger_auto_print(record=record, background_tasks=background_tasks)
-    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, current_user.id, record.record_datetime.date())
-    return record
+    return await service.register_exit(
+        user_id=current_user.id, request=request, background_tasks=background_tasks
+    )
 
 
 @router.put(
@@ -73,9 +69,9 @@ async def toggle_record_type(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
-    record = await service.toggle_record_type(record_id=id, current_user=current_user)
-    background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id, record.record_datetime.date())
-    return record
+    return await service.toggle_record_type(
+        record_id=id, current_user=current_user, background_tasks=background_tasks
+    )
 
 
 @router.get("/my")
@@ -113,11 +109,8 @@ async def create_time_record_admin(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
-    ip_address = get_client_ip(request)
-    device_name = get_client_device_name(ip_address, request)
-    platform = request.headers.get("X-Platform", "desktop").lower()
     return await service.create_admin_record(
-        obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
+        obj_in=record_in, manager_id=current_user.id, request=request
     )
 
 
@@ -132,11 +125,8 @@ async def update_time_record_admin(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> TimeRecordResponse:
-    ip_address = get_client_ip(request)
-    device_name = get_client_device_name(ip_address, request)
-    platform = request.headers.get("X-Platform", "desktop").lower()
     return await service.update_admin_record(
-        record_id=record_id, obj_in=record_in, manager_id=current_user.id, ip_address=ip_address, device_name=device_name, platform=platform
+        record_id=record_id, obj_in=record_in, manager_id=current_user.id, request=request
     )
 
 
@@ -151,20 +141,13 @@ async def delete_time_record_admin(
         justification: Annotated[str | None, Query(max_length=300)] = None,
         request_body: Annotated[TimeRecordDeleteAdmin | None, Body()] = None,
 ) -> SuccessResponse:
-    justification_val = None
-    if justification and justification.strip():
-        justification_val = justification.strip()
-    elif request_body and request_body.edit_justification and request_body.edit_justification.strip():
-        justification_val = request_body.edit_justification.strip()
-
-    if not justification_val:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Justificativa de exclusão é obrigatória.",
-        )
-
-    obj_in = TimeRecordDeleteAdmin(edit_justification=justification_val)
-    await service.delete_admin_record(record_id=record_id, obj_in=obj_in, manager_id=current_user.id)
+    await service.delete_admin_record(
+        record_id=record_id,
+        manager_id=current_user.id,
+        justification=justification,
+        request_body=request_body,
+        validate_justification=True,
+    )
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 
