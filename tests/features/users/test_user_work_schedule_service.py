@@ -517,3 +517,76 @@ async def test_check_schedule_overlap_async_session(mocker):
         valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
     )
     async_sess.scalars.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_bulk_add_schedules_success_async_session(mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
+    mocker.patch.object(user_work_schedule_service, "check_schedule_overlap", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    async_session = MagicMock()
+    async_session.sync_session = MagicMock()
+    async_session.flush = AsyncMock()
+    user = User(id=1, name="Test User")
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [user]
+    async_session.execute = AsyncMock(return_value=mock_result)
+
+    bulk_data = {
+        "valid_from": date(2026, 9, 1),
+        "valid_until": date(2026, 9, 30),
+        "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_hours": 8.0}]}],
+    }
+
+    res = await user_work_schedule_service.bulk_add_schedules(async_session, bulk_data, 99)
+    assert "sucesso" in res["message"]
+    async_session.add.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_update_bulk_schedules_success_async_session(mocker):
+    mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
+    mocker.patch.object(user_work_schedule_service, "check_schedule_overlap", new_callable=AsyncMock)
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    async_session = MagicMock()
+    async_session.sync_session = MagicMock()
+    async_session.flush = AsyncMock()
+    async_session.delete = AsyncMock()
+
+    old_cfg_update = UserWorkScheduleConfig(
+        id=10, user_id=1, day_of_week=1, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
+    )
+    old_cfg_delete = UserWorkScheduleConfig(
+        id=11, user_id=1, day_of_week=2, valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
+    )
+
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [old_cfg_update, old_cfg_delete]
+    async_session.scalars = AsyncMock(return_value=mock_scalars)
+
+    user = User(id=1, name="Test User")
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [user]
+    async_session.execute = AsyncMock(return_value=mock_result)
+
+    bulk_data = {
+        "valid_from": date(2026, 9, 1),
+        "valid_until": date(2026, 9, 30),
+        "users": [
+            {
+                "user_id": 1,
+                "schedules": [
+                    {"day_of_week": 1, "daily_hours": 9.0},
+                    {"day_of_week": 3, "daily_hours": 8.0},
+                ],
+            }
+        ],
+    }
+
+    res = await user_work_schedule_service.update_bulk_schedules(
+        async_session, date(2026, 9, 1), date(2026, 9, 30), bulk_data, 99,
+    )
+    assert res["message"] == "Expedientes atualizados com sucesso."
+    async_session.delete.assert_called_with(old_cfg_delete)

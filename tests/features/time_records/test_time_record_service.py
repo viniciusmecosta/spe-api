@@ -549,6 +549,31 @@ async def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mo
 
 
 @pytest.mark.asyncio
+@patch("app.features.time_records.time_record_service.get_client_device_name")
+async def test_create_punch_with_explicit_device_name(mock_get_device, db_session_mock, mock_time_record_repo):
+    dt = datetime.now(ZoneInfo(settings.TIMEZONE))
+    mock_time_record_repo.get_last_by_user.return_value = None
+    record = TimeRecord(id=10)
+    mock_time_record_repo.create.return_value = record
+
+    result = await time_record_service.create_punch(
+        db_session_mock, 1, dt, "192.168.1.43", device_name="Relogio-Portaria"
+    )
+    assert result == record
+    mock_get_device.assert_not_called()
+    mock_time_record_repo.create.assert_called_once_with(
+        db_session_mock,
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=dt,
+        ip_address="192.168.1.43",
+        device_name="Relogio-Portaria",
+        platform="desktop",
+        biometric_id=None,
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_record_timeline(db_session_mock, mock_time_record_repo):
     records = [TimeRecord(id=1), TimeRecord(id=2)]
     mock_time_record_repo.get_timeline.return_value = records
