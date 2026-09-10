@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 
 from app.features.payroll.payroll_schemas import (
     PayrollClosureCreate,
@@ -15,6 +16,7 @@ from app.shared.openapi_responses import (
     AUTH_RESPONSES,
     BAD_REQUEST_RESPONSE,
     CRUD_RESPONSES,
+    NOT_FOUND_RESPONSE,
 )
 
 router = APIRouter(responses={**AUTH_RESPONSES})
@@ -22,7 +24,7 @@ router = APIRouter(responses={**AUTH_RESPONSES})
 
 @router.get(
     "/",
-    dependencies=[Depends(deps.get_current_maintainer)],
+    dependencies=[Depends(deps.get_current_manager)],
 )
 async def list_payroll_periods(
         year: int,
@@ -39,7 +41,7 @@ async def close_payroll_period(
         period: PayrollClosureCreate,
         background_tasks: BackgroundTasks,
         service: Annotated[PayrollService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> PayrollClosureResponse:
     return await service.close_period(month=period.month, year=period.year, current_user=current_user,
                                       background_tasks=background_tasks)
@@ -53,16 +55,34 @@ async def reopen_payroll_period(
         period: PayrollReopenCreate,
         background_tasks: BackgroundTasks,
         service: Annotated[PayrollService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> SuccessResponse:
     return await service.reopen_period(
         month=period.month, year=period.year, observation=period.observation, current_user=current_user, background_tasks=background_tasks
     )
 
 
+@router.get(
+    "/{closure_id}/download-report",
+    response_class=FileResponse,
+    dependencies=[Depends(deps.get_current_manager)],
+    responses={**NOT_FOUND_RESPONSE, **AUTH_RESPONSES},
+)
+async def download_closure_report(
+        closure_id: int,
+        service: Annotated[PayrollService, Depends()],
+) -> FileResponse:
+    file_path, filename = await service.get_report_file_path(closure_id=closure_id)
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
 @router.post(
     "/{closure_id}/legacy-report",
-    dependencies=[Depends(deps.get_current_maintainer)],
+    dependencies=[Depends(deps.get_current_manager)],
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def upload_legacy_report(

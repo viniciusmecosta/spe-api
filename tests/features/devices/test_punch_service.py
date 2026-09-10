@@ -250,3 +250,42 @@ async def test_process_biometric_punch_propagates_device_name_from_header_when_n
         platform="IOT",
         device_name="Header-Device",
     )
+
+
+@pytest.mark.asyncio
+async def test_process_biometric_punch_header_overrides_state(async_db_mock, mocker):
+    bio = UserBiometric(id=1, user=User(id=1, is_active=True))
+    record = TimeRecord(id=1)
+
+    bio_scalars = MagicMock()
+    bio_scalars.first.return_value = bio
+    record_scalars = MagicMock()
+    record_scalars.first.return_value = record
+    async_db_mock.scalars.side_effect = [bio_scalars, record_scalars]
+
+    mocker.patch(
+        "app.features.devices.punch_service.trusted_time_service.get_trusted_time",
+        return_value=(datetime(2023, 10, 1), True),
+    )
+    mock_create_punch = mocker.patch(
+        "app.features.time_records.time_record_service.time_record_service.create_punch",
+        return_value=record,
+    )
+
+    req = MagicMock()
+    req.state.device_name = "DB-Device-Name"
+    req.headers.get.side_effect = lambda k, d=None: "Header-Custom-Device" if k == "X-Device-Name" else d
+
+    success, msg, rec = await punch_service.process_biometric_punch(
+        async_db_mock, 1, ip_address="192.168.1.43", request=req
+    )
+    assert success
+    mock_create_punch.assert_called_once_with(
+        async_db_mock,
+        user_id=1,
+        timestamp=datetime(2023, 10, 1),
+        ip_address="192.168.1.43",
+        biometric_id=1,
+        platform="IOT",
+        device_name="Header-Custom-Device",
+    )

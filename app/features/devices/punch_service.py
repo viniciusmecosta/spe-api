@@ -56,10 +56,12 @@ class PunchService:
 
             device_name = None
             if request:
-                if hasattr(request, "state"):
+                if hasattr(request, "headers") and hasattr(request.headers, "get"):
+                    header_device = request.headers.get("X-Device-Name")
+                    if isinstance(header_device, str) and header_device.strip():
+                        device_name = header_device.strip()[:100]
+                if not device_name and hasattr(request, "state"):
                     device_name = getattr(request.state, "device_name", None)
-                if not device_name:
-                    device_name = request.headers.get("X-Device-Name")
 
             new_record = time_record_service.create_punch(
                 session,

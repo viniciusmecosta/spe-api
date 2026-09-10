@@ -166,9 +166,12 @@ class ExcelService:
 
     def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
             if os.path.exists(full_logo_path):
                 return full_logo_path
+            legacy_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            if os.path.exists(legacy_path):
+                return legacy_path
         return None
 
     async def _fetch_batch_data(self, session: Any, user_ids: list[int], start_dt: datetime, end_dt: datetime,

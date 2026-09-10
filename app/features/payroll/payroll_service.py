@@ -324,5 +324,24 @@ class PayrollService:
         closure.report_path = f"reports/legacy/{filename}"
         await session.commit()
 
+    async def get_report_file_path(
+            self,
+            db: AsyncSession | None = None,
+            closure_id: int = 0,
+    ) -> tuple[str, str]:
+        session = db if db is not None else self.db
+        assert session is not None
+        stmt = select(PayrollClosure).where(PayrollClosure.id == closure_id)
+        closure = (await session.scalars(stmt)).first()
+        if not closure or not closure.report_path:
+            raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
+
+        file_path = os.path.join(settings.UPLOAD_DIR, closure.report_path)
+        if not os.path.exists(file_path):
+            raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
+
+        filename = os.path.basename(file_path)
+        return file_path, filename
+
 
 payroll_service = PayrollService()

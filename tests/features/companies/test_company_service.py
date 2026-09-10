@@ -221,6 +221,51 @@ async def test_upload_logo_success_old_logo_remove_oserror(mocker, async_db_mock
     mock_remove.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_upload_logo_success_old_logo_in_legacy_path(mocker, async_db_mock):
+    existing = Company(id=1, logo_path="old.jpg")
+    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
+                 new_callable=AsyncMock, return_value=existing)
+
+    file_mock = MagicMock(spec=UploadFile)
+    file_mock.filename = "new.png"
+    file_mock.file = MagicMock()
+
+    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("shutil.copyfileobj")
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    # public não existe, legacy existe
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
+    mock_remove = mocker.patch("os.remove")
+
+    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
+    assert result.logo_path.endswith(".png")
+    mock_remove.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_upload_logo_success_old_logo_in_legacy_path_oserror(mocker, async_db_mock):
+    existing = Company(id=1, logo_path="old.jpg")
+    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
+                 new_callable=AsyncMock, return_value=existing)
+
+    file_mock = MagicMock(spec=UploadFile)
+    file_mock.filename = "new.png"
+    file_mock.file = MagicMock()
+
+    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch("shutil.copyfileobj")
+    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
+    mock_remove = mocker.patch("os.remove", side_effect=OSError("Cannot remove legacy"))
+
+    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
+    assert result.logo_path.endswith(".png")
+    mock_remove.assert_called_once()
+
+
 def test_company_service_repo_property():
     custom_repo = MagicMock()
     original_repo = company_service.repo

@@ -133,6 +133,21 @@ async def test_verify_device_api_key_success(db_session):
 
 
 @pytest.mark.asyncio
+async def test_verify_device_api_key_with_custom_header(db_session):
+    req = MagicMock()
+    req.headers = {"X-Device-Name": "Catraca Principal Bloco B"}
+    raw_key = "valid_device_key_custom_header_test"
+    hashed = get_api_key_hash(raw_key)
+    cred = DeviceCredential(name="Chave Geral", api_key_hash=hashed, key_type=DeviceKeyType.DEVICE, is_active=True)
+    db_session.add(cred)
+    db_session.commit()
+
+    device = await verify_device_api_key(req, raw_key, db_session)
+    assert device.name == "Chave Geral"
+    assert req.state.device_name == "Catraca Principal Bloco B"
+
+
+@pytest.mark.asyncio
 async def test_verify_consumer_api_key_none(db_session):
     req = MagicMock()
     db = MagicMock()

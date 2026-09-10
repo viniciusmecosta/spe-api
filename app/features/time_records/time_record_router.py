@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request, Response, status
 
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.time_records.time_record_schemas import (
@@ -146,11 +146,25 @@ async def update_time_record_admin(
 )
 async def delete_time_record_admin(
         record_id: int,
-        request_body: TimeRecordDeleteAdmin,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
+        justification: Annotated[str | None, Query(max_length=300)] = None,
+        request_body: Annotated[TimeRecordDeleteAdmin | None, Body()] = None,
 ) -> SuccessResponse:
-    await service.delete_admin_record(record_id=record_id, obj_in=request_body, manager_id=current_user.id)
+    justification_val = None
+    if justification and justification.strip():
+        justification_val = justification.strip()
+    elif request_body and request_body.edit_justification and request_body.edit_justification.strip():
+        justification_val = request_body.edit_justification.strip()
+
+    if not justification_val:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Justificativa de exclusão é obrigatória.",
+        )
+
+    obj_in = TimeRecordDeleteAdmin(edit_justification=justification_val)
+    await service.delete_admin_record(record_id=record_id, obj_in=obj_in, manager_id=current_user.id)
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 

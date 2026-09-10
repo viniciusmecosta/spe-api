@@ -25,7 +25,7 @@ def mock_maintainer_user() -> User:
 
 @pytest.fixture
 def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient:
-    app.dependency_overrides[deps.get_current_maintainer] = lambda: mock_maintainer_user
+    app.dependency_overrides[deps.get_current_manager] = lambda: mock_maintainer_user
     app.dependency_overrides[deps.get_db] = lambda: db_session_mock
     client = TestClient(app)
     yield client
@@ -107,3 +107,19 @@ def test_upload_legacy_report(client: TestClient, mocker: MagicMock) -> None:
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
+
+
+def test_download_closure_report(client: TestClient, mocker: MagicMock, tmp_path) -> None:
+    test_file = tmp_path / "folha_ponto_08_2026.xlsx"
+    test_file.write_bytes(b"excel-report-content")
+
+    mocker.patch.object(
+        PayrollService,
+        "get_report_file_path",
+        new_callable=AsyncMock,
+        return_value=(str(test_file), "folha_ponto_08_2026.xlsx"),
+    )
+
+    response = client.get("/api/v1/payroll/1/download-report")
+    assert response.status_code == 200
+    assert response.content == b"excel-report-content"

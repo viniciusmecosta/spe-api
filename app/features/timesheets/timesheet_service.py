@@ -213,7 +213,9 @@ class TimesheetService:
         document_title = f"{company_name} - Registro de Ponto"
 
         if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
+            if not os.path.exists(full_logo_path):
+                full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
             if os.path.exists(full_logo_path):
                 try:
                     logo_img = Image(full_logo_path, width=50, height=50)

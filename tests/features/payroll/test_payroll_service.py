@@ -471,3 +471,60 @@ async def test_async_validate_period_open_success_and_closed():
             await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
         with pytest.raises(PayrollPeriodClosedError):
             await _run_payroll()
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_success(async_db_mock, mocker):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = "reports/folha_ponto_10_2026.xlsx"
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    mocker.patch("os.path.exists", return_value=True)
+
+    path, name = await payroll_service.get_report_file_path(async_db_mock, 10)
+    assert name == "folha_ponto_10_2026.xlsx"
+    assert "reports/folha_ponto_10_2026.xlsx" in path
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_not_found(async_db_mock):
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = None
+    async_db_mock.scalars.return_value = scalars_mock
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 999)
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_no_report_path(async_db_mock):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = None
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 10)
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_file_missing_on_disk(async_db_mock, mocker):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = "reports/missing.xlsx"
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    mocker.patch("os.path.exists", return_value=False)
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 10)

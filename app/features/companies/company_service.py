@@ -2,6 +2,7 @@ import asyncio
 import os
 import shutil
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, UploadFile
@@ -96,7 +97,9 @@ class CompanyService:
             raise InvalidLogoFormatError()
 
         filename = f"logo_{uuid.uuid4().hex}{ext}"
-        full_file_path = os.path.join(settings.UPLOAD_DIR, filename)
+        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
+        Path(public_dir).mkdir(parents=True, exist_ok=True)
+        full_file_path = os.path.join(public_dir, filename)
 
         def _save_file() -> None:
             with open(full_file_path, "wb") as f:
@@ -108,12 +111,17 @@ class CompanyService:
             raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
 
         if existing.logo_path:
-            old_full_path = os.path.join(settings.UPLOAD_DIR, existing.logo_path)
+            old_full_path = os.path.join(public_dir, existing.logo_path)
 
             def _delete_old_file() -> None:
                 if os.path.exists(old_full_path):
                     try:
                         os.remove(old_full_path)
+                    except OSError:
+                        pass
+                elif os.path.exists(os.path.join(settings.UPLOAD_DIR, existing.logo_path)):
+                    try:
+                        os.remove(os.path.join(settings.UPLOAD_DIR, existing.logo_path))
                     except OSError:
                         pass
 

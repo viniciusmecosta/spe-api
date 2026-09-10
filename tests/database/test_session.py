@@ -18,5 +18,6 @@ def test_set_sqlite_pragma():
     mock_cursor = MagicMock()
     mock_connection.cursor.return_value = mock_cursor
     set_sqlite_pragma(mock_connection, None)
-    assert mock_cursor.execute.call_count == 4
+    assert mock_cursor.execute.call_count == 5
+    mock_cursor.execute.assert_any_call("PRAGMA foreign_keys=ON")
     mock_cursor.close.assert_called_once()

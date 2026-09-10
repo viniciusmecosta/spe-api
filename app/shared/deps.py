@@ -138,7 +138,13 @@ async def verify_device_api_key(
             detail="Chave de API do dispositivo inválida ou inativa.",
         )
 
-    request.state.device_name = device.name
+    custom_name = None
+    if hasattr(request, "headers") and hasattr(request.headers, "get"):
+        header_val = request.headers.get("X-Device-Name")
+        if isinstance(header_val, str) and header_val.strip():
+            custom_name = header_val.strip()[:100]
+
+    request.state.device_name = custom_name if custom_name else device.name
     return device
 
 
