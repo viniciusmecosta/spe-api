@@ -65,6 +65,7 @@ class ManagerVerifyResponse(BaseModel):
 
 class FirmwareResponse(BaseModel):
     version: str
+    file_path: str | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
