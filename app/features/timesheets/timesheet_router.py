@@ -47,7 +47,7 @@ async def get_official_timesheet_all_pdf(
         month: Annotated[int, Query(ge=1, le=12)],
         year: Annotated[int, Query(ge=2000)],
         service: Annotated[TimesheetService, Depends()],
-        employee_ids: Annotated[list[int] | None, Query()] = None,
+        employee_ids: Annotated[list[int] | None, Depends(deps.parse_optional_employee_ids)] = None,
 ) -> StreamingResponse:
     zip_buffer = await service.generate_all_timesheets_pdf_zip(month=month, year=year, employee_ids=employee_ids)
     filename = f"espelhos_ponto_lote_{month:02d}_{year}.zip"

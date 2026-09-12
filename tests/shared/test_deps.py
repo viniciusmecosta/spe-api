@@ -14,6 +14,7 @@ from app.shared.deps import (
     get_current_maintainer,
     verify_device_api_key,
     verify_consumer_api_key,
+    parse_optional_employee_ids,
 )
 from app.shared.enums import UserRole, DeviceKeyType
 
@@ -234,3 +235,16 @@ async def test_verify_keys_async_and_sync():
     with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
         res_cs = await verify_consumer_api_key(req, "key", sync_db)
         assert res_cs == consumer
+
+
+def test_parse_optional_employee_ids():
+    assert parse_optional_employee_ids(None) is None
+    assert parse_optional_employee_ids([]) is None
+    assert parse_optional_employee_ids([""]) is None
+    assert parse_optional_employee_ids(["   "]) is None
+    assert parse_optional_employee_ids(["abc", "def"]) is None
+    assert parse_optional_employee_ids(["1", "2"]) == [1, 2]
+    assert parse_optional_employee_ids(["1,2,3"]) == [1, 2, 3]
+    assert parse_optional_employee_ids(["1", "", "2"]) == [1, 2]
+    assert parse_optional_employee_ids([" 1 , 2 "]) == [1, 2]
+

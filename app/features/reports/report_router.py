@@ -94,7 +94,7 @@ async def export_monthly_report_excel(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         month: Annotated[int | None, Query(ge=1, le=12)] = None,
         year: Annotated[int | None, Query(ge=2000)] = None,
-        employee_ids: Annotated[list[int] | None, Query()] = None,
+        employee_ids: Annotated[list[int] | None, Depends(deps.parse_optional_employee_ids)] = None,
 ) -> Response:
     return await excel_service.export_monthly_report(
         month=month,

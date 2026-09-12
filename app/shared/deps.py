@@ -3,7 +3,7 @@ from collections.abc import Generator
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, HTTPException, Request, Security, status
+from fastapi import Depends, HTTPException, Query, Request, Security, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -183,3 +183,20 @@ async def verify_consumer_api_key(
 
     request.state.device_name = consumer.name
     return consumer
+
+
+def parse_optional_employee_ids(
+        employee_ids: Annotated[list[str] | None, Query(description="Lista de IDs de colaboradores")] = None,
+) -> list[int] | None:
+    if not employee_ids:
+        return None
+    cleaned: list[int] = []
+    for item in employee_ids:
+        if not item:
+            continue
+        for part in item.split(","):
+            part = part.strip()
+            if part.isdigit():
+                cleaned.append(int(part))
+    return cleaned if cleaned else None
+
