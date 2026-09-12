@@ -204,6 +204,26 @@ def test_delete_time_record_admin(client: TestClient, mocker: MagicMock) -> None
     assert response.json()["status"] == "success"
 
 
+def test_delete_time_record_admin_query_param(client: TestClient, mocker: MagicMock) -> None:
+    mocker.patch.object(TimeRecordService, "delete_admin_record", new_callable=AsyncMock)
+
+    response = client.request(
+        "DELETE",
+        "/api/v1/time-records/admin/1?justification=Admin%20delete%20via%20query",
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+
+
+def test_delete_time_record_admin_missing_justification(client: TestClient, mocker: MagicMock) -> None:
+    response = client.request(
+        "DELETE",
+        "/api/v1/time-records/admin/1",
+    )
+    assert response.status_code == 422
+    assert "Justificativa de exclusão é obrigatória" in response.json()["detail"]
+
+
 def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None:
     now = datetime(2026, 8, 14, 8, 0, 0)
     timeline_item = TimeRecordTimelineResponse(

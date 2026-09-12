@@ -167,6 +167,12 @@ def test_calculate_unapproved_extra_matrix(adjustment_factory, adj_hours_list, w
     assert time_calculation_service._calculate_unapproved_extra(adjs, worked_seconds) == expected_unapproved_sec
 
 
+def test_calculate_unapproved_extra_ignores_approved(adjustment_factory):
+    approved_adj = adjustment_factory(date(2023, 10, 10), AdjustmentType.EXTRA_TIME, AdjustmentStatus.APPROVED, 2.0)
+    rejected_adj = adjustment_factory(date(2023, 10, 10), AdjustmentType.EXTRA_TIME, AdjustmentStatus.REJECTED, 1.0)
+    assert time_calculation_service._calculate_unapproved_extra([approved_adj, rejected_adj], 10000.0) == 3600.0
+
+
 @pytest.mark.parametrize(
     "raw_worked, expected_sec, waiver_hr, unapproved_hr, has_schedule, exp_net, exp_gross, exp_extra, exp_missing",
     [

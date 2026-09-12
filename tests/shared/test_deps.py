@@ -14,6 +14,7 @@ from app.shared.deps import (
     get_current_maintainer,
     verify_device_api_key,
     verify_consumer_api_key,
+    parse_optional_employee_ids,
 )
 from app.shared.enums import UserRole, DeviceKeyType
 
@@ -133,6 +134,21 @@ async def test_verify_device_api_key_success(db_session):
 
 
 @pytest.mark.asyncio
+async def test_verify_device_api_key_with_custom_header(db_session):
+    req = MagicMock()
+    req.headers = {"X-Device-Name": "Catraca Principal Bloco B"}
+    raw_key = "valid_device_key_custom_header_test"
+    hashed = get_api_key_hash(raw_key)
+    cred = DeviceCredential(name="Chave Geral", api_key_hash=hashed, key_type=DeviceKeyType.DEVICE, is_active=True)
+    db_session.add(cred)
+    db_session.commit()
+
+    device = await verify_device_api_key(req, raw_key, db_session)
+    assert device.name == "Chave Geral"
+    assert req.state.device_name == "Catraca Principal Bloco B"
+
+
+@pytest.mark.asyncio
 async def test_verify_consumer_api_key_none(db_session):
     req = MagicMock()
     db = MagicMock()
@@ -219,3 +235,16 @@ async def test_verify_keys_async_and_sync():
     with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
         res_cs = await verify_consumer_api_key(req, "key", sync_db)
         assert res_cs == consumer
+
+
+def test_parse_optional_employee_ids():
+    assert parse_optional_employee_ids(None) is None
+    assert parse_optional_employee_ids([]) is None
+    assert parse_optional_employee_ids([""]) is None
+    assert parse_optional_employee_ids(["   "]) is None
+    assert parse_optional_employee_ids(["abc", "def"]) is None
+    assert parse_optional_employee_ids(["1", "2"]) == [1, 2]
+    assert parse_optional_employee_ids(["1,2,3"]) == [1, 2, 3]
+    assert parse_optional_employee_ids(["1", "", "2"]) == [1, 2]
+    assert parse_optional_employee_ids([" 1 , 2 "]) == [1, 2]
+

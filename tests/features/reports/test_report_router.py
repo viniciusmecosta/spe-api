@@ -229,3 +229,27 @@ def test_export_monthly_report_excel_reopened_payroll_falls_back(client: TestCli
     assert response.status_code == 200
     assert response.content == b"dynamically generated for reopened"
     mock_generate.assert_called_once()
+
+
+def test_export_monthly_report_excel_empty_employee_ids_param(client: TestClient, mocker: MagicMock) -> None:
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    mock_generate = mocker.patch.object(
+        ExcelService,
+        "generate_excel_report",
+        new_callable=AsyncMock,
+        side_effect=lambda *args, **kwargs: io.BytesIO(b"excel with empty param"),
+    )
+
+    response1 = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids=")
+    assert response1.status_code == 200
+    assert response1.content == b"excel with empty param"
+
+    response2 = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids")
+    assert response2.status_code == 200
+    assert response2.content == b"excel with empty param"
+

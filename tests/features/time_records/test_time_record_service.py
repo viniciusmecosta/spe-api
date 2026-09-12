@@ -549,6 +549,31 @@ async def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mo
 
 
 @pytest.mark.asyncio
+@patch("app.features.time_records.time_record_service.get_client_device_name")
+async def test_create_punch_with_explicit_device_name(mock_get_device, db_session_mock, mock_time_record_repo):
+    dt = datetime.now(ZoneInfo(settings.TIMEZONE))
+    mock_time_record_repo.get_last_by_user.return_value = None
+    record = TimeRecord(id=10)
+    mock_time_record_repo.create.return_value = record
+
+    result = await time_record_service.create_punch(
+        db_session_mock, 1, dt, "192.168.1.43", device_name="Relogio-Portaria"
+    )
+    assert result == record
+    mock_get_device.assert_not_called()
+    mock_time_record_repo.create.assert_called_once_with(
+        db_session_mock,
+        user_id=1,
+        record_type=RecordType.ENTRY,
+        record_datetime=dt,
+        ip_address="192.168.1.43",
+        device_name="Relogio-Portaria",
+        platform="desktop",
+        biometric_id=None,
+    )
+
+
+@pytest.mark.asyncio
 async def test_get_record_timeline(db_session_mock, mock_time_record_repo):
     records = [TimeRecord(id=1), TimeRecord(id=2)]
     mock_time_record_repo.get_timeline.return_value = records
@@ -1058,3 +1083,77 @@ async def test_time_record_service_admin_update_date_change_branches(mocker):
     assert time_record_service._reprocess_daily_excess.call_count == 2
 
 
+@pytest.mark.asyncio
+async def test_time_record_service_background_tasks_and_request(mocker, db_session_mock):
+    from fastapi import BackgroundTasks, HTTPException
+    from app.features.time_records.time_record_schemas import TimeRecordCreateAdmin, TimeRecordUpdate, \
+        TimeRecordDeleteAdmin
+
+    bg = BackgroundTasks()
+    mocker.patch.object(time_record_service, "_register_manual_punch", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service, "trigger_auto_print", new_callable=AsyncMock)
+    mock_rec = TimeRecord(id=1, user_id=2, record_type=RecordType.ENTRY,
+                          record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
+    time_record_service._register_manual_punch.return_value = mock_rec
+
+    res1 = await time_record_service.register_entry(db_session_mock, user_id=2, request=MagicMock(),
+                                                    background_tasks=bg)
+    assert res1 == mock_rec
+
+    mock_rec2 = TimeRecord(id=2, user_id=2, record_type=RecordType.EXIT,
+                           record_datetime=datetime(2026, 8, 1, 18, 0, tzinfo=ZoneInfo("UTC")))
+    time_record_service._register_manual_punch.return_value = mock_rec2
+    res2 = await time_record_service.register_exit(db_session_mock, user_id=2, request=MagicMock(), background_tasks=bg)
+    assert res2 == mock_rec2
+
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_rec)
+    mocker.patch.object(time_record_service, "_validate_period_open_helper", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service, "_process_toggle_invalidations", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service, "_commit_and_audit_toggle_record", new_callable=AsyncMock)
+    mgr_user = User(id=2, role=UserRole.MANAGER)
+    res3 = await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=mgr_user,
+                                                        background_tasks=bg)
+    assert res3.record_type == RecordType.EXIT
+
+    req = MagicMock()
+    req.client.host = "10.0.0.1"
+    req.headers.get.side_effect = lambda k, default=None: "custom-device" if k == "X-Device-Name" else (
+        "ios" if k == "X-Platform" else default)
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.create", return_value=mock_rec)
+    mocker.patch.object(time_record_service, "_commit_and_audit_admin_create", new_callable=AsyncMock)
+    create_in = TimeRecordCreateAdmin(user_id=2, record_type=RecordType.ENTRY,
+                                      record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")),
+                                      edit_justification="Test")
+    res4 = await time_record_service.create_admin_record(db_session_mock, obj_in=create_in, manager_id=1, request=req)
+    assert res4.edited_by == 1
+
+    mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_rec)
+    mocker.patch.object(time_record_service, "_handle_admin_update_invalidations", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service, "_commit_and_audit_admin_update", new_callable=AsyncMock)
+    update_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 1, 9, 0, tzinfo=ZoneInfo("UTC")),
+                                 edit_justification="Update")
+    res5 = await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_in, manager_id=1,
+                                                         request=req)
+    assert res5.platform == "ios"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,
+                                                      validate_justification=True)
+    assert exc_info.value.status_code == 422
+
+    mocker.patch.object(time_record_service, "_commit_and_audit_admin_delete", new_callable=AsyncMock)
+    await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,
+                                                  justification="Manual delete", validate_justification=True)
+
+    del_in = TimeRecordDeleteAdmin(edit_justification="Body delete")
+    await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1, request_body=del_in,
+                                                  validate_justification=True)
+
+    del_obj = TimeRecordDeleteAdmin(edit_justification="Obj delete")
+    await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1, obj_in=del_obj,
+                                                  validate_justification=True)
+
+    del_in_empty = TimeRecordDeleteAdmin(edit_justification="")
+    with pytest.raises(HTTPException):
+        await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,
+                                                      request_body=del_in_empty, validate_justification=True)

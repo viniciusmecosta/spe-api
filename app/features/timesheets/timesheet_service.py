@@ -68,6 +68,8 @@ class TimesheetService:
             raise FutureTimesheetNotAllowedError()
 
     def _format_duration(self, total_seconds: float) -> str:
+        if not isinstance(total_seconds, (int, float)):
+            total_seconds = 0.0
         total_minutes = int(round(total_seconds / 60))
         hours = total_minutes // 60
         minutes = total_minutes % 60
@@ -213,7 +215,9 @@ class TimesheetService:
         document_title = f"{company_name} - Registro de Ponto"
 
         if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
+            if not os.path.exists(full_logo_path):
+                full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
             if os.path.exists(full_logo_path):
                 try:
                     logo_img = Image(full_logo_path, width=50, height=50)
@@ -418,6 +422,7 @@ class TimesheetService:
 
     async def generate_user_timesheet_pdf(self, db: Any | None = None, user_id: int = 0, month: int = 0,
                                           year: int = 0) -> io.BytesIO:
+        self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(session, "sync_session"):
@@ -572,26 +577,37 @@ class TimesheetService:
         ))
         story.append(Spacer(1, 10))
 
-        total_duration_str = self._format_duration(period_result.total_net_worked_seconds)
-        total_accounted_str = self._format_duration(period_result.total_accounted_seconds)
-        total_extra_hours = period_result.total_extra_seconds / 3600.0
-        total_missing_hours = period_result.total_missing_seconds / 3600.0
-        final_balance = round(total_extra_hours - total_missing_hours, 2)
-        balance_sign = "+" if final_balance > 0.0 else ""
+        total_gross = getattr(period_result, 'total_gross_worked_seconds', None)
+        if not isinstance(total_gross, (int, float)):
+            net_sec = getattr(period_result, 'total_net_worked_seconds', 0.0)
+            unapp_sec = getattr(period_result, 'total_unapproved_extra_seconds', 0.0)
+            total_gross = (net_sec if isinstance(net_sec, (int, float)) else 0.0) + (
+                unapp_sec if isinstance(unapp_sec, (int, float)) else 0.0
+            )
+
+        total_unapproved = getattr(period_result, 'total_unapproved_extra_seconds', 0.0)
+        unapproved_val = total_unapproved if isinstance(total_unapproved, (int, float)) else 0.0
+
+        total_accounted = getattr(period_result, 'total_accounted_seconds', 0.0)
+        accounted_val = total_accounted if isinstance(total_accounted, (int, float)) else 0.0
+
+        total_duration_str = self._format_duration(total_gross)
+        total_unapproved_str = self._format_duration(unapproved_val)
+        total_accounted_str = self._format_duration(accounted_val)
         
         summary_info = [
             [Paragraph("<b>Total de Horas Trabalhadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
              Paragraph(total_duration_str, header_style)],
+            [Paragraph("<b>Horas Não Autorizadas:</b>",
+                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
+                                      textColor=colors.HexColor("#000000"))),
+             Paragraph(total_unapproved_str, header_style)],
             [Paragraph("<b>Total de Horas Contabilizadas:</b>",
                        ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
                                       textColor=colors.HexColor("#000000"))),
-             Paragraph(total_accounted_str, header_style)],
-            [Paragraph("<b>Saldo de Horas (Extras - Faltas):</b>",
-                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
-                                      textColor=colors.HexColor("#000000"))),
-             Paragraph(f"{balance_sign}{final_balance:.2f} h", header_style)]
+             Paragraph(total_accounted_str, header_style)]
         ]
         sum_table = Table(summary_info, colWidths=[175, 360])
         sum_table.setStyle(TableStyle([
@@ -657,6 +673,7 @@ class TimesheetService:
 
     async def generate_all_timesheets_pdf_zip(self, db: Any | None = None, month: int = 0, year: int = 0,
                                         employee_ids: list[int] | None = None) -> io.BytesIO:
+        self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
         tz = ZoneInfo(settings.TIMEZONE)

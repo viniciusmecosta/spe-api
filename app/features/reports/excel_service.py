@@ -166,9 +166,12 @@ class ExcelService:
 
     def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            full_logo_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
             if os.path.exists(full_logo_path):
                 return full_logo_path
+            legacy_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+            if os.path.exists(legacy_path):
+                return legacy_path
         return None
 
     async def _fetch_batch_data(self, session: Any, user_ids: list[int], start_dt: datetime, end_dt: datetime,
@@ -234,40 +237,67 @@ class ExcelService:
                 user_reports.append((user, report))
         return user_reports
 
+    def _resolve_target_period(self, month: int | None, year: int | None) -> tuple[int, int, datetime]:
+        now = datetime.now()
+        month_val = month if month else now.month
+        year_val = year if year else now.year
+        return month_val, year_val, now
+
+    async def _validate_export_access(
+            self, current_user: User | None, session: Any, month: int, year: int, now: datetime
+    ) -> None:
+        if not current_user:
+            return
+        report_service.check_report_permission(current_user)
+        if session is not None:
+            await report_service.validate_excel_export_permission(
+                db=session, current_user=current_user, month=month, year=year, now=now
+            )
+
+    async def _resolve_cached_closure_file(self, session: Any, month: int, year: int) -> FileResponse | None:
+        closure = await async_payroll_repository.get_by_month(session, month, year)
+        if not closure or not getattr(closure, "is_closed", None) or not getattr(closure, "report_path", None):
+            return None
+        report_path = str(closure.report_path)
+        full_path = (
+            report_path
+            if os.path.isabs(report_path)
+            else os.path.join(settings.UPLOAD_DIR, report_path)
+        )
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            filename = f"folha_ponto_{month:02d}_{year}.xlsx"
+            return FileResponse(
+                path=full_path,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=filename,
+            )
+        return None
+
     async def export_monthly_report(
             self,
-            month: int,
-            year: int,
+            month: int | None = None,
+            year: int | None = None,
             employee_ids: list[int] | None = None,
             current_user: User | None = None,
             db: Any | None = None,
     ) -> Response:
         session = db if db is not None else self.db
+        month_val, year_val, now = self._resolve_target_period(month, year)
+        await self._validate_export_access(current_user, session, month_val, year_val, now)
+
         if not employee_ids and session is not None:
-            closure = await async_payroll_repository.get_by_month(session, month, year)
-            if closure and getattr(closure, "is_closed", None) is True and getattr(closure, "report_path", None):
-                report_path = str(closure.report_path)
-                full_path = (
-                    report_path
-                    if os.path.isabs(report_path)
-                    else os.path.join(settings.UPLOAD_DIR, report_path)
-                )
-                if os.path.exists(full_path) and os.path.isfile(full_path):
-                    filename = f"folha_ponto_{month:02d}_{year}.xlsx"
-                    return FileResponse(
-                        path=full_path,
-                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        filename=filename,
-                    )
+            cached_file = await self._resolve_cached_closure_file(session, month_val, year_val)
+            if cached_file:
+                return cached_file
 
         file_stream = await self.generate_excel_report(
             db=session,
-            month=month,
-            year=year,
+            month=month_val,
+            year=year_val,
             employee_ids=employee_ids,
             current_user=current_user,
         )
-        filename = f"folha_ponto_{month}_{year}.xlsx"
+        filename = f"folha_ponto_{month_val}_{year_val}.xlsx"
         return StreamingResponse(
             file_stream,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

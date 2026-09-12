@@ -330,11 +330,13 @@ class UserWorkScheduleService:
         if valid_uids:
             background_tasks.add_task(daily_excess_service.reprocess_user_ranges_bg, valid_uids, start_eval, end_eval)
 
-    async def bulk_add_schedules(self, db: Any | None = None, bulk_data: dict = None,
+    async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
                                   current_user_id: int = 0,
                                   background_tasks: BackgroundTasks | None = None):
         session = db if db is not None else self.db
         assert session is not None
+        if hasattr(bulk_data, "model_dump"):
+            bulk_data = bulk_data.model_dump(exclude_unset=True)
         valid_from = bulk_data.get('valid_from')
         valid_until = bulk_data.get('valid_until')
 
@@ -385,11 +387,13 @@ class UserWorkScheduleService:
         return incoming_map
 
     async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
-                                    old_valid_until: date = None, bulk_data: dict = None,
+                                    old_valid_until: date = None, bulk_data: Any = None,
                                     current_user_id: int = 0,
                                     background_tasks: BackgroundTasks | None = None):
         session = db if db is not None else self.db
         assert session is not None
+        if hasattr(bulk_data, "model_dump"):
+            bulk_data = bulk_data.model_dump(exclude_unset=True)
         new_valid_from = bulk_data.get('valid_from')
         new_valid_until = bulk_data.get('valid_until')
 

@@ -823,3 +823,25 @@ async def test_excel_service_fetch_data_branches(excel_service, async_db_mock):
         assert recs == []
 
 
+def test_resolve_logo_path(excel_service, mocker):
+    assert excel_service._resolve_logo_path(None) is None
+
+    comp_no_logo = MagicMock(logo_path=None)
+    assert excel_service._resolve_logo_path(comp_no_logo) is None
+
+    comp = MagicMock(logo_path="logo.png")
+
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" in p)
+    path = excel_service._resolve_logo_path(comp)
+    assert path is not None
+    assert "public/logo.png" in path
+
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
+    path_legacy = excel_service._resolve_logo_path(comp)
+    assert path_legacy is not None
+    assert "public" not in path_legacy
+
+    mocker.patch("os.path.exists", return_value=False)
+    assert excel_service._resolve_logo_path(comp) is None
+
+

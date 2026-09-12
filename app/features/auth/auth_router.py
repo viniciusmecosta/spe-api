@@ -22,10 +22,9 @@ async def login_access_token(
         auth_service: Annotated[AuthService, Depends()],
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> Token:
-    request.state.attempted_user = form_data.username.lower()
     return await auth_service.authenticate(
-        username=form_data.username,
-        password=form_data.password,
+        form_data=form_data,
+        request=request,
     )
 
 

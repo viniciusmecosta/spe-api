@@ -2,6 +2,7 @@ import asyncio
 import os
 import shutil
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, UploadFile
@@ -42,10 +43,14 @@ class CompanyService:
     def repo(self, value: AsyncCompanyRepository) -> None:
         self._repo = value
 
-    async def get_company(self, db: AsyncSession | None = None) -> Company | None:
+    async def get_company(self, db: AsyncSession | None = None,
+                          base_url: str | None = None) -> Company | CompanyResponse | None:
         session = db if db is not None else self.db
         assert session is not None
-        return await self.repo.get_current(session)
+        company = await self.repo.get_current(session)
+        if base_url and company:
+            return self.enrich_logo_url(company, base_url)
+        return company
 
     def enrich_logo_url(self, company: Company | None, base_url: str) -> CompanyResponse | None:
         if not company:
@@ -57,7 +62,7 @@ class CompanyService:
         return response_obj
 
     async def create_company(self, db: AsyncSession | None = None, obj_in: CompanyCreate | None = None,
-                             current_user_id: int = 0) -> Company:
+                             current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -66,10 +71,12 @@ class CompanyService:
             raise CompanyAlreadyExistsError()
         company = await self.repo.create(session, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "CREATE", new_model=company)
+        if base_url:
+            return self.enrich_logo_url(company, base_url)
         return company
 
     async def update_company(self, db: AsyncSession | None = None, obj_in: CompanyUpdate | None = None,
-                             current_user_id: int = 0) -> Company:
+                             current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -80,23 +87,20 @@ class CompanyService:
         old_data = serialize_model(existing)
         company = await self.repo.update(session, db_obj=existing, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "UPDATE", old_model=old_data, new_model=company)
+        if base_url:
+            return self.enrich_logo_url(company, base_url)
         return company
 
-    async def upload_logo(self, db: AsyncSession | None = None, file: UploadFile | None = None,
-                          current_user_id: int = 0) -> Company:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert file is not None
-        existing = await self.repo.get_current(session)
-        if not existing:
-            raise CompanyNotFoundError("Nenhuma empresa cadastrada para associar o logotipo.")
-
-        ext = os.path.splitext(file.filename or "")[1].lower()
+    def _validate_logo_extension(self, filename: str | None) -> str:
+        ext = os.path.splitext(filename or "")[1].lower()
         if ext not in [".png", ".jpg", ".jpeg"]:
             raise InvalidLogoFormatError()
+        return ext
 
-        filename = f"logo_{uuid.uuid4().hex}{ext}"
-        full_file_path = os.path.join(settings.UPLOAD_DIR, filename)
+    async def _save_uploaded_logo(self, file: UploadFile, filename: str) -> None:
+        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
+        Path(public_dir).mkdir(parents=True, exist_ok=True)
+        full_file_path = os.path.join(public_dir, filename)
 
         def _save_file() -> None:
             with open(full_file_path, "wb") as f:
@@ -107,17 +111,42 @@ class CompanyService:
         except Exception as e:
             raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
 
-        if existing.logo_path:
-            old_full_path = os.path.join(settings.UPLOAD_DIR, existing.logo_path)
+    async def _cleanup_old_logo(self, old_logo_path: str | None) -> None:
+        if not old_logo_path:
+            return
 
-            def _delete_old_file() -> None:
-                if os.path.exists(old_full_path):
-                    try:
-                        os.remove(old_full_path)
-                    except OSError:
-                        pass
+        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
+        old_full_path = os.path.join(public_dir, old_logo_path)
+        legacy_full_path = os.path.join(settings.UPLOAD_DIR, old_logo_path)
 
-            await asyncio.to_thread(_delete_old_file)
+        def _delete_old_file() -> None:
+            if os.path.exists(old_full_path):
+                try:
+                    os.remove(old_full_path)
+                except OSError:
+                    pass
+            elif os.path.exists(legacy_full_path):
+                try:
+                    os.remove(legacy_full_path)
+                except OSError:
+                    pass
+
+        await asyncio.to_thread(_delete_old_file)
+
+    async def upload_logo(self, db: AsyncSession | None = None, file: UploadFile | None = None,
+                          current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
+        session = db if db is not None else self.db
+        assert session is not None
+        assert file is not None
+        existing = await self.repo.get_current(session)
+        if not existing:
+            raise CompanyNotFoundError("Nenhuma empresa cadastrada para associar o logotipo.")
+
+        ext = self._validate_logo_extension(file.filename)
+        filename = f"logo_{uuid.uuid4().hex}{ext}"
+
+        await self._save_uploaded_logo(file, filename)
+        await self._cleanup_old_logo(existing.logo_path)
 
         old_logo = existing.logo_path
         existing.logo_path = filename
@@ -129,6 +158,8 @@ class CompanyService:
             session, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
             old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
         )
+        if base_url:
+            return self.enrich_logo_url(existing, base_url)
         return existing
 
 

@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
@@ -19,10 +19,18 @@ class AuthService:
 
     async def authenticate(
             self,
-            username: str,
-            password: str,
+            username: str = "",
+            password: str = "",
+            *,
+            form_data: Any = None,
+            request: Request | None = None,
     ) -> Token:
+        if form_data is not None:
+            username = form_data.username
+            password = form_data.password
         normalized_username = username.lower()
+        if request is not None:
+            request.state.attempted_user = normalized_username
         user = await async_user_repository.get_by_username(self.db, username=normalized_username)
 
         if not user:

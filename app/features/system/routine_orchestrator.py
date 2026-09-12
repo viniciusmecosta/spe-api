@@ -2,10 +2,10 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import Depends
+from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -462,6 +462,49 @@ class RoutineOrchestrator:
             raise SMTPConnectionFailedError()
 
         return True
+
+    async def trigger_manual_backup_email(
+            self,
+            background_tasks: BackgroundTasks,
+            current_user: User,
+            audit_svc: Any,
+    ) -> dict[str, str]:
+        background_tasks.add_task(self.send_manual_backup_email)
+        await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
+        return {"status": "success", "message": "Backup manual por e-mail iniciado em segundo plano."}
+
+    async def trigger_manual_backup_telegram(
+            self,
+            background_tasks: BackgroundTasks,
+            current_user: User,
+            audit_svc: Any,
+    ) -> dict[str, str]:
+        background_tasks.add_task(self.execute_manual_backup_telegram)
+        await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM",
+                                  entity_id=0)
+        return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
+
+    async def trigger_manual_report_telegram(
+            self,
+            background_tasks: BackgroundTasks,
+            start_date: date,
+            end_date: date,
+            current_user: User,
+            audit_svc: Any,
+            telegram_svc: Any,
+    ) -> dict[str, str]:
+        telegram_svc.validate_manual_report_dates(start_date, end_date)
+        background_tasks.add_task(self.send_manual_report_telegram, start_date, end_date)
+        await audit_svc.async_log(
+            user_id=current_user.id,
+            action="MANUAL_REPORT_TELEGRAM",
+            entity="SYSTEM",
+            entity_id=0,
+            new_data={"start_date": str(start_date), "end_date": str(end_date)},
+        )
+        return {
+            "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
+        }
 
 
 routine_orchestrator = RoutineOrchestrator()

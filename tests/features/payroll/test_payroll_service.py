@@ -471,3 +471,142 @@ async def test_async_validate_period_open_success_and_closed():
             await payroll_service.async_validate_period_open(db=mock_db, target_date=date(2026, 7, 1))
         with pytest.raises(PayrollPeriodClosedError):
             await _run_payroll()
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_success(async_db_mock, mocker):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = "reports/folha_ponto_10_2026.xlsx"
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    mocker.patch("os.path.exists", return_value=True)
+
+    path, name = await payroll_service.get_report_file_path(async_db_mock, 10)
+    assert name == "folha_ponto_10_2026.xlsx"
+    assert "reports/folha_ponto_10_2026.xlsx" in path
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_not_found(async_db_mock):
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = None
+    async_db_mock.scalars.return_value = scalars_mock
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 999)
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_no_report_path(async_db_mock):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = None
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 10)
+
+
+@pytest.mark.asyncio
+async def test_get_report_file_path_file_missing_on_disk(async_db_mock, mocker):
+    closure = MagicMock(spec=PayrollClosure)
+    closure.id = 10
+    closure.report_path = "reports/missing.xlsx"
+
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = closure
+    async_db_mock.scalars.return_value = scalars_mock
+
+    mocker.patch("os.path.exists", return_value=False)
+
+    with pytest.raises(PayrollClosureNotFoundError):
+        await payroll_service.get_report_file_path(async_db_mock, 10)
+
+
+@patch("app.features.payroll.payroll_service.dispatch_closure_email_background")
+@patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.create", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.excel_service.generate_excel_report")
+@pytest.mark.asyncio
+async def test_close_period_with_period_schema(
+        mock_excel, mock_get_by_month, mock_create, mock_audit, mock_dispatch,
+        async_db_mock, mock_user_manager, mock_background_tasks
+):
+    mock_get_by_month.return_value = None
+    mock_excel.return_value = BytesIO(b"data")
+    mock_closure = MagicMock(id=1, month=4, year=2024, report_path="reports/test.xlsx")
+    mock_create.return_value = mock_closure
+
+    maintainer = MagicMock(spec=User)
+    maintainer.email = "main@test.com"
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [maintainer]
+    async_db_mock.scalars.return_value = mock_scalars
+
+    period_schema = MagicMock()
+    period_schema.month = 4
+    period_schema.year = 2024
+
+    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
+        result = await payroll_service.close_period(
+            async_db_mock, current_user=mock_user_manager, background_tasks=mock_background_tasks, period=period_schema
+        )
+    assert result == mock_closure
+
+
+@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
+@patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)
+@pytest.mark.asyncio
+async def test_reopen_period_with_period_schema(
+        mock_delete, mock_get_by_month, mock_audit, mock_dispatch,
+        async_db_mock, mock_user_maintainer, mock_background_tasks
+):
+    mock_closure = MagicMock(id=99)
+    mock_get_by_month.return_value = mock_closure
+
+    maintainer = MagicMock(spec=User)
+    maintainer.email = "main@test.com"
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [maintainer]
+    async_db_mock.scalars.return_value = mock_scalars
+
+    period_schema = MagicMock()
+    period_schema.month = 4
+    period_schema.year = 2024
+    period_schema.observation = "Obs schema"
+
+    result = await payroll_service.reopen_period(
+        async_db_mock, current_user=mock_user_maintainer, background_tasks=mock_background_tasks, period=period_schema
+    )
+    assert result["status"] == "success"
+    mock_delete.assert_called_once_with(async_db_mock, 4, 2024, mock_user_maintainer.id, "Obs schema")
+
+
+@pytest.mark.asyncio
+async def test_upload_legacy_report_with_upload_file(async_db_mock):
+    mock_closure = MagicMock(id=1, month=4, year=2024)
+    mock_scalars = MagicMock()
+    mock_scalars.first.return_value = mock_closure
+    async_db_mock.scalars.return_value = mock_scalars
+
+    mock_upload = MagicMock()
+    mock_upload.filename = "legacy_file.pdf"
+    mock_upload.read = AsyncMock(return_value=b"binary content")
+
+    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
+        res = await payroll_service.upload_legacy_report(
+            async_db_mock, closure_id=1, upload_file=mock_upload
+        )
+
+    assert res["status"] == "success"
+    assert mock_closure.report_path.endswith(".pdf")

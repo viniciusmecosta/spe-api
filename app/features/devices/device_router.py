@@ -12,7 +12,6 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 
-from app.core.security import get_client_ip
 from app.features.devices.biometric_service import BiometricService
 from app.features.devices.device_credential_service import (
     DeviceCredentialService,
@@ -57,10 +56,8 @@ async def register_device_punch(
         background_tasks: BackgroundTasks,
         device_service: Annotated[DeviceService, Depends()],
 ) -> FeedbackPayload:
-    ip_address = get_client_ip(request)
     return await device_service.process_punch(
-        sensor_index=payload.sensor_index,
-        ip_address=ip_address,
+        payload=payload,
         request=request,
         background_tasks=background_tasks,
     )
@@ -80,8 +77,8 @@ async def verify_manager_access(
         device_service: Annotated[DeviceService, Depends()],
 ) -> ManagerVerifyResponse:
     return await device_service.verify_manager_access(
-        sensor_index=payload.sensor_index,
-        device_id=device.id,
+        payload=payload,
+        device=device,
     )
 
 

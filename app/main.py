@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -16,6 +17,8 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
+public_upload_dir = os.path.join(settings.UPLOAD_DIR, "public")
+Path(public_upload_dir).mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -56,4 +59,4 @@ def root():
 
 
 app.include_router(api_v1_router, prefix="/api/v1")
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+app.mount("/uploads", StaticFiles(directory=public_upload_dir), name="uploads")
