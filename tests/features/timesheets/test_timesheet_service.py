@@ -736,3 +736,97 @@ async def test_generate_batch_timesheets_pdf_async_session(mocker):
     batch_buf = await timesheet_service.generate_all_timesheets_pdf_zip(async_sess, month=10, year=2023,
                                                                         employee_ids=[1])
     assert isinstance(batch_buf, io.BytesIO)
+
+
+@pytest.mark.asyncio
+async def test_timesheet_summary_table_content(mocker, db_session_mock):
+    from reportlab.platypus import SimpleDocTemplate, Table, Paragraph
+    mock_user = MagicMock(spec=User)
+    mock_user.id = 1
+    mock_user.name = "Test User"
+    mock_user.cpf = "12345678901"
+    mock_user.pis = "12345678901"
+    mock_user.role = UserRole.EMPLOYEE
+    mock_user.historical_schedules = []
+
+    mock_company = MagicMock(spec=Company)
+    mock_company.name = "Test Company"
+    mock_company.cnpj = "12.345.678/0001-99"
+    mock_company.address = "Test St"
+    mock_company.phone = "12345678"
+    mock_company.logo_path = None
+
+    mocker.patch('app.features.users.user_repository.user_repository.get', return_value=mock_user)
+    mocker.patch('app.features.companies.company_repository.company_repository.get_current', return_value=mock_company)
+    mocker.patch('app.features.time_records.time_record_repository.time_record_repository.get_by_range', return_value=[])
+    mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
+    db_session_mock.query.return_value = MagicMock()
+    db_session_mock.query.return_value.filter.return_value.all.return_value = []
+
+    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    daily_res = {}
+    daily_hol = {}
+    for d in range(1, 32):
+        dt = date(2023, 10, d)
+        mock_daily = MagicMock(spec=DailyTimeResult)
+        mock_daily.punch_blocks = []
+        mock_daily.net_worked_seconds = 0
+        mock_daily.unapproved_extra_seconds = 0
+        mock_daily.waiver_seconds = 0
+        mock_daily.extra_seconds = 0
+        mock_daily.missing_seconds = 0
+        daily_res[dt] = mock_daily
+        daily_hol[dt] = False
+
+    mock_period = MagicMock()
+    # 70:12 = 70 * 3600 + 12 * 60 = 252720
+    mock_period.total_gross_worked_seconds = 252720.0
+    # 01:59 = 1 * 3600 + 59 * 60 = 7140
+    mock_period.total_unapproved_extra_seconds = 7140.0
+    # 68:13 = 68 * 3600 + 13 * 60 = 245580
+    mock_period.total_accounted_seconds = 245580.0
+    mock_period.total_net_worked_seconds = 245580.0
+    mock_period.daily_results = daily_res
+    mock_period.daily_is_holiday = daily_hol
+    mock_period.daily_expected_seconds = {}
+    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_calc.return_value = mock_period
+
+    captured_summary_rows = []
+    original_build = SimpleDocTemplate.build
+
+    def intercept_build(self, story, *args, **kwargs):
+        for item in story:
+            if isinstance(item, Table) and len(getattr(item, '_cellvalues', [])) == 3:
+                # Capture text before ReportLab processes them
+                rows = []
+                for row in item._cellvalues:
+                    rows.append([cell.text if hasattr(cell, 'text') else str(cell) for cell in row])
+                captured_summary_rows.extend(rows)
+        return original_build(self, story, *args, **kwargs)
+
+    mocker.patch.object(SimpleDocTemplate, 'build', side_effect=intercept_build, autospec=True)
+
+    buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
+    assert isinstance(buffer, io.BytesIO)
+
+    assert len(captured_summary_rows) == 3
+
+    # Row 0: Total de Horas Trabalhadas: 70:12
+    assert "Total de Horas Trabalhadas:" in captured_summary_rows[0][0]
+    assert "70:12" in captured_summary_rows[0][1]
+
+    # Row 1: Horas Não Autorizadas: 01:59
+    assert "Horas Não Autorizadas:" in captured_summary_rows[1][0]
+    assert "01:59" in captured_summary_rows[1][1]
+
+    # Row 2: Total de Horas Contabilizadas: 68:13
+    assert "Total de Horas Contabilizadas:" in captured_summary_rows[2][0]
+    assert "68:13" in captured_summary_rows[2][1]
+
+    # Ensure "Saldo de Horas" is NOT present anywhere in the summary table
+    all_summary_text = " ".join(
+        cell for row in captured_summary_rows for cell in row
+    )
+    assert "Saldo de Horas" not in all_summary_text
+
