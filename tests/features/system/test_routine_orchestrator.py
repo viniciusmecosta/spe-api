@@ -1,9 +1,10 @@
-import pytest
 from datetime import datetime
-from sqlalchemy.exc import SQLAlchemyError
 from unittest.mock import patch, AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import SQLAlchemyError
+
+import pytest
 from app.core.config import settings
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_exceptions import (
@@ -601,13 +602,28 @@ def test_generate_backup_files_zip_sync_postgresql(mocker):
 @pytest.mark.asyncio
 async def test_build_email_attachments_postgresql(mocker):
     orchestrator = RoutineOrchestrator()
-    mocker.patch("os.path.exists", return_value=False)
-    # When not zipped and sql
-    att = await orchestrator._build_email_attachments("backup.sql", False, datetime(2023, 1, 1).date(),
-                                                      datetime(2023, 1, 2).date())
-    assert att == [("backup.sql", "spe-db.sql")]
+    mocker.patch("os.path.exists", return_value=True)
 
-    # When zipped
-    att_zip = await orchestrator._build_email_attachments("backup.sql.zip", True, datetime(2023, 1, 1).date(),
-                                                          datetime(2023, 1, 2).date())
-    assert att_zip == [("backup.sql.zip", "spe.zip")]
+    att_unzipped = await orchestrator._build_email_attachments(
+        "backup.sql",
+        False,
+        datetime(2023, 1, 1).date(),
+        datetime(2023, 1, 2).date(),
+        sql_file="inserts.sql",
+    )
+    filenames_unzipped = [a[1] for a in att_unzipped]
+    assert "spe-db.sql" in filenames_unzipped
+    assert "spe_dump.sql" in filenames_unzipped
+
+    att_zip = await orchestrator._build_email_attachments(
+        "backup.sql.zip",
+        True,
+        datetime(2023, 1, 1).date(),
+        datetime(2023, 1, 2).date(),
+        sql_file="inserts.sql",
+    )
+    filenames_zip = [a[1] for a in att_zip]
+    assert "spe.zip" in filenames_zip
+    assert "spe_dump.sql" not in filenames_zip
+    assert "spe-db.sql" not in filenames_zip
+    assert any(f.startswith("log_") for f in filenames_zip)

@@ -2,12 +2,13 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
+
 from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -261,8 +262,10 @@ class RoutineOrchestrator:
             attachments.insert(0, (zip_path, BACKUP_ZIP_FILENAME))
         elif backup_path and os.path.exists(backup_path):
             attachments.insert(0, (backup_path, BACKUP_DB_FILENAME))
-        if sql_path and os.path.exists(sql_path):
-            attachments.insert(1 if attachments else 0, (sql_path, BACKUP_SQL_FILENAME))
+            if sql_path and os.path.exists(sql_path):
+                attachments.insert(1, (sql_path, BACKUP_SQL_FILENAME))
+        elif sql_path and os.path.exists(sql_path):
+            attachments.insert(0, (sql_path, BACKUP_SQL_FILENAME))
 
         today_log_path = get_log_path(today)
         if await asyncio.to_thread(os.path.exists, today_log_path):
@@ -448,7 +451,7 @@ class RoutineOrchestrator:
     ) -> list[tuple[str, str]]:
         filename = BACKUP_ZIP_FILENAME if is_zip else BACKUP_DB_FILENAME
         attachments = [(backup_file, filename)]
-        if sql_file and is_zip and await asyncio.to_thread(os.path.exists, sql_file):
+        if sql_file and not is_zip and await asyncio.to_thread(os.path.exists, sql_file):
             attachments.append((sql_file, BACKUP_SQL_FILENAME))
         for log_date in [yesterday, today]:
             log_path = get_log_path(log_date)
