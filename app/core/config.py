@@ -13,6 +13,11 @@ class Settings(BaseSettings):
 
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
+    POSTGRES_DB: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: str | None = None
+    POSTGRES_HOST: str | None = None
+    POSTGRES_PORT: int | None = None
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
@@ -30,20 +35,10 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str | None = None
     TELEGRAM_MAX_MESSAGE_LENGTH: int
 
-    OPERATION_MODE: str
-    CONSUMER_SERVER_URL: str | None = None
-    CONSUMER_API_KEY: str | None = None
-
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
     HOURLY_BACKUP_START_HOUR: int
     HOURLY_BACKUP_END_HOUR: int
-
-    @property
-    def DATABASE_PATH(self) -> str:
-        if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
-            return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
-        return "spe.db"
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod

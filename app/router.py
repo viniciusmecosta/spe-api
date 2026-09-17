@@ -9,7 +9,6 @@ from app.features.devices.device_router import (
     device_credentials_router,
     firmware_router,
     router as device_router,
-    sync_router,
 )
 from app.features.holidays.holiday_router import router as holidays_router
 from app.features.payroll.payroll_router import router as payroll_router
@@ -51,9 +50,7 @@ api_router.include_router(printers_router, prefix="/printers", tags=["Printers"]
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(routine_logs_router, prefix="/routine-logs", tags=["Routine Logs"])
 api_router.include_router(schedules_router, prefix="/schedules", tags=["Schedules"])
-api_router.include_router(sync_router, prefix="/sync", tags=["Sync"])
 api_router.include_router(telegram_actions_router, prefix="/telegram", tags=["Telegram"])
 api_router.include_router(time_records_router, prefix="/time-records", tags=["Time Records"])
 api_router.include_router(timesheets_router, prefix="/timesheets", tags=["Timesheets"])
 api_router.include_router(users_router, prefix="/users", tags=["Users"])
-

@@ -1,9 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock, patch
-
+import pytest
 from pydantic import BaseModel
 from sqlalchemy import Column, Integer, String
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from app.database.base import Base
 from app.database.repository import BaseRepository, AsyncBaseRepository
 from app.database.session import get_db, get_async_session_context
@@ -149,12 +148,13 @@ async def test_get_async_session_context_rollback_on_error():
         async def _run():
             async with get_async_session_context() as s:
                 raise ValueError("Oops")
+
         with pytest.raises(ValueError):
             await _run()
         mock_session.rollback.assert_called_once()
 
 
-from app.database.session import get_db_session, get_async_db, set_sqlite_pragma
+from app.database.session import get_db_session, get_async_db
 
 
 def test_get_db_session_ctx():
@@ -190,16 +190,6 @@ async def test_get_async_db_normal_and_error():
         mock_session.rollback.assert_called_once()
 
 
-def test_set_sqlite_pragma():
-    conn = MagicMock()
-    cursor = MagicMock()
-    conn.cursor.return_value = cursor
-    with patch("app.database.session.db_uri_sync", "sqlite:///test.db"):
-        set_sqlite_pragma(conn, None)
-        cursor.execute.assert_called()
-        cursor.close.assert_called_once()
-
-
 def test_session_uri_prefixes():
     import importlib
     from app.core.config import settings
@@ -207,10 +197,7 @@ def test_session_uri_prefixes():
 
     orig_uri = settings.SQLALCHEMY_DATABASE_URI
     try:
-        with patch("sqlalchemy.create_engine"), patch("sqlalchemy.ext.asyncio.create_async_engine"), patch(
-                "sqlalchemy.event.listen"):
-            with patch.object(settings, "SQLALCHEMY_DATABASE_URI", "sqlite+aiosqlite:///test.db"):
-                importlib.reload(sess_mod)
+        with patch("sqlalchemy.create_engine"), patch("sqlalchemy.ext.asyncio.create_async_engine"):
             with patch.object(settings, "SQLALCHEMY_DATABASE_URI", "postgresql+asyncpg://user:pass@localhost/db"):
                 importlib.reload(sess_mod)
             with patch.object(settings, "SQLALCHEMY_DATABASE_URI", "postgresql://user:pass@localhost/db"):

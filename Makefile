@@ -1,25 +1,24 @@
 .PHONY: setup run run-prod docker-build docker-up docker-down migrate seed clean test lint reset-db dump restore venv db-export db-pg-up db-pg-populate db-pg-setup db-pg-reset db-check
 
-PYTHON ?= uv run python
 
 setup:
 	pip install uv
 	uv sync
 
 run:
-	$(PYTHON) -m granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
+	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
 
 run-prod:
-	$(PYTHON) -m granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
+	granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
 migrate:
-	uv run alembic revision --autogenerate -m "$(msg)"
+	alembic revision --autogenerate -m "$(msg)"
 
 upgrade:
-	uv run alembic upgrade head
+	alembic upgrade head
 
 seed:
-	$(PYTHON) app/initial_data.py
+	python app/initial_data.py
 
 docker-build:
 	docker-compose build

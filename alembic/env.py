@@ -1,9 +1,8 @@
 from logging.config import fileConfig
-
-from alembic import context
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
+from alembic import context
 from app.core.config import settings
 from app.database.base import Base
 
@@ -12,7 +11,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.SQLALCHEMY_DATABASE_URI)
+db_url = settings.SQLALCHEMY_DATABASE_URI
+if db_url.startswith("postgresql+asyncpg://"):
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 

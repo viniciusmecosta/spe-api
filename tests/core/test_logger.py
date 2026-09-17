@@ -30,6 +30,8 @@ def test_daily_rotating_file_handler(tmp_path):
 
     logger.info("Test log message 1")
 
+    if handler.stream:
+        handler.stream.close()
     if os.path.exists(handler.baseFilename):
         os.remove(handler.baseFilename)
     handler._check_and_reopen_stream_if_deleted()
@@ -53,6 +55,8 @@ def test_daily_rotating_file_handler(tmp_path):
 
     from unittest.mock import patch
     with patch.object(handler, "_open", side_effect=Exception("open err")):
+        if handler.stream:
+            handler.stream.close()
         if os.path.exists(handler.baseFilename):
             os.remove(handler.baseFilename)
         handler._check_and_reopen_stream_if_deleted()
@@ -66,6 +70,7 @@ def test_daily_rotating_file_handler(tmp_path):
         handler._remove_empty_dirs()
 
     handler.close()
+    logger.removeHandler(handler)
 
 
 def test_setup_logging():

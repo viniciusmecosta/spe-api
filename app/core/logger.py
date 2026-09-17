@@ -10,11 +10,11 @@ from app.core.config import settings
 LOG_BASE_DIR = "logs"
 
 
-def get_log_path(target_date: date) -> str:
+def get_log_path(target_date: date, base_dir: str = LOG_BASE_DIR) -> str:
     year = target_date.strftime("%Y")
     month = target_date.strftime("%m")
     filename = target_date.strftime("%d%m%Y") + ".log"
-    return os.path.join(LOG_BASE_DIR, year, month, filename)
+    return os.path.join(base_dir, year, month, filename)
 
 
 class CleanFormatter(logging.Formatter):
@@ -45,7 +45,7 @@ class DailyRotatingFileHandler(logging.FileHandler):
 
     def _get_current_filename(self):
         now = datetime.now(self.tz)
-        log_path = get_log_path(now.date())
+        log_path = get_log_path(now.date(), base_dir=self.log_dir)
         os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
         return os.path.abspath(log_path)
 

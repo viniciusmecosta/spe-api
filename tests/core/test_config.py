@@ -1,7 +1,7 @@
 from app.core.config import Settings
 
 
-def test_config_database_path():
+def test_config_settings_initialization():
     s = Settings(
         PROJECT_NAME="SPE",
         APP_VERSION="1.2.0",
@@ -16,13 +16,13 @@ def test_config_database_path():
         BACKEND_CORS_ORIGINS=["http://localhost"],
         UPLOAD_DIR="uploads",
         TELEGRAM_MAX_MESSAGE_LENGTH=4000,
-        OPERATION_MODE="LOCAL",
         ROUTINE_LOG_RETENTION_DAYS=30,
         DAILY_REPORT_HOUR=6,
         HOURLY_BACKUP_START_HOUR=0,
         HOURLY_BACKUP_END_HOUR=23,
     )
-    assert s.DATABASE_PATH == "spe.db"
+    assert s.PROJECT_NAME == "SPE"
+    assert s.ENVIRONMENT == "test"
 
 
 def test_cors_origins_validator_string():

@@ -1,11 +1,11 @@
+import os
+import pytest
 import sys
 from datetime import datetime
 from io import BytesIO
+from openpyxl import Workbook
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from openpyxl import Workbook
-
-import pytest
 from app.features.reports.excel_service import ExcelService
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.users.user_models import User
@@ -118,7 +118,7 @@ def test_validate_employee_report_period_january(excel_service, mock_user, monke
 @patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
 async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service,
-                               db_session_mock, mock_user):
+                                     db_session_mock, mock_user):
     mock_exists.return_value = True
     mock_company = MagicMock()
     mock_company.logo_path = 'logo.png'
@@ -169,7 +169,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
 @patch('app.features.reports.excel_service.report_service')
 @patch('app.features.reports.excel_service.company_repository')
 async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock,
-                                       mock_user):
+                                             mock_user):
     mock_company = MagicMock()
     mock_company.logo_path = None
     mock_company.cnpj = '12345678901234'
@@ -361,7 +361,7 @@ from app.features.reports.report_schemas import UserPayrollSummary, DailyReportI
 @patch('os.path.exists')
 async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service,
                                                       mock_validate,
-                                                excel_service, db_session_mock, mock_user):
+                                                      excel_service, db_session_mock, mock_user):
     mock_exists.return_value = False
     mock_company = MagicMock()
     mock_company.logo_path = None
@@ -594,7 +594,7 @@ def test_build_day_row_abono_status(excel_service):
 @patch("app.features.reports.excel_service.company_repository")
 @patch("app.features.reports.excel_service.report_service")
 async def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service,
-                                                            db_session_mock):
+                                                                  db_session_mock):
     from datetime import datetime, date
     from app.features.time_records.time_record_models import TimeRecord
     from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -755,9 +755,9 @@ async def test_export_monthly_report_saved_file(excel_service, tmp_path, async_d
     mock_closure.report_path = str(test_file)
 
     with patch(
-        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-        new_callable=AsyncMock,
-        return_value=mock_closure,
+            "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+            new_callable=AsyncMock,
+            return_value=mock_closure,
     ), patch.object(excel_service, "generate_excel_report", new_callable=AsyncMock) as mock_gen:
         resp = await excel_service.export_monthly_report(
             month=7,
@@ -773,9 +773,9 @@ async def test_export_monthly_report_fallback(excel_service, async_db_mock):
     fake_stream = BytesIO(b"generated content")
 
     with patch(
-        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-        new_callable=AsyncMock,
-        return_value=None,
+            "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+            new_callable=AsyncMock,
+            return_value=None,
     ), patch.object(
         excel_service,
         "generate_excel_report",
@@ -797,11 +797,13 @@ async def test_excel_service_fetch_data_branches(excel_service, async_db_mock):
     mock_res = MagicMock()
     mock_res.all.return_value = []
     async_db_mock.scalars.return_value = mock_res
-    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock, return_value=None):
+    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock,
+               return_value=None):
         users, comp = await excel_service._fetch_users_and_company(async_db_mock, None)
         assert users == []
 
-    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock, return_value=[]):
+    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock,
+               return_value=[]):
         recs, adjs, hols = await excel_service._fetch_batch_data(
             async_db_mock, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
             date(2026, 8, 1), date(2026, 8, 31), 8, 2026
@@ -834,7 +836,7 @@ def test_resolve_logo_path(excel_service, mocker):
     mocker.patch("os.path.exists", side_effect=lambda p: "public" in p)
     path = excel_service._resolve_logo_path(comp)
     assert path is not None
-    assert "public/logo.png" in path
+    assert os.path.join("public", "logo.png") in path
 
     mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
     path_legacy = excel_service._resolve_logo_path(comp)
@@ -843,5 +845,3 @@ def test_resolve_logo_path(excel_service, mocker):
 
     mocker.patch("os.path.exists", return_value=False)
     assert excel_service._resolve_logo_path(comp) is None
-
-

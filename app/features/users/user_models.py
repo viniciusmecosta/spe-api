@@ -1,6 +1,4 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import (
     Boolean,
     Column,
@@ -14,6 +12,7 @@ from sqlalchemy import (
     Time,
 )
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -73,8 +72,8 @@ class User(Base):
     current_schedules_rel = relationship(
         "UserWorkScheduleConfig",
         primaryjoin="and_(User.id == UserWorkScheduleConfig.user_id, "
-                    "UserWorkScheduleConfig.valid_from <= func.date('now', 'localtime'), "
-                    "or_(UserWorkScheduleConfig.valid_until.is_(None), UserWorkScheduleConfig.valid_until >= func.date('now', 'localtime')))",
+                    "UserWorkScheduleConfig.valid_from <= func.current_date(), "
+                    "or_(UserWorkScheduleConfig.valid_until.is_(None), UserWorkScheduleConfig.valid_until >= func.current_date()))",
         viewonly=True,
     )
 

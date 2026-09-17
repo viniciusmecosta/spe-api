@@ -1,7 +1,7 @@
+import pytest
 from unittest.mock import MagicMock
 
-import pytest
-from app.database.session import get_db_session, set_sqlite_pragma
+from app.database.session import get_db, get_db_session
 
 
 def test_get_db_session_exception():
@@ -13,11 +13,22 @@ def test_get_db_session_exception():
         _trigger()
 
 
-def test_set_sqlite_pragma():
-    mock_connection = MagicMock()
-    mock_cursor = MagicMock()
-    mock_connection.cursor.return_value = mock_cursor
-    set_sqlite_pragma(mock_connection, None)
-    assert mock_cursor.execute.call_count == 5
-    mock_cursor.execute.assert_any_call("PRAGMA foreign_keys=ON")
-    mock_cursor.close.assert_called_once()
+def test_get_db_session_success(mocker):
+    mock_session = MagicMock()
+    mocker.patch("app.database.session.SessionLocal", return_value=mock_session)
+    with get_db_session() as s:
+        assert s == mock_session
+    mock_session.close.assert_called_once()
+
+
+def test_get_db_generator(mocker):
+    mock_session = MagicMock()
+    mocker.patch("app.database.session.SessionLocal", return_value=mock_session)
+    gen = get_db()
+    s = next(gen)
+    assert s == mock_session
+    try:
+        next(gen)
+    except StopIteration:
+        pass
+    mock_session.close.assert_called_once()
