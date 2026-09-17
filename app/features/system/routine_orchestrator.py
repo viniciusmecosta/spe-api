@@ -2,13 +2,12 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -33,7 +32,7 @@ from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
 DATE_FORMAT = "%d/%m/%Y"
-BACKUP_DB_FILENAME = "spe.db"
+BACKUP_DB_FILENAME = "spe-db.sql"
 BACKUP_SQL_FILENAME = "spe_dump.sql"
 BACKUP_ZIP_FILENAME = "spe.zip"
 
@@ -53,21 +52,24 @@ class RoutineOrchestrator:
 
     def _generate_backup_files_zip_sync(self) -> tuple[str | None, str | None, str | None]:
         backup_path = backup_service.create_safe_backup()
-        if not backup_path:
-            return None, None, None
         sql_path = backup_service.create_sql_dump(backup_path)
-        files_to_compress = {backup_path: BACKUP_DB_FILENAME}
+        if not backup_path and not sql_path:
+            return None, None, None
+        files_to_compress = {}
+        if backup_path:
+            files_to_compress[backup_path] = BACKUP_DB_FILENAME
         if sql_path:
             files_to_compress[sql_path] = BACKUP_SQL_FILENAME
-        zip_path = backup_service.compress_files(files_to_compress, backup_path + '.zip')
+        base_path = backup_path or sql_path
+        zip_path = backup_service.compress_files(files_to_compress, base_path + '.zip')
         return backup_path, sql_path, zip_path
 
     async def _generate_backup_files_zip(self) -> tuple[str | None, str | None, str | None]:
         return await asyncio.to_thread(self._generate_backup_files_zip_sync)
 
     def _cleanup_backup_files_sync(self, backup_path, sql_path, zip_path):
-        for p in [backup_path, sql_path, zip_path]:
-            if p and os.path.exists(p):
+        for p in set(filter(None, [backup_path, sql_path, zip_path])):
+            if os.path.exists(p):
                 try:
                     os.remove(p)
                 except OSError as e:
@@ -100,7 +102,7 @@ class RoutineOrchestrator:
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path:
+        if not backup_path and not sql_path:
             logger.error('Backup - "Telegram horário" Error')
             return
 
@@ -110,9 +112,9 @@ class RoutineOrchestrator:
         try:
             success = await asyncio.to_thread(
                 telegram_service.send_document,
-                zip_path or backup_path,
+                zip_path or backup_path or sql_path,
                 caption,
-                filename=BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME
+                filename=BACKUP_ZIP_FILENAME if zip_path else (BACKUP_DB_FILENAME if backup_path else BACKUP_SQL_FILENAME)
             )
 
             try:
@@ -251,11 +253,16 @@ class RoutineOrchestrator:
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path:
+        if not backup_path and not sql_path:
             logger.error('Backup - "Email diário" Error')
             return
 
-        attachments.insert(0, (zip_path or backup_path, BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME))
+        if zip_path and os.path.exists(zip_path):
+            attachments.insert(0, (zip_path, BACKUP_ZIP_FILENAME))
+        elif backup_path and os.path.exists(backup_path):
+            attachments.insert(0, (backup_path, BACKUP_DB_FILENAME))
+        if sql_path and os.path.exists(sql_path):
+            attachments.insert(1 if attachments else 0, (sql_path, BACKUP_SQL_FILENAME))
 
         today_log_path = get_log_path(today)
         if await asyncio.to_thread(os.path.exists, today_log_path):
@@ -327,7 +334,7 @@ class RoutineOrchestrator:
 
     async def execute_manual_backup_telegram(self):
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path:
+        if not backup_path and not sql_path:
             logger.error('Backup - "Telegram manual" Error')
             return
 
@@ -340,10 +347,18 @@ class RoutineOrchestrator:
         try:
             success = await asyncio.to_thread(
                 telegram_service.send_document,
-                zip_path or backup_path,
+                zip_path or backup_path or sql_path,
                 caption,
-                filename=BACKUP_ZIP_FILENAME if zip_path else BACKUP_DB_FILENAME
+                filename=BACKUP_ZIP_FILENAME if zip_path else (BACKUP_DB_FILENAME if backup_path else BACKUP_SQL_FILENAME)
             )
+
+            if sql_path and os.path.exists(sql_path) and success:
+                await asyncio.to_thread(
+                    telegram_service.send_document,
+                    sql_path,
+                    f"{caption} (SQL Dump)",
+                    filename=BACKUP_SQL_FILENAME
+                )
 
             today = now_local.date()
             yesterday = today - timedelta(days=1)
@@ -423,9 +438,18 @@ class RoutineOrchestrator:
         period_text = f"Abaixo está o relatório do dia {yesterday.strftime(DATE_FORMAT)}:"
         return to_emails, full_report_html, period_text, yesterday, today
 
-    async def _build_email_attachments(self, backup_file: str, is_zip: bool, yesterday: date, today: date) -> list[tuple[str, str]]:
+    async def _build_email_attachments(
+        self,
+        backup_file: str,
+        is_zip: bool,
+        yesterday: date,
+        today: date,
+        sql_file: str | None = None,
+    ) -> list[tuple[str, str]]:
         filename = BACKUP_ZIP_FILENAME if is_zip else BACKUP_DB_FILENAME
         attachments = [(backup_file, filename)]
+        if sql_file and is_zip and await asyncio.to_thread(os.path.exists, sql_file):
+            attachments.append((sql_file, BACKUP_SQL_FILENAME))
         for log_date in [yesterday, today]:
             log_path = get_log_path(log_date)
             if await asyncio.to_thread(os.path.exists, log_path):
@@ -441,15 +465,16 @@ class RoutineOrchestrator:
             to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(session)
         else:
             async with get_async_session_context() as bg_session:
-                to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(bg_session)
+                to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(
+                    bg_session)
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path:
+        if not backup_path and not sql_path:
             logger.error('Backup - "Email manual" Error')
             raise BackupGenerationFailedError()
 
-        backup_file = zip_path or backup_path
-        attachments = await self._build_email_attachments(backup_file, bool(zip_path), yesterday, today)
+        backup_file = zip_path or backup_path or sql_path
+        attachments = await self._build_email_attachments(backup_file, bool(zip_path), yesterday, today, sql_file=sql_path)
 
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,

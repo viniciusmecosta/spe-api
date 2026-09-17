@@ -1,67 +1,56 @@
-import sqlite3
 from unittest.mock import MagicMock, mock_open, patch
 
 from app.features.system.backup_service import BackupService
 
 
-def test_create_safe_backup_success(mocker, db_session_mock):
-    mock_connect = mocker.patch("app.features.system.backup_service.sqlite3.connect")
-    src_conn = MagicMock()
-    dst_conn = MagicMock()
-    mock_connect.side_effect = [src_conn, dst_conn]
-
+def test_create_safe_backup_success(mocker):
     service = BackupService()
+    mocker.patch.object(service, "_dump_postgresql_schema", return_value=True)
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch("os.path.getsize", return_value=1024)
+
     result = service.create_safe_backup()
 
     assert result is not None
     assert result.startswith("temp_backup_")
-    assert result.endswith(".db")
-
-    assert mock_connect.call_count == 2
-    src_conn.backup.assert_called_once_with(dst_conn, pages=100, sleep=0.05)
-    dst_conn.close.assert_called_once()
-    src_conn.close.assert_called_once()
+    assert result.endswith(".sql")
 
 
-def test_create_safe_backup_sqlite_error(mocker, db_session_mock):
-    mock_connect = mocker.patch("app.features.system.backup_service.sqlite3.connect")
-    mock_connect.side_effect = sqlite3.Error("Mocked SQLite error")
+def test_create_safe_backup_dump_failure(mocker):
+    service = BackupService()
+    mocker.patch.object(service, "_dump_postgresql_schema", return_value=False)
+    mocker.patch("os.path.exists", return_value=False)
 
+    result = service.create_safe_backup()
+    assert result is None
+
+
+def test_create_safe_backup_exception(mocker):
+    service = BackupService()
+    mocker.patch.object(service, "_dump_postgresql_schema", side_effect=Exception("PG Dump error"))
     mock_logger = mocker.patch("app.features.system.backup_service.logger.exception")
 
-    service = BackupService()
     result = service.create_safe_backup()
-
     assert result is None
     mock_logger.assert_called_once()
 
 
 def test_create_sql_dump_success(mocker):
-    mock_connect = mocker.patch("app.features.system.backup_service.sqlite3.connect")
-    conn = MagicMock()
-    conn.iterdump.return_value = ["CREATE TABLE test;", "INSERT INTO test VALUES(1);"]
-    mock_connect.return_value = conn
-
-    m = mock_open()
-    with patch("builtins.open", m):
-        service = BackupService()
-        result = service.create_sql_dump("test.db")
-
-    assert result == "test.sql"
-    conn.close.assert_called_once()
-    m.assert_called_once_with("test.sql", "w", encoding="utf-8")
+    service = BackupService()
+    mocker.patch.object(service, "_dump_postgresql_inserts", return_value=True)
+    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch("os.path.getsize", return_value=1024)
+    result = service.create_sql_dump()
+    assert result is not None
+    assert result.startswith("temp_inserts_")
+    assert result.endswith(".sql")
 
 
 def test_create_sql_dump_failure(mocker):
-    mock_connect = mocker.patch("app.features.system.backup_service.sqlite3.connect")
-    mock_connect.side_effect = Exception("DB error")
-    mock_logger = mocker.patch("app.features.system.backup_service.logger.exception")
-
     service = BackupService()
-    result = service.create_sql_dump("test.db")
-
-    assert result is None
-    mock_logger.assert_called_once()
+    mocker.patch.object(service, "_dump_postgresql_inserts", return_value=False)
+    mocker.patch("os.path.exists", return_value=False)
+    assert service.create_sql_dump() is None
 
 
 def test_compress_files_success(mocker):
@@ -92,4 +81,75 @@ def test_compress_files_failure(mocker):
     result = service.compress_files({"file1.db": "backup1.db"}, "output.zip")
 
     assert result is None
+    mock_logger.assert_called_once()
+
+
+def test_dump_postgresql_tier1_pg_dump_success(mocker):
+    service = BackupService()
+    mocker.patch.object(service, "_find_pg_dump", return_value="/usr/bin/pg_dump")
+    proc_mock = MagicMock()
+    proc_mock.stdout = b"-- pg_dump dump"
+    mocker.patch("subprocess.run", return_value=proc_mock)
+    mocker.patch.object(service, "_filter_pg_dump_output", return_value=True)
+
+    result = service._dump_postgresql_inserts("output.sql")
+    assert result is True
+
+
+def test_dump_postgresql_tier2_docker_success(mocker):
+    service = BackupService()
+    mocker.patch.object(service, "_find_pg_dump", return_value=None)
+    mocker.patch("shutil.which", side_effect=lambda cmd: "/usr/bin/docker" if cmd == "docker" else None)
+    proc_mock = MagicMock()
+    proc_mock.stdout = b"-- pg_dump dump"
+    mocker.patch("subprocess.run", return_value=proc_mock)
+    mocker.patch.object(service, "_filter_pg_dump_output", return_value=True)
+
+    result = service._dump_postgresql_inserts("output.sql")
+    assert result is True
+
+
+def test_dump_postgresql_tier3_python_fallback(mocker):
+    service = BackupService()
+    mocker.patch.object(service, "_find_pg_dump", return_value=None)
+    mocker.patch("shutil.which", return_value=None)
+    mock_py_dump = mocker.patch.object(service, "_dump_postgresql_python", return_value=True)
+
+    result = service._dump_postgresql_inserts("output.sql")
+    assert result is True
+    mock_py_dump.assert_called_once()
+
+
+def test_dump_postgresql_python_success(mocker):
+    service = BackupService()
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+    mock_cur.fetchall.side_effect = [
+        [("companies",)],  # table_names
+        [(1, "Company A", {"k": "v"}, memoryview(b"abc"))],  # row
+    ]
+    mock_cur.description = [("id",), ("name",), ("data",), ("blob",)]
+    mock_cur.fetchone.return_value = ("companies_id_seq",)
+    mock_cur.mogrify.return_value = b'INSERT INTO "companies" ("id") VALUES (1);\n'
+
+    mocker.patch("psycopg2.connect", return_value=mock_conn)
+    mocker.patch("builtins.open", mocker.mock_open())
+
+    params = {"host": "localhost", "port": 5432, "user": "spe", "password": "pwd", "dbname": "spe_db"}
+    result = service._dump_postgresql_python("output.sql", params)
+
+    assert result is True
+    mock_conn.close.assert_called_once()
+
+
+def test_dump_postgresql_python_failure(mocker):
+    service = BackupService()
+    mocker.patch("psycopg2.connect", side_effect=Exception("DB Connection Error"))
+    mock_logger = mocker.patch("app.features.system.backup_service.logger.exception")
+
+    params = {"host": "localhost", "port": 5432, "user": "spe", "password": "pwd", "dbname": "spe_db"}
+    result = service._dump_postgresql_python("output.sql", params)
+
+    assert result is False
     mock_logger.assert_called_once()

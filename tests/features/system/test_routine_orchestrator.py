@@ -1,10 +1,9 @@
+import pytest
 from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 from unittest.mock import patch, AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.exc import SQLAlchemyError
-
-import pytest
 from app.core.config import settings
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_exceptions import (
@@ -449,6 +448,7 @@ async def test_send_manual_backup_email_backup_fails(orchestrator, db_session_mo
             User(email="test@test.com", role=UserRole.MAINTAINER, is_active=True)]
         db_session_mock.scalars = AsyncMock(return_value=mock_scalars)
         mock_backup_service.create_safe_backup.return_value = None
+        mock_backup_service.create_sql_dump.return_value = None
         mock_daily_report_service.generate_daily_report_html = AsyncMock(return_value="")
         with pytest.raises(BackupGenerationFailedError):
             await orchestrator.send_manual_backup_email(db_session_mock)
@@ -519,6 +519,7 @@ async def test_execute_manual_backup_telegram_sends_yesterday_and_today_logs(
         mock_backup_service, mock_telegram_service, mock_os, mock_get_log_path,
 ):
     mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
+    mock_backup_service.create_sql_dump.return_value = None
     mock_telegram_service.send_document.return_value = True
     await orchestrator.execute_manual_backup_telegram()
     assert mock_telegram_service.send_document.call_count == 3
@@ -575,3 +576,38 @@ async def test_routine_orchestrator_environment_dev_and_cleanup_oserror(orchestr
         success = await orchestrator.send_manual_backup_email(db=None)
         assert success is True
         mock_fetch.assert_awaited_once_with(db_session_mock)
+
+
+def test_generate_backup_files_zip_sync_postgresql(mocker):
+    orchestrator = RoutineOrchestrator()
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_safe_backup",
+                 return_value="temp_backup.sql")
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_sql_dump",
+                 return_value="temp_inserts.sql")
+    mock_compress = mocker.patch("app.features.system.routine_orchestrator.backup_service.compress_files",
+                                 return_value="temp_backup.sql.zip")
+
+    b_path, s_path, z_path = orchestrator._generate_backup_files_zip_sync()
+    assert b_path == "temp_backup.sql"
+    assert s_path == "temp_inserts.sql"
+    assert z_path == "temp_backup.sql.zip"
+
+    mock_compress.assert_called_once_with(
+        {"temp_backup.sql": "spe-db.sql", "temp_inserts.sql": "spe_dump.sql"},
+        "temp_backup.sql.zip"
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_email_attachments_postgresql(mocker):
+    orchestrator = RoutineOrchestrator()
+    mocker.patch("os.path.exists", return_value=False)
+    # When not zipped and sql
+    att = await orchestrator._build_email_attachments("backup.sql", False, datetime(2023, 1, 1).date(),
+                                                      datetime(2023, 1, 2).date())
+    assert att == [("backup.sql", "spe-db.sql")]
+
+    # When zipped
+    att_zip = await orchestrator._build_email_attachments("backup.sql.zip", True, datetime(2023, 1, 1).date(),
+                                                          datetime(2023, 1, 2).date())
+    assert att_zip == [("backup.sql.zip", "spe.zip")]
