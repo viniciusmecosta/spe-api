@@ -654,7 +654,84 @@ async def test_execute_manual_backup_telegram_uncompressed_sql(
 ):
     mock_backup_service.create_safe_backup.return_value = None
     mock_backup_service.create_sql_dump.return_value = "/tmp/dump.sql"
+    mock_backup_service.compress_files.return_value = None
     mock_telegram_service.send_document.return_value = True
     await orchestrator.execute_manual_backup_telegram()
-    assert mock_telegram_service.send_document.call_count == 3
+    assert mock_telegram_service.send_document.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_resolve_backup_filename(orchestrator):
+    assert orchestrator._resolve_backup_filename("path.zip", None) == "spe.zip"
+    assert orchestrator._resolve_backup_filename(None, "path.sql") == "spe-db.sql"
+    assert orchestrator._resolve_backup_filename(None, None) == "spe_dump.sql"
+
+
+@pytest.mark.asyncio
+async def test_prepare_backup_attachments_branches(orchestrator, mocker):
+    mocker.patch("os.path.exists", return_value=True)
+    att = []
+    orchestrator._prepare_backup_attachments(att, "spe.zip", "spe-db.sql", "spe_dump.sql")
+    assert att == [("spe.zip", "spe.zip")]
+
+    att2 = []
+    orchestrator._prepare_backup_attachments(att2, None, "spe-db.sql", "spe_dump.sql")
+    assert att2 == [("spe-db.sql", "spe-db.sql"), ("spe_dump.sql", "spe_dump.sql")]
+
+    att3 = []
+    orchestrator._prepare_backup_attachments(att3, None, None, "spe_dump.sql")
+    assert att3 == [("spe_dump.sql", "spe_dump.sql")]
+
+
+@pytest.mark.asyncio
+async def test_execute_hourly_backup_telegram_no_backup_files(orchestrator, mock_datetime, mock_get_db_session):
+    with patch.object(settings, "HOURLY_BACKUP_START_HOUR", 8), patch.object(settings, "HOURLY_BACKUP_END_HOUR", 18):
+        orchestrator._repo.has_hourly_routine_run.return_value = False
+        orchestrator._generate_backup_files_zip = AsyncMock(return_value=(None, None, None))
+        await orchestrator.execute_hourly_backup_telegram()
+
+
+@pytest.mark.asyncio
+async def test_run_daily_backup_routine_email_no_backup_files(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
+    with patch.object(settings, "DAILY_REPORT_HOUR", 10):
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        orchestrator._repo.get_last_successful_target_date.return_value = datetime(2023, 10, 14).date()
+        maintainer = User(id=1, email="m@spe.com", role=UserRole.MAINTAINER, is_active=True)
+        res_mock = MagicMock()
+        res_mock.all.return_value = [maintainer]
+        db_session_mock.scalars = AsyncMock(return_value=res_mock)
+        orchestrator._generate_daily_backup_report = AsyncMock(return_value=("html", [], "period"))
+        orchestrator._generate_backup_files_zip = AsyncMock(return_value=(None, None, None))
+        await orchestrator.run_daily_backup_routine_email()
+
+
+@pytest.mark.asyncio
+async def test_execute_manual_backup_telegram_no_backup_files(orchestrator):
+    orchestrator._generate_backup_files_zip = AsyncMock(return_value=(None, None, None))
+    await orchestrator.execute_manual_backup_telegram()
+
+
+@pytest.mark.asyncio
+async def test_trigger_manual_endpoints(orchestrator):
+    from fastapi import BackgroundTasks
+    bg = MagicMock(spec=BackgroundTasks)
+    user = User(id=1, role=UserRole.MAINTAINER)
+    audit_svc = AsyncMock()
+    telegram_svc = MagicMock()
+
+    res1 = await orchestrator.trigger_manual_backup_email(bg, user, audit_svc)
+    assert res1["status"] == "success"
+    bg.add_task.assert_called_with(orchestrator.send_manual_backup_email)
+
+    res2 = await orchestrator.trigger_manual_backup_telegram(bg, user, audit_svc)
+    assert "fila de processamento" in res2["message"]
+    bg.add_task.assert_called_with(orchestrator.execute_manual_backup_telegram)
+
+    from datetime import date
+    d1 = date(2026, 1, 1)
+    d2 = date(2026, 1, 2)
+    res3 = await orchestrator.trigger_manual_report_telegram(bg, d1, d2, user, audit_svc, telegram_svc)
+    telegram_svc.validate_manual_report_dates.assert_called_once_with(d1, d2)
+    bg.add_task.assert_called_with(orchestrator.send_manual_report_telegram, d1, d2)
+    assert "processamento em background" in res3["message"]
 

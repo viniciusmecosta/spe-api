@@ -1,7 +1,7 @@
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, event
@@ -36,6 +36,20 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+def encode_timestamptz(v: Any) -> str | None:
+    if v is None:
+        return None
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)
+
+
+def decode_timestamptz(s: str | None, tz: ZoneInfo) -> datetime | None:
+    if s is None:
+        return None
+    return datetime.fromisoformat(s).astimezone(tz)
+
+
 def on_async_connect(dbapi_connection, connection_record):
     if not hasattr(dbapi_connection, "run_async"):
         return
@@ -45,8 +59,8 @@ def on_async_connect(dbapi_connection, connection_record):
     async def setup_connection(conn):
         await conn.set_type_codec(
             "timestamptz",
-            encoder=lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v) if v is not None else None,
-            decoder=lambda s: datetime.fromisoformat(s).astimezone(tz) if s is not None else None,
+            encoder=encode_timestamptz,
+            decoder=lambda s: decode_timestamptz(s, tz),
             schema="pg_catalog",
             format="text",
         )

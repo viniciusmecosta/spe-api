@@ -22,10 +22,12 @@ except ImportError:
     psycopg2 = None
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+FILENAME_SPE_DB = "spe-db.sql"
+FILENAME_SPE_DUMP = "spe_dump.sql"
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
-DEFAULT_DDL_PATH = ROOT_DIR / "scripts" / "spe-db.sql"
+DEFAULT_DDL_PATH = ROOT_DIR / "scripts" / FILENAME_SPE_DB
 DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
-DEFAULT_DUMP_PATH = ROOT_DIR / "spe_dump.sql"
+DEFAULT_DUMP_PATH = ROOT_DIR / FILENAME_SPE_DUMP
 
 TABLE_ORDER = [
     "alembic_version",
@@ -644,6 +646,38 @@ def export_ddl(output_path: Path = DEFAULT_DDL_PATH) -> None:
     print(f"[OK] DDL exportado com sucesso em: {output_path}")
 
 
+def _export_table_data(out: Any, table_name: str, rows: list, batch_size: int) -> None:
+    if not rows:
+        return
+
+    cols = list(rows[0].keys())
+    cols_str = ", ".join(f'"{c}"' for c in cols)
+
+    if table_name == "alembic_version":
+        for r in rows:
+            v = format_cell(table_name, "version_num", r["version_num"])
+            out.write(
+                f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
+            )
+        out.write("\n")
+        return
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i: i + batch_size]
+        value_tuples = []
+        for row in batch:
+            formatted_vals = [
+                format_cell(table_name, c, row[c]) for c in cols
+            ]
+            value_tuples.append("(" + ", ".join(formatted_vals) + ")")
+
+        values_str = ",\n  ".join(value_tuples)
+        out.write(
+            f"INSERT INTO {table_name} ({cols_str}) VALUES\n  {values_str};\n"
+        )
+    out.write("\n")
+
+
 def export_data(
         sqlite_path: Path = DEFAULT_SQLITE_PATH,
         output_path: Path = DEFAULT_DML_PATH,
@@ -683,35 +717,7 @@ def export_data(
             rows = cursor.fetchall()
             stats[table_name] = len(rows)
 
-            if not rows:
-                continue
-
-            cols = list(rows[0].keys())
-            cols_str = ", ".join(f'"{c}"' for c in cols)
-
-            if table_name == "alembic_version":
-                for r in rows:
-                    v = format_cell(table_name, "version_num", r["version_num"])
-                    out.write(
-                        f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
-                    )
-                out.write("\n")
-                continue
-
-            for i in range(0, len(rows), batch_size):
-                batch = rows[i: i + batch_size]
-                value_tuples = []
-                for row in batch:
-                    formatted_vals = [
-                        format_cell(table_name, c, row[c]) for c in cols
-                    ]
-                    value_tuples.append("(" + ", ".join(formatted_vals) + ")")
-
-                values_str = ",\n  ".join(value_tuples)
-                out.write(
-                    f"INSERT INTO {table_name} ({cols_str}) VALUES\n  {values_str};\n"
-                )
-            out.write("\n")
+            _export_table_data(out, table_name, rows, batch_size)
 
         for table_name in IDENTITY_TABLES:
             out.write(
@@ -735,7 +741,7 @@ def connect_with_retry(creds: dict[str, str], max_retries: int = 30, delay: floa
     for attempt in range(1, max_retries + 1):
         try:
             return psycopg2.connect(**creds)
-        except (psycopg2.OperationalError, psycopg2.DatabaseError) as e:
+        except psycopg2.DatabaseError as e:
             if attempt == max_retries:
                 raise RuntimeError(f"Tempo limite aguardando o PostgreSQL: {e}") from e
             if attempt == 1 or attempt % 5 == 0:
@@ -813,13 +819,62 @@ def populate_postgresql(
         conn.close()
 
 
+def parse_jsonb_value(val: Any) -> Any:
+    if val in (None, "null"):
+        return None
+    if isinstance(val, str):
+        return json.loads(val)
+    return val
+
+
+def _compare_datetime(sq_val: Any, pg_val: datetime, tz: ZoneInfo) -> bool:
+    if isinstance(sq_val, str):
+        dt_s = datetime.fromisoformat(sq_val)
+        dt_s = dt_s.replace(tzinfo=tz) if dt_s.tzinfo is None else dt_s.astimezone(tz)
+        dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
+        return dt_s == dt_p
+    if isinstance(sq_val, datetime):
+        dt_s = sq_val.astimezone(tz) if sq_val.tzinfo is not None else sq_val.replace(tzinfo=tz)
+        dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
+        return dt_s == dt_p
+    return False
+
+
+def _compare_date(sq_val: Any, pg_val: date) -> bool:
+    if isinstance(sq_val, str):
+        return date.fromisoformat(sq_val.split()[0]) == pg_val
+    if isinstance(sq_val, date):
+        return sq_val == pg_val
+    return False
+
+
+def _compare_time(sq_val: Any, pg_val: dtime) -> bool:
+    if isinstance(sq_val, str):
+        return dtime.fromisoformat(sq_val) == pg_val
+    if isinstance(sq_val, dtime):
+        return sq_val == pg_val
+    return False
+
+
+def _compare_numeric(sq_val: Any, pg_val: Any) -> bool | None:
+    if isinstance(pg_val, float) or isinstance(sq_val, float):
+        try:
+            return abs(float(sq_val) - float(pg_val)) < 1e-6
+        except (ValueError, TypeError):
+            return None
+    if isinstance(pg_val, int) and isinstance(sq_val, int):
+        return sq_val == pg_val
+    if (isinstance(pg_val, int) and isinstance(sq_val, str)) or (isinstance(sq_val, int) and isinstance(pg_val, str)):
+        try:
+            return int(sq_val) == int(pg_val)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
 def are_cells_equal(sq_val, pg_val, col_name: str, table_name: str, tz: ZoneInfo) -> bool:
     if table_name in JSONB_COLUMNS and col_name in JSONB_COLUMNS[table_name]:
-        val_s = json.loads(sq_val) if isinstance(sq_val, str) and sq_val != "null" else None if sq_val in (None,
-                                                                                                           "null") else sq_val
-        val_p = json.loads(pg_val) if isinstance(pg_val, str) and pg_val != "null" else None if pg_val in (None,
-                                                                                                           "null") else pg_val
-        return val_s == val_p
+        return parse_jsonb_value(sq_val) == parse_jsonb_value(pg_val)
 
     if sq_val is None and pg_val is None:
         return True
@@ -830,47 +885,100 @@ def are_cells_equal(sq_val, pg_val, col_name: str, table_name: str, tz: ZoneInfo
         return bool(sq_val) == bool(pg_val)
 
     if isinstance(pg_val, datetime):
-        if isinstance(sq_val, str):
-            dt_s = datetime.fromisoformat(sq_val)
-            if dt_s.tzinfo is None:
-                dt_s = dt_s.replace(tzinfo=tz)
-            else:
-                dt_s = dt_s.astimezone(tz)
-            dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
-            return dt_s == dt_p
-        if isinstance(sq_val, datetime):
-            dt_s = sq_val.astimezone(tz) if sq_val.tzinfo is not None else sq_val.replace(tzinfo=tz)
-            dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
-            return dt_s == dt_p
+        return _compare_datetime(sq_val, pg_val, tz)
 
     if isinstance(pg_val, date) and not isinstance(pg_val, datetime):
-        if isinstance(sq_val, str):
-            return date.fromisoformat(sq_val.split()[0]) == pg_val
-        if isinstance(sq_val, date):
-            return sq_val == pg_val
+        return _compare_date(sq_val, pg_val)
 
     if isinstance(pg_val, dtime):
-        if isinstance(sq_val, str):
-            return dtime.fromisoformat(sq_val) == pg_val
-        if isinstance(sq_val, dtime):
-            return sq_val == pg_val
+        return _compare_time(sq_val, pg_val)
 
-    if isinstance(pg_val, float) or isinstance(sq_val, float):
-        try:
-            return abs(float(sq_val) - float(pg_val)) < 1e-6
-        except (ValueError, TypeError):
-            pass
-
-    if isinstance(pg_val, int) and isinstance(sq_val, int):
-        return sq_val == pg_val
-
-    if (isinstance(pg_val, int) and isinstance(sq_val, str)) or (isinstance(sq_val, int) and isinstance(pg_val, str)):
-        try:
-            return int(sq_val) == int(pg_val)
-        except (ValueError, TypeError):
-            pass
+    numeric_res = _compare_numeric(sq_val, pg_val)
+    if numeric_res is not None:
+        return numeric_res
 
     return str(sq_val) == str(pg_val)
+
+
+def _compare_table_rows(
+    table: str,
+    sq_rows: list,
+    pg_rows: list,
+    common_cols: list[str],
+    target_tz: ZoneInfo,
+) -> int:
+    table_diffs = 0
+    for sq_r, pg_r in zip(sq_rows, pg_rows):
+        for c_idx, col in enumerate(common_cols):
+            if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
+                table_diffs += 1
+                if table_diffs <= 3:
+                    print(
+                        f"  [DIVERGÊNCIA] {table} (PK {sq_r[0]}), coluna '{col}': SQLite={repr(sq_r[c_idx])} vs PG={repr(pg_r[c_idx])}"
+                    )
+    return table_diffs
+
+
+def _verify_table_sync(
+    table: str,
+    sq_cur: Any,
+    pg_cur: Any,
+    pg_conn: Any,
+    target_tz: ZoneInfo,
+) -> tuple[bool, int, int, int, int]:
+    sq_cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    )
+    if not sq_cur.fetchone():
+        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE SQLITE':^20}")
+        return False, 0, 0, 0, 0
+
+    sq_cur.execute(f"PRAGMA table_info({table})")
+    sq_cols = [c[1] for c in sq_cur.fetchall()]
+
+    try:
+        pg_cur.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table,),
+        )
+        pg_cols = [c[0] for c in pg_cur.fetchall()]
+    except Exception:
+        pg_conn.rollback()
+        pg_cols = []
+
+    if not pg_cols:
+        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE POSTGRES':^20}")
+        return False, 0, 0, 0, 0
+
+    common_cols = [c for c in sq_cols if c in pg_cols]
+    pk = "version_num" if table == "alembic_version" else "id"
+    if pk not in common_cols:
+        pk = common_cols[0]
+
+    cols_sql = ", ".join(f'"{c}"' for c in common_cols)
+    sq_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
+    pg_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
+
+    sq_rows = sq_cur.fetchall()
+    pg_rows = pg_cur.fetchall()
+
+    sq_count = len(sq_rows)
+    pg_count = len(pg_rows)
+    table_cells = sq_count * len(common_cols)
+
+    if sq_count != pg_count:
+        status_str = f"DIFF ({sq_count}!={pg_count})"
+        print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
+        return False, sq_count, pg_count, table_cells, 0
+
+    table_diffs = _compare_table_rows(table, sq_rows, pg_rows, common_cols, target_tz)
+
+    matched = table_diffs == 0
+    status_str = "OK (100%)" if matched else f"{table_diffs} ERROS"
+    print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
+
+    return matched, sq_count, pg_count, table_cells, table_diffs
 
 
 def verify_sync(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
@@ -902,76 +1010,15 @@ def verify_sync(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
     print("=" * 95)
 
     for table in TABLE_ORDER:
-        sq_cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table,),
+        matched, sq_count, pg_count, table_cells, table_diffs = _verify_table_sync(
+            table, sq_cur, pg_cur, pg_conn, target_tz
         )
-        if not sq_cur.fetchone():
-            print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE SQLITE':^20}")
+        if not matched:
             all_matched = False
-            continue
-
-        sq_cur.execute(f"PRAGMA table_info({table})")
-        sq_cols = [c[1] for c in sq_cur.fetchall()]
-
-        try:
-            pg_cur.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
-                (table,),
-            )
-            pg_cols = [c[0] for c in pg_cur.fetchall()]
-        except Exception:
-            pg_conn.rollback()
-            pg_cols = []
-
-        if not pg_cols:
-            print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE POSTGRES':^20}")
-            all_matched = False
-            continue
-
-        common_cols = [c for c in sq_cols if c in pg_cols]
-        pk = "version_num" if table == "alembic_version" else "id"
-        if pk not in common_cols:
-            pk = common_cols[0]
-
-        cols_sql = ", ".join(f'"{c}"' for c in common_cols)
-        sq_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
-        pg_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
-
-        sq_rows = sq_cur.fetchall()
-        pg_rows = pg_cur.fetchall()
-
-        sq_count = len(sq_rows)
-        pg_count = len(pg_rows)
         total_sq_rows += sq_count
         total_pg_rows += pg_count
-
-        table_cells = sq_count * len(common_cols)
         total_checked_cells += table_cells
-
-        table_diffs = 0
-        if sq_count != pg_count:
-            all_matched = False
-            status_str = f"DIFF ({sq_count}!={pg_count})"
-            print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
-            continue
-
-        for r_idx, (sq_r, pg_r) in enumerate(zip(sq_rows, pg_rows)):
-            for c_idx, col in enumerate(common_cols):
-                if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
-                    table_diffs += 1
-                    total_cell_mismatches += 1
-                    if table_diffs <= 3:
-                        print(
-                            f"  [DIVERGÊNCIA] {table} (PK {sq_r[0]}), coluna '{col}': SQLite={repr(sq_r[c_idx])} vs PG={repr(pg_r[c_idx])}")
-
-        if table_diffs > 0:
-            all_matched = False
-            status_str = f"{table_diffs} ERROS"
-        else:
-            status_str = "OK (100%)"
-
-        print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
+        total_cell_mismatches += table_diffs
 
     print("=" * 95)
     print(
@@ -1127,8 +1174,8 @@ def restore_database(input_path: Path = DEFAULT_DUMP_PATH) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             with zipfile.ZipFile(found_zip, "r") as z:
                 z.extractall(tmp_dir)
-            tmp_schema = Path(tmp_dir) / "spe-db.sql"
-            tmp_dump = Path(tmp_dir) / "spe_dump.sql"
+            tmp_schema = Path(tmp_dir) / FILENAME_SPE_DB
+            tmp_dump = Path(tmp_dir) / FILENAME_SPE_DUMP
             if tmp_schema.exists():
                 print(f"Aplicando estrutura DDL de {tmp_schema.name}...")
                 execute_sql_script(tmp_schema, creds)
@@ -1139,11 +1186,11 @@ def restore_database(input_path: Path = DEFAULT_DUMP_PATH) -> None:
         return
 
     schema_file = next(
-        (p for p in [ROOT_DIR / "spe-db.sql", ROOT_DIR / "scripts" / "spe-db.sql"] if p.exists()),
+        (p for p in [ROOT_DIR / FILENAME_SPE_DB, ROOT_DIR / "scripts" / FILENAME_SPE_DB] if p.exists()),
         None
     )
     dump_file = next(
-        (p for p in [input_path, ROOT_DIR / "spe_dump.sql", ROOT_DIR / "scripts" / "spe_dump.sql"] if p.exists()),
+        (p for p in [input_path, ROOT_DIR / FILENAME_SPE_DUMP, ROOT_DIR / "scripts" / FILENAME_SPE_DUMP] if p.exists()),
         None
     )
 
@@ -1153,7 +1200,7 @@ def restore_database(input_path: Path = DEFAULT_DUMP_PATH) -> None:
         execute_sql_script(schema_file, creds)
         print(f"Aplicando dados e inserts de {dump_file.name}...")
         execute_sql_script(dump_file, creds)
-        print("[OK] Restauração a partir de spe-db.sql e spe_dump.sql concluída com sucesso!")
+        print(f"[OK] Restauração a partir de {FILENAME_SPE_DB} e {FILENAME_SPE_DUMP} concluída com sucesso!")
         return
 
     if dump_file:
@@ -1172,23 +1219,23 @@ def main() -> None:
     parser.add_argument(
         "--dump",
         action="store_true",
-        help="Gera um dump oficial e fidedigno do PostgreSQL (padrão: spe_dump.sql)",
+        help=f"Gera um dump oficial e fidedigno do PostgreSQL (padrão: {FILENAME_SPE_DUMP})",
     )
     parser.add_argument(
         "--restore",
         action="store_true",
-        help="Restaura o PostgreSQL a partir de um arquivo de dump (padrão: spe_dump.sql)",
+        help=f"Restaura o PostgreSQL a partir de um arquivo de dump (padrão: {FILENAME_SPE_DUMP})",
     )
     parser.add_argument(
         "--dump-file",
         type=Path,
         default=DEFAULT_DUMP_PATH,
-        help="Caminho do arquivo de dump para --dump ou --restore (padrão: spe_dump.sql)",
+        help=f"Caminho do arquivo de dump para --dump ou --restore (padrão: {FILENAME_SPE_DUMP})",
     )
     parser.add_argument(
         "--export-ddl",
         action="store_true",
-        help="Gera o script DDL em scripts/spe-db.sql",
+        help=f"Gera o script DDL em scripts/{FILENAME_SPE_DB}",
     )
     parser.add_argument(
         "--export-data",

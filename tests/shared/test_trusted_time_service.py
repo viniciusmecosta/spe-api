@@ -206,6 +206,6 @@ async def test_sync_ntp_with_backoff_async_cancelled(mocker):
     trusted_time_service.reset_ntp_cache()
     mocker.patch.object(trusted_time_service, "sync_ntp_async")
     mocker.patch("asyncio.sleep", side_effect=asyncio.CancelledError)
-    result = await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.1)
-    assert result is False
+    with pytest.raises(asyncio.CancelledError):
+        await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.1)
 

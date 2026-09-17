@@ -115,6 +115,38 @@ def format_cell(table_name: str, col_name: str, val: object) -> str:
     return f"'{val_str}'"
 
 
+def _export_table_data(out, table_name: str, rows: list, batch_size: int) -> None:
+    if not rows:
+        return
+
+    cols = list(rows[0].keys())
+    cols_str = ", ".join(f'"{c}"' for c in cols)
+
+    if table_name == "alembic_version":
+        for r in rows:
+            v = format_cell(table_name, "version_num", r["version_num"])
+            out.write(
+                f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
+            )
+        out.write("\n")
+        return
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i: i + batch_size]
+        value_tuples = []
+        for row in batch:
+            formatted_vals = [
+                format_cell(table_name, c, row[c]) for c in cols
+            ]
+            value_tuples.append("(" + ", ".join(formatted_vals) + ")")
+
+        values_str = ",\n  ".join(value_tuples)
+        out.write(
+            f"INSERT INTO {table_name} ({cols_str}) VALUES\n  {values_str};\n"
+        )
+    out.write("\n")
+
+
 def export_sqlite_to_postgresql(
         sqlite_path: Path, output_sql_path: Path, batch_size: int = 100
 ) -> dict[str, int]:
@@ -150,35 +182,7 @@ def export_sqlite_to_postgresql(
             rows = cursor.fetchall()
             stats[table_name] = len(rows)
 
-            if not rows:
-                continue
-
-            cols = list(rows[0].keys())
-            cols_str = ", ".join(f'"{c}"' for c in cols)
-
-            if table_name == "alembic_version":
-                for r in rows:
-                    v = format_cell(table_name, "version_num", r["version_num"])
-                    out.write(
-                        f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
-                    )
-                out.write("\n")
-                continue
-
-            for i in range(0, len(rows), batch_size):
-                batch = rows[i: i + batch_size]
-                value_tuples = []
-                for row in batch:
-                    formatted_vals = [
-                        format_cell(table_name, c, row[c]) for c in cols
-                    ]
-                    value_tuples.append("(" + ", ".join(formatted_vals) + ")")
-
-                values_str = ",\n  ".join(value_tuples)
-                out.write(
-                    f"INSERT INTO {table_name} ({cols_str}) VALUES\n  {values_str};\n"
-                )
-            out.write("\n")
+            _export_table_data(out, table_name, rows, batch_size)
 
         for table_name in IDENTITY_TABLES:
             out.write(

@@ -32,6 +32,9 @@ TABLE_ORDER = [
 ]
 
 
+PG_ENCODING_UTF8 = "--encoding=UTF8"
+
+
 class BackupService:
     def __init__(self):
         self._backup_lock = threading.Lock()
@@ -61,9 +64,46 @@ class BackupService:
             "dbname": dbname,
         }
 
+    def _dump_table_data(self, cur: Any, f: Any, table: str) -> None:
+        import json
+
+        cur.execute(f'SELECT * FROM "{table}";')
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        if not rows:
+            return
+
+        f.write(f"-- Data for {table} ({len(rows)} rows)\n")
+        col_identifiers = ", ".join(f'"{c}"' for c in columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        insert_tmpl = f'INSERT INTO "{table}" ({col_identifiers}) VALUES ({placeholders});\n'
+
+        for row in rows:
+            row_formatted = [
+                json.dumps(v, ensure_ascii=False)
+                if isinstance(v, (dict, list))
+                else bytes(v)
+                if isinstance(v, memoryview)
+                else v
+                for v in row
+            ]
+            mogrified = cur.mogrify(insert_tmpl, row_formatted)
+            val_str = mogrified.decode("utf-8") if isinstance(mogrified, bytes) else str(mogrified)
+            f.write(val_str)
+        f.write("\n")
+
+    def _sync_table_sequences(self, cur: Any, f: Any, sorted_tables: list[str]) -> None:
+        for table in sorted_tables:
+            if table == "alembic_version":
+                continue
+            cur.execute("SELECT pg_get_serial_sequence(%s, 'id');", (table,))
+            seq_row = cur.fetchone()
+            if seq_row and seq_row[0]:
+                seq_name = seq_row[0]
+                f.write(f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {table}), 1), true);\n")
+
     def _dump_postgresql_python(self, output_path: str, params: dict[str, Any]) -> bool:
         try:
-            import json
             import psycopg2
 
             conn = psycopg2.connect(
@@ -91,46 +131,9 @@ class BackupService:
                         sorted_tables.append(t)
 
                     for table in sorted_tables:
-                        cur.execute(f'SELECT * FROM "{table}";')
-                        columns = [desc[0] for desc in cur.description]
-                        rows = cur.fetchall()
-                        if not rows:
-                            continue
+                        self._dump_table_data(cur, f, table)
 
-                        f.write(f"-- Data for {table} ({len(rows)} rows)\n")
-                        col_identifiers = ", ".join(f'"{c}"' for c in columns)
-                        placeholders = ", ".join(["%s"] * len(columns))
-                        insert_tmpl = f'INSERT INTO "{table}" ({col_identifiers}) VALUES ({placeholders});\n'
-
-                        for row in rows:
-                            row_formatted = [
-                                json.dumps(v, ensure_ascii=False)
-                                if isinstance(v, (dict, list))
-                                else bytes(v)
-                                if isinstance(v, memoryview)
-                                else v
-                                for v in row
-                            ]
-                            mogrified = cur.mogrify(insert_tmpl, row_formatted)
-                            if isinstance(mogrified, bytes):
-                                f.write(mogrified.decode("utf-8"))
-                            else:
-                                f.write(str(mogrified))
-                        f.write("\n")
-
-                    for table in sorted_tables:
-                        if table == "alembic_version":
-                            continue
-                        cur.execute(
-                            """
-                            SELECT pg_get_serial_sequence(%s, 'id');
-                            """,
-                            (table,)
-                        )
-                        seq_row = cur.fetchone()
-                        if seq_row and seq_row[0]:
-                            seq_name = seq_row[0]
-                            f.write(f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {table}), 1), true);\n")
+                    self._sync_table_sequences(cur, f, sorted_tables)
 
                     f.write("\nCOMMIT;\n")
                 return True
@@ -195,7 +198,7 @@ class BackupService:
                     "--if-exists",
                     "--no-owner",
                     "--no-privileges",
-                    "--encoding=UTF8",
+                    PG_ENCODING_UTF8,
                 ]
                 proc = subprocess.run(cmd, env=env, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
@@ -217,7 +220,7 @@ class BackupService:
                     "--if-exists",
                     "--no-owner",
                     "--no-privileges",
-                    "--encoding=UTF8",
+                    PG_ENCODING_UTF8,
                 ]
                 proc = subprocess.run(cmd, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
@@ -247,7 +250,7 @@ class BackupService:
                     "--column-inserts",
                     "--no-owner",
                     "--no-privileges",
-                    "--encoding=UTF8",
+                    PG_ENCODING_UTF8,
                 ]
                 proc = subprocess.run(cmd, env=env, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
@@ -269,7 +272,7 @@ class BackupService:
                     "--column-inserts",
                     "--no-owner",
                     "--no-privileges",
-                    "--encoding=UTF8",
+                    PG_ENCODING_UTF8,
                 ]
                 proc = subprocess.run(cmd, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
@@ -310,7 +313,7 @@ class BackupService:
                         pass
                 return None
 
-    def create_sql_dump(self, db_path: str | None = None) -> str | None:
+    def create_sql_dump(self) -> str | None:
         tz = ZoneInfo(settings.TIMEZONE)
         timestamp = datetime.now(tz).strftime('%Y%m%d_%H%M%S')
         unique_id = uuid.uuid4().hex[:8]

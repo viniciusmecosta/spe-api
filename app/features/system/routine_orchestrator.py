@@ -51,9 +51,16 @@ class RoutineOrchestrator:
     def repo(self) -> AsyncRoutineLogRepository:
         return self._repo if self._repo is not None else async_routine_log_repository
 
+    def _resolve_backup_filename(self, zip_path: str | None, backup_path: str | None) -> str:
+        if zip_path:
+            return BACKUP_ZIP_FILENAME
+        if backup_path:
+            return BACKUP_DB_FILENAME
+        return BACKUP_SQL_FILENAME
+
     def _generate_backup_files_zip_sync(self) -> tuple[str | None, str | None, str | None]:
         backup_path = backup_service.create_safe_backup()
-        sql_path = backup_service.create_sql_dump(backup_path)
+        sql_path = backup_service.create_sql_dump()
         if not backup_path and not sql_path:
             return None, None, None
         files_to_compress = {}
@@ -115,7 +122,7 @@ class RoutineOrchestrator:
                 telegram_service.send_document,
                 zip_path or backup_path or sql_path,
                 caption,
-                filename=BACKUP_ZIP_FILENAME if zip_path else (BACKUP_DB_FILENAME if backup_path else BACKUP_SQL_FILENAME)
+                filename=self._resolve_backup_filename(zip_path, backup_path),
             )
 
             try:
@@ -226,6 +233,44 @@ class RoutineOrchestrator:
             period_text = f"Abaixo está o relatório e log do dia {fmt_start}:"
         return full_report_html, attachments, period_text
 
+    def _prepare_backup_attachments(
+        self,
+        attachments: list[tuple[str, str]],
+        zip_path: str | None,
+        backup_path: str | None,
+        sql_path: str | None,
+    ) -> None:
+        if zip_path and os.path.exists(zip_path):
+            attachments.insert(0, (zip_path, BACKUP_ZIP_FILENAME))
+            return
+        if backup_path and os.path.exists(backup_path):
+            attachments.insert(0, (backup_path, BACKUP_DB_FILENAME))
+            if sql_path and os.path.exists(sql_path):
+                attachments.insert(1, (sql_path, BACKUP_SQL_FILENAME))
+            return
+        if sql_path and os.path.exists(sql_path):
+            attachments.insert(0, (sql_path, BACKUP_SQL_FILENAME))
+
+    async def _log_daily_backup_email_execution(
+        self, success: bool, yesterday: date, now_local: datetime
+    ) -> None:
+        try:
+            async with get_async_session_context() as db_write:
+                await self.repo.log_execution(
+                    db_write,
+                    routine_type="EMAIL_DAILY_BACKUP",
+                    target_date=yesterday,
+                    status="SUCCESS" if success else "FAILED",
+                    execution_time=now_local,
+                )
+                if not success:
+                    logger.error('Backup - "Email diário" Error')
+        except SQLAlchemyError as e:
+            logger.exception(
+                f'Erro de banco ao salvar log de backup diário por email: {type(e).__name__} - {e}',
+                exc_info=False,
+            )
+
     async def run_daily_backup_routine_email(self):
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -268,14 +313,7 @@ class RoutineOrchestrator:
             logger.error('Backup - "Email diário" Error')
             return
 
-        if zip_path and os.path.exists(zip_path):
-            attachments.insert(0, (zip_path, BACKUP_ZIP_FILENAME))
-        elif backup_path and os.path.exists(backup_path):
-            attachments.insert(0, (backup_path, BACKUP_DB_FILENAME))
-            if sql_path and os.path.exists(sql_path):
-                attachments.insert(1, (sql_path, BACKUP_SQL_FILENAME))
-        elif sql_path and os.path.exists(sql_path):
-            attachments.insert(0, (sql_path, BACKUP_SQL_FILENAME))
+        self._prepare_backup_attachments(attachments, zip_path, backup_path, sql_path)
 
         today_log_path = get_log_path(today)
         if await asyncio.to_thread(os.path.exists, today_log_path):
@@ -284,21 +322,7 @@ class RoutineOrchestrator:
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
                                               period_text)
-
-            try:
-                async with get_async_session_context() as db_write:
-                    await self.repo.log_execution(
-                        db_write,
-                        routine_type="EMAIL_DAILY_BACKUP",
-                        target_date=yesterday,
-                        status="SUCCESS" if success else "FAILED",
-                        execution_time=now_local,
-                    )
-                    if not success:
-                        logger.error('Backup - "Email diário" Error')
-            except SQLAlchemyError as e:
-                logger.exception(f'Erro de banco ao salvar log de backup diário por email: {type(e).__name__} - {e}',
-                                 exc_info=False)
+            await self._log_daily_backup_email_execution(success, yesterday, now_local)
         finally:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
@@ -362,7 +386,7 @@ class RoutineOrchestrator:
                 telegram_service.send_document,
                 zip_path or backup_path or sql_path,
                 caption,
-                filename=BACKUP_ZIP_FILENAME if zip_path else (BACKUP_DB_FILENAME if backup_path else BACKUP_SQL_FILENAME)
+                filename=self._resolve_backup_filename(zip_path, backup_path),
             )
 
             if not zip_path and sql_path and os.path.exists(sql_path) and success:

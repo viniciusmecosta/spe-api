@@ -31,7 +31,7 @@ class TrustedTimeService:
         now_utc = self._get_current_utc_time()
         needs_sync = self._check_if_sync_needed(now_utc)
         if needs_sync:
-            self._trigger_background_sync(now_utc)
+            self._trigger_background_sync()
         if self._ntp_offset is not None:
             trusted_utc = self._get_current_utc_time() + timedelta(seconds=self._ntp_offset)
             return (trusted_utc.astimezone(ZoneInfo(settings.TIMEZONE)), True)
@@ -51,7 +51,7 @@ class TrustedTimeService:
             return False
         return True
 
-    def _trigger_background_sync(self, now_utc: datetime) -> None:
+    def _trigger_background_sync(self) -> None:
         with self._ntp_lock:
             now_utc_locked = self._get_current_utc_time()
             if self._is_syncing or not self._check_if_sync_needed(now_utc_locked):
@@ -95,10 +95,7 @@ class TrustedTimeService:
                 return True
             if max_attempts is not None and attempts >= max_attempts:
                 return False
-            try:
-                await asyncio.sleep(delay)
-            except asyncio.CancelledError:
-                return False
+            await asyncio.sleep(delay)
             delay = min(delay * backoff_factor, max_delay)
 
 

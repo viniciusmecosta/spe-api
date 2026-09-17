@@ -140,6 +140,36 @@ class TimesheetService:
         ]
         return next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
 
+    def _is_day_absence(
+        self,
+        is_weekend: bool,
+        is_holiday: bool,
+        abono: Any,
+        expected_seconds: float,
+        records_count: int,
+        current_date: date,
+        today: date,
+    ) -> bool:
+        if is_weekend or is_holiday or abono is not None:
+            return False
+        return expected_seconds > 0 and records_count == 0 and current_date <= today
+
+    def _resolve_day_background(
+        self, is_holiday: bool, is_absence: bool, is_weekend: bool
+    ) -> colors.HexColor | None:
+        if is_holiday:
+            return colors.HexColor("#FEF3C7")
+        if is_absence:
+            return colors.HexColor("#FEE2E2")
+        if is_weekend:
+            return colors.HexColor("#F1F5F9")
+        return None
+
+    def _format_absence_punches(self, punches_str: str, is_absence: bool) -> str:
+        if is_absence and (not punches_str or punches_str == "-"):
+            return "<font color='#991B1B'><b>Falta</b></font>"
+        return punches_str
+
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
                                    table_text_style, records: list[TimeRecord] | None = None,
                                    all_adjustments: list[AdjustmentRequest] | None = None,
@@ -164,25 +194,15 @@ class TimesheetService:
             if not expected_seconds and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
                 expected_seconds = float(day_schedule.daily_hours * 3600.0)
 
-            is_absence = (
-                not is_weekend
-                and not is_holiday
-                and abono is None
-                and expected_seconds > 0
-                and len(day_records) == 0
-                and current_date <= today
+            is_absence = self._is_day_absence(
+                is_weekend, is_holiday, abono, expected_seconds, len(day_records), current_date, today
             )
-
-            if is_holiday:
-                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEF3C7")))
-            elif is_absence:
-                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#FEE2E2")))
-            elif is_weekend:
-                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor("#F1F5F9")))
+            bg_color = self._resolve_day_background(is_holiday, is_absence, is_weekend)
+            if bg_color is not None:
+                t_style.append(('BACKGROUND', (0, row_index), (-1, row_index), bg_color))
 
             punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
-            if is_absence and (not punches_str or punches_str == "-"):
-                punches_str = "<font color='#991B1B'><b>Falta</b></font>"
+            punches_str = self._format_absence_punches(punches_str, is_absence)
 
             accounted_res = time_calculation_service.calculate_accounted_time(
                 day_records=day_records,
@@ -210,27 +230,33 @@ class TimesheetService:
         t.setStyle(TableStyle(t_style))
         return t
 
+    def _resolve_company_logo_path(self, company) -> str | None:
+        if not company or not company.logo_path:
+            return None
+        public_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
+        if os.path.exists(public_path):
+            return public_path
+        fallback_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
+        if os.path.exists(fallback_path):
+            return fallback_path
+        return None
+
     def _draw_company_header(self, story, company, title_style, section_heading_style, header_style):
         company_name = company.name if company else "Empresa Não Cadastrada"
         document_title = f"{company_name} - Registro de Ponto"
+        logo_path = self._resolve_company_logo_path(company)
 
-        if company and company.logo_path:
-            full_logo_path = os.path.join(settings.UPLOAD_DIR, "public", company.logo_path)
-            if not os.path.exists(full_logo_path):
-                full_logo_path = os.path.join(settings.UPLOAD_DIR, company.logo_path)
-            if os.path.exists(full_logo_path):
-                try:
-                    logo_img = Image(full_logo_path, width=50, height=50)
-                    header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
-                    header_table.setStyle(TableStyle([
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('ALIGN', (1, 0), (1, 0), 'RIGHT')
-                    ]))
-                    story.append(header_table)
-                    story.append(Spacer(1, 10))
-                except (OSError, ValueError):
-                    story.append(Paragraph(document_title, title_style))
-            else:
+        if logo_path:
+            try:
+                logo_img = Image(logo_path, width=50, height=50)
+                header_table = Table([[logo_img, Paragraph(document_title, title_style)]], colWidths=[60, 475])
+                header_table.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('ALIGN', (1, 0), (1, 0), 'RIGHT')
+                ]))
+                story.append(header_table)
+                story.append(Spacer(1, 10))
+            except (OSError, ValueError):
                 story.append(Paragraph(document_title, title_style))
         else:
             story.append(Paragraph(document_title, title_style))
@@ -420,15 +446,122 @@ class TimesheetService:
             story.append(table)
             story.append(Spacer(1, 5))
 
-    async def generate_user_timesheet_pdf(self, db: Any | None = None, user_id: int = 0, month: int = 0,
-                                          year: int = 0) -> io.BytesIO:
+    async def _fetch_user(self, session, user_id: int):
+        if hasattr(session, "sync_session"):
+            return await async_user_repository.get(session, user_id)
+        return user_repository.get(session, user_id)
+
+    async def _fetch_period_data(
+        self, session, user_id: int, start_dt, end_dt, start_date, end_date, month: int, year: int
+    ):
+        if hasattr(session, "sync_session"):
+            records = await async_time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
+            holidays = await async_holiday_repository.get_by_month(session, month, year)
+            adj_stmt = select(AdjustmentRequest).where(
+                AdjustmentRequest.user_id == user_id,
+                AdjustmentRequest.target_date >= start_date,
+                AdjustmentRequest.target_date <= end_date,
+                AdjustmentRequest.deleted_at.is_(None),
+            )
+            adj_res = await session.scalars(adj_stmt)
+            all_adjustments = list(adj_res.all())
+            company = await async_company_repository.get_current(session)
+            return records, holidays, all_adjustments, company
+
+        records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
+        holidays = holiday_repository.get_by_month(session, month, year)
+        all_adjustments = session.query(AdjustmentRequest).filter(
+            AdjustmentRequest.user_id == user_id,
+            AdjustmentRequest.target_date >= start_date,
+            AdjustmentRequest.target_date <= end_date,
+            AdjustmentRequest.deleted_at.is_(None),
+        ).all()
+        company = company_repository.get_current(session)
+        return records, holidays, all_adjustments, company
+
+    def _calculate_summary_totals(self, period_result) -> tuple[str, str, str]:
+        total_gross = getattr(period_result, "total_gross_worked_seconds", None)
+        if not isinstance(total_gross, (int, float)):
+            net_sec = getattr(period_result, "total_net_worked_seconds", 0.0)
+            unapp_sec = getattr(period_result, "total_unapproved_extra_seconds", 0.0)
+            net_val = net_sec if isinstance(net_sec, (int, float)) else 0.0
+            unapp_val = unapp_sec if isinstance(unapp_sec, (int, float)) else 0.0
+            total_gross = net_val + unapp_val
+
+        total_unapproved = getattr(period_result, "total_unapproved_extra_seconds", 0.0)
+        unapproved_val = total_unapproved if isinstance(total_unapproved, (int, float)) else 0.0
+
+        total_accounted = getattr(period_result, "total_accounted_seconds", 0.0)
+        accounted_val = total_accounted if isinstance(total_accounted, (int, float)) else 0.0
+
+        return (
+            self._format_duration(total_gross),
+            self._format_duration(unapproved_val),
+            self._format_duration(accounted_val),
+        )
+
+    def _build_summary_table(
+        self, total_duration_str: str, total_unapproved_str: str, total_accounted_str: str, header_style
+    ) -> Table:
+        summary_info = [
+            [
+                Paragraph(
+                    "<b>Total de Horas Trabalhadas:</b>",
+                    ParagraphStyle(
+                        "BoldHeaderStyle",
+                        fontSize=9,
+                        leading=12,
+                        fontName="Helvetica-Bold",
+                        textColor=colors.HexColor("#000000"),
+                    ),
+                ),
+                Paragraph(total_duration_str, header_style),
+            ],
+            [
+                Paragraph(
+                    "<b>Horas Não Autorizadas:</b>",
+                    ParagraphStyle(
+                        "BoldHeaderStyle",
+                        fontSize=9,
+                        leading=12,
+                        fontName="Helvetica-Bold",
+                        textColor=colors.HexColor("#000000"),
+                    ),
+                ),
+                Paragraph(total_unapproved_str, header_style),
+            ],
+            [
+                Paragraph(
+                    "<b>Total de Horas Contabilizadas:</b>",
+                    ParagraphStyle(
+                        "BoldHeaderStyle",
+                        fontSize=9,
+                        leading=12,
+                        fontName="Helvetica-Bold",
+                        textColor=colors.HexColor("#000000"),
+                    ),
+                ),
+                Paragraph(total_accounted_str, header_style),
+            ],
+        ]
+        sum_table = Table(summary_info, colWidths=[175, 360])
+        sum_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        return sum_table
+
+    async def generate_user_timesheet_pdf(
+        self, db: Any | None = None, user_id: int = 0, month: int = 0, year: int = 0
+    ) -> io.BytesIO:
         self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
-        if hasattr(session, "sync_session"):
-            user = await async_user_repository.get(session, user_id)
-        else:
-            user = user_repository.get(session, user_id)
+        user = await self._fetch_user(session, user_id)
         if not user:
             raise TimesheetUserNotFoundError(user_id=user_id)
 
@@ -442,28 +575,9 @@ class TimesheetService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
-        if hasattr(session, "sync_session"):
-            records = await async_time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
-            holidays = await async_holiday_repository.get_by_month(session, month, year)
-            adj_stmt = select(AdjustmentRequest).where(
-                AdjustmentRequest.user_id == user_id,
-                AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date,
-                AdjustmentRequest.deleted_at.is_(None)
-            )
-            adj_res = await session.scalars(adj_stmt)
-            all_adjustments = list(adj_res.all())
-            company = await async_company_repository.get_current(session)
-        else:
-            records = time_record_repository.get_by_range(session, user_id, start_dt, end_dt)
-            holidays = holiday_repository.get_by_month(session, month, year)
-            all_adjustments = session.query(AdjustmentRequest).filter(
-                AdjustmentRequest.user_id == user_id,
-                AdjustmentRequest.target_date >= start_date,
-                AdjustmentRequest.target_date <= end_date,
-                AdjustmentRequest.deleted_at.is_(None)
-            ).all()
-            company = company_repository.get_current(session)
+        records, holidays, all_adjustments, company = await self._fetch_period_data(
+            session, user_id, start_dt, end_dt, start_date, end_date, month, year
+        )
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
@@ -476,144 +590,120 @@ class TimesheetService:
             title="Espelho de Ponto Oficial",
             author=settings.PROJECT_NAME,
             subject="Relatório Oficial de Ponto",
-            creator=settings.PROJECT_NAME
+            creator=settings.PROJECT_NAME,
         )
         story = []
 
         styles = getSampleStyleSheet()
 
         title_style = ParagraphStyle(
-            'DocTitle',
-            parent=styles['Heading1'],
+            "DocTitle",
+            parent=styles["Heading1"],
             fontSize=14,
             leading=17,
             alignment=1,
-            spaceAfter=10
+            spaceAfter=10,
         )
 
         section_heading_style = ParagraphStyle(
-            'SectionHeading',
+            "SectionHeading",
             fontSize=9,
             leading=12,
-            fontName='Helvetica-Bold',
+            fontName="Helvetica-Bold",
             textColor=colors.HexColor("#1A365D"),
-            spaceAfter=2
+            spaceAfter=2,
         )
 
         header_style = ParagraphStyle(
-            'HeaderStyle',
+            "HeaderStyle",
             fontSize=9,
             leading=12,
-            textColor=colors.HexColor("#222222")
+            textColor=colors.HexColor("#222222"),
         )
 
         table_text_style = ParagraphStyle(
-            'TableText',
+            "TableText",
             fontSize=9,
             leading=12,
-            alignment=1
+            alignment=1,
         )
 
         table_header_style = ParagraphStyle(
-            'TableHeader',
+            "TableHeader",
             fontSize=10,
             leading=13,
-            fontName='Helvetica-Bold',
+            fontName="Helvetica-Bold",
             alignment=1,
-            textColor=colors.white
+            textColor=colors.white,
         )
 
         self._draw_company_header(story, company, title_style, section_heading_style, header_style)
         self._draw_employee_header(story, user, section_heading_style, header_style)
 
         period_info = [
-            [Paragraph(f"<b>Mês/Ano de Referência:</b> {month:02d}/{year}", header_style),
-             Paragraph(f"<b>Data de Emissão:</b> {today.strftime('%d/%m/%Y')}", header_style)]
+            [
+                Paragraph(f"<b>Mês/Ano de Referência:</b> {month:02d}/{year}", header_style),
+                Paragraph(f"<b>Data de Emissão:</b> {today.strftime('%d/%m/%Y')}", header_style),
+            ]
         ]
         per_table = Table(period_info, colWidths=[320, 215])
-        per_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
+        per_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
         story.append(per_table)
         story.append(Spacer(1, 8))
 
-        data_table = [[
-            Paragraph("Data", table_header_style),
-            Paragraph("Dia", table_header_style),
-            Paragraph("Registros de Ponto", table_header_style),
-            Paragraph("Horas Não Autorizadas", table_header_style),
-            Paragraph("Horas Contabilizadas", table_header_style)
-        ]]
-
-        t_style = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A365D")),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        data_table = [
+            [
+                Paragraph("Data", table_header_style),
+                Paragraph("Dia", table_header_style),
+                Paragraph("Registros de Ponto", table_header_style),
+                Paragraph("Horas Não Autorizadas", table_header_style),
+                Paragraph("Horas Contabilizadas", table_header_style),
+            ]
         ]
 
+        t_style = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1A365D")),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]
+
+        historical_schedules = user.historical_schedules if user else []
         period_result = time_calculation_service.calculate_period_time(
             start_date=start_date,
             end_date=end_date,
             records=records,
             adjustments=all_adjustments,
             holidays=holidays,
-            historical_schedules=user.historical_schedules if user else []
+            historical_schedules=historical_schedules,
         )
 
-        story.append(self._build_daily_records_table(
-            start_date=start_date,
-            end_date=end_date,
-            period_result=period_result,
-            holidays=holidays,
-            data_table=data_table,
-            t_style=t_style,
-            table_text_style=table_text_style,
-            records=records,
-            all_adjustments=all_adjustments,
-            historical_schedules=user.historical_schedules if user else []
-        ))
+        story.append(
+            self._build_daily_records_table(
+                start_date=start_date,
+                end_date=end_date,
+                period_result=period_result,
+                holidays=holidays,
+                data_table=data_table,
+                t_style=t_style,
+                table_text_style=table_text_style,
+                records=records,
+                all_adjustments=all_adjustments,
+                historical_schedules=historical_schedules,
+            )
+        )
         story.append(Spacer(1, 10))
 
-        total_gross = getattr(period_result, 'total_gross_worked_seconds', None)
-        if not isinstance(total_gross, (int, float)):
-            net_sec = getattr(period_result, 'total_net_worked_seconds', 0.0)
-            unapp_sec = getattr(period_result, 'total_unapproved_extra_seconds', 0.0)
-            total_gross = (net_sec if isinstance(net_sec, (int, float)) else 0.0) + (
-                unapp_sec if isinstance(unapp_sec, (int, float)) else 0.0
-            )
-
-        total_unapproved = getattr(period_result, 'total_unapproved_extra_seconds', 0.0)
-        unapproved_val = total_unapproved if isinstance(total_unapproved, (int, float)) else 0.0
-
-        total_accounted = getattr(period_result, 'total_accounted_seconds', 0.0)
-        accounted_val = total_accounted if isinstance(total_accounted, (int, float)) else 0.0
-
-        total_duration_str = self._format_duration(total_gross)
-        total_unapproved_str = self._format_duration(unapproved_val)
-        total_accounted_str = self._format_duration(accounted_val)
-        
-        summary_info = [
-            [Paragraph("<b>Total de Horas Trabalhadas:</b>",
-                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
-                                      textColor=colors.HexColor("#000000"))),
-             Paragraph(total_duration_str, header_style)],
-            [Paragraph("<b>Horas Não Autorizadas:</b>",
-                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
-                                      textColor=colors.HexColor("#000000"))),
-             Paragraph(total_unapproved_str, header_style)],
-            [Paragraph("<b>Total de Horas Contabilizadas:</b>",
-                       ParagraphStyle('BoldHeaderStyle', fontSize=9, leading=12, fontName='Helvetica-Bold',
-                                      textColor=colors.HexColor("#000000"))),
-             Paragraph(total_accounted_str, header_style)]
-        ]
-        sum_table = Table(summary_info, colWidths=[175, 360])
-        sum_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
+        total_dur, total_unapp, total_acc = self._calculate_summary_totals(period_result)
+        sum_table = self._build_summary_table(total_dur, total_unapp, total_acc, header_style)
         story.append(sum_table)
         story.append(Spacer(1, 8))
 

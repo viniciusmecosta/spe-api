@@ -24,6 +24,50 @@ def test_format_duration():
     assert timesheet_service._format_duration(3600) == '01:00'
     assert timesheet_service._format_duration(3660) == '01:01'
     assert timesheet_service._format_duration(0) == '00:00'
+    assert timesheet_service._format_duration(None) == '00:00'
+
+
+def test_validate_date_not_future():
+    from app.features.timesheets.timesheet_exceptions import FutureTimesheetNotAllowedError
+    with pytest.raises(FutureTimesheetNotAllowedError):
+        timesheet_service.validate_date_not_future(1, 2099)
+
+
+def test_absence_helpers():
+    from reportlab.lib import colors
+    assert timesheet_service._is_day_absence(True, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, True, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, False, "abono", 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, False, None, 0, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, False, None, 3600, 1, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 3), date(2026, 1, 2)) is False
+    assert timesheet_service._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is True
+
+    assert timesheet_service._resolve_day_background(True, False, False) == colors.HexColor("#FEF3C7")
+    assert timesheet_service._resolve_day_background(False, True, False) == colors.HexColor("#FEE2E2")
+    assert timesheet_service._resolve_day_background(False, False, True) == colors.HexColor("#F1F5F9")
+    assert timesheet_service._resolve_day_background(False, False, False) is None
+
+    assert timesheet_service._format_absence_punches("-", True) == "<font color='#991B1B'><b>Falta</b></font>"
+    assert timesheet_service._format_absence_punches("", True) == "<font color='#991B1B'><b>Falta</b></font>"
+    assert timesheet_service._format_absence_punches("08:00", True) == "08:00"
+    assert timesheet_service._format_absence_punches("-", False) == "-"
+
+
+def test_resolve_company_logo_path(mocker):
+    assert timesheet_service._resolve_company_logo_path(None) is None
+    comp_no_logo = MagicMock(logo_path=None)
+    assert timesheet_service._resolve_company_logo_path(comp_no_logo) is None
+
+    comp = MagicMock(logo_path="logo.png")
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" in str(p))
+    assert timesheet_service._resolve_company_logo_path(comp) is not None
+
+    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in str(p) and "logo.png" in str(p))
+    assert timesheet_service._resolve_company_logo_path(comp) is not None
+
+    mocker.patch("os.path.exists", return_value=False)
+    assert timesheet_service._resolve_company_logo_path(comp) is None
 
 
 def test_format_cnpj():
@@ -779,11 +823,8 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
         daily_hol[dt] = False
 
     mock_period = MagicMock()
-    # 70:12 = 70 * 3600 + 12 * 60 = 252720
     mock_period.total_gross_worked_seconds = 252720.0
-    # 01:59 = 1 * 3600 + 59 * 60 = 7140
     mock_period.total_unapproved_extra_seconds = 7140.0
-    # 68:13 = 68 * 3600 + 13 * 60 = 245580
     mock_period.total_accounted_seconds = 245580.0
     mock_period.total_net_worked_seconds = 245580.0
     mock_period.daily_results = daily_res
@@ -798,7 +839,6 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
     def intercept_build(self, story, *args, **kwargs):
         for item in story:
             if isinstance(item, Table) and len(getattr(item, '_cellvalues', [])) == 3:
-                # Capture text before ReportLab processes them
                 rows = []
                 for row in item._cellvalues:
                     rows.append([cell.text if hasattr(cell, 'text') else str(cell) for cell in row])
@@ -812,19 +852,15 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
 
     assert len(captured_summary_rows) == 3
 
-    # Row 0: Total de Horas Trabalhadas: 70:12
     assert "Total de Horas Trabalhadas:" in captured_summary_rows[0][0]
     assert "70:12" in captured_summary_rows[0][1]
 
-    # Row 1: Horas Não Autorizadas: 01:59
     assert "Horas Não Autorizadas:" in captured_summary_rows[1][0]
     assert "01:59" in captured_summary_rows[1][1]
 
-    # Row 2: Total de Horas Contabilizadas: 68:13
     assert "Total de Horas Contabilizadas:" in captured_summary_rows[2][0]
     assert "68:13" in captured_summary_rows[2][1]
 
-    # Ensure "Saldo de Horas" is NOT present anywhere in the summary table
     all_summary_text = " ".join(
         cell for row in captured_summary_rows for cell in row
     )
