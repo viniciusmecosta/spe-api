@@ -1,13 +1,16 @@
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
-from sqlalchemy import create_engine
+from datetime import datetime
+from typing import AsyncGenerator
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import Session, sessionmaker
-from typing import AsyncGenerator
 
 from app.core.config import settings
 
@@ -31,6 +34,30 @@ async_engine = create_async_engine(db_uri_async, **pool_kwargs)
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
 )
+
+
+def on_async_connect(dbapi_connection, connection_record):
+    if not hasattr(dbapi_connection, "run_async"):
+        return
+
+    tz = ZoneInfo(settings.TIMEZONE)
+
+    async def setup_connection(conn):
+        await conn.set_type_codec(
+            "timestamptz",
+            encoder=lambda v: v.isoformat() if hasattr(v, "isoformat") else str(v) if v is not None else None,
+            decoder=lambda s: datetime.fromisoformat(s).astimezone(tz) if s is not None else None,
+            schema="pg_catalog",
+            format="text",
+        )
+
+    dbapi_connection.run_async(setup_connection)
+
+
+try:
+    event.listen(async_engine.sync_engine, "connect", on_async_connect)
+except Exception:
+    pass
 
 
 def get_db() -> Generator[Session, None, None]:

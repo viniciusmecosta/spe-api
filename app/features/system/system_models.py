@@ -1,7 +1,8 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import JSON, Column, Date, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Index, Integer, JSON, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -29,8 +30,8 @@ class AuditLog(Base):
     action = Column(String, nullable=False)
     entity = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=True)
-    old_data = Column(JSON, nullable=True)
-    new_data = Column(JSON, nullable=True)
+    old_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    new_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     timestamp = Column(DateTime(timezone=True), default=get_local_time)
 
     user = relationship("User", foreign_keys=[user_id])
@@ -41,7 +42,7 @@ class RoutineLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     routine_type = Column(String, index=True, nullable=False)
-    execution_time = Column(DateTime, default=get_local_time_naive, nullable=False)
+    execution_time = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
     target_date = Column(Date, nullable=True)
     status = Column(String, nullable=False)
     details = Column(String, nullable=True)

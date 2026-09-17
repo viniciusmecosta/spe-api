@@ -1307,7 +1307,6 @@ name = "spe"
 version = "1.4.2"
 source = { virtual = "." }
 dependencies = [
-    { name = "aiosqlite" },
     { name = "alembic" },
     { name = "apscheduler" },
     { name = "asyncpg" },
@@ -1338,6 +1337,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "aiosqlite" },
     { name = "httpx2" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1347,7 +1347,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "alembic", specifier = ">=1.18.5" },
     { name = "apscheduler", specifier = ">=3.11.3" },
     { name = "asyncpg", specifier = ">=0.29.0" },
@@ -1378,6 +1377,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "httpx2", specifier = ">=2.10.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
