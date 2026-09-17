@@ -1,3 +1,4 @@
+import asyncio
 import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -18,6 +19,8 @@ async def lifespan(app: FastAPI):
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path(os.path.join(settings.UPLOAD_DIR, "public")).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(settings.TIMEZONE)
+
+    asyncio.create_task(trusted_time_service.sync_ntp_async())
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
     trigger_hourly = CronTrigger(minute=0, timezone=tz)
