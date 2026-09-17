@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -7,6 +8,17 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
 DEFAULT_OUTPUT_SQL_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
+
+
+def get_timezone() -> str:
+    env_path = ROOT_DIR / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("TIMEZONE="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return os.getenv("TIMEZONE", "America/Fortaleza")
+
 
 TABLE_ORDER = [
     "alembic_version",
@@ -114,6 +126,7 @@ def export_sqlite_to_postgresql(
     cursor = conn.cursor()
 
     stats: dict[str, int] = {}
+    tz = get_timezone()
 
     with open(output_sql_path, "w", encoding="utf-8") as out:
         out.write("BEGIN;\n\n")
@@ -121,7 +134,7 @@ def export_sqlite_to_postgresql(
         out.write("SET standard_conforming_strings = on;\n")
         out.write("SET check_function_bodies = false;\n")
         out.write("SET client_min_messages = warning;\n")
-        out.write("SET timezone = 'America/Fortaleza';\n\n")
+        out.write(f"SET timezone = '{tz}';\n\n")
 
         for table_name in TABLE_ORDER:
             cursor.execute(

@@ -223,9 +223,15 @@ temp_backup_*.db
 temp_backup_*.sql
 temp_inserts_*.sql
 temp_*.zip
+spe.zip
+*.zip
+*.sql
+scripts/*.sql
 /uploads
 dump.sql
 spe_dump.sql
+spe-db.sql
+data_inserts_postgresql.sql
 
 # Mosquitto data and logs
 mosquitto/data/
