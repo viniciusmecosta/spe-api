@@ -1,9 +1,8 @@
+import jwt
+import pytest
+from fastapi import HTTPException
 from unittest.mock import MagicMock, patch
 
-import jwt
-from fastapi import HTTPException
-
-import pytest
 from app.core.security import get_api_key_hash
 from app.features.devices.device_models import DeviceCredential
 from app.shared.deps import (
@@ -13,7 +12,6 @@ from app.shared.deps import (
     get_current_manager,
     get_current_maintainer,
     verify_device_api_key,
-    verify_consumer_api_key,
     parse_optional_employee_ids,
 )
 from app.shared.enums import UserRole, DeviceKeyType
@@ -149,37 +147,6 @@ async def test_verify_device_api_key_with_custom_header(db_session):
 
 
 @pytest.mark.asyncio
-async def test_verify_consumer_api_key_none(db_session):
-    req = MagicMock()
-    db = MagicMock()
-    with pytest.raises(HTTPException) as exc_info:
-        await verify_consumer_api_key(req, None, db)
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_verify_consumer_api_key_invalid(db_session):
-    req = MagicMock()
-    with pytest.raises(HTTPException) as exc_info:
-        await verify_consumer_api_key(req, "invalid_key", db_session)
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_verify_consumer_api_key_success(db_session):
-    req = MagicMock()
-    raw_key = "valid_consumer_key_deps_test"
-    hashed = get_api_key_hash(raw_key)
-    cred = DeviceCredential(name="Servidor Dep", api_key_hash=hashed, key_type=DeviceKeyType.CONSUMER, is_active=True)
-    db_session.add(cred)
-    db_session.commit()
-
-    consumer = await verify_consumer_api_key(req, raw_key, db_session)
-    assert consumer.name == "Servidor Dep"
-    assert req.state.device_name == "Servidor Dep"
-
-
-@pytest.mark.asyncio
 async def test_get_current_user_async_db_awaitable(normal_user):
     from unittest.mock import AsyncMock
     async_db = AsyncMock()
@@ -223,19 +190,6 @@ async def test_verify_keys_async_and_sync():
         res = await verify_device_api_key(req, "key", sync_db)
         assert res == dev
 
-    consumer = DeviceCredential(name="C1", api_key_hash="hash", key_type=DeviceKeyType.CONSUMER, is_active=True)
-    mock_res_c = MagicMock()
-    mock_res_c.first.return_value = consumer
-    async_db.scalars = AsyncMock(return_value=mock_res_c)
-    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
-        res_c = await verify_consumer_api_key(req, "key", async_db)
-        assert res_c == consumer
-
-    sync_db.query.return_value.filter.return_value.first.return_value = consumer
-    with patch("app.shared.deps.get_api_key_hash", return_value="hash"):
-        res_cs = await verify_consumer_api_key(req, "key", sync_db)
-        assert res_cs == consumer
-
 
 def test_parse_optional_employee_ids():
     assert parse_optional_employee_ids(None) is None
@@ -247,4 +201,3 @@ def test_parse_optional_employee_ids():
     assert parse_optional_employee_ids(["1,2,3"]) == [1, 2, 3]
     assert parse_optional_employee_ids(["1", "", "2"]) == [1, 2]
     assert parse_optional_employee_ids([" 1 , 2 "]) == [1, 2]
-

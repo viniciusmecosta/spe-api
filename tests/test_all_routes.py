@@ -37,26 +37,23 @@ def setup_test_data(db):
             db.add(user)
 
     device_key = "fuzz_device_api_key_123"
-    consumer_key = "fuzz_consumer_api_key_123"
 
-    for name, k, kt in [("fuzz_device", device_key, DeviceKeyType.DEVICE),
-                        ("fuzz_consumer", consumer_key, DeviceKeyType.CONSUMER)]:
-        cred = db.query(DeviceCredential).filter(DeviceCredential.name == name).first()
-        if not cred:
-            cred = DeviceCredential(
-                name=name, api_key_hash=get_api_key_hash(k),
-                key_type=kt, is_active=True
-            )
-            db.add(cred)
+    cred = db.query(DeviceCredential).filter(DeviceCredential.name == "fuzz_device").first()
+    if not cred:
+        cred = DeviceCredential(
+            name="fuzz_device", api_key_hash=get_api_key_hash(device_key),
+            key_type=DeviceKeyType.DEVICE, is_active=True
+        )
+        db.add(cred)
 
     db.commit()
-    return device_key, consumer_key
+    return device_key
 
 
 def generate_report():
     db = SessionLocal()
     try:
-        device_key, consumer_key = setup_test_data(db)
+        device_key = setup_test_data(db)
     finally:
         db.close()
 
@@ -75,7 +72,6 @@ def generate_report():
         "Manager": {"Authorization": f"Bearer {tokens.get('manager', '')}"},
         "Maintainer": {"Authorization": f"Bearer {tokens.get('maintainer', '')}"},
         "Device": {"X-API-KEY": device_key},
-        "Consumer": {"X-CONSUMER-API-KEY": consumer_key}
     }
 
     openapi = client.get("/api/v1/openapi.json").json()

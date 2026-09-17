@@ -1,14 +1,12 @@
 import os
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
-
 from app.core.config import settings
-from app.features.devices.sync_service import sync_service
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -39,10 +37,6 @@ async def lifespan(app: FastAPI):
 
     scheduler.add_job(trusted_time_service.sync_ntp_async, trigger=trigger_hourly, id="hourly_ntp_sync",
                       max_instances=1, coalesce=True)
-
-    if settings.OPERATION_MODE == "EXPORTADOR":
-        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_aligned, id="hourly_sync_db",
-                          max_instances=1, coalesce=True)
 
     scheduler.start()
     yield

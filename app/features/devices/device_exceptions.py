@@ -47,18 +47,3 @@ class FirmwareFileNotFoundError(DomainException):
         if detail is None:
             detail = f"Arquivo do firmware '{version}' não encontrado no servidor." if version is not None else "Arquivo do firmware não encontrado no servidor."
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
-
-
-class SyncConsumerOnlyError(DomainException):
-    def __init__(self, detail: str = "Apenas o Consumidor pode receber o banco de dados."):
-        super().__init__(detail=detail, status_code=status.HTTP_403_FORBIDDEN)
-
-
-class SyncDatabaseCorruptedError(DomainException):
-    def __init__(self, detail: str = "Arquivo de banco de dados corrompido ou invalido."):
-        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
-
-
-class SyncDatabaseReceiveError(DomainException):
-    def __init__(self, detail: str):
-        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
