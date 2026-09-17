@@ -206,3 +206,12 @@ def test_dispatch_payroll_email_exception():
         mock_send.side_effect = Exception("Err")
         dispatch_payroll_email("Fechamento", "User", 1, 2023, ["test@test.com"])
         mock_send.assert_called_once()
+
+
+def test_global_prevent_real_email_sending_intercepts(mock_template_service):
+    mock_template_service.get_backup_email_html.return_value = "<html>"
+    service = EmailService()
+    result = service.send_email(["real_destination@test.com"], [], "html", "period")
+    assert result is True
+    assert smtplib.SMTP.called
+

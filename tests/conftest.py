@@ -37,6 +37,18 @@ def cleanup_app_database():
     engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def prevent_real_email_sending(monkeypatch):
+    mock_smtp_class = MagicMock(name="PreventRealSMTP")
+    mock_smtp_instance = mock_smtp_class.return_value
+    mock_smtp_instance.__enter__.return_value = mock_smtp_instance
+    mock_smtp_instance.__exit__.return_value = None
+    monkeypatch.setattr("smtplib.SMTP", mock_smtp_class)
+    monkeypatch.setattr("smtplib.SMTP_SSL", mock_smtp_class)
+    return mock_smtp_class
+
+
+
 @pytest.fixture
 def db_session_mock():
     session = MagicMock(spec=Session)
