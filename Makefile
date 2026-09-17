@@ -1,23 +1,25 @@
-.PHONY: setup run run-prod docker-build docker-up docker-down migrate seed clean test lint reset-db dump restore venv
+.PHONY: setup run run-prod docker-build docker-up docker-down migrate seed clean test lint reset-db dump restore venv db-export db-pg-up db-pg-populate db-pg-setup db-pg-reset db-check
+
+PYTHON ?= uv run python
 
 setup:
 	pip install uv
 	uv sync
 
 run:
-	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
+	$(PYTHON) -m granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
 
 run-prod:
-	granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
+	$(PYTHON) -m granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
 migrate:
-	alembic revision --autogenerate -m "$(msg)"
+	uv run alembic revision --autogenerate -m "$(msg)"
 
 upgrade:
-	alembic upgrade head
+	uv run alembic upgrade head
 
 seed:
-	python app/initial_data.py
+	$(PYTHON) app/initial_data.py
 
 docker-build:
 	docker-compose build
@@ -42,24 +44,19 @@ lint:
 	mypy app
 
 reset-db:
-	@echo "Apagando banco de dados..."
-	rm -f spe.db spe.db-shm spe.db-wal
-	@echo "Recriando estrutura e populando dados..."
-	make upgrade
-	make seed
-	@echo "Banco resetado com sucesso!"
+	@echo "Resetando e repopulando banco PostgreSQL..."
+	$(PYTHON) scripts/db_manager.py --populate
+	@echo "Banco PostgreSQL resetado e populado com sucesso!"
 
 dump:
-	@echo "Gerando dump do banco de dados (spe_dump.sql)..."
-	sqlite3 spe.db .dump > spe_dump.sql
-	@echo "Dump gerado com sucesso!"
+	@echo "Gerando dump oficial fidedigno do PostgreSQL (spe_dump.sql)..."
+	$(PYTHON) scripts/db_manager.py --dump
+	@echo "Dump PostgreSQL gerado com sucesso!"
 
 restore:
-	@echo "Limpando banco de dados atual..."
-	rm -f spe.db spe.db-shm spe.db-wal
-	@echo "Restaurando banco a partir de spe_dump.sql..."
-	sqlite3 spe.db < spe_dump.sql
-	@echo "Restauração concluída com sucesso!"
+	@echo "Restaurando banco PostgreSQL a partir de spe_dump.sql..."
+	$(PYTHON) scripts/db_manager.py --restore
+	@echo "Restauração do PostgreSQL concluída com sucesso!"
 
 venv:
 	@echo "Iniciando um novo shell com o ambiente virtual ativado..."
@@ -68,3 +65,32 @@ venv:
 	else \
 		bash -c "source .venv/bin/activate && exec bash" ; \
 	fi
+
+db-export:
+	@echo "Exportando DDL e dados do SQLite para PostgreSQL..."
+	$(PYTHON) scripts/db_manager.py --export-all
+
+db-pg-up:
+	@echo "Subindo container PostgreSQL no Docker..."
+	docker compose up -d --wait db
+
+db-pg-populate:
+	@echo "Populando PostgreSQL a partir de scripts/data_inserts_postgresql.sql..."
+	$(PYTHON) scripts/db_manager.py --populate
+
+db-pg-setup:
+	@echo "Subindo banco PostgreSQL e aplicando dados..."
+	docker compose up -d --wait db
+	$(PYTHON) scripts/db_manager.py --populate
+	$(PYTHON) scripts/db_manager.py --verify
+
+db-pg-reset:
+	@echo "Resetando PostgreSQL (recriando container e volume limpo)..."
+	docker compose down db -v
+	docker compose up -d --wait db
+	$(PYTHON) scripts/db_manager.py --populate
+	@echo "PostgreSQL resetado e populado com sucesso!"
+
+db-check:
+	@echo "Verificando paridade entre SQLite e PostgreSQL..."
+	$(PYTHON) scripts/db_manager.py --verify

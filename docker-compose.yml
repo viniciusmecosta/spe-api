@@ -1,4 +1,22 @@
 services:
+  db:
+    image: postgres:17-alpine
+    container_name: spe_postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/spe-db.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   api:
     build:
       context: .
@@ -11,8 +29,15 @@ services:
       - /app/.venv
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+    env_file:
+      - .env
     environment:
-      - PROJECT_NAME=${PROJECT_NAME:-SPE}
-      - TIMEZONE=${TIMEZONE:-America/Sao_Paulo}
-      - SQLALCHEMY_DATABASE_URI=${SQLALCHEMY_DATABASE_URI:-sqlite:///spe.db}
+      - POSTGRES_HOST=db
+      - SQLALCHEMY_DATABASE_URI=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  pgdata:

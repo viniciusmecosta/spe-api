@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
     "alembic>=1.18.5",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
     "apscheduler>=3.11.3",
     "bcrypt>=5.0.0",
     "email-validator>=2.3.0",
@@ -43,25 +45,25 @@ dev = [
 
 [tool.mypy]
 plugins = [
-  "pydantic.mypy",
-  "sqlalchemy.ext.mypy.plugin"
+    "pydantic.mypy",
+    "sqlalchemy.ext.mypy.plugin"
 ]
 ignore_missing_imports = true
 disable_error_code = [
-  "arg-type",
-  "union-attr",
-  "attr-defined",
-  "assignment",
-  "call-arg",
-  "return-value",
-  "var-annotated",
-  "import-untyped",
-  "valid-type",
-  "operator",
-  "type-var",
-  "annotation-unchecked",
-  "dict-item",
-  "list-item",
-  "misc"
+    "arg-type",
+    "union-attr",
+    "attr-defined",
+    "assignment",
+    "call-arg",
+    "return-value",
+    "var-annotated",
+    "import-untyped",
+    "valid-type",
+    "operator",
+    "type-var",
+    "annotation-unchecked",
+    "dict-item",
+    "list-item",
+    "misc"
 ]
 

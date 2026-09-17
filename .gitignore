@@ -220,6 +220,9 @@ spe.db
 *.db-shm
 *.db-wal
 temp_backup_*.db
+temp_backup_*.sql
+temp_inserts_*.sql
+temp_*.zip
 /uploads
 dump.sql
 spe_dump.sql
