@@ -176,9 +176,19 @@ class RoutineOrchestrator:
                 await asyncio.to_thread(
                     telegram_service.send_document,
                     log_path,
-                    f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}"
+                    f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}",
+                    filename=f"log_{current_log_date.strftime('%d%m%Y')}.log",
                 )
             current_log_date += timedelta(days=1)
+
+        today_log_path = get_log_path(today)
+        if await asyncio.to_thread(os.path.exists, today_log_path):
+            await asyncio.to_thread(
+                telegram_service.send_document,
+                today_log_path,
+                f"Logs do sistema - {today.strftime(DATE_FORMAT)}",
+                filename=f"log_{today.strftime('%d%m%Y')}.log",
+            )
 
         try:
             async with get_async_session_context() as db_write:
@@ -355,7 +365,7 @@ class RoutineOrchestrator:
                 filename=BACKUP_ZIP_FILENAME if zip_path else (BACKUP_DB_FILENAME if backup_path else BACKUP_SQL_FILENAME)
             )
 
-            if sql_path and os.path.exists(sql_path) and success:
+            if not zip_path and sql_path and os.path.exists(sql_path) and success:
                 await asyncio.to_thread(
                     telegram_service.send_document,
                     sql_path,

@@ -627,3 +627,34 @@ async def test_build_email_attachments_postgresql(mocker):
     assert "spe_dump.sql" not in filenames_zip
     assert "spe-db.sql" not in filenames_zip
     assert any(f.startswith("log_") for f in filenames_zip)
+
+
+@pytest.mark.asyncio
+async def test_send_managerial_report_telegram_sends_yesterday_and_today_logs(
+        orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+        mock_telegram_service, mock_get_log_path, mock_os,
+):
+    with patch.object(settings, "DAILY_REPORT_HOUR", 10):
+        orchestrator._repo.has_routine_run_for_target_date.return_value = False
+        orchestrator._repo.get_last_successful_target_date.return_value = datetime(2023, 10, 14).date()
+        mock_telegram_service.generate_report_text.return_value = "Report"
+        mock_telegram_service.send_text.return_value = True
+        await orchestrator.send_managerial_report_telegram()
+        assert mock_telegram_service.send_document.call_count == 2
+        calls = mock_telegram_service.send_document.call_args_list
+        captions = [call[0][1] for call in calls]
+        assert "Logs do sistema - 14/10/2023" in captions
+        assert "Logs do sistema - 15/10/2023" in captions
+
+
+@pytest.mark.asyncio
+async def test_execute_manual_backup_telegram_uncompressed_sql(
+        orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
+        mock_backup_service, mock_telegram_service, mock_os, mock_get_log_path,
+):
+    mock_backup_service.create_safe_backup.return_value = None
+    mock_backup_service.create_sql_dump.return_value = "/tmp/dump.sql"
+    mock_telegram_service.send_document.return_value = True
+    await orchestrator.execute_manual_backup_telegram()
+    assert mock_telegram_service.send_document.call_count == 3
+
