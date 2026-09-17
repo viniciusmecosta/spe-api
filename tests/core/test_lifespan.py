@@ -7,7 +7,7 @@ from app.core.lifespan import lifespan, scheduler
 
 @pytest.mark.asyncio
 async def test_lifespan_default(mocker):
-    mock_sync = mocker.patch("app.core.lifespan.trusted_time_service.sync_ntp_async", new_callable=AsyncMock)
+    mock_sync = mocker.patch("app.core.lifespan.trusted_time_service.sync_ntp_with_backoff_async", new_callable=AsyncMock)
     app = FastAPI()
     async with lifespan(app):
         job_ids = [job.id for job in scheduler.get_jobs()]
@@ -17,4 +17,5 @@ async def test_lifespan_default(mocker):
         assert "daily_backup_email" in job_ids
         assert "hourly_backup_telegram" in job_ids
     mock_sync.assert_called_once()
+
 

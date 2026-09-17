@@ -89,8 +89,13 @@ def test_get_trusted_time_success():
         mock_response.tx_time = 1627819200.0
         mock_client_instance.request.return_value = mock_response
         time, is_trusted = trusted_time_service.get_trusted_time()
-        assert is_trusted is True
+        assert is_trusted is False
         assert isinstance(time, datetime)
+        if trusted_time_service._sync_thread:
+            trusted_time_service._sync_thread.join(timeout=2.0)
+        time_after, is_trusted_after = trusted_time_service.get_trusted_time()
+        assert is_trusted_after is True
+        assert isinstance(time_after, datetime)
 
 
 def test_get_trusted_time_failure():
@@ -148,3 +153,59 @@ async def test_sync_ntp_async():
         await trusted_time_service.sync_ntp_async()
         mock_ntp.assert_called_once()
         assert trusted_time_service._ntp_offset is not None
+
+
+@pytest.mark.asyncio
+async def test_sync_ntp_with_backoff_async_success(mocker):
+    trusted_time_service.reset_ntp_cache()
+    mock_sync = mocker.patch.object(trusted_time_service, "sync_ntp_async")
+
+    async def fake_sync():
+        trusted_time_service._ntp_offset = 1.0
+
+    mock_sync.side_effect = fake_sync
+    result = await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.01)
+    assert result is True
+    assert mock_sync.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_ntp_with_backoff_async_retry_then_succeed(mocker):
+    trusted_time_service.reset_ntp_cache()
+    mock_sync = mocker.patch.object(trusted_time_service, "sync_ntp_async")
+    mock_sleep = mocker.patch("asyncio.sleep")
+    calls = 0
+
+    async def fake_sync():
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            trusted_time_service._ntp_offset = 2.0
+
+    mock_sync.side_effect = fake_sync
+    result = await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.1, backoff_factor=2.0)
+    assert result is True
+    assert calls == 2
+    mock_sleep.assert_called_once_with(0.1)
+
+
+@pytest.mark.asyncio
+async def test_sync_ntp_with_backoff_async_max_attempts(mocker):
+    trusted_time_service.reset_ntp_cache()
+    mocker.patch.object(trusted_time_service, "sync_ntp_async")
+    mocker.patch("asyncio.sleep")
+    result = await trusted_time_service.sync_ntp_with_backoff_async(
+        initial_delay=0.1, max_attempts=3, backoff_factor=2.0
+    )
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_sync_ntp_with_backoff_async_cancelled(mocker):
+    import asyncio
+    trusted_time_service.reset_ntp_cache()
+    mocker.patch.object(trusted_time_service, "sync_ntp_async")
+    mocker.patch("asyncio.sleep", side_effect=asyncio.CancelledError)
+    result = await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.1)
+    assert result is False
+

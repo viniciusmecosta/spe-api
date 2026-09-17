@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     Path(os.path.join(settings.UPLOAD_DIR, "public")).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(settings.TIMEZONE)
 
-    asyncio.create_task(trusted_time_service.sync_ntp_async())
+    startup_ntp_task = asyncio.create_task(trusted_time_service.sync_ntp_with_backoff_async())
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
     trigger_hourly = CronTrigger(minute=0, timezone=tz)
@@ -43,4 +43,6 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     yield
+    if not startup_ntp_task.done():
+        startup_ntp_task.cancel()
     scheduler.shutdown()

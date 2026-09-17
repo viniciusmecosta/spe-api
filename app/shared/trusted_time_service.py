@@ -1,9 +1,8 @@
 import asyncio
+import ntplib
 import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
-import ntplib
 
 from app.core.config import settings
 
@@ -32,14 +31,12 @@ class TrustedTimeService:
         now_utc = self._get_current_utc_time()
         needs_sync = self._check_if_sync_needed(now_utc)
         if needs_sync:
-            if self._ntp_offset is not None:
-                self._trigger_background_sync(now_utc)
-            else:
-                self._perform_sync_with_lock()
+            self._trigger_background_sync(now_utc)
         if self._ntp_offset is not None:
             trusted_utc = self._get_current_utc_time() + timedelta(seconds=self._ntp_offset)
             return (trusted_utc.astimezone(ZoneInfo(settings.TIMEZONE)), True)
         return (datetime.now(ZoneInfo(settings.TIMEZONE)), False)
+
 
     def _get_current_utc_time(self) -> datetime:
         return datetime.now(ZoneInfo("UTC"))
@@ -56,13 +53,15 @@ class TrustedTimeService:
 
     def _trigger_background_sync(self, now_utc: datetime) -> None:
         with self._ntp_lock:
-            if self._is_syncing:
+            now_utc_locked = self._get_current_utc_time()
+            if self._is_syncing or not self._check_if_sync_needed(now_utc_locked):
                 return
             self._is_syncing = True
-            self._last_ntp_sync = now_utc
-            thread = threading.Thread(target=self._run_background_sync, args=(now_utc,), daemon=True)
+            self._last_ntp_sync = now_utc_locked
+            thread = threading.Thread(target=self._run_background_sync, args=(now_utc_locked,), daemon=True)
             self._sync_thread = thread
             thread.start()
+
 
     def _run_background_sync(self, now_utc: datetime) -> None:
         try:
@@ -79,6 +78,29 @@ class TrustedTimeService:
 
     async def sync_ntp_async(self) -> None:
         await asyncio.to_thread(self._perform_sync_with_lock, True)
+
+    async def sync_ntp_with_backoff_async(
+            self,
+            initial_delay: float = 2.0,
+            max_delay: float = 60.0,
+            backoff_factor: float = 2.0,
+            max_attempts: int | None = None,
+    ) -> bool:
+        delay = initial_delay
+        attempts = 0
+        while True:
+            attempts += 1
+            await self.sync_ntp_async()
+            if self._ntp_offset is not None:
+                return True
+            if max_attempts is not None and attempts >= max_attempts:
+                return False
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                return False
+            delay = min(delay * backoff_factor, max_delay)
+
 
     def _execute_ntp_request(self, now_utc_locked: datetime) -> None:
         try:
