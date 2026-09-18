@@ -26,12 +26,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN groupadd -g 1000 appuser && \
-    useradd -m -u 1000 -g appuser -s /bin/bash appuser
+    useradd -m -u 1000 -g appuser -s /bin/bash appuser && \
+    apt-get update && apt-get install -y --no-install-recommends postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
 
 COPY ./app ./app
 COPY ./alembic ./alembic
+COPY ./scripts ./scripts
 COPY alembic.ini pyproject.toml uv.lock ./
 COPY ./entrypoint.sh /entrypoint.sh
 
