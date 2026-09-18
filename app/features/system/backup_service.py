@@ -73,7 +73,6 @@ class BackupService:
         if not rows:
             return
 
-        f.write(f"-- Data for {table} ({len(rows)} rows)\n")
         col_identifiers = ", ".join(f'"{c}"' for c in columns)
         placeholders = ", ".join(["%s"] * len(columns))
         conflict_clause = " ON CONFLICT (version_num) DO NOTHING" if table == "alembic_version" else ""
@@ -101,7 +100,10 @@ class BackupService:
             seq_row = cur.fetchone()
             if seq_row and seq_row[0]:
                 seq_name = seq_row[0]
-                f.write(f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {table}), 1), true);\n")
+                f.write(
+                    f"SELECT setval('{seq_name}', COALESCE((SELECT MAX(id) FROM {table}), 1), "
+                    f"EXISTS (SELECT 1 FROM {table}));\n"
+                )
 
     def _dump_postgresql_python(self, output_path: str, params: dict[str, Any]) -> bool:
         try:
@@ -118,7 +120,6 @@ class BackupService:
             try:
                 with conn.cursor() as cur, open(output_path, "w", encoding="utf-8") as f:
                     cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-                    f.write("-- PostgreSQL Backup (Pure Python Dumper)\n")
                     f.write("BEGIN;\n")
                     f.write("SET client_encoding = 'UTF8';\n")
                     f.write("SET standard_conforming_strings = on;\n\n")
@@ -128,7 +129,6 @@ class BackupService:
                         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
                     )
                     existing_tables = {r[0] for r in cur.fetchall()}
-
                     sorted_tables = [t for t in TABLE_ORDER if t in existing_tables]
                     for t in sorted(existing_tables - set(sorted_tables)):
                         sorted_tables.append(t)
@@ -162,20 +162,22 @@ class BackupService:
         return None
 
     def _filter_pg_dump_output(self, raw_bytes: bytes, output_path: str) -> bool:
-        text = raw_bytes.decode("utf-8", errors="replace")
-        lines = [
+        from scripts.apply_sql_to_postgresql import strip_sql_comments
+
+        text = raw_bytes.decode("utf-8")
+        text = "".join(
             line for line in text.splitlines(keepends=True)
-            if not line.startswith((r"\restrict", r"\unrestrict"))
-        ]
+            if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
+        )
         with open(output_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+            f.write(strip_sql_comments(text))
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
     def _dump_postgresql_schema_python(self, output_path: str) -> bool:
         try:
             from scripts.db_manager import get_ddl_sql
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write(get_ddl_sql(include_alembic_version=False))
+                f.write(get_ddl_sql(include_alembic_version=True))
             return os.path.exists(output_path) and os.path.getsize(output_path) > 0
         except Exception as e:
             logger.exception(f"Erro ao gerar schema via Python: {type(e).__name__} - {e}", exc_info=False)

@@ -1,4 +1,4 @@
-.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore venv db-pg-up db-dump-sqlite db-apply-dump db-check db-migrate-all
+.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore venv db-init db-pg-up db-dump-ddl db-dump-data db-dump-sqlite db-apply-dump db-check db-migrate-all
 
 ifeq ($(OS),Windows_NT)
     PYTHON := .venv\Scripts\python.exe
@@ -8,78 +8,77 @@ else
     ALEMBIC := .venv/bin/alembic
 endif
 
-
-# Instala gerenciador uv e sincroniza dependencias. Use ao configurar o ambiente pela primeira vez.
+# Instala e sincroniza as dependências.
 setup:
 	pip install uv
 	uv sync
 
-# Inicia a API com auto-reload. Use durante o desenvolvimento local.
+# Inicia a API em desenvolvimento.
 run:
 	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
 
-# Inicia a API em modo producao. Use para execucao em ambiente final/producao.
+# Inicia a API em produção.
 run-prod:
 	granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
-# Gera revisao de migracao Alembic. Use apos alterar modelos (ex: make migrate msg="descricao").
+# Cria uma nova revisão Alembic.
 migrate:
 	$(ALEMBIC) revision --autogenerate -m "$(msg)"
 
-# Aplica migracoes pendentes no banco via Alembic. Use para criar ou atualizar o schema no PostgreSQL.
+# Aplica as migrações Alembic pendentes.
 upgrade:
 	$(ALEMBIC) upgrade head
 
-# Popula banco com dados iniciais basicos. Use ao inicializar instalacao nova.
+# Insere os dados iniciais da aplicação.
 seed:
 	$(PYTHON) app/initial_data.py
 
-# Constroi imagens Docker do projeto. Use apos alterar Dockerfile ou dependencias.
+# Constrói as imagens Docker.
 docker-build:
-	docker-compose build
+	docker compose build
 
-# Sobe os servicos Docker em background. Use para rodar ambiente conteinerizado.
+# Inicia todos os serviços Docker.
 docker-up:
-	docker-compose up -d
+	docker compose up -d
 
-# Exibe logs em tempo real dos containers. Use para monitorar ou depurar os servicos Docker.
+# Acompanha os logs dos containers.
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
-# Para e remove os containers Docker. Use para encerrar os servicos conteinerizados.
+# Encerra os serviços Docker.
 docker-down:
-	docker-compose down
+	docker compose down
 
-# Remove arquivos compilados e caches Python. Use para limpeza do diretorio local.
+# Remove caches e bytecode do Python.
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 
-# Executa suite de testes automatizados com pytest. Use para validar testes e regras de negocio.
+# Executa os testes automatizados.
 test:
 	.venv/bin/pytest
 
-# Executa verificador estatico de tipos mypy. Use para checar tipagem e consistencia do codigo.
+# Verifica a tipagem do projeto.
 lint:
 	mypy app
 
-# Gera backup desmembrado do PostgreSQL: DDL live (spe-db.sql) e inserts live (spe_dump.sql) em spe.zip.
+# Gera o backup completo do PostgreSQL.
 dump: db-pg-up
 	$(PYTHON) scripts/db_manager.py --dump
 
-# Extrai a DDL da estrutura atual diretamente do PostgreSQL ativo para spe-db.sql.
+# Gera somente a estrutura do PostgreSQL.
 db-dump-ddl: db-pg-up
 	$(PYTHON) scripts/db_manager.py --dump-ddl
 
-# Extrai apenas os inserts de dados diretamente do PostgreSQL ativo para spe_dump.sql.
+# Gera somente os inserts do PostgreSQL.
 db-dump-data: db-pg-up
 	$(PYTHON) scripts/db_manager.py --dump-data
 
-# Restaura o banco a partir do backup recebido por e-mail (spe.zip ou SQL). Limpa dados existentes e aplica novos.
+# Restaura spe.zip ou spe_dump.sql da raiz ou de scripts/.
 restore: db-pg-up
-	$(PYTHON) scripts/apply_sql_to_postgresql.py --restore
+	$(PYTHON) scripts/apply_sql_to_postgresql.py --restore --yes
 
-# Abre shell com ambiente virtual ativado. Use para entrar no ambiente virtual no terminal.
+# Abre um terminal com o ambiente virtual.
 venv:
 	@if [ "$(OS)" = "Windows_NT" ]; then \
 		cmd /k ".venv\\Scripts\\activate.bat" ; \
@@ -87,21 +86,30 @@ venv:
 		bash -c "source .venv/bin/activate && exec bash" ; \
 	fi
 
-# Sobe apenas o container PostgreSQL no Docker e aguarda estar pronto. Use para ligar o banco de dados.
+# Inicia somente o PostgreSQL.
 db-pg-up:
 	docker compose up -d --wait db
 
-# Exporta dados do SQLite (spe.db) em script SQL de inserts compativel com PostgreSQL. Use para gerar dump dos dados.
+# Inicia o PostgreSQL e aplica a estrutura do banco.
+db-init:
+	docker compose up -d --wait db
+	$(ALEMBIC) upgrade head
+
+# Converte spe.db em inserts para PostgreSQL.
 db-dump-sqlite:
 	$(PYTHON) scripts/export_sqlite_to_postgresql.py
 
-# Limpa o PostgreSQL e aplica o dump de dados SQL com transacao atomica e constraints diferidas.
-db-apply-dump:
-	$(PYTHON) scripts/apply_sql_to_postgresql.py
+# Limpa os dados e aplica o dump convertido.
+db-apply-dump: db-pg-up
+	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
 
-# Audita todas as linhas e celulas comparando SQLite e PostgreSQL. Use para verificar integridade e paridade dos dados.
-db-check:
+# Compara todos os dados do SQLite e PostgreSQL.
+db-check: db-pg-up
 	$(PYTHON) scripts/verify_parity.py
 
-# Fluxo completo: sobe banco, aplica Alembic 001, gera dump do SQLite, aplica no PostgreSQL e audita paridade.
-db-migrate-all: db-pg-up upgrade db-dump-sqlite db-apply-dump db-check
+# Executa a migração completa e confere os dados.
+db-migrate-all: db-pg-up
+	$(ALEMBIC) upgrade head
+	$(PYTHON) scripts/export_sqlite_to_postgresql.py
+	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
+	$(PYTHON) scripts/verify_parity.py

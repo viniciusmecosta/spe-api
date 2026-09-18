@@ -6,6 +6,7 @@ import sys
 import time
 from datetime import date, datetime
 from datetime import time as dtime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,53 +21,38 @@ try:
 except ImportError:
     psycopg2 = None
 
+try:
+    from scripts.database_migration_config import (
+        BOOLEAN_COLUMNS,
+        JSONB_COLUMNS,
+        MIGRATION_TABLES,
+        TABLE_ORDER,
+        are_type_families_compatible,
+        normalize_boolean,
+        postgres_type_family,
+        quote_identifier,
+        sqlite_type_family,
+    )
+except ModuleNotFoundError:
+    from database_migration_config import (
+        BOOLEAN_COLUMNS,
+        JSONB_COLUMNS,
+        MIGRATION_TABLES,
+        TABLE_ORDER,
+        are_type_families_compatible,
+        normalize_boolean,
+        postgres_type_family,
+        quote_identifier,
+        sqlite_type_family,
+    )
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
-
-TABLE_ORDER = [
-    "companies",
-    "printers",
-    "users",
-    "device_credentials",
-    "firmwares",
-    "holidays",
-    "user_biometrics",
-    "user_work_schedule_configs",
-    "time_records",
-    "adjustment_requests",
-    "adjustment_attachments",
-    "payroll_closures",
-    "audit_logs",
-    "routine_logs",
-]
-
-BOOLEAN_COLUMNS = {
-    "companies": {"auto_print_receipt"},
-    "printers": {"status"},
-    "users": {
-        "is_active",
-        "can_manual_punch_desktop",
-        "can_manual_punch_mobile",
-        "can_export_report",
-        "is_exempt_from_rules",
-        "is_tolerance_exempt",
-        "auto_print_receipt",
-    },
-    "device_credentials": {"is_active"},
-    "user_work_schedule_configs": {"is_daily_excess_enabled"},
-    "time_records": {"is_ignored", "is_verified"},
-    "payroll_closures": {"is_closed"},
-}
-
-JSONB_COLUMNS = {
-    "audit_logs": {"old_data", "new_data"},
-}
-
 
 def load_environment() -> None:
     env_path = ROOT_DIR / ".env"
     if env_path.exists() and load_dotenv:
-        load_dotenv(dotenv_path=env_path, override=True)
+        load_dotenv(dotenv_path=env_path, override=False)
 
 
 def get_pg_credentials() -> dict[str, str]:
@@ -163,13 +149,12 @@ def _compare_time(sq_val: Any, pg_val: dtime) -> bool:
 
 
 def _compare_numeric(sq_val: Any, pg_val: Any) -> bool | None:
-    if isinstance(pg_val, float) or isinstance(sq_val, float):
+    numeric_types = (int, float, Decimal)
+    if isinstance(pg_val, numeric_types) and isinstance(sq_val, numeric_types):
         try:
-            return abs(float(sq_val) - float(pg_val)) < 1e-5
+            return abs(Decimal(str(sq_val)) - Decimal(str(pg_val))) <= Decimal("0.00001")
         except (ValueError, TypeError):
             return None
-    if isinstance(pg_val, int) and isinstance(sq_val, int):
-        return sq_val == pg_val
     return None
 
 
@@ -183,7 +168,10 @@ def are_cells_equal(sq_val: Any, pg_val: Any, col_name: str, table_name: str, tz
         return False
 
     if table_name in BOOLEAN_COLUMNS and col_name in BOOLEAN_COLUMNS[table_name]:
-        return bool(sq_val) == bool(pg_val)
+        try:
+            return normalize_boolean(sq_val) == normalize_boolean(pg_val)
+        except ValueError:
+            return False
 
     if isinstance(pg_val, datetime):
         return _compare_datetime(sq_val, pg_val, tz)
@@ -220,21 +208,48 @@ def _compare_table_rows(
     return table_diffs
 
 
-def get_table_columns(table: str, sq_cur: Any, pg_cur: Any, pg_conn: Any) -> tuple[list[str], list[str]]:
-    sq_cur.execute(f"PRAGMA table_info({table})")
-    sq_cols = [c[1] for c in sq_cur.fetchall()]
+def get_table_schema(
+    table: str,
+    sq_cur: Any,
+    pg_cur: Any,
+) -> tuple[list[str], list[str], list[str]]:
+    sq_cur.execute(f"PRAGMA table_info({quote_identifier(table)})")
+    sq_info = [(str(row[1]), str(row[2] or "")) for row in sq_cur.fetchall()]
 
-    try:
-        pg_cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
-            (table,),
-        )
-        pg_cols = [c[0] for c in pg_cur.fetchall()]
-    except Exception:
-        pg_conn.rollback()
-        pg_cols = []
+    pg_cur.execute(
+        """
+        SELECT column_name, data_type, udt_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        ORDER BY ordinal_position
+        """,
+        (table,),
+    )
+    pg_info = [(str(row[0]), str(row[1]), str(row[2])) for row in pg_cur.fetchall()]
+    sq_cols = [column for column, _ in sq_info]
+    pg_cols = [column for column, _, _ in pg_info]
+    schema_errors: list[str] = []
 
-    return sq_cols, pg_cols
+    if set(sq_cols) != set(pg_cols):
+        missing = sorted(set(sq_cols) - set(pg_cols))
+        extra = sorted(set(pg_cols) - set(sq_cols))
+        if missing:
+            schema_errors.append("ausentes no PostgreSQL: " + ", ".join(missing))
+        if extra:
+            schema_errors.append("extras no PostgreSQL: " + ", ".join(extra))
+        return sq_cols, pg_cols, schema_errors
+
+    sq_types = {column: sqlite_type_family(declared) for column, declared in sq_info}
+    pg_types = {
+        column: postgres_type_family(data_type, udt_name)
+        for column, data_type, udt_name in pg_info
+    }
+    for column in sq_cols:
+        if not are_type_families_compatible(sq_types[column], pg_types[column]):
+            schema_errors.append(
+                f"{column}: SQLite={sq_types[column]} PostgreSQL={pg_types[column]}"
+            )
+    return sq_cols, pg_cols, schema_errors
 
 
 def verify_table_data(
@@ -244,9 +259,10 @@ def verify_table_data(
     common_cols: list[str],
     target_tz: ZoneInfo,
 ) -> tuple[bool, int, int, int]:
-    cols_sql = ", ".join(f'"{c}"' for c in common_cols)
-    sq_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "id"')
-    pg_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "id"')
+    cols_sql = ", ".join(quote_identifier(column) for column in common_cols)
+    table_sql = quote_identifier(table)
+    sq_cur.execute(f"SELECT {cols_sql} FROM {table_sql} ORDER BY {quote_identifier('id')}")
+    pg_cur.execute(f"SELECT {cols_sql} FROM {table_sql} ORDER BY {quote_identifier('id')}")
 
     sq_rows = sq_cur.fetchall()
     pg_rows = pg_cur.fetchall()
@@ -265,21 +281,46 @@ def verify_single_table(
     table: str,
     sq_cur: Any,
     pg_cur: Any,
-    pg_conn: Any,
     target_tz: ZoneInfo,
 ) -> tuple[bool, int, int, int]:
-    sq_cols, pg_cols = get_table_columns(table, sq_cur, pg_cur, pg_conn)
+    sq_cols, pg_cols, schema_errors = get_table_schema(table, sq_cur, pg_cur)
 
-    if not sq_cols or not pg_cols or set(sq_cols) != set(pg_cols):
+    if not sq_cols or not pg_cols or schema_errors:
         status_msg = "ERRO DE SCHEMA"
         print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'N/A':>12} | {status_msg:^12}")
-        return False, 0, 0, 1
+        for error in schema_errors[:5]:
+            print(f"  [SCHEMA] {error}")
+        return False, 0, 0, max(1, len(schema_errors))
 
     matched, sq_count, pg_count, diffs = verify_table_data(table, sq_cur, pg_cur, sq_cols, target_tz)
     status_str = "[OK]" if matched else f"[{diffs} ERROS]"
     print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {diffs:>12} | {status_str:^12}")
 
     return matched, sq_count, pg_count, diffs
+
+
+def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
+    sq_cur.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    )
+    sqlite_tables = {row[0] for row in sq_cur.fetchall()}
+    pg_cur.execute(
+        """
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        """
+    )
+    postgres_tables = {row[0] for row in pg_cur.fetchall()}
+    expected = set(MIGRATION_TABLES)
+    errors = []
+    for label, actual in (("SQLite", sqlite_tables), ("PostgreSQL", postgres_tables)):
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        if missing:
+            errors.append(f"{label}: tabelas ausentes: {', '.join(missing)}")
+        if extra:
+            errors.append(f"{label}: tabelas extras: {', '.join(extra)}")
+    return errors
 
 
 def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
@@ -292,9 +333,11 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
 
     sq_conn = sqlite3.connect(sqlite_path)
     sq_cur = sq_conn.cursor()
+    sq_cur.execute("BEGIN")
 
     pg_conn = connect_with_retry(creds)
     pg_cur = pg_conn.cursor()
+    pg_cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
 
     print("=" * 75)
     print("AUDITORIA DE PARIDADE CÉLULA A CÉLULA (SQLite <-> PostgreSQL)")
@@ -309,8 +352,14 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
     total_diffs = 0
 
     try:
+        table_errors = validate_table_sets(sq_cur, pg_cur)
+        if table_errors:
+            for error in table_errors:
+                print(f"[SCHEMA] {error}")
+            return False
+
         for table in TABLE_ORDER:
-            matched, sq_c, pg_c, diffs = verify_single_table(table, sq_cur, pg_cur, pg_conn, target_tz)
+            matched, sq_c, pg_c, diffs = verify_single_table(table, sq_cur, pg_cur, target_tz)
             total_sq_rows += sq_c
             total_pg_rows += pg_c
             total_diffs += diffs

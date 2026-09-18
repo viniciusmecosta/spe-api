@@ -17,6 +17,7 @@ from scripts.apply_sql_to_postgresql import (
     get_pg_credentials,
     load_environment,
     restore_backup,
+    strip_sql_comments,
 )
 from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
 from scripts.verify_parity import verify_parity
@@ -28,6 +29,23 @@ DEFAULT_SCHEMA_PATH = ROOT_DIR / FILENAME_SPE_DB
 DEFAULT_DUMP_PATH = ROOT_DIR / FILENAME_SPE_DUMP
 DEFAULT_ZIP_PATH = ROOT_DIR / FILENAME_SPE_ZIP
 DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
+
+
+def _clean_pg_dump_bytes(raw_bytes: bytes) -> str:
+    text = raw_bytes.decode("utf-8")
+    text = "".join(
+        line for line in text.splitlines(keepends=True)
+        if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
+    )
+    return strip_sql_comments(text)
+
+
+def _clean_pg_dump_file(output_path: Path) -> bool:
+    if not output_path.is_file() or output_path.stat().st_size == 0:
+        return False
+    cleaned = _clean_pg_dump_bytes(output_path.read_bytes())
+    output_path.write_text(cleaned, encoding="utf-8", newline="\n")
+    return output_path.stat().st_size > 0
 
 
 def _extract_extensions_and_types(creds: dict[str, str]) -> list[str]:
@@ -167,8 +185,6 @@ def _run_local_pg_dump(output_path: Path, creds: dict[str, str], pg_dump: str, e
         "-p", str(creds.get("port", 5432)),
         "-U", str(creds.get("user", "spe")),
         "-d", str(creds.get("dbname", "spe_db")),
-        "--clean",
-        "--if-exists",
         "--no-owner",
         "--no-privileges",
         "--encoding=UTF8",
@@ -176,7 +192,7 @@ def _run_local_pg_dump(output_path: Path, creds: dict[str, str], pg_dump: str, e
         "-f", str(output_path),
     ]
     res = subprocess.run(cmd, env=env, capture_output=True, text=True)
-    return res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+    return res.returncode == 0 and _clean_pg_dump_file(output_path)
 
 
 def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: list[str]) -> bool:
@@ -189,8 +205,6 @@ def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: l
         "pg_dump",
         "-U", str(creds.get("user", "spe")),
         "-d", str(creds.get("dbname", "spe_db")),
-        "--clean",
-        "--if-exists",
         "--no-owner",
         "--no-privileges",
         "--encoding=UTF8",
@@ -198,8 +212,7 @@ def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: l
     ]
     res = subprocess.run(cmd, capture_output=True)
     if res.returncode == 0 and res.stdout:
-        with open(output_path, "wb") as f:
-            f.write(res.stdout)
+        output_path.write_text(_clean_pg_dump_bytes(res.stdout), encoding="utf-8", newline="\n")
         return True
     return False
 
@@ -207,7 +220,7 @@ def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: l
 def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
     creds = get_pg_credentials()
     pg_dump = find_pg_binary("pg_dump")
-    flags = ["--schema-only"]
+    flags = ["--schema-only", "--clean", "--if-exists"]
 
     print(f"Extraindo DDL do banco PostgreSQL para: {output_path.name}...")
     if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
@@ -218,7 +231,7 @@ def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
         print(f"[OK] DDL extraída com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
         return
 
-    ddl = extract_live_ddl_from_postgres(include_alembic_version=False)
+    ddl = extract_live_ddl_from_postgres(include_alembic_version=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(ddl)
     print(f"[OK] DDL extraída com sucesso via introspecção live! ({output_path.stat().st_size:,} bytes)")
@@ -227,7 +240,11 @@ def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
 def dump_data_inserts(output_path: Path = DEFAULT_DUMP_PATH) -> None:
     creds = get_pg_credentials()
     pg_dump = find_pg_binary("pg_dump")
-    flags = ["--data-only", "--inserts", "--column-inserts"]
+    flags = [
+        "--data-only",
+        "--inserts",
+        "--column-inserts",
+    ]
 
     print(f"Extraindo inserts de dados do PostgreSQL para: {output_path.name}...")
     if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
@@ -262,8 +279,16 @@ def dump_database(
     print(f"[OK] Pacote de backup completo gerado em {zip_path.name} ({zip_path.stat().st_size:,} bytes)")
 
 
-def restore_database(input_path: Path = DEFAULT_ZIP_PATH) -> None:
-    restore_backup(input_path)
+def restore_database(
+    input_path: Path = DEFAULT_ZIP_PATH,
+    *,
+    expected_database: str | None = None,
+) -> None:
+    restore_backup(
+        input_path,
+        allow_destructive=True,
+        expected_database=expected_database,
+    )
     print("Banco de dados PostgreSQL restaurado com sucesso.")
 
 
@@ -324,6 +349,15 @@ def main() -> None:
         default=DEFAULT_DML_PATH,
         help="Caminho de saída do script de dados SQL",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirma operações que apagam os dados atuais do PostgreSQL",
+    )
+    parser.add_argument(
+        "--confirm-database",
+        help="Nome exato do banco que pode receber a restauração",
+    )
 
     args = parser.parse_args()
 
@@ -339,11 +373,20 @@ def main() -> None:
         if args.dump_data:
             dump_data_inserts()
         if args.restore:
-            restore_database(args.file)
+            if not args.yes:
+                raise ValueError("--restore apaga dados; informe --yes")
+            restore_database(args.file, expected_database=args.confirm_database)
         if args.export_sqlite:
             export_sqlite_to_postgresql(args.sqlite_db, args.dml_out)
         if args.apply_dump:
-            apply_sql_file(args.dml_out, truncate_first=True)
+            if not args.yes:
+                raise ValueError("--apply-dump apaga dados; informe --yes")
+            apply_sql_file(
+                args.dml_out,
+                truncate_first=True,
+                allow_destructive=True,
+                expected_database=args.confirm_database,
+            )
         if args.verify and not verify_parity(args.sqlite_db):
             sys.exit(1)
     except Exception as e:
