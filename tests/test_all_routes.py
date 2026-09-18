@@ -8,6 +8,8 @@ warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from app.main import app
 from app.database.session import SessionLocal
 from app.features.users.user_models import User
@@ -53,12 +55,22 @@ def setup_test_data(db):
 def generate_report():
     db = SessionLocal()
     try:
+        db.execute(text("SELECT 1"))
         device_key = setup_test_data(db)
+    except SQLAlchemyError as exc:
+        raise RuntimeError(
+            "PostgreSQL indisponível. Execute `make db-init` e tente novamente."
+        ) from exc
     finally:
         db.close()
 
-    client = TestClient(app)
+    with TestClient(app) as client:
+        _generate_report(client, device_key)
 
+
+def _generate_report(client, device_key):
+
+    failures = 0
     tokens = {}
     for u in ["fuzz_maintainer", "fuzz_manager", "fuzz_employee"]:
         resp = client.post("/api/v1/auth/login", data={"username": u, "password": "password123"})
@@ -132,6 +144,7 @@ def generate_report():
 
                             if status >= 500:
                                 marker = "❌ CRITICAL ERROR (500)"
+                                failures += 1
                             elif status == 200 and path_desc == "Invalid Path Params" and path != valid_path:
                                 marker = "⚠️ WARNING (Accepted Invalid Path Param)"
                             else:
@@ -143,6 +156,7 @@ def generate_report():
                                 report.append(f"  - *Details*: `{response.text[:300]}`")
 
                         except Exception as e:
+                            failures += 1
                             report.append(f"- **{scenario_desc}**: Exception `{str(e)}` ❌ FATAL CRASH")
 
     report_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "route_test_report.md")
@@ -150,11 +164,29 @@ def generate_report():
         f.write("\n".join(report))
 
     print(f"Total validation complete! Report generated at {report_path}")
+    if failures:
+        raise RuntimeError(f"Teste de rotas encontrou {failures} falhas críticas")
 
 
-def test_placeholder():
-    pass
+def test_all_registered_routes_are_in_openapi():
+    openapi_paths = app.openapi().get("paths", {})
+    operation_ids = [
+        operation["operationId"]
+        for methods in openapi_paths.values()
+        for operation in methods.values()
+        if "operationId" in operation
+    ]
+
+    assert openapi_paths
+    assert "/api/v1/auth/login" in openapi_paths
+    assert "/api/v1/health" in openapi_paths
+    assert all(path.startswith("/api/v1/") for path in openapi_paths)
+    assert len(operation_ids) == len(set(operation_ids))
 
 
 if __name__ == "__main__":
-    generate_report()
+    try:
+        generate_report()
+    except RuntimeError as exc:
+        print(f"Erro: {exc}", file=sys.stderr)
+        sys.exit(1)
