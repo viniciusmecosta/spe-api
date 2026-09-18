@@ -1,7 +1,7 @@
 import re
 from datetime import date, datetime, time
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
-from typing import Annotated
+from typing import Annotated, Any
 
 from app.features.devices.device_schemas import (
     UserBiometricCreate,
@@ -161,6 +161,29 @@ class UserInDBBase(UserBase):
     updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator(
+        "is_active",
+        "can_manual_punch_desktop",
+        "can_manual_punch_mobile",
+        "can_export_report",
+        "is_exempt_from_rules",
+        "is_tolerance_exempt",
+        mode="before",
+    )
+    @classmethod
+    def set_boolean_defaults(cls, value: Any, info) -> Any:
+        if value is None:
+            defaults = {
+                "is_active": True,
+                "can_manual_punch_desktop": True,
+                "can_manual_punch_mobile": False,
+                "can_export_report": False,
+                "is_exempt_from_rules": False,
+                "is_tolerance_exempt": False,
+            }
+            return defaults.get(info.field_name, False)
+        return value
 
 
 class User(UserInDBBase):

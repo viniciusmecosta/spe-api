@@ -158,7 +158,6 @@ def export_sqlite_to_postgresql(
     cursor = conn.cursor()
 
     stats: dict[str, int] = {}
-    tz = get_timezone()
 
     with open(output_sql_path, "w", encoding="utf-8") as out:
         out.write("-- Dados SQLite exportados para PostgreSQL.\n")

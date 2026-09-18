@@ -579,7 +579,7 @@ def get_ddl_sql(
         )
     if not include_transaction_control:
         content = re.sub(r"\ABEGIN;\s*", "", content, count=1)
-        content = re.sub(r"\s*COMMIT;\s*\Z", "\n", content, count=1)
+        content = re.sub(r"\nCOMMIT;\s*\Z", "\n", content, count=1)
     return content
 
 
@@ -734,8 +734,6 @@ def export_data(
                 f"O caminho de destino '{output_path}' é um diretório. Pare os containers antes de exportar: {e}"
             ) from e
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    tz = get_timezone()
 
     with open(output_path, "w", encoding="utf-8") as out:
         out.write("-- Dados SQLite exportados para PostgreSQL.\n")
@@ -1388,9 +1386,8 @@ def main() -> None:
         if args.populate:
             populate_postgresql(args.dml_out, truncate_first=not args.no_truncate)
 
-        if args.verify:
-            if not verify_sync(args.sqlite_db):
-                sys.exit(1)
+        if args.verify and not verify_sync(args.sqlite_db):
+            sys.exit(1)
 
     except Exception as e:
         print(f"\n[ERRO]: {e}", file=sys.stderr)

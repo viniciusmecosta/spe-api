@@ -11,4 +11,6 @@ def upgrade():
 
 
 def downgrade():
-    pass
+    op.execute("UPDATE user_work_schedule_configs SET is_daily_excess_enabled = TRUE WHERE valid_from < '2026-09-01'")
+
+
