@@ -1,8 +1,7 @@
 import re
 from datetime import date, datetime, time
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 from typing import Annotated
-
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 from app.features.devices.device_schemas import (
     UserBiometricCreate,
@@ -97,12 +96,12 @@ class UserBase(BaseModel):
     endereco: str | None = None
     data_nascimento: PastDate = None
     role: UserRole | None = UserRole.EMPLOYEE
-    is_active: bool | None = True
-    can_manual_punch_desktop: bool | None = True
-    can_manual_punch_mobile: bool | None = False
-    can_export_report: bool | None = False
-    is_exempt_from_rules: bool | None = False
-    is_tolerance_exempt: bool | None = False
+    is_active: bool = True
+    can_manual_punch_desktop: bool = True
+    can_manual_punch_mobile: bool = False
+    can_export_report: bool = False
+    is_exempt_from_rules: bool = False
+    is_tolerance_exempt: bool = False
     auto_print_receipt: bool | None = None
 
 
@@ -131,6 +130,21 @@ class UserUpdate(BaseModel):
     is_tolerance_exempt: bool | None = None
     auto_print_receipt: bool | None = None
     biometrics: list[UserBiometricUpdate] | None = None
+
+    @field_validator(
+        "is_active",
+        "can_manual_punch_desktop",
+        "can_manual_punch_mobile",
+        "can_export_report",
+        "is_exempt_from_rules",
+        "is_tolerance_exempt",
+        mode="before",
+    )
+    @classmethod
+    def reject_null_required_flags(cls, value: bool | None) -> bool | None:
+        if value is None:
+            raise ValueError("Este campo booleano não pode ser nulo.")
+        return value
 
 
 class UserUpdateMe(BaseModel):

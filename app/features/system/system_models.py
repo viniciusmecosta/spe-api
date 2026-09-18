@@ -1,9 +1,8 @@
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
 from sqlalchemy import Column, Date, DateTime, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -16,6 +15,13 @@ def get_local_time():
 def get_local_time_naive():
     tz = ZoneInfo(settings.TIMEZONE)
     return datetime.now(tz).replace(tzinfo=None)
+
+
+def normalize_datetime(value: datetime) -> datetime:
+    timezone = ZoneInfo(settings.TIMEZONE)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone)
+    return value.astimezone(timezone)
 
 
 class AuditLog(Base):

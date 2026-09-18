@@ -5,9 +5,6 @@ import re
 import zipfile
 from calendar import monthrange
 from datetime import date, datetime, timedelta
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import Depends
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -22,6 +19,8 @@ from reportlab.platypus import (
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -156,7 +155,7 @@ class TimesheetService:
 
     def _resolve_day_background(
         self, is_holiday: bool, is_absence: bool, is_weekend: bool
-    ) -> colors.HexColor | None:
+    ) -> colors.Color | None:
         if is_holiday:
             return colors.HexColor("#FEF3C7")
         if is_absence:

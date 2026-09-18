@@ -2,13 +2,12 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logger import get_log_path
@@ -61,7 +60,8 @@ class RoutineOrchestrator:
     def _generate_backup_files_zip_sync(self) -> tuple[str | None, str | None, str | None]:
         backup_path = backup_service.create_safe_backup()
         sql_path = backup_service.create_sql_dump()
-        if not backup_path and not sql_path:
+        if not backup_path or not sql_path:
+            self._cleanup_backup_files_sync(backup_path, sql_path, None)
             return None, None, None
         files_to_compress = {}
         if backup_path:
@@ -110,7 +110,7 @@ class RoutineOrchestrator:
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path and not sql_path:
+        if not backup_path or not sql_path:
             logger.error('Backup - "Telegram horário" Error')
             return
 
@@ -309,7 +309,7 @@ class RoutineOrchestrator:
             return
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path and not sql_path:
+        if not backup_path or not sql_path:
             logger.error('Backup - "Email diário" Error')
             return
 
@@ -371,7 +371,7 @@ class RoutineOrchestrator:
 
     async def execute_manual_backup_telegram(self):
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path and not sql_path:
+        if not backup_path or not sql_path:
             logger.error('Backup - "Telegram manual" Error')
             return
 
@@ -506,7 +506,7 @@ class RoutineOrchestrator:
                     bg_session)
 
         backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path and not sql_path:
+        if not backup_path or not sql_path:
             logger.error('Backup - "Email manual" Error')
             raise BackupGenerationFailedError()
 

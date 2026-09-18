@@ -161,14 +161,12 @@ def export_sqlite_to_postgresql(
     tz = get_timezone()
 
     with open(output_sql_path, "w", encoding="utf-8") as out:
-        out.write("BEGIN;\n\n")
-        out.write("SET client_encoding = 'UTF8';\n")
-        out.write("SET standard_conforming_strings = on;\n")
-        out.write("SET check_function_bodies = false;\n")
-        out.write("SET client_min_messages = warning;\n")
-        out.write(f"SET timezone = '{tz}';\n\n")
+        out.write("-- Dados SQLite exportados para PostgreSQL.\n")
+        out.write("-- A transação é controlada pelo importador para que a carga seja atômica.\n\n")
 
         for table_name in TABLE_ORDER:
+            if table_name == "alembic_version":
+                continue
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
                 (table_name,),
@@ -188,8 +186,6 @@ def export_sqlite_to_postgresql(
             out.write(
                 f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), COALESCE((SELECT MAX(id) FROM {table_name}), 1));\n"
             )
-
-        out.write("\nCOMMIT;\n")
 
     conn.close()
     return stats

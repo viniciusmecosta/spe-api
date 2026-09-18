@@ -76,7 +76,8 @@ class BackupService:
         f.write(f"-- Data for {table} ({len(rows)} rows)\n")
         col_identifiers = ", ".join(f'"{c}"' for c in columns)
         placeholders = ", ".join(["%s"] * len(columns))
-        insert_tmpl = f'INSERT INTO "{table}" ({col_identifiers}) VALUES ({placeholders});\n'
+        conflict_clause = " ON CONFLICT (version_num) DO NOTHING" if table == "alembic_version" else ""
+        insert_tmpl = f'INSERT INTO "{table}" ({col_identifiers}) VALUES ({placeholders}){conflict_clause};\n'
 
         for row in rows:
             row_formatted = [
@@ -116,10 +117,12 @@ class BackupService:
             )
             try:
                 with conn.cursor() as cur, open(output_path, "w", encoding="utf-8") as f:
+                    cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                     f.write("-- PostgreSQL Backup (Pure Python Dumper)\n")
                     f.write("BEGIN;\n")
                     f.write("SET client_encoding = 'UTF8';\n")
                     f.write("SET standard_conforming_strings = on;\n\n")
+                    f.write("SET CONSTRAINTS ALL DEFERRED;\n\n")
 
                     cur.execute(
                         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
@@ -170,9 +173,9 @@ class BackupService:
 
     def _dump_postgresql_schema_python(self, output_path: str) -> bool:
         try:
-            from scripts.db_manager import DDL_SQL_CONTENT
+            from scripts.db_manager import get_ddl_sql
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write(DDL_SQL_CONTENT)
+                f.write(get_ddl_sql(include_alembic_version=False))
             return os.path.exists(output_path) and os.path.getsize(output_path) > 0
         except Exception as e:
             logger.exception(f"Erro ao gerar schema via Python: {type(e).__name__} - {e}", exc_info=False)

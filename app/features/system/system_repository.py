@@ -1,12 +1,11 @@
 from datetime import date, datetime, time
-from unittest.mock import MagicMock
-
 from sqlalchemy import asc, desc, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
+from unittest.mock import MagicMock
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
-from app.features.system.system_models import AuditLog, RoutineLog, get_local_time_naive
+from app.features.system.system_models import AuditLog, RoutineLog, get_local_time, normalize_datetime
 from app.features.system.system_schemas import AuditLogCreate, RoutineLogCreate
 
 
@@ -34,10 +33,10 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
                 if action:
                     stmt = stmt.where(AuditLog.action == action)
                 if start_date:
-                    dt_start = datetime.combine(start_date, time.min)
+                    dt_start = normalize_datetime(datetime.combine(start_date, time.min))
                     stmt = stmt.where(AuditLog.timestamp >= dt_start)
                 if end_date:
-                    dt_end = datetime.combine(end_date, time.max)
+                    dt_end = normalize_datetime(datetime.combine(end_date, time.max))
                     stmt = stmt.where(AuditLog.timestamp <= dt_end)
 
                 if order_by.lower() == "asc":
@@ -52,10 +51,10 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
         if action:
             query = query.filter(AuditLog.action == action)
         if start_date:
-            dt_start = datetime.combine(start_date, time.min)
+            dt_start = normalize_datetime(datetime.combine(start_date, time.min))
             query = query.filter(AuditLog.timestamp >= dt_start)
         if end_date:
-            dt_end = datetime.combine(end_date, time.max)
+            dt_end = normalize_datetime(datetime.combine(end_date, time.max))
             query = query.filter(AuditLog.timestamp <= dt_end)
 
         if order_by.lower() == "asc":
@@ -86,10 +85,10 @@ class AsyncAuditRepository(AsyncBaseRepository[AuditLog, AuditLogCreate, AuditLo
         if action:
             stmt = stmt.where(AuditLog.action == action)
         if start_date:
-            dt_start = datetime.combine(start_date, time.min)
+            dt_start = normalize_datetime(datetime.combine(start_date, time.min))
             stmt = stmt.where(AuditLog.timestamp >= dt_start)
         if end_date:
-            dt_end = datetime.combine(end_date, time.max)
+            dt_end = normalize_datetime(datetime.combine(end_date, time.max))
             stmt = stmt.where(AuditLog.timestamp <= dt_end)
 
         if order_by.lower() == "asc":
@@ -128,11 +127,11 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
                     stmt = stmt.where(RoutineLog.status == status)
 
                 if start_date:
-                    start_dt = datetime.combine(start_date, time.min)
+                    start_dt = normalize_datetime(datetime.combine(start_date, time.min))
                     stmt = stmt.where(RoutineLog.execution_time >= start_dt)
 
                 if end_date:
-                    end_dt = datetime.combine(end_date, time.max)
+                    end_dt = normalize_datetime(datetime.combine(end_date, time.max))
                     stmt = stmt.where(RoutineLog.execution_time <= end_dt)
 
                 if order_by == "asc":
@@ -149,10 +148,10 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
         if status:
             query = query.filter(RoutineLog.status == status)
         if start_date:
-            start_dt = datetime.combine(start_date, time.min)
+            start_dt = normalize_datetime(datetime.combine(start_date, time.min))
             query = query.filter(RoutineLog.execution_time >= start_dt)
         if end_date:
-            end_dt = datetime.combine(end_date, time.max)
+            end_dt = normalize_datetime(datetime.combine(end_date, time.max))
             query = query.filter(RoutineLog.execution_time <= end_dt)
         if order_by == "asc":
             query = query.order_by(asc(RoutineLog.execution_time))
@@ -196,7 +195,7 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
         if hasattr(db, "scalars") and not hasattr(db, "query"):
             stmt = select(exists().where(
                 RoutineLog.routine_type == routine_type,
-                RoutineLog.execution_time >= since_time,
+                RoutineLog.execution_time >= normalize_datetime(since_time),
                 *([RoutineLog.status == status] if status else [])
             ))
             res = db.scalar(stmt)
@@ -205,7 +204,7 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
 
         filters = [
             RoutineLog.routine_type == routine_type,
-            RoutineLog.execution_time >= since_time,
+            RoutineLog.execution_time >= normalize_datetime(since_time),
         ]
         if status:
             filters.append(RoutineLog.status == status)
@@ -243,7 +242,7 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
             execution_time: datetime | None = None,
             details: str | None = None,
     ) -> RoutineLog:
-        now_local = execution_time or get_local_time_naive()
+        now_local = normalize_datetime(execution_time) if execution_time else get_local_time()
         obj_in = RoutineLogCreate(
             routine_type=routine_type,
             status=status,
@@ -258,8 +257,8 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
             db: Session,
             cutoff_date: datetime,
     ) -> int:
-        query = db.query(RoutineLog).filter(RoutineLog.execution_time < cutoff_date)
-        count = query.delete()
+        query = db.query(RoutineLog).filter(RoutineLog.execution_time < normalize_datetime(cutoff_date))
+        count = query.delete(synchronize_session=False)
         db.commit()
         return count
 
@@ -287,11 +286,11 @@ class AsyncRoutineLogRepository(AsyncBaseRepository[RoutineLog, RoutineLogCreate
             stmt = stmt.where(RoutineLog.status == status)
 
         if start_date:
-            start_dt = datetime.combine(start_date, time.min)
+            start_dt = normalize_datetime(datetime.combine(start_date, time.min))
             stmt = stmt.where(RoutineLog.execution_time >= start_dt)
 
         if end_date:
-            end_dt = datetime.combine(end_date, time.max)
+            end_dt = normalize_datetime(datetime.combine(end_date, time.max))
             stmt = stmt.where(RoutineLog.execution_time <= end_dt)
 
         if order_by == "asc":
@@ -327,7 +326,7 @@ class AsyncRoutineLogRepository(AsyncBaseRepository[RoutineLog, RoutineLogCreate
     ) -> bool:
         stmt = select(exists().where(
             RoutineLog.routine_type == routine_type,
-            RoutineLog.execution_time >= since_time,
+            RoutineLog.execution_time >= normalize_datetime(since_time),
             *([RoutineLog.status == status] if status else [])
         ))
         res = await db.scalar(stmt)
@@ -354,7 +353,7 @@ class AsyncRoutineLogRepository(AsyncBaseRepository[RoutineLog, RoutineLogCreate
             execution_time: datetime | None = None,
             details: str | None = None,
     ) -> RoutineLog:
-        now_local = execution_time or get_local_time_naive()
+        now_local = normalize_datetime(execution_time) if execution_time else get_local_time()
         obj_in = RoutineLogCreate(
             routine_type=routine_type,
             status=status,
@@ -370,7 +369,7 @@ class AsyncRoutineLogRepository(AsyncBaseRepository[RoutineLog, RoutineLogCreate
             cutoff_date: datetime,
     ) -> int:
         from sqlalchemy import delete
-        stmt = delete(RoutineLog).where(RoutineLog.execution_time < cutoff_date)
+        stmt = delete(RoutineLog).where(RoutineLog.execution_time < normalize_datetime(cutoff_date))
         res = await db.execute(stmt)
         await db.commit()
         return res.rowcount or 0
