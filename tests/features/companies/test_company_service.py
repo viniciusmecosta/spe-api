@@ -1,8 +1,7 @@
+import pytest
+from fastapi import UploadFile
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import UploadFile
-
-import pytest
 from app.features.companies.company_exceptions import (
     CompanyAlreadyExistsError,
     CompanyNotFoundError,
@@ -265,15 +264,10 @@ async def test_upload_logo_success_old_logo_in_legacy_path_oserror(mocker, async
     mock_remove.assert_called_once()
 
 
-def test_company_service_repo_property():
+def test_company_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = company_service.repo
-    try:
-        device_repo = custom_repo
-        company_service.repo = device_repo
-        assert company_service.repo == custom_repo
-    finally:
-        company_service.repo = original_repo
+    monkeypatch.setattr(company_service, "repo", custom_repo)
+    assert company_service.repo == custom_repo
 
 
 @pytest.mark.asyncio

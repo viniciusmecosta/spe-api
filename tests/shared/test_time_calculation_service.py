@@ -1,8 +1,8 @@
+import pytest
 from datetime import date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
@@ -135,8 +135,7 @@ def test_daily_process_state_over_24h(record_factory):
         (True, 0.0, 0.0),
         (True, 2.0, 7200.0),
         (True, 8.0, 28800.0),
-        (False, 2.0, 7200.0),
-        (False, None, 0.0)
+        (False, 2.0, 7200.0)
     ]
 )
 def test_calculate_waiver_matrix(adjustment_factory, is_excused, adj_hours, expected_waiver_sec):

@@ -1,8 +1,8 @@
+import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
-import pytest
 from app.core.config import settings
 from app.features.devices.device_schemas import FeedbackPayload, ManagerVerifyResponse, TimeResponsePayload
 from app.features.devices.device_service import device_service
@@ -326,14 +326,10 @@ async def test_verify_manager_access_denied_inactive(async_db_mock: AsyncMock, m
     audit_mock.assert_called_once()
 
 
-def test_device_service_repo_property():
+def test_device_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = device_service.repo
-    try:
-        device_service.repo = custom_repo
-        assert device_service.repo == custom_repo
-    finally:
-        device_service.repo = original_repo
+    monkeypatch.setattr(device_service, "repo", custom_repo)
+    assert device_service.repo == custom_repo
 
 
 @pytest.mark.asyncio

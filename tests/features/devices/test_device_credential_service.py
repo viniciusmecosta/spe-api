@@ -1,6 +1,6 @@
+import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from app.features.devices.device_credential_service import device_credential_service
 from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
@@ -122,11 +122,7 @@ async def test_delete_device_credential_not_found(async_db_mock: AsyncMock, mock
     assert exc_info.value.status_code == 404
 
 
-def test_device_credential_service_repo_property():
+def test_device_credential_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = device_credential_service.repo
-    try:
-        device_credential_service.repo = custom_repo
-        assert device_credential_service.repo == custom_repo
-    finally:
-        device_credential_service.repo = original_repo
+    monkeypatch.setattr(device_credential_service, "repo", custom_repo)
+    assert device_credential_service.repo == custom_repo

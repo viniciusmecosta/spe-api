@@ -1,10 +1,9 @@
+import pytest
 from datetime import date, datetime, time
+from fastapi import HTTPException, UploadFile
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import HTTPException, UploadFile
-
-import pytest
 from app.features.adjustments.adjustment_exceptions import (
     AdjustmentAttachmentNotFoundError,
     AdjustmentNotFoundError,
@@ -744,14 +743,10 @@ async def test_revert_adjustment_status_approve_daily_excess(async_db_mock, mock
     mock_exec.assert_not_called()
 
 
-def test_adjustment_service_repo_property():
+def test_adjustment_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = adjustment_service.repo
-    try:
-        adjustment_service.repo = custom_repo
-        assert adjustment_service.repo == custom_repo
-    finally:
-        adjustment_service.repo = original_repo
+    monkeypatch.setattr(adjustment_service, "repo", custom_repo)
+    assert adjustment_service.repo == custom_repo
 
 
 @pytest.mark.asyncio

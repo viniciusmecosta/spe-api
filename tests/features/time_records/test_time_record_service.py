@@ -1,10 +1,9 @@
+import pytest
 from datetime import date, datetime, timedelta
+from fastapi import Request, status
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from fastapi import Request, status
-
-import pytest
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_exceptions import (
@@ -1090,11 +1089,11 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
         TimeRecordDeleteAdmin
 
     bg = BackgroundTasks()
-    mocker.patch.object(time_record_service, "_register_manual_punch", new_callable=AsyncMock)
+    mock_punch = mocker.patch.object(time_record_service, "_register_manual_punch", new_callable=AsyncMock)
     mocker.patch.object(time_record_service, "trigger_auto_print", new_callable=AsyncMock)
     mock_rec = TimeRecord(id=1, user_id=2, record_type=RecordType.ENTRY,
                           record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
-    time_record_service._register_manual_punch.return_value = mock_rec
+    mock_punch.return_value = mock_rec
 
     res1 = await time_record_service.register_entry(db_session_mock, user_id=2, request=MagicMock(),
                                                     background_tasks=bg)
@@ -1102,7 +1101,7 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
 
     mock_rec2 = TimeRecord(id=2, user_id=2, record_type=RecordType.EXIT,
                            record_datetime=datetime(2026, 8, 1, 18, 0, tzinfo=ZoneInfo("UTC")))
-    time_record_service._register_manual_punch.return_value = mock_rec2
+    mock_punch.return_value = mock_rec2
     res2 = await time_record_service.register_exit(db_session_mock, user_id=2, request=MagicMock(), background_tasks=bg)
     assert res2 == mock_rec2
 

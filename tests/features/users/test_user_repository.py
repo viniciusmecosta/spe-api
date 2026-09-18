@@ -1,8 +1,8 @@
+import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import pytest
-import pytest_asyncio
 from app.database.base import Base
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
@@ -183,10 +183,12 @@ def test_sync_user_repository(db_session, normal_user):
 
     u = user_repository.get_by_username(db_session, normal_user.username)
 
-    assert u is not None and u.id == normal_user.id
+    assert u is not None
+    assert u.id == normal_user.id
 
     u2 = user_repository.get(db_session, normal_user.id)
-    assert u2 is not None and u2.id == normal_user.id
+    assert u2 is not None
+    assert u2.id == normal_user.id
 
     users_asc = user_repository.get_multi(
         db_session,
