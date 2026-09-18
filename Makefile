@@ -109,8 +109,7 @@ db-check:
 	$(PYTHON) scripts/db_manager.py --verify
 
 # Fluxo completo: sobe banco, exporta SQLite, popula PostgreSQL e audita celula a celula. Use para migrar com 1 comando.
-db-migrate-all: db-pg-up
-	$(PYTHON) scripts/db_manager.py --export-all
+db-migrate-all: db-export db-pg-up
 	$(PYTHON) scripts/db_manager.py --populate
 	$(PYTHON) scripts/db_manager.py --verify
 

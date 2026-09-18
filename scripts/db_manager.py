@@ -9,6 +9,7 @@ import time
 from datetime import date, datetime
 from datetime import time as dtime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 try:
@@ -637,6 +638,14 @@ def get_timezone() -> str:
 
 
 def export_ddl(output_path: Path = DEFAULT_DDL_PATH) -> None:
+    if output_path.is_dir():
+        try:
+            shutil.rmtree(output_path)
+        except OSError as e:
+            raise RuntimeError(
+                f"O caminho de destino '{output_path}' é um diretório (provavelmente criado pelo Docker volume mount). "
+                f"Pare os containers com 'docker compose down' antes de exportar: {e}"
+            ) from e
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tz = get_timezone()
     content = DDL_SQL_CONTENT.strip().replace("SET timezone = 'America/Fortaleza';", f"SET timezone = '{tz}';")
@@ -691,6 +700,13 @@ def export_data(
     cursor = conn.cursor()
 
     stats: dict[str, int] = {}
+    if output_path.is_dir():
+        try:
+            shutil.rmtree(output_path)
+        except OSError as e:
+            raise RuntimeError(
+                f"O caminho de destino '{output_path}' é um diretório. Pare os containers antes de exportar: {e}"
+            ) from e
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     tz = get_timezone()
