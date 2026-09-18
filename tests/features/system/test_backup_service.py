@@ -176,6 +176,19 @@ def test_dump_table_data_empty(mocker):
     mock_file.write.assert_not_called()
 
 
+def test_dump_table_data_alembic_version_is_idempotent():
+    service = BackupService()
+    mock_cur = MagicMock()
+    mock_cur.description = [("version_num",)]
+    mock_cur.fetchall.return_value = [("045",)]
+    mock_cur.mogrify.return_value = b"INSERT INTO alembic_version VALUES ('045');\n"
+    mock_file = MagicMock()
+
+    service._dump_table_data(mock_cur, mock_file, "alembic_version")
+
+    assert "ON CONFLICT (version_num) DO NOTHING" in mock_cur.mogrify.call_args.args[0]
+
+
 def test_sync_table_sequences_alembic_and_none(mocker):
     service = BackupService()
     mock_cur = MagicMock()

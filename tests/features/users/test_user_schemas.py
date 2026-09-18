@@ -1,8 +1,7 @@
+import pytest
 from datetime import date, timedelta
-
 from pydantic import ValidationError
 
-import pytest
 from app.features.users.user_schemas import (
     UserBase,
     UserUpdate,
@@ -60,6 +59,14 @@ def test_user_update_future_dob():
     future_date = date.today() + timedelta(days=1)
     with pytest.raises(ValidationError):
         UserUpdate(data_nascimento=future_date)
+
+
+def test_user_flags_reject_explicit_nulls():
+    with pytest.raises(ValidationError):
+        UserBase(is_active=None)
+
+    with pytest.raises(ValidationError):
+        UserUpdate(can_export_report=None)
 
 
 def test_user_update_me_valid():

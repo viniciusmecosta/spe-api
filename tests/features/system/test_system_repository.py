@@ -2,7 +2,7 @@ from datetime import date, datetime
 from unittest.mock import MagicMock
 
 import pytest
-from app.features.system.system_models import AuditLog, RoutineLog, get_local_time_naive
+from app.features.system.system_models import AuditLog, RoutineLog, get_local_time, get_local_time_naive, normalize_datetime
 from app.features.system.system_repository import (
     AsyncAuditRepository,
     AsyncRoutineLogRepository,
@@ -15,6 +15,11 @@ from app.features.system.system_schemas import AuditLogCreate
 def test_system_models_local_time_naive():
     t = get_local_time_naive()
     assert t.tzinfo is None
+
+
+def test_system_models_normalize_postgresql_datetimes():
+    assert get_local_time().tzinfo is not None
+    assert normalize_datetime(datetime(2026, 1, 1)).tzinfo is not None
 
 
 def test_audit_repository(db_session, normal_user):

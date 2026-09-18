@@ -519,8 +519,9 @@ async def test_execute_manual_backup_telegram_sends_yesterday_and_today_logs(
         orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
         mock_backup_service, mock_telegram_service, mock_os, mock_get_log_path,
 ):
-    mock_backup_service.create_safe_backup.return_value = "/tmp/backup.zip"
-    mock_backup_service.create_sql_dump.return_value = None
+    mock_backup_service.create_safe_backup.return_value = "/tmp/schema.sql"
+    mock_backup_service.create_sql_dump.return_value = "/tmp/data.sql"
+    mock_backup_service.compress_files.return_value = "/tmp/backup.zip"
     mock_telegram_service.send_document.return_value = True
     await orchestrator.execute_manual_backup_telegram()
     assert mock_telegram_service.send_document.call_count == 3
@@ -572,10 +573,10 @@ async def test_routine_orchestrator_environment_dev_and_cleanup_oserror(orchestr
             patch("app.features.system.routine_orchestrator.email_service.send_email", return_value=True):
         mock_fetch.return_value = (["admin@test.com"], "html", "period", datetime(2023, 10, 14).date(),
                                    datetime(2023, 10, 15).date())
-        mock_gen.return_value = ("/tmp/b.bak", None, None)
+        mock_gen.return_value = (None, None, None)
         mock_att.return_value = []
-        success = await orchestrator.send_manual_backup_email(db=None)
-        assert success is True
+        with pytest.raises(BackupGenerationFailedError):
+            await orchestrator.send_manual_backup_email(db=None)
         mock_fetch.assert_awaited_once_with(db_session_mock)
 
 
@@ -597,6 +598,16 @@ def test_generate_backup_files_zip_sync_postgresql(mocker):
         {"temp_backup.sql": "spe-db.sql", "temp_inserts.sql": "spe_dump.sql"},
         "temp_backup.sql.zip"
     )
+
+
+def test_generate_backup_files_zip_sync_requires_schema_and_data(mocker):
+    orchestrator = RoutineOrchestrator()
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_safe_backup", return_value="schema.sql")
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_sql_dump", return_value=None)
+    mock_compress = mocker.patch("app.features.system.routine_orchestrator.backup_service.compress_files")
+
+    assert orchestrator._generate_backup_files_zip_sync() == (None, None, None)
+    mock_compress.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -652,7 +663,7 @@ async def test_execute_manual_backup_telegram_uncompressed_sql(
         orchestrator, mock_datetime, mock_get_db_session, db_session_mock,
         mock_backup_service, mock_telegram_service, mock_os, mock_get_log_path,
 ):
-    mock_backup_service.create_safe_backup.return_value = None
+    mock_backup_service.create_safe_backup.return_value = "/tmp/schema.sql"
     mock_backup_service.create_sql_dump.return_value = "/tmp/dump.sql"
     mock_backup_service.compress_files.return_value = None
     mock_telegram_service.send_document.return_value = True
