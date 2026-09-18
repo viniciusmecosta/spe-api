@@ -68,6 +68,8 @@ def test_user_flags_reject_explicit_nulls():
     with pytest.raises(ValidationError):
         UserUpdate(can_export_report=None)
 
+    assert UserUpdate.reject_null_required_flags(True) is True
+
 
 def test_user_update_me_valid():
     dob = date(1990, 1, 1)

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 from app.features.system.system_models import AuditLog, RoutineLog, get_local_time, get_local_time_naive, normalize_datetime
@@ -20,6 +21,7 @@ def test_system_models_local_time_naive():
 def test_system_models_normalize_postgresql_datetimes():
     assert get_local_time().tzinfo is not None
     assert normalize_datetime(datetime(2026, 1, 1)).tzinfo is not None
+    assert normalize_datetime(datetime(2026, 1, 1, tzinfo=ZoneInfo("UTC"))).tzinfo is not None
 
 
 def test_audit_repository(db_session, normal_user):

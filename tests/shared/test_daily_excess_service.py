@@ -98,13 +98,6 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     )
 
     mock_db = MagicMock()
-    # We have 5 queries in sync:
-    # 1. PayrollClosure.first() -> None
-    # 2. AdjustmentRequest EXTRA_TIME.first() -> None
-    # 3. TimeRecord.order_by.all() -> [r1, r2]
-    # 4. UserWorkScheduleConfig.first() -> schedule
-    # 5. AdjustmentRequest DAILY_EXCESS.all() -> [old_adj]
-    
     mock_q_payroll = MagicMock()
     mock_q_payroll.filter.return_value.first.return_value = None
     
@@ -116,7 +109,7 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     
     mock_q_schedule = MagicMock()
     mock_q_schedule.filter.return_value.order_by.return_value.first.return_value = schedule
-    mock_q_schedule.filter.return_value.first.return_value = schedule # In case order_by is missed
+    mock_q_schedule.filter.return_value.first.return_value = schedule
     
     mock_q_dailyexcess = MagicMock()
     mock_q_dailyexcess.filter.return_value.all.return_value = [old_adj]
@@ -125,9 +118,6 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
         if model.__name__ == 'PayrollClosure':
             return mock_q_payroll
         elif model.__name__ == 'AdjustmentRequest':
-            # distinguish between EXTRA_TIME and DAILY_EXCESS based on usage? 
-            # Actually, both are AdjustmentRequest, so they return the same query mock.
-            # We can use side_effect on the filter result.
             pass
         elif model.__name__ == 'TimeRecord':
             return mock_q_records
@@ -137,10 +127,9 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     
     mock_db.query.side_effect = query_side_effect
     
-    # Since AdjustmentRequest is queried twice, let's just make its filter return a mock that handles both first() and all()
     mock_adj_filter = MagicMock()
-    mock_adj_filter.first.side_effect = [None] # For EXTRA_TIME
-    mock_adj_filter.all.return_value = [old_adj] # For DAILY_EXCESS
+    mock_adj_filter.first.side_effect = [None]
+    mock_adj_filter.all.return_value = [old_adj]
     
     mock_q_adj = MagicMock()
     mock_q_adj.filter.return_value = mock_adj_filter

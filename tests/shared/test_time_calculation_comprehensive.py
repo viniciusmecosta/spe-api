@@ -71,12 +71,11 @@ def test_scenario_8h_worked_30m_early_lunch_leaves_early(time_service, schedule_
     r4 = TimeRecord(id=4, user_id=1, record_datetime=datetime(2026, 9, 2, 16, 30, tzinfo=tz), record_type=RecordType.EXIT)
     records = [r1, r2, r3, r4]
 
-    # 1. Sem ajuste ou com ajuste PENDING
     res_pending = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=None)
-    assert res_pending.raw_seconds == 28800.0  # 8h
-    assert res_pending.early_return_seconds == 1800.0  # 30m
-    assert res_pending.total_excess_seconds == 1800.0  # 30m
-    assert res_pending.accounted_seconds == 27000.0  # 7h30!
+    assert res_pending.raw_seconds == 28800.0
+    assert res_pending.early_return_seconds == 1800.0
+    assert res_pending.total_excess_seconds == 1800.0
+    assert res_pending.accounted_seconds == 27000.0
 
     adj = excess_service._create_daily_excess_adjustment(1, d, records, res_pending)
     assert adj is not None
@@ -84,15 +83,13 @@ def test_scenario_8h_worked_30m_early_lunch_leaves_early(time_service, schedule_
     assert "30min de almoço adiantado" in adj.reason_text
     assert "jornada excedente" not in adj.reason_text
 
-    # 2. Com ajuste REJECTED
     adj_rej = AdjustmentRequest(status=AdjustmentStatus.REJECTED, amount_hours=0.5)
     res_rejected = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=adj_rej)
-    assert res_rejected.accounted_seconds == 27000.0  # Permanece 7h30
+    assert res_rejected.accounted_seconds == 27000.0
 
-    # 3. Com ajuste APPROVED
     adj_app = AdjustmentRequest(status=AdjustmentStatus.APPROVED, amount_hours=0.5, approved_amount_hours=0.5)
     res_approved = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=adj_app)
-    assert res_approved.accounted_seconds == 28800.0  # Restaura para 8h00!
+    assert res_approved.accounted_seconds == 28800.0
 
 
 def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, schedule_8h, excess_service):
@@ -123,15 +120,13 @@ def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, sche
     assert "60min de jornada excedente" in adj.reason_text
     assert "30min de almoço adiantado" in adj.reason_text
 
-    # Aprovado parcial (1h)
     adj_part = AdjustmentRequest(status=AdjustmentStatus.APPROVED, amount_hours=1.5, approved_amount_hours=1.0)
     res_part = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=adj_part)
-    assert res_part.accounted_seconds == 32400.0  # 9h00
+    assert res_part.accounted_seconds == 32400.0
 
-    # Aprovado total (1.5h)
     adj_full = AdjustmentRequest(status=AdjustmentStatus.APPROVED, amount_hours=1.5, approved_amount_hours=1.5)
     res_full = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=adj_full)
-    assert res_full.accounted_seconds == 34200.0  # 9h30
+    assert res_full.accounted_seconds == 34200.0
 
 
 def test_scenario_legacy_schedule_disabled(time_service):
