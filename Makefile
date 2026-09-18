@@ -1,9 +1,11 @@
-.PHONY: setup run run-prod docker-build docker-up docker-down migrate seed clean test lint reset-db dump restore venv db-export db-pg-up db-pg-populate db-pg-setup db-pg-reset db-check db-migrate-all db_pg_up db_migrate_all db-restore db_restore
+.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore venv db-pg-up db-dump-sqlite db-apply-dump db-check db-migrate-all
 
 ifeq ($(OS),Windows_NT)
     PYTHON := .venv\Scripts\python.exe
+    ALEMBIC := .venv\Scripts\alembic.exe
 else
     PYTHON := .venv/bin/python
+    ALEMBIC := .venv/bin/alembic
 endif
 
 
@@ -22,15 +24,15 @@ run-prod:
 
 # Gera revisao de migracao Alembic. Use apos alterar modelos (ex: make migrate msg="descricao").
 migrate:
-	alembic revision --autogenerate -m "$(msg)"
+	$(ALEMBIC) revision --autogenerate -m "$(msg)"
 
-# Aplica migracoes pendentes no banco. Use para atualizar o schema via Alembic.
+# Aplica migracoes pendentes no banco via Alembic. Use para criar ou atualizar o schema no PostgreSQL.
 upgrade:
-	alembic upgrade head
+	$(ALEMBIC) upgrade head
 
 # Popula banco com dados iniciais basicos. Use ao inicializar instalacao nova.
 seed:
-	python app/initial_data.py
+	$(PYTHON) app/initial_data.py
 
 # Constroi imagens Docker do projeto. Use apos alterar Dockerfile ou dependencias.
 docker-build:
@@ -61,17 +63,21 @@ test:
 lint:
 	mypy app
 
-# Gera dump SQL oficial fidedigno do PostgreSQL. Use para criar backup manual completo.
-dump:
+# Gera backup desmembrado do PostgreSQL: DDL live (spe-db.sql) e inserts live (spe_dump.sql) em spe.zip.
+dump: db-pg-up
 	$(PYTHON) scripts/db_manager.py --dump
 
-# Restaura o banco a partir do spe.zip do email ou de arquivos SQL. Use para aplicar backup no PostgreSQL.
+# Extrai a DDL da estrutura atual diretamente do PostgreSQL ativo para spe-db.sql.
+db-dump-ddl: db-pg-up
+	$(PYTHON) scripts/db_manager.py --dump-ddl
+
+# Extrai apenas os inserts de dados diretamente do PostgreSQL ativo para spe_dump.sql.
+db-dump-data: db-pg-up
+	$(PYTHON) scripts/db_manager.py --dump-data
+
+# Restaura o banco a partir do backup recebido por e-mail (spe.zip ou SQL). Limpa dados existentes e aplica novos.
 restore: db-pg-up
-	$(PYTHON) scripts/db_manager.py --restore
-
-db-restore: restore
-
-db_restore: restore
+	$(PYTHON) scripts/apply_sql_to_postgresql.py --restore
 
 # Abre shell com ambiente virtual ativado. Use para entrar no ambiente virtual no terminal.
 venv:
@@ -81,38 +87,21 @@ venv:
 		bash -c "source .venv/bin/activate && exec bash" ; \
 	fi
 
-# Exporta DDL e inserts do SQLite para scripts/. Use para inspecionar ou exportar manualmente.
-db-export:
-	$(PYTHON) scripts/db_manager.py --export-all
-
-# Sobe apenas o container PostgreSQL no Docker e aguarda estar pronto. Use para ligar o banco.
+# Sobe apenas o container PostgreSQL no Docker e aguarda estar pronto. Use para ligar o banco de dados.
 db-pg-up:
 	docker compose up -d --wait db
 
-# Popula o PostgreSQL com os scripts SQL existentes. Use para recarregar dados sem reexportar.
-db-pg-populate:
-	$(PYTHON) scripts/db_manager.py --populate
+# Exporta dados do SQLite (spe.db) em script SQL de inserts compativel com PostgreSQL. Use para gerar dump dos dados.
+db-dump-sqlite:
+	$(PYTHON) scripts/export_sqlite_to_postgresql.py
 
-# Sobe o banco, popula e audita paridade. Use para setup e validacao completa do PostgreSQL.
-db-pg-setup: db-pg-up
-	$(PYTHON) scripts/db_manager.py --populate
-	$(PYTHON) scripts/db_manager.py --verify
+# Limpa o PostgreSQL e aplica o dump de dados SQL com transacao atomica e constraints diferidas.
+db-apply-dump:
+	$(PYTHON) scripts/apply_sql_to_postgresql.py
 
-# Reinicia container e volume Docker do PostgreSQL do zero. Use para reset total limpo do banco.
-db-pg-reset:
-	docker compose down db -v
-	docker compose up -d --wait db
-	$(PYTHON) scripts/db_manager.py --populate
-
-# Audita todas as linhas e celulas comparando SQLite e PostgreSQL. Use para verificar integridade dos dados.
+# Audita todas as linhas e celulas comparando SQLite e PostgreSQL. Use para verificar integridade e paridade dos dados.
 db-check:
-	$(PYTHON) scripts/db_manager.py --verify
+	$(PYTHON) scripts/verify_parity.py
 
-# Fluxo completo: sobe banco, exporta SQLite, popula PostgreSQL e audita celula a celula. Use para migrar com 1 comando.
-db-migrate-all: db-export db-pg-up
-	$(PYTHON) scripts/db_manager.py --populate
-	$(PYTHON) scripts/db_manager.py --verify
-
-db_pg_up: db-pg-up
-
-db_migrate_all: db-migrate-all
+# Fluxo completo: sobe banco, aplica Alembic 001, gera dump do SQLite, aplica no PostgreSQL e audita paridade.
+db-migrate-all: db-pg-up upgrade db-dump-sqlite db-apply-dump db-check

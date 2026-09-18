@@ -122,15 +122,6 @@ def _export_table_data(out, table_name: str, rows: list, batch_size: int) -> Non
     cols = list(rows[0].keys())
     cols_str = ", ".join(f'"{c}"' for c in cols)
 
-    if table_name == "alembic_version":
-        for r in rows:
-            v = format_cell(table_name, "version_num", r["version_num"])
-            out.write(
-                f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
-            )
-        out.write("\n")
-        return
-
     for i in range(0, len(rows), batch_size):
         batch = rows[i: i + batch_size]
         value_tuples = []
@@ -148,7 +139,7 @@ def _export_table_data(out, table_name: str, rows: list, batch_size: int) -> Non
 
 
 def export_sqlite_to_postgresql(
-        sqlite_path: Path, output_sql_path: Path, batch_size: int = 100
+        sqlite_path: Path, output_sql_path: Path, batch_size: int = 500
 ) -> dict[str, int]:
     if not sqlite_path.exists():
         raise FileNotFoundError(f"Arquivo SQLite não encontrado: {sqlite_path}")
@@ -183,7 +174,7 @@ def export_sqlite_to_postgresql(
 
         for table_name in IDENTITY_TABLES:
             out.write(
-                f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), COALESCE((SELECT MAX(id) FROM {table_name}), 1));\n"
+                f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), COALESCE((SELECT MAX(id) FROM {table_name}), 1), (SELECT COUNT(*) > 0 FROM {table_name}));\n"
             )
 
     conn.close()

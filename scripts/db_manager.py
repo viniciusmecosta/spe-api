@@ -1,1106 +1,143 @@
 import argparse
-import json
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
-import time
-from datetime import date, datetime
-from datetime import time as dtime
+import zipfile
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-
-try:
-    import psycopg2
-except ImportError:
-    psycopg2 = None
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-FILENAME_SPE_DB = "spe-db.sql"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.apply_sql_to_postgresql import (
+    apply_sql_file,
+    get_pg_credentials,
+    load_environment,
+    restore_backup,
+)
+from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
+from scripts.verify_parity import verify_parity
 FILENAME_SPE_DUMP = "spe_dump.sql"
+FILENAME_SPE_DB = "spe-db.sql"
+FILENAME_SPE_ZIP = "spe.zip"
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
-DEFAULT_DDL_PATH = ROOT_DIR / "scripts" / FILENAME_SPE_DB
-DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
+DEFAULT_SCHEMA_PATH = ROOT_DIR / FILENAME_SPE_DB
 DEFAULT_DUMP_PATH = ROOT_DIR / FILENAME_SPE_DUMP
-CURRENT_SCHEMA_REVISION = "001"
+DEFAULT_ZIP_PATH = ROOT_DIR / FILENAME_SPE_ZIP
+DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 
-TABLE_ORDER = [
-    "alembic_version",
-    "companies",
-    "printers",
-    "users",
-    "device_credentials",
-    "firmwares",
-    "holidays",
-    "user_biometrics",
-    "user_work_schedule_configs",
-    "time_records",
-    "adjustment_requests",
-    "adjustment_attachments",
-    "payroll_closures",
-    "audit_logs",
-    "routine_logs",
-]
 
-BOOLEAN_COLUMNS = {
-    "companies": {"auto_print_receipt"},
-    "printers": {"status"},
-    "users": {
-        "is_active",
-        "can_manual_punch_desktop",
-        "can_manual_punch_mobile",
-        "can_export_report",
-        "is_exempt_from_rules",
-        "is_tolerance_exempt",
-        "auto_print_receipt",
-    },
-    "device_credentials": {"is_active"},
-    "user_work_schedule_configs": {"is_daily_excess_enabled"},
-    "time_records": {"is_ignored", "is_verified"},
-    "payroll_closures": {"is_closed"},
-}
+def _extract_extensions_and_types(creds: dict[str, str]) -> list[str]:
+    import psycopg2
 
-JSONB_COLUMNS = {
-    "audit_logs": {"old_data", "new_data"},
-}
+    parts: list[str] = []
+    try:
+        conn = psycopg2.connect(
+            host=creds["host"],
+            port=int(creds["port"]),
+            user=creds["user"],
+            password=creds["password"],
+            dbname=creds["dbname"],
+            connect_timeout=3,
+        )
+        with conn.cursor() as cur:
+            cur.execute("SELECT extname FROM pg_extension WHERE extname != 'plpgsql';")
+            for ext in cur.fetchall():
+                parts.append(f'CREATE EXTENSION IF NOT EXISTS "{ext[0]}";')
+            parts.append("")
 
-IDENTITY_TABLES = [
-    "companies",
-    "printers",
-    "users",
-    "device_credentials",
-    "firmwares",
-    "holidays",
-    "user_biometrics",
-    "user_work_schedule_configs",
-    "time_records",
-    "adjustment_requests",
-    "adjustment_attachments",
-    "payroll_closures",
-    "audit_logs",
-    "routine_logs",
-]
+            cur.execute("""
+                SELECT t.typname, array_agg(e.enumlabel ORDER BY e.enumsortorder)
+                FROM pg_type t
+                JOIN pg_enum e ON t.oid = e.enumtypid
+                JOIN pg_namespace n ON t.typnamespace = n.oid
+                WHERE n.nspname = 'public'
+                GROUP BY t.typname;
+            """)
+            for typ, labels in cur.fetchall():
+                labels_str = ", ".join(f"'{lbl}'" for lbl in labels)
+                parts.append(
+                    f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '{typ}') "
+                    f"THEN CREATE TYPE {typ} AS ENUM ({labels_str}); END IF; END $$;"
+                )
+            parts.append("")
+        conn.close()
+    except Exception:
+        pass
+    return parts
 
-DDL_SQL_CONTENT = """BEGIN;
 
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SET check_function_bodies = false;
-SET client_min_messages = warning;
-SET row_security = off;
-SET timezone = 'America/Fortaleza';
+def _extract_tables_and_indexes(engine: Any, metadata: Any, include_alembic_version: bool) -> list[str]:
+    from sqlalchemy.schema import CreateIndex, CreateTable
 
-DO $$
-BEGIN
-    EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'America/Fortaleza');
-END $$;
+    parts: list[str] = []
+    for table_name, table in metadata.tables.items():
+        if table_name == "alembic_version" and not include_alembic_version:
+            continue
+        create_table_stmt = str(CreateTable(table).compile(engine)).strip()
+        parts.append(f"{create_table_stmt};")
+        for idx in table.indexes:
+            create_index_stmt = str(CreateIndex(idx).compile(engine)).strip()
+            parts.append(f"{create_index_stmt};")
+        parts.append("")
+    return parts
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'recordtype') THEN
-        CREATE TYPE recordtype AS ENUM ('ENTRY', 'EXIT');
-    END IF;
+def extract_live_ddl_from_postgres(include_alembic_version: bool = False) -> str:
+    from sqlalchemy import create_engine, MetaData
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'adjustmenttype') THEN
-        CREATE TYPE adjustmenttype AS ENUM (
-            'FORGOT_PUNCH',
-            'PUNCH_NOT_COUNTED',
-            'DELETE_PUNCH',
-            'WAIVER',
-            'EXTRA_TIME',
-            'DAILY_EXCESS',
-            'OTHER'
-        );
-    END IF;
+    creds = get_pg_credentials()
+    url = f"postgresql://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['dbname']}"
+    engine = create_engine(url)
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'adjustmentstatus') THEN
-        CREATE TYPE adjustmentstatus AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
-    END IF;
+    ddl_parts = [
+        "SET client_encoding = 'UTF8';",
+        "SET standard_conforming_strings = on;",
+        "SET check_function_bodies = false;",
+        "SET client_min_messages = warning;",
+        "SET row_security = off;\n",
+    ]
+    ddl_parts.extend(_extract_extensions_and_types(creds))
+    ddl_parts.extend(_extract_tables_and_indexes(engine, metadata, include_alembic_version))
 
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'devicekeytype') THEN
-        CREATE TYPE devicekeytype AS ENUM ('DEVICE', 'CONSUMER');
-    END IF;
-END $$;
+    return "\n".join(ddl_parts)
 
-CREATE TABLE IF NOT EXISTS companies (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    name TEXT NOT NULL,
-    cnpj TEXT NOT NULL,
-    address TEXT NOT NULL,
-    phone TEXT,
-    logo_path TEXT,
-    auto_print_receipt BOOLEAN NOT NULL DEFAULT FALSE,
-    default_printer_id INTEGER
-);
 
-CREATE TABLE IF NOT EXISTS printers (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    name TEXT NOT NULL,
-    address TEXT NOT NULL,
-    status BOOLEAN NOT NULL DEFAULT TRUE,
-    paper_width INTEGER NOT NULL DEFAULT 80,
-    company_id INTEGER NOT NULL,
-    CONSTRAINT fk_printers_company_id FOREIGN KEY (company_id) REFERENCES companies (id) ON DELETE CASCADE
-);
+def _load_fallback_migration_ddl(include_alembic_version: bool) -> str:
+    migration_file = ROOT_DIR / "alembic" / "versions" / "001_db_base.py"
+    if not migration_file.exists():
+        raise FileNotFoundError(f"Arquivo de migração base não encontrado: {migration_file}")
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_companies_default_printer_id'
-    ) THEN
-        ALTER TABLE companies 
-        ADD CONSTRAINT fk_companies_default_printer_id 
-        FOREIGN KEY (default_printer_id) REFERENCES printers (id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
-    END IF;
-END $$;
+    content = migration_file.read_text(encoding="utf-8")
+    match = re.search(r'SCHEMA_SQL\s*=\s*"""(.*?)"""', content, re.DOTALL)
+    if not match:
+        raise ValueError("Constante SCHEMA_SQL não encontrada na migração 001_db_base.py")
 
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    username TEXT NOT NULL,
-    name TEXT,
-    email TEXT,
-    cpf TEXT,
-    pis TEXT,
-    endereco TEXT,
-    data_nascimento DATE,
-    password_hash TEXT,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    role TEXT NOT NULL DEFAULT 'EMPLOYEE' CHECK (role IN ('EMPLOYEE', 'MANAGER', 'MAINTAINER')),
-    can_manual_punch_desktop BOOLEAN NOT NULL DEFAULT TRUE,
-    can_manual_punch_mobile BOOLEAN NOT NULL DEFAULT FALSE,
-    can_export_report BOOLEAN NOT NULL DEFAULT FALSE,
-    is_exempt_from_rules BOOLEAN NOT NULL DEFAULT FALSE,
-    is_tolerance_exempt BOOLEAN NOT NULL DEFAULT FALSE,
-    auto_print_receipt BOOLEAN,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    schema_sql = match.group(1).strip()
+    alembic_stmt = (
+        "\nCREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY);\n"
+        "INSERT INTO alembic_version (version_num) VALUES ('001') ON CONFLICT (version_num) DO NOTHING;\n"
+    )
+    return f"{schema_sql}\n{alembic_stmt}" if include_alembic_version else schema_sql
 
-CREATE TABLE IF NOT EXISTS device_credentials (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    name TEXT NOT NULL,
-    key_type devicekeytype NOT NULL DEFAULT 'DEVICE',
-    api_key_hash TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS firmwares (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    version TEXT NOT NULL,
-    file_path TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS holidays (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    date DATE NOT NULL UNIQUE,
-    name TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS user_biometrics (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    sensor_index INTEGER,
-    template_data TEXT,
-    finger_id INTEGER,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_biometrics_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS user_work_schedule_configs (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-    daily_hours DOUBLE PRECISION NOT NULL,
-    entry_1 TIME WITHOUT TIME ZONE,
-    exit_1 TIME WITHOUT TIME ZONE,
-    entry_2 TIME WITHOUT TIME ZONE,
-    exit_2 TIME WITHOUT TIME ZONE,
-    valid_from DATE NOT NULL,
-    valid_until DATE,
-    is_daily_excess_enabled BOOLEAN DEFAULT TRUE,
-    CONSTRAINT fk_user_work_schedule_configs_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS time_records (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    record_type recordtype NOT NULL,
-    record_datetime TIMESTAMPTZ NOT NULL,
-    ip_address TEXT,
-    device_name TEXT,
-    platform TEXT,
-    biometric_id INTEGER,
-    edited_by INTEGER,
-    edit_justification TEXT,
-    deleted_at TIMESTAMPTZ,
-    deleted_by INTEGER,
-    is_ignored BOOLEAN NOT NULL DEFAULT FALSE,
-    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    original_record_id INTEGER,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ,
-    CONSTRAINT fk_time_records_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
-    CONSTRAINT fk_time_records_biometric_id FOREIGN KEY (biometric_id) REFERENCES user_biometrics (id) ON DELETE SET NULL,
-    CONSTRAINT fk_time_records_edited_by FOREIGN KEY (edited_by) REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT fk_time_records_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT fk_time_records_original_record_id FOREIGN KEY (original_record_id) REFERENCES time_records (id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS adjustment_requests (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    adjustment_type adjustmenttype NOT NULL,
-    record_type recordtype,
-    target_date DATE NOT NULL,
-    time TIME WITHOUT TIME ZONE,
-    amount_hours DOUBLE PRECISION,
-    reason_text TEXT,
-    status adjustmentstatus NOT NULL DEFAULT 'PENDING',
-    manager_id INTEGER,
-    manager_comment TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    reviewed_at TIMESTAMPTZ,
-    deleted_at TIMESTAMPTZ,
-    deleted_by INTEGER,
-    approved_amount_hours DOUBLE PRECISION,
-    CONSTRAINT fk_adjustment_requests_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-    CONSTRAINT fk_adjustment_requests_manager_id FOREIGN KEY (manager_id) REFERENCES users (id) ON DELETE SET NULL,
-    CONSTRAINT fk_adjustment_requests_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS adjustment_attachments (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    adjustment_request_id INTEGER NOT NULL,
-    file_path TEXT NOT NULL,
-    file_type TEXT NOT NULL,
-    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_adjustment_attachments_request_id FOREIGN KEY (adjustment_request_id) REFERENCES adjustment_requests (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS payroll_closures (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    month SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
-    year INTEGER NOT NULL CHECK (year >= 2000),
-    is_closed BOOLEAN NOT NULL DEFAULT TRUE,
-    closed_by_user_id INTEGER NOT NULL,
-    closed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    report_path TEXT,
-    deleted_at TIMESTAMPTZ,
-    deleted_by INTEGER,
-    reopen_observation TEXT,
-    CONSTRAINT fk_payroll_closures_closed_by FOREIGN KEY (closed_by_user_id) REFERENCES users (id) ON DELETE RESTRICT,
-    CONSTRAINT fk_payroll_closures_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS audit_logs (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id INTEGER,
-    action TEXT NOT NULL,
-    entity TEXT NOT NULL,
-    entity_id INTEGER,
-    old_data JSONB,
-    new_data JSONB,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_audit_logs_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS routine_logs (
-    id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    routine_type TEXT NOT NULL,
-    execution_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    target_date DATE,
-    status TEXT NOT NULL,
-    details TEXT
-);
-
-CREATE TABLE IF NOT EXISTS alembic_version (
-    version_num VARCHAR(32) NOT NULL PRIMARY KEY
-);
-
-INSERT INTO alembic_version (version_num)
-VALUES ('001')
-ON CONFLICT (version_num) DO NOTHING;
-
-CREATE UNIQUE INDEX IF NOT EXISTS ix_companies_cnpj ON companies (cnpj);
-CREATE INDEX IF NOT EXISTS ix_companies_id ON companies (id);
-CREATE INDEX IF NOT EXISTS ix_companies_default_printer_id ON companies (default_printer_id);
-
-CREATE INDEX IF NOT EXISTS ix_printers_id ON printers (id);
-CREATE INDEX IF NOT EXISTS ix_printers_company_id ON printers (company_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users (username);
-CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email);
-CREATE UNIQUE INDEX IF NOT EXISTS ix_users_cpf ON users (cpf);
-CREATE INDEX IF NOT EXISTS ix_users_id ON users (id);
-CREATE INDEX IF NOT EXISTS idx_users_active_role ON users (is_active, role);
-CREATE INDEX IF NOT EXISTS idx_users_name_trgm ON users USING gin (name gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS ix_device_credentials_id ON device_credentials (id);
-CREATE INDEX IF NOT EXISTS idx_device_credentials_lookup ON device_credentials (api_key_hash, key_type, is_active);
-
-CREATE INDEX IF NOT EXISTS ix_firmwares_id ON firmwares (id);
-CREATE INDEX IF NOT EXISTS idx_firmwares_version_created ON firmwares (version, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS ix_holidays_id ON holidays (id);
-
-CREATE INDEX IF NOT EXISTS ix_user_biometrics_id ON user_biometrics (id);
-CREATE INDEX IF NOT EXISTS ix_user_biometrics_user_id ON user_biometrics (user_id);
-CREATE INDEX IF NOT EXISTS idx_user_biometrics_sensor_lookup ON user_biometrics (sensor_index);
-
-CREATE INDEX IF NOT EXISTS ix_user_work_schedule_configs_id ON user_work_schedule_configs (id);
-CREATE INDEX IF NOT EXISTS ix_user_work_schedule_configs_user_id ON user_work_schedule_configs (user_id);
-CREATE INDEX IF NOT EXISTS idx_user_work_schedules_active ON user_work_schedule_configs (user_id, valid_from, valid_until);
-
-CREATE INDEX IF NOT EXISTS ix_time_records_id ON time_records (id);
-CREATE INDEX IF NOT EXISTS idx_tr_user_date ON time_records (user_id, record_datetime);
-CREATE INDEX IF NOT EXISTS idx_tr_ignored ON time_records (is_ignored);
-CREATE INDEX IF NOT EXISTS idx_tr_active_period ON time_records (user_id, record_datetime) WHERE is_ignored = FALSE;
-CREATE INDEX IF NOT EXISTS ix_time_records_biometric_id ON time_records (biometric_id);
-CREATE INDEX IF NOT EXISTS ix_time_records_edited_by ON time_records (edited_by);
-CREATE INDEX IF NOT EXISTS ix_time_records_deleted_by ON time_records (deleted_by);
-CREATE INDEX IF NOT EXISTS ix_time_records_original_record_id ON time_records (original_record_id);
-
-CREATE INDEX IF NOT EXISTS ix_adjustment_requests_id ON adjustment_requests (id);
-CREATE INDEX IF NOT EXISTS idx_adj_user_date ON adjustment_requests (user_id, target_date);
-CREATE INDEX IF NOT EXISTS idx_adj_status ON adjustment_requests (status);
-CREATE INDEX IF NOT EXISTS ix_adjustment_requests_manager_id ON adjustment_requests (manager_id);
-CREATE INDEX IF NOT EXISTS ix_adjustment_requests_deleted_by ON adjustment_requests (deleted_by);
-
-CREATE INDEX IF NOT EXISTS ix_adjustment_attachments_id ON adjustment_attachments (id);
-CREATE INDEX IF NOT EXISTS ix_adjustment_attachments_request_id ON adjustment_attachments (adjustment_request_id);
-
-CREATE INDEX IF NOT EXISTS ix_payroll_closures_id ON payroll_closures (id);
-CREATE INDEX IF NOT EXISTS idx_payroll_closures_period ON payroll_closures (year, month);
-CREATE INDEX IF NOT EXISTS ix_payroll_closures_closed_by ON payroll_closures (closed_by_user_id);
-CREATE INDEX IF NOT EXISTS ix_payroll_closures_deleted_by ON payroll_closures (deleted_by);
-
-CREATE INDEX IF NOT EXISTS ix_audit_logs_id ON audit_logs (id);
-CREATE INDEX IF NOT EXISTS idx_audit_user_action ON audit_logs (user_id, action);
-CREATE INDEX IF NOT EXISTS idx_audit_entity_time ON audit_logs (entity, entity_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_new_data_gin ON audit_logs USING gin (new_data);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_old_data_gin ON audit_logs USING gin (old_data);
-
-CREATE INDEX IF NOT EXISTS ix_routine_logs_id ON routine_logs (id);
-CREATE INDEX IF NOT EXISTS ix_routine_logs_routine_type ON routine_logs (routine_type);
-CREATE INDEX IF NOT EXISTS idx_routine_logs_execution_time ON routine_logs (execution_time DESC);
-
-COMMENT ON TABLE companies IS 'Empresas e filiais';
-COMMENT ON COLUMN companies.id IS 'ID da empresa';
-COMMENT ON COLUMN companies.name IS 'Razao social ou nome';
-COMMENT ON COLUMN companies.cnpj IS 'CNPJ da empresa';
-COMMENT ON COLUMN companies.address IS 'Endereco da empresa';
-COMMENT ON COLUMN companies.phone IS 'Telefone de contato';
-COMMENT ON COLUMN companies.logo_path IS 'Caminho do logotipo';
-COMMENT ON COLUMN companies.auto_print_receipt IS 'Impressao automatica de comprovante';
-COMMENT ON COLUMN companies.default_printer_id IS 'ID da impressora padrao';
-
-COMMENT ON TABLE printers IS 'Impressoras termicas';
-COMMENT ON COLUMN printers.id IS 'ID da impressora';
-COMMENT ON COLUMN printers.name IS 'Nome da impressora';
-COMMENT ON COLUMN printers.address IS 'Endereco IP ou porta';
-COMMENT ON COLUMN printers.status IS 'Status ativo/inativo';
-COMMENT ON COLUMN printers.paper_width IS 'Largura do papel em mm';
-COMMENT ON COLUMN printers.company_id IS 'ID da empresa vinculada';
-
-COMMENT ON TABLE users IS 'Usuarios do sistema';
-COMMENT ON COLUMN users.id IS 'ID do usuario';
-COMMENT ON COLUMN users.username IS 'Login do usuario';
-COMMENT ON COLUMN users.name IS 'Nome do usuario';
-COMMENT ON COLUMN users.email IS 'E-mail do usuario';
-COMMENT ON COLUMN users.cpf IS 'CPF do usuario';
-COMMENT ON COLUMN users.pis IS 'PIS do usuario';
-COMMENT ON COLUMN users.endereco IS 'Endereco do usuario';
-COMMENT ON COLUMN users.data_nascimento IS 'Data de nascimento';
-COMMENT ON COLUMN users.password_hash IS 'Hash da senha';
-COMMENT ON COLUMN users.is_active IS 'Status ativo';
-COMMENT ON COLUMN users.role IS 'Perfil de acesso';
-COMMENT ON COLUMN users.can_manual_punch_desktop IS 'Permite batida manual desktop';
-COMMENT ON COLUMN users.can_manual_punch_mobile IS 'Permite batida manual mobile';
-COMMENT ON COLUMN users.can_export_report IS 'Permite exportar relatorios';
-COMMENT ON COLUMN users.is_exempt_from_rules IS 'Isento de regras gerais';
-COMMENT ON COLUMN users.is_tolerance_exempt IS 'Isento de tolerancia';
-COMMENT ON COLUMN users.auto_print_receipt IS 'Impressao automatica de comprovante';
-COMMENT ON COLUMN users.created_at IS 'Data de criacao';
-COMMENT ON COLUMN users.updated_at IS 'Data de atualizacao';
-
-COMMENT ON TABLE device_credentials IS 'Credenciais de dispositivos e APIs';
-COMMENT ON COLUMN device_credentials.id IS 'ID da credencial';
-COMMENT ON COLUMN device_credentials.name IS 'Nome da credencial';
-COMMENT ON COLUMN device_credentials.key_type IS 'Tipo de chave';
-COMMENT ON COLUMN device_credentials.api_key_hash IS 'Hash da chave de API';
-COMMENT ON COLUMN device_credentials.is_active IS 'Status ativo';
-COMMENT ON COLUMN device_credentials.created_at IS 'Data de criacao';
-COMMENT ON COLUMN device_credentials.updated_at IS 'Data de atualizacao';
-
-COMMENT ON TABLE firmwares IS 'Firmwares de dispositivos';
-COMMENT ON COLUMN firmwares.id IS 'ID do firmware';
-COMMENT ON COLUMN firmwares.version IS 'Versao do firmware';
-COMMENT ON COLUMN firmwares.file_path IS 'Caminho do arquivo';
-COMMENT ON COLUMN firmwares.created_at IS 'Data de criacao';
-
-COMMENT ON TABLE holidays IS 'Feriados cadastrados';
-COMMENT ON COLUMN holidays.id IS 'ID do feriado';
-COMMENT ON COLUMN holidays.date IS 'Data do feriado';
-COMMENT ON COLUMN holidays.name IS 'Nome do feriado';
-
-COMMENT ON TABLE user_biometrics IS 'Biometrias dos usuarios';
-COMMENT ON COLUMN user_biometrics.id IS 'ID da biometria';
-COMMENT ON COLUMN user_biometrics.user_id IS 'ID do usuario';
-COMMENT ON COLUMN user_biometrics.sensor_index IS 'Indice no sensor biometrico';
-COMMENT ON COLUMN user_biometrics.template_data IS 'Template biometrico';
-COMMENT ON COLUMN user_biometrics.finger_id IS 'Identificador do dedo';
-COMMENT ON COLUMN user_biometrics.created_at IS 'Data de criacao';
-
-COMMENT ON TABLE user_work_schedule_configs IS 'Configuracoes de jornada de trabalho';
-COMMENT ON COLUMN user_work_schedule_configs.id IS 'ID da jornada';
-COMMENT ON COLUMN user_work_schedule_configs.user_id IS 'ID do usuario';
-COMMENT ON COLUMN user_work_schedule_configs.day_of_week IS 'Dia da semana (0-6)';
-COMMENT ON COLUMN user_work_schedule_configs.daily_hours IS 'Horas diarias previstas';
-COMMENT ON COLUMN user_work_schedule_configs.entry_1 IS 'Entrada 1';
-COMMENT ON COLUMN user_work_schedule_configs.exit_1 IS 'Saida 1';
-COMMENT ON COLUMN user_work_schedule_configs.entry_2 IS 'Entrada 2';
-COMMENT ON COLUMN user_work_schedule_configs.exit_2 IS 'Saida 2';
-COMMENT ON COLUMN user_work_schedule_configs.valid_from IS 'Inicio de vigencia';
-COMMENT ON COLUMN user_work_schedule_configs.valid_until IS 'Fim de vigencia';
-COMMENT ON COLUMN user_work_schedule_configs.is_daily_excess_enabled IS 'Compensacao de excesso diario';
-
-COMMENT ON TABLE time_records IS 'Registros de ponto eletronico';
-COMMENT ON COLUMN time_records.id IS 'ID do ponto';
-COMMENT ON COLUMN time_records.user_id IS 'ID do usuario';
-COMMENT ON COLUMN time_records.record_type IS 'Tipo de batida';
-COMMENT ON COLUMN time_records.record_datetime IS 'Data e hora da batida';
-COMMENT ON COLUMN time_records.ip_address IS 'IP de origem';
-COMMENT ON COLUMN time_records.device_name IS 'Nome do dispositivo';
-COMMENT ON COLUMN time_records.platform IS 'Plataforma de origem';
-COMMENT ON COLUMN time_records.biometric_id IS 'ID da biometria utilizada';
-COMMENT ON COLUMN time_records.edited_by IS 'ID do editor manual';
-COMMENT ON COLUMN time_records.edit_justification IS 'Justificativa da edicao';
-COMMENT ON COLUMN time_records.deleted_at IS 'Data de exclusao logica';
-COMMENT ON COLUMN time_records.deleted_by IS 'ID de quem excluiu';
-COMMENT ON COLUMN time_records.is_ignored IS 'Batida desconsiderada';
-COMMENT ON COLUMN time_records.is_verified IS 'Batida verificada';
-COMMENT ON COLUMN time_records.original_record_id IS 'ID do ponto original';
-COMMENT ON COLUMN time_records.created_at IS 'Data de criacao';
-COMMENT ON COLUMN time_records.updated_at IS 'Data de atualizacao';
-
-COMMENT ON TABLE adjustment_requests IS 'Solicitacoes de ajuste de ponto';
-COMMENT ON COLUMN adjustment_requests.id IS 'ID do ajuste';
-COMMENT ON COLUMN adjustment_requests.user_id IS 'ID do solicitante';
-COMMENT ON COLUMN adjustment_requests.adjustment_type IS 'Tipo de ajuste';
-COMMENT ON COLUMN adjustment_requests.record_type IS 'Tipo de batida';
-COMMENT ON COLUMN adjustment_requests.target_date IS 'Data do ajuste';
-COMMENT ON COLUMN adjustment_requests.time IS 'Horario proposto';
-COMMENT ON COLUMN adjustment_requests.amount_hours IS 'Horas solicitadas';
-COMMENT ON COLUMN adjustment_requests.reason_text IS 'Motivo do ajuste';
-COMMENT ON COLUMN adjustment_requests.status IS 'Status da solicitacao';
-COMMENT ON COLUMN adjustment_requests.manager_id IS 'ID do gestor avaliador';
-COMMENT ON COLUMN adjustment_requests.manager_comment IS 'Parecer do gestor';
-COMMENT ON COLUMN adjustment_requests.created_at IS 'Data de criacao';
-COMMENT ON COLUMN adjustment_requests.reviewed_at IS 'Data de avaliacao';
-COMMENT ON COLUMN adjustment_requests.deleted_at IS 'Data de exclusao';
-COMMENT ON COLUMN adjustment_requests.deleted_by IS 'ID de quem excluiu';
-COMMENT ON COLUMN adjustment_requests.approved_amount_hours IS 'Horas aprovadas';
-
-COMMENT ON TABLE adjustment_attachments IS 'Anexos de ajustes de ponto';
-COMMENT ON COLUMN adjustment_attachments.id IS 'ID do anexo';
-COMMENT ON COLUMN adjustment_attachments.adjustment_request_id IS 'ID do ajuste vinculado';
-COMMENT ON COLUMN adjustment_attachments.file_path IS 'Caminho do arquivo';
-COMMENT ON COLUMN adjustment_attachments.file_type IS 'Tipo do arquivo';
-COMMENT ON COLUMN adjustment_attachments.uploaded_at IS 'Data de upload';
-
-COMMENT ON TABLE payroll_closures IS 'Fechamentos de folha de ponto';
-COMMENT ON COLUMN payroll_closures.id IS 'ID do fechamento';
-COMMENT ON COLUMN payroll_closures.month IS 'Mes de competencia';
-COMMENT ON COLUMN payroll_closures.year IS 'Ano de competencia';
-COMMENT ON COLUMN payroll_closures.is_closed IS 'Status de fechamento';
-COMMENT ON COLUMN payroll_closures.closed_by_user_id IS 'ID de quem fechou';
-COMMENT ON COLUMN payroll_closures.closed_at IS 'Data de fechamento';
-COMMENT ON COLUMN payroll_closures.report_path IS 'Caminho do relatorio';
-COMMENT ON COLUMN payroll_closures.deleted_at IS 'Data de reabertura';
-COMMENT ON COLUMN payroll_closures.deleted_by IS 'ID de quem reabriu';
-COMMENT ON COLUMN payroll_closures.reopen_observation IS 'Motivo da reabertura';
-
-COMMENT ON TABLE audit_logs IS 'Logs de auditoria';
-COMMENT ON COLUMN audit_logs.id IS 'ID do log';
-COMMENT ON COLUMN audit_logs.user_id IS 'ID do usuario';
-COMMENT ON COLUMN audit_logs.action IS 'Acao executada';
-COMMENT ON COLUMN audit_logs.entity IS 'Entidade afetada';
-COMMENT ON COLUMN audit_logs.entity_id IS 'ID do registro afetado';
-COMMENT ON COLUMN audit_logs.old_data IS 'Dados anteriores (JSONB)';
-COMMENT ON COLUMN audit_logs.new_data IS 'Dados novos (JSONB)';
-COMMENT ON COLUMN audit_logs.timestamp IS 'Data e hora do evento';
-
-COMMENT ON TABLE routine_logs IS 'Logs de rotinas automaticas';
-COMMENT ON COLUMN routine_logs.id IS 'ID do log';
-COMMENT ON COLUMN routine_logs.routine_type IS 'Tipo da rotina';
-COMMENT ON COLUMN routine_logs.execution_time IS 'Data e hora de execucao';
-COMMENT ON COLUMN routine_logs.target_date IS 'Data alvo da rotina';
-COMMENT ON COLUMN routine_logs.status IS 'Status da execucao';
-COMMENT ON COLUMN routine_logs.details IS 'Detalhes da execucao';
-
-COMMENT ON TABLE alembic_version IS 'Versao do schema no Alembic';
-COMMENT ON COLUMN alembic_version.version_num IS 'Identificador da revisao';
-
-COMMIT;
-"""
 
 def get_ddl_sql(
     include_alembic_version: bool = True,
     include_transaction_control: bool = True,
 ) -> str:
-    """Return the canonical PostgreSQL DDL.
-
-    Migrations and fallback backups omit the version row because Alembic or the
-    data dump owns it. Migrations also omit BEGIN/COMMIT so they remain inside
-    Alembic's transaction.
-    """
-    content = DDL_SQL_CONTENT
-    if not include_alembic_version:
-        content = re.sub(
-            r"\nINSERT INTO alembic_version\s*\(version_num\)\s*VALUES\s*\('001'\)\s*"
-            r"ON CONFLICT\s*\(version_num\)\s*DO NOTHING;\s*",
-            "\n",
-            content,
-            count=1,
-        )
-    if not include_transaction_control:
-        content = re.sub(r"\ABEGIN;\s*", "", content, count=1)
-        content = re.sub(r"\nCOMMIT;\s*\Z", "\n", content, count=1)
-    return content
-
-
-def load_environment() -> None:
-    env_path = ROOT_DIR / ".env"
-    if env_path.exists() and load_dotenv:
-        load_dotenv(dotenv_path=env_path, override=True)
-
-
-def get_pg_credentials() -> dict[str, str]:
-    load_environment()
-    db = os.getenv("POSTGRES_DB", "spe_db")
-    user = os.getenv("POSTGRES_USER", "spe")
-    password = os.getenv("POSTGRES_PASSWORD", "")
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-
-    uri = os.getenv("SQLALCHEMY_DATABASE_URI", "")
-    if uri and "postgresql" in uri:
-        clean_uri = uri.replace("postgresql+asyncpg://", "").replace("postgresql://", "")
-        if "@" in clean_uri:
-            auth, host_part = clean_uri.split("@", 1)
-            if ":" in auth:
-                user, password = auth.split(":", 1)
-            if "/" in host_part:
-                hp, db_part = host_part.split("/", 1)
-                db = db_part.split("?")[0]
-                if ":" in hp:
-                    host, port = hp.split(":", 1)
-                else:
-                    host = hp
-
-    return {
-        "dbname": db,
-        "user": user,
-        "password": password,
-        "host": host,
-        "port": port,
-    }
-
-
-def format_cell(table_name: str, col_name: str, val: object) -> str:
-    if val is None:
-        return "NULL"
-
-    if col_name in BOOLEAN_COLUMNS.get(table_name, set()):
-        val_str = str(val).strip().lower()
-        if val_str in ("1", "true", "t"):
-            return "TRUE"
-        if val_str in ("0", "false", "f"):
-            return "FALSE"
-        return "NULL"
-
-    if col_name in JSONB_COLUMNS.get(table_name, set()):
-        if isinstance(val, dict):
-            val_str = json.dumps(val, ensure_ascii=False)
-        else:
-            val_str = str(val)
-        escaped = val_str.replace("'", "''")
-        return f"'{escaped}'::jsonb"
-
-    if isinstance(val, (int, float)):
-        return str(val)
-
-    val_str = str(val)
-    if "\n" in val_str or "\r" in val_str:
-        escaped = (
-            val_str.replace("\\", "\\\\")
-            .replace("'", "''")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-        )
-        return f"E'{escaped}'"
-
-    val_str = val_str.replace("'", "''")
-    return f"'{val_str}'"
-
-
-def get_timezone() -> str:
-    load_environment()
-    return os.getenv("TIMEZONE", "America/Fortaleza")
-
-
-def export_ddl(output_path: Path = DEFAULT_DDL_PATH) -> None:
-    if output_path.is_dir():
-        try:
-            shutil.rmtree(output_path)
-        except OSError as e:
-            raise RuntimeError(
-                f"O caminho de destino '{output_path}' é um diretório (provavelmente criado pelo Docker volume mount). "
-                f"Pare os containers com 'docker compose down' antes de exportar: {e}"
-            ) from e
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    tz = get_timezone()
-    content = get_ddl_sql().strip().replace("SET timezone = 'America/Fortaleza';", f"SET timezone = '{tz}';")
-    content = content.replace("'America/Fortaleza'", f"'{tz}'")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(content + "\n")
-    print(f"[OK] DDL exportado com sucesso em: {output_path}")
-
-
-def _export_table_data(out: Any, table_name: str, rows: list, batch_size: int) -> None:
-    if not rows:
-        return
-
-    cols = list(rows[0].keys())
-    cols_str = ", ".join(f'"{c}"' for c in cols)
-
-    if table_name == "alembic_version":
-        for r in rows:
-            v = format_cell(table_name, "version_num", r["version_num"])
-            out.write(
-                f"INSERT INTO alembic_version (version_num) VALUES ({v}) ON CONFLICT (version_num) DO NOTHING;\n"
-            )
-        out.write("\n")
-        return
-
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i: i + batch_size]
-        value_tuples = []
-        for row in batch:
-            formatted_vals = [
-                format_cell(table_name, c, row[c]) for c in cols
-            ]
-            value_tuples.append("(" + ", ".join(formatted_vals) + ")")
-
-        values_str = ",\n  ".join(value_tuples)
-        out.write(
-            f"INSERT INTO {table_name} ({cols_str}) VALUES\n  {values_str};\n"
-        )
-    out.write("\n")
-
-
-def export_data(
-        sqlite_path: Path = DEFAULT_SQLITE_PATH,
-        output_path: Path = DEFAULT_DML_PATH,
-        batch_size: int = 100,
-) -> dict[str, int]:
-    if not sqlite_path.exists():
-        raise FileNotFoundError(f"Arquivo SQLite não encontrado: {sqlite_path}")
-
-    conn = sqlite3.connect(sqlite_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    stats: dict[str, int] = {}
-    if output_path.is_dir():
-        try:
-            shutil.rmtree(output_path)
-        except OSError as e:
-            raise RuntimeError(
-                f"O caminho de destino '{output_path}' é um diretório. Pare os containers antes de exportar: {e}"
-            ) from e
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(output_path, "w", encoding="utf-8") as out:
-        out.write("-- Dados SQLite exportados para PostgreSQL.\n")
-        out.write("-- A transação é controlada pelo importador para que a carga seja atômica.\n\n")
-
-        for table_name in TABLE_ORDER:
-            if table_name == "alembic_version":
-                continue
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                (table_name,),
-            )
-            if not cursor.fetchone():
-                stats[table_name] = 0
-                continue
-
-            order_clause = " ORDER BY id ASC" if table_name != "alembic_version" else ""
-            cursor.execute(f"SELECT * FROM {table_name}{order_clause}")
-            rows = cursor.fetchall()
-            stats[table_name] = len(rows)
-
-            _export_table_data(out, table_name, rows, batch_size)
-
-        for table_name in IDENTITY_TABLES:
-            out.write(
-                f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), COALESCE((SELECT MAX(id) FROM {table_name}), 1));\n"
-            )
-
-    conn.close()
-    print(f"[OK] Dados exportados com sucesso em: {output_path}")
-    print("\nResumo de registros exportados:")
-    total = 0
-    for table, count in stats.items():
-        print(f"  - {table:30}: {count:>6} registros")
-        total += count
-    print(f"  Total: {total} registros")
-    return stats
-
-
-def connect_with_retry(creds: dict[str, str], max_retries: int = 30, delay: float = 1.0):
-    for attempt in range(1, max_retries + 1):
-        try:
-            return psycopg2.connect(**creds)
-        except psycopg2.DatabaseError as e:
-            if attempt == max_retries:
-                raise RuntimeError(f"Tempo limite aguardando o PostgreSQL: {e}") from e
-            if attempt == 1 or attempt % 5 == 0:
-                print(f"Aguardando o PostgreSQL ficar pronto... (tentativa {attempt}/{max_retries})")
-            time.sleep(delay)
-
-
-def apply_ddl(ddl_path: Path = DEFAULT_DDL_PATH) -> None:
-    if psycopg2 is None:
-        raise RuntimeError("Driver psycopg2 não está instalado no ambiente virtual.")
-
-    if not ddl_path.exists():
-        print(f"DDL não encontrado em {ddl_path}. Gerando...")
-        export_ddl(ddl_path)
-
-    creds = get_pg_credentials()
-    print(f"Aplicando DDL no PostgreSQL em {creds['host']}:{creds['port']}/{creds['dbname']}...")
-
-    conn = connect_with_retry(creds)
-    conn.autocommit = True
-    cursor = conn.cursor()
     try:
-        sql_content = ddl_path.read_text(encoding="utf-8")
-        cursor.execute(sql_content)
-        print(f"[OK] DDL aplicado com sucesso a partir de: {ddl_path}")
-    except Exception as e:
-        raise RuntimeError(f"Falha ao aplicar DDL: {e}") from e
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def populate_postgresql(
-        dml_path: Path = DEFAULT_DML_PATH,
-        truncate_first: bool = True,
-) -> None:
-    if psycopg2 is None:
-        raise RuntimeError("Driver psycopg2 não está instalado no ambiente virtual.")
-
-    apply_ddl()
-
-    if not dml_path.exists():
-        print(f"Arquivo de dados {dml_path.name} não encontrado. Gerando a partir do SQLite...")
-        export_data(output_path=dml_path)
-
-    creds = get_pg_credentials()
-    print(
-        f"Conectando ao PostgreSQL em {creds['host']}:{creds['port']}/{creds['dbname']} (usuário: {creds['user']})...")
-
-    conn = connect_with_retry(creds)
-    conn.autocommit = False
-    cursor = conn.cursor()
-
-    try:
-        if truncate_first:
-            print("Limpando tabelas existentes antes da inserção...")
-            cursor.execute("DELETE FROM alembic_version;")
-            truncate_tables = [t for t in TABLE_ORDER if t != "alembic_version"]
-            truncate_query = f"TRUNCATE TABLE {', '.join(truncate_tables)} RESTART IDENTITY CASCADE;"
-            cursor.execute(truncate_query)
-            print("[OK] Tabelas preparadas para a carga atômica.")
-
-        print(f"Executando script de inserção: {dml_path}...")
-        sql_content = dml_path.read_text(encoding="utf-8")
-        sql_content = _remove_transaction_control(sql_content)
-        cursor.execute("SET CONSTRAINTS ALL DEFERRED;")
-        cursor.execute(sql_content)
-        cursor.execute("DELETE FROM alembic_version;")
-        cursor.execute(
-            "INSERT INTO alembic_version (version_num) VALUES (%s);",
-            (CURRENT_SCHEMA_REVISION,),
-        )
-        conn.commit()
-        print("[OK] Carga de dados realizada e transação confirmada com sucesso!")
-
-    except Exception as e:
-        conn.rollback()
-        raise RuntimeError(f"Falha ao popular o banco PostgreSQL: {e}") from e
-    finally:
-        cursor.close()
-        conn.close()
-
-
-def _remove_transaction_control(sql_content: str) -> str:
-    """Remove delimitadores legados para preservar a transação do importador."""
-    lines = []
-    for line in sql_content.splitlines():
-        if line.strip().upper().rstrip(";") in {"BEGIN", "COMMIT"}:
-            continue
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def parse_jsonb_value(val: Any) -> Any:
-    if val in (None, "null"):
-        return None
-    if isinstance(val, str):
-        return json.loads(val)
-    return val
-
-
-def _compare_datetime(sq_val: Any, pg_val: datetime, tz: ZoneInfo) -> bool:
-    if isinstance(sq_val, str):
-        dt_s = datetime.fromisoformat(sq_val)
-        dt_s = dt_s.replace(tzinfo=tz) if dt_s.tzinfo is None else dt_s.astimezone(tz)
-        dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
-        return dt_s == dt_p
-    if isinstance(sq_val, datetime):
-        dt_s = sq_val.astimezone(tz) if sq_val.tzinfo is not None else sq_val.replace(tzinfo=tz)
-        dt_p = pg_val.astimezone(tz) if pg_val.tzinfo is not None else pg_val.replace(tzinfo=tz)
-        return dt_s == dt_p
-    return False
-
-
-def _compare_date(sq_val: Any, pg_val: date) -> bool:
-    if isinstance(sq_val, str):
-        return date.fromisoformat(sq_val.split()[0]) == pg_val
-    if isinstance(sq_val, date):
-        return sq_val == pg_val
-    return False
-
-
-def _compare_time(sq_val: Any, pg_val: dtime) -> bool:
-    if isinstance(sq_val, str):
-        return dtime.fromisoformat(sq_val) == pg_val
-    if isinstance(sq_val, dtime):
-        return sq_val == pg_val
-    return False
-
-
-def _compare_numeric(sq_val: Any, pg_val: Any) -> bool | None:
-    if isinstance(pg_val, float) or isinstance(sq_val, float):
-        try:
-            return abs(float(sq_val) - float(pg_val)) < 1e-6
-        except (ValueError, TypeError):
-            return None
-    if isinstance(pg_val, int) and isinstance(sq_val, int):
-        return sq_val == pg_val
-    if (isinstance(pg_val, int) and isinstance(sq_val, str)) or (isinstance(sq_val, int) and isinstance(pg_val, str)):
-        try:
-            return int(sq_val) == int(pg_val)
-        except (ValueError, TypeError):
-            return None
-    return None
-
-
-def are_cells_equal(sq_val, pg_val, col_name: str, table_name: str, tz: ZoneInfo) -> bool:
-    if table_name in JSONB_COLUMNS and col_name in JSONB_COLUMNS[table_name]:
-        return parse_jsonb_value(sq_val) == parse_jsonb_value(pg_val)
-
-    if sq_val is None and pg_val is None:
-        return True
-    if sq_val is None or pg_val is None:
-        return False
-
-    if table_name in BOOLEAN_COLUMNS and col_name in BOOLEAN_COLUMNS[table_name]:
-        return bool(sq_val) == bool(pg_val)
-
-    if isinstance(pg_val, datetime):
-        return _compare_datetime(sq_val, pg_val, tz)
-
-    if isinstance(pg_val, date) and not isinstance(pg_val, datetime):
-        return _compare_date(sq_val, pg_val)
-
-    if isinstance(pg_val, dtime):
-        return _compare_time(sq_val, pg_val)
-
-    numeric_res = _compare_numeric(sq_val, pg_val)
-    if numeric_res is not None:
-        return numeric_res
-
-    return str(sq_val) == str(pg_val)
-
-
-def _compare_table_rows(
-    table: str,
-    sq_rows: list,
-    pg_rows: list,
-    common_cols: list[str],
-    target_tz: ZoneInfo,
-) -> int:
-    table_diffs = 0
-    for sq_r, pg_r in zip(sq_rows, pg_rows):
-        for c_idx, col in enumerate(common_cols):
-            if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
-                table_diffs += 1
-                if table_diffs <= 3:
-                    print(
-                        f"  [DIVERGÊNCIA] {table} (PK {sq_r[0]}), coluna '{col}': SQLite={repr(sq_r[c_idx])} vs PG={repr(pg_r[c_idx])}"
-                    )
-    return table_diffs
-
-
-def _verify_table_sync(
-    table: str,
-    sq_cur: Any,
-    pg_cur: Any,
-    pg_conn: Any,
-    target_tz: ZoneInfo,
-) -> tuple[bool, int, int, int, int]:
-    sq_cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-        (table,),
-    )
-    if not sq_cur.fetchone():
-        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE SQLITE':^20}")
-        return False, 0, 0, 0, 0
-
-    sq_cur.execute(f"PRAGMA table_info({table})")
-    sq_cols = [c[1] for c in sq_cur.fetchall()]
-
-    try:
-        pg_cur.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
-            (table,),
-        )
-        pg_cols = [c[0] for c in pg_cur.fetchall()]
+        full_sql = extract_live_ddl_from_postgres(include_alembic_version=include_alembic_version)
     except Exception:
-        pg_conn.rollback()
-        pg_cols = []
+        full_sql = _load_fallback_migration_ddl(include_alembic_version=include_alembic_version)
 
-    if not pg_cols:
-        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {'AUSENTE POSTGRES':^20}")
-        return False, 0, 0, 0, 0
-
-    missing_pg_cols = [c for c in sq_cols if c not in pg_cols]
-    extra_pg_cols = [c for c in pg_cols if c not in sq_cols]
-    if missing_pg_cols or extra_pg_cols:
-        details = []
-        if missing_pg_cols:
-            details.append(f"FALTAM PG: {', '.join(missing_pg_cols)}")
-        if extra_pg_cols:
-            details.append(f"EXTRAS PG: {', '.join(extra_pg_cols)}")
-        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'0':>9} | {' / '.join(details):^20}")
-        return False, 0, 0, 0, 0
-
-    common_cols = sq_cols
-    pk = "version_num" if table == "alembic_version" else "id"
-    if pk not in common_cols:
-        pk = common_cols[0]
-
-    cols_sql = ", ".join(f'"{c}"' for c in common_cols)
-    sq_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
-    pg_cur.execute(f'SELECT {cols_sql} FROM "{table}" ORDER BY "{pk}"')
-
-    sq_rows = sq_cur.fetchall()
-    pg_rows = pg_cur.fetchall()
-
-    sq_count = len(sq_rows)
-    pg_count = len(pg_rows)
-    table_cells = sq_count * len(common_cols)
-
-    if sq_count != pg_count:
-        status_str = f"DIFF ({sq_count}!={pg_count})"
-        print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
-        return False, sq_count, pg_count, table_cells, 0
-
-    table_diffs = _compare_table_rows(table, sq_rows, pg_rows, common_cols, target_tz)
-
-    matched = table_diffs == 0
-    status_str = "OK (100%)" if matched else f"{table_diffs} ERROS"
-    print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {table_cells:>9} | {status_str:^20}")
-
-    return matched, sq_count, pg_count, table_cells, table_diffs
-
-
-def verify_sync(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
-    if psycopg2 is None:
-        raise RuntimeError("Driver psycopg2 não está instalado.")
-
-    if not sqlite_path.exists():
-        raise FileNotFoundError(f"Arquivo SQLite não encontrado: {sqlite_path}")
-
-    load_environment()
-    target_tz_name = os.getenv("TIMEZONE", "America/Fortaleza")
-    target_tz = ZoneInfo(target_tz_name)
-
-    creds = get_pg_credentials()
-    pg_conn = connect_with_retry(creds)
-    pg_cur = pg_conn.cursor()
-
-    sq_conn = sqlite3.connect(sqlite_path)
-    sq_cur = sq_conn.cursor()
-
-    all_matched = True
-    total_sq_rows = 0
-    total_pg_rows = 0
-    total_checked_cells = 0
-    total_cell_mismatches = 0
-
-    print("\n" + "=" * 95)
-    print(f"{'TABELA':28} | {'SQLITE':>7} | {'POSTGRES':>8} | {'CÉLULAS':>9} | {'STATUS':^20}")
-    print("=" * 95)
-
-    for table in TABLE_ORDER:
-        if table == "alembic_version":
-            continue
-        matched, sq_count, pg_count, table_cells, table_diffs = _verify_table_sync(
-            table, sq_cur, pg_cur, pg_conn, target_tz
-        )
-        if not matched:
-            all_matched = False
-        total_sq_rows += sq_count
-        total_pg_rows += pg_count
-        total_checked_cells += table_cells
-        total_cell_mismatches += table_diffs
-
-    print("=" * 95)
-    print(
-        f"{'TOTAL GERAL':28} | {total_sq_rows:>7} | {total_pg_rows:>8} | {total_checked_cells:>9} | {'100% ÍNTEGRO' if all_matched else 'DIVERGÊNCIAS':^20}")
-    print("=" * 95)
-
-    pg_cur.close()
-    pg_conn.close()
-    sq_conn.close()
-
-    if all_matched:
-        print(
-            f"[SUCESSO] 100% de paridade e integridade celular confirmada! {total_checked_cells:,} células conferidas em {total_sq_rows:,} registros.")
-    else:
-        print(f"[ALERTA] Divergências detectadas: {total_cell_mismatches} células divergentes.")
-
-    return all_matched
+    if include_transaction_control:
+        return f"BEGIN;\n{full_sql.strip()}\nCOMMIT;\n"
+    return f"{full_sql.strip()}\n"
 
 
 def find_pg_binary(name: str) -> str | None:
@@ -1108,6 +145,7 @@ def find_pg_binary(name: str) -> str | None:
     if bin_path:
         return bin_path
     import glob
+
     for pattern in [
         rf"C:\Program Files\PostgreSQL\*\bin\{name}.exe",
         rf"C:\Program Files (x86)\PostgreSQL\*\bin\{name}.exe",
@@ -1119,223 +157,160 @@ def find_pg_binary(name: str) -> str | None:
     return None
 
 
-def dump_database(output_path: Path = DEFAULT_DUMP_PATH) -> None:
+def _run_local_pg_dump(output_path: Path, creds: dict[str, str], pg_dump: str, extra_flags: list[str]) -> bool:
+    env = os.environ.copy()
+    if creds.get("password"):
+        env["PGPASSWORD"] = str(creds["password"])
+    cmd = [
+        pg_dump,
+        "-h", str(creds.get("host", "localhost")),
+        "-p", str(creds.get("port", 5432)),
+        "-U", str(creds.get("user", "spe")),
+        "-d", str(creds.get("dbname", "spe_db")),
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--encoding=UTF8",
+        *extra_flags,
+        "-f", str(output_path),
+    ]
+    res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    return res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0
+
+
+def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: list[str]) -> bool:
+    if not shutil.which("docker"):
+        return False
+    cmd = [
+        "docker", "exec",
+        "-e", f"PGPASSWORD={creds.get('password', '')}",
+        "spe_postgres",
+        "pg_dump",
+        "-U", str(creds.get("user", "spe")),
+        "-d", str(creds.get("dbname", "spe_db")),
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        "--encoding=UTF8",
+        *extra_flags,
+    ]
+    res = subprocess.run(cmd, capture_output=True)
+    if res.returncode == 0 and res.stdout:
+        with open(output_path, "wb") as f:
+            f.write(res.stdout)
+        return True
+    return False
+
+
+def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
     creds = get_pg_credentials()
     pg_dump = find_pg_binary("pg_dump")
-    print(f"Gerando dump fidedigno oficial do PostgreSQL em: {output_path}...")
+    flags = ["--schema-only"]
 
-    if pg_dump:
-        print(f"Utilizando ferramenta nativa do PostgreSQL: {pg_dump}")
-        env = os.environ.copy()
-        if creds.get("password"):
-            env["PGPASSWORD"] = str(creds["password"])
-        cmd = [
-            pg_dump,
-            "-h", str(creds.get("host", "localhost")),
-            "-p", str(creds.get("port", 5432)),
-            "-U", str(creds.get("user", "spe")),
-            "-d", str(creds.get("dbname", "spe_db")),
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--no-privileges",
-            "--encoding=UTF8",
-            "-f", str(output_path),
-        ]
-        res = subprocess.run(cmd, env=env, capture_output=True, text=True)
-        if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
-            print(f"[OK] Dump oficial PostgreSQL gerado com sucesso! Tamanho: {output_path.stat().st_size:,} bytes")
-            return
-        print(f"[AVISO] pg_dump local falhou ({res.stderr.strip()}). Tentando via Docker...")
+    print(f"Extraindo DDL do banco PostgreSQL para: {output_path.name}...")
+    if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
+        print(f"[OK] DDL extraída com sucesso via pg_dump! ({output_path.stat().st_size:,} bytes)")
+        return
 
-    if shutil.which("docker"):
-        print("Executando pg_dump via container Docker spe_postgres...")
-        cmd = [
-            "docker", "exec",
-            "-e", f"PGPASSWORD={creds.get('password', '')}",
-            "spe_postgres",
-            "pg_dump",
-            "-U", str(creds.get("user", "spe")),
-            "-d", str(creds.get("dbname", "spe_db")),
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--no-privileges",
-            "--encoding=UTF8",
-        ]
-        res = subprocess.run(cmd, capture_output=True)
-        if res.returncode == 0 and res.stdout:
-            with open(output_path, "wb") as f:
-                f.write(res.stdout)
-            print(f"[OK] Dump via Docker gerado com sucesso! Tamanho: {output_path.stat().st_size:,} bytes")
-            return
-        print("[AVISO] pg_dump via Docker falhou. Tentando fallback Python...")
+    if _run_docker_pg_dump(output_path, creds, flags):
+        print(f"[OK] DDL extraída com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
+        return
+
+    ddl = extract_live_ddl_from_postgres(include_alembic_version=False)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(ddl)
+    print(f"[OK] DDL extraída com sucesso via introspecção live! ({output_path.stat().st_size:,} bytes)")
+
+
+def dump_data_inserts(output_path: Path = DEFAULT_DUMP_PATH) -> None:
+    creds = get_pg_credentials()
+    pg_dump = find_pg_binary("pg_dump")
+    flags = ["--data-only", "--inserts", "--column-inserts"]
+
+    print(f"Extraindo inserts de dados do PostgreSQL para: {output_path.name}...")
+    if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
+        print(f"[OK] Inserts extraídos com sucesso via pg_dump! ({output_path.stat().st_size:,} bytes)")
+        return
+
+    if _run_docker_pg_dump(output_path, creds, flags):
+        print(f"[OK] Inserts extraídos com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
+        return
 
     from app.features.system.backup_service import backup_service
     params = backup_service._get_postgres_connection_params()
-    success = backup_service._dump_postgresql_python(str(output_path), params)
-    if success and output_path.exists() and output_path.stat().st_size > 0:
-        print(f"[OK] Dump gerado com sucesso via Python dumper! Tamanho: {output_path.stat().st_size:,} bytes")
-    else:
-        raise RuntimeError("Não foi possível gerar o dump do PostgreSQL.")
-
-
-def execute_sql_script(sql_path: Path, creds: dict[str, str]) -> None:
-    psql = find_pg_binary("psql")
-    if psql:
-        env = os.environ.copy()
-        if creds.get("password"):
-            env["PGPASSWORD"] = str(creds["password"])
-        cmd = [
-            psql,
-            "-v", "ON_ERROR_STOP=1",
-            "-h", str(creds.get("host", "localhost")),
-            "-p", str(creds.get("port", 5432)),
-            "-U", str(creds.get("user", "spe")),
-            "-d", str(creds.get("dbname", "spe_db")),
-            "-f", str(sql_path),
-        ]
-        res = subprocess.run(cmd, env=env, capture_output=True, text=True)
-        if res.returncode == 0:
-            return
-
-    if shutil.which("docker"):
-        with open(sql_path, "rb") as f:
-            data = f.read()
-        cmd = [
-            "docker", "exec", "-i",
-            "-e", f"PGPASSWORD={creds.get('password', '')}",
-            "spe_postgres",
-            "psql",
-            "-v", "ON_ERROR_STOP=1",
-            "-U", str(creds.get("user", "spe")),
-            "-d", str(creds.get("dbname", "spe_db")),
-        ]
-        res = subprocess.run(cmd, input=data, capture_output=True)
-        if res.returncode == 0:
-            return
-
-        error_output = res.stderr.decode("utf-8", errors="replace")
-        raise RuntimeError(f"Falha ao executar psql: {error_output.strip()}")
-
-    conn = connect_with_retry(creds)
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur, open(sql_path, "r", encoding="utf-8", errors="ignore") as f:
-            cur.execute(f.read())
-    finally:
-        conn.close()
-
-
-def restore_database(input_path: Path = DEFAULT_DUMP_PATH) -> None:
-    import tempfile
-    import zipfile
-
-    creds = get_pg_credentials()
-
-    found_zip = next(
-        (p for p in [input_path, ROOT_DIR / "spe.zip", ROOT_DIR / "scripts" / "spe.zip"]
-         if p.suffix.lower() == ".zip" and p.exists()),
-        None
-    )
-
-    if found_zip:
-        print(f"Detectado arquivo de backup compactado: {found_zip}. Extraindo...")
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            with zipfile.ZipFile(found_zip, "r") as z:
-                z.extractall(tmp_dir)
-            tmp_schema = Path(tmp_dir) / FILENAME_SPE_DB
-            tmp_dump = Path(tmp_dir) / FILENAME_SPE_DUMP
-            if tmp_schema.exists():
-                print(f"Aplicando estrutura DDL de {tmp_schema.name}...")
-                execute_sql_script(tmp_schema, creds)
-            if tmp_dump.exists():
-                print(f"Aplicando dados e inserts de {tmp_dump.name}...")
-                execute_sql_script(tmp_dump, creds)
-        print("[OK] Restauração a partir do pacote ZIP concluída com sucesso!")
+    if backup_service._dump_postgresql_python(str(output_path), params):
+        print(f"[OK] Inserts extraídos com sucesso via dumper Python! ({output_path.stat().st_size:,} bytes)")
         return
 
-    schema_file = next(
-        (p for p in [ROOT_DIR / FILENAME_SPE_DB, ROOT_DIR / "scripts" / FILENAME_SPE_DB] if p.exists()),
-        None
-    )
-    dump_file = next(
-        (p for p in [input_path, ROOT_DIR / FILENAME_SPE_DUMP, ROOT_DIR / "scripts" / FILENAME_SPE_DUMP] if p.exists()),
-        None
-    )
+    raise RuntimeError("Não foi possível extrair inserts do PostgreSQL.")
 
-    if schema_file and dump_file and schema_file != dump_file:
-        print(f"Detectados arquivos de backup: {schema_file} e {dump_file}")
-        print(f"Aplicando estrutura DDL de {schema_file.name}...")
-        execute_sql_script(schema_file, creds)
-        print(f"Aplicando dados e inserts de {dump_file.name}...")
-        execute_sql_script(dump_file, creds)
-        print(f"[OK] Restauração a partir de {FILENAME_SPE_DB} e {FILENAME_SPE_DUMP} concluída com sucesso!")
-        return
 
-    if dump_file:
-        print(f"Restaurando banco PostgreSQL a partir de: {dump_file}...")
-        execute_sql_script(dump_file, creds)
-        print("[OK] Banco PostgreSQL restaurado com sucesso!")
-        return
+def dump_database(
+    schema_path: Path = DEFAULT_SCHEMA_PATH,
+    dump_path: Path = DEFAULT_DUMP_PATH,
+    zip_path: Path = DEFAULT_ZIP_PATH,
+) -> None:
+    print("Iniciando dump completo desmembrado do PostgreSQL...")
+    dump_schema_ddl(schema_path)
+    dump_data_inserts(dump_path)
 
-    raise FileNotFoundError(f"Arquivo de dump ou backup não encontrado: {input_path}")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(schema_path, arcname=FILENAME_SPE_DB)
+        z.write(dump_path, arcname=FILENAME_SPE_DUMP)
+    print(f"[OK] Pacote de backup completo gerado em {zip_path.name} ({zip_path.stat().st_size:,} bytes)")
+
+
+def restore_database(input_path: Path = DEFAULT_ZIP_PATH) -> None:
+    restore_backup(input_path)
+    print("Banco de dados PostgreSQL restaurado com sucesso.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Utilitário de migração, geração de SQL e população de dados entre SQLite e PostgreSQL."
+        description="Utilitário de migração, geração de SQL e gerenciamento do banco de dados."
     )
     parser.add_argument(
         "--dump",
         action="store_true",
-        help=f"Gera um dump oficial e fidedigno do PostgreSQL (padrão: {FILENAME_SPE_DUMP})",
+        help="Gera dump completo desmembrado: DDL (spe-db.sql), inserts (spe_dump.sql) e pacote ZIP",
+    )
+    parser.add_argument(
+        "--dump-ddl",
+        action="store_true",
+        help="Extrai apenas a DDL da estrutura atual do PostgreSQL",
+    )
+    parser.add_argument(
+        "--dump-data",
+        action="store_true",
+        help="Extrai apenas os inserts de dados do PostgreSQL",
     )
     parser.add_argument(
         "--restore",
         action="store_true",
-        help=f"Restaura o PostgreSQL a partir de um arquivo de dump (padrão: {FILENAME_SPE_DUMP})",
+        help="Restaura o PostgreSQL a partir de um arquivo de backup ou dump",
     )
     parser.add_argument(
-        "--dump-file",
+        "--file",
         type=Path,
-        default=DEFAULT_DUMP_PATH,
-        help=f"Caminho do arquivo de dump para --dump ou --restore (padrão: {FILENAME_SPE_DUMP})",
+        default=DEFAULT_ZIP_PATH,
+        help="Caminho do arquivo de backup para restauração",
     )
     parser.add_argument(
-        "--export-ddl",
+        "--export-sqlite",
         action="store_true",
-        help=f"Gera o script DDL em scripts/{FILENAME_SPE_DB}",
+        help="Extrai os dados do SQLite e gera data_inserts_postgresql.sql",
     )
     parser.add_argument(
-        "--export-data",
+        "--apply-dump",
         action="store_true",
-        help="Extrai os dados do SQLite e gera scripts/data_inserts_postgresql.sql",
-    )
-    parser.add_argument(
-        "--export-all",
-        action="store_true",
-        help="Gera tanto o DDL quanto os inserts SQL",
-    )
-    parser.add_argument(
-        "--apply-ddl",
-        action="store_true",
-        help="Aplica o script DDL no PostgreSQL",
-    )
-    parser.add_argument(
-        "--populate",
-        action="store_true",
-        help="Executa a inserção dos dados no PostgreSQL via credenciais do .env",
-    )
-    parser.add_argument(
-        "--no-truncate",
-        action="store_true",
-        help="Não limpa as tabelas antes de popular o PostgreSQL",
+        help="Aplica data_inserts_postgresql.sql no PostgreSQL de forma atômica",
     )
     parser.add_argument(
         "--verify",
         action="store_true",
-        help="Compara a contagem de registros entre SQLite e PostgreSQL",
+        help="Verifica paridade célula a célula entre SQLite e PostgreSQL",
     )
     parser.add_argument(
         "--sqlite-db",
@@ -1344,51 +319,33 @@ def main() -> None:
         help="Caminho do arquivo SQLite (padrão: spe.db)",
     )
     parser.add_argument(
-        "--ddl-out",
-        type=Path,
-        default=DEFAULT_DDL_PATH,
-        help="Caminho de saída da DDL",
-    )
-    parser.add_argument(
         "--dml-out",
         type=Path,
         default=DEFAULT_DML_PATH,
-        help="Caminho de saída do script de dados",
+        help="Caminho de saída do script de dados SQL",
     )
 
     args = parser.parse_args()
 
-    if not any(
-            [args.dump, args.restore, args.export_ddl, args.export_data, args.export_all, args.apply_ddl, args.populate,
-             args.verify]):
+    if not any([args.dump, args.dump_ddl, args.dump_data, args.restore, args.export_sqlite, args.apply_dump, args.verify]):
         parser.print_help()
         sys.exit(0)
 
     try:
         if args.dump:
-            dump_database(args.dump_file)
-
+            dump_database()
+        if args.dump_ddl:
+            dump_schema_ddl()
+        if args.dump_data:
+            dump_data_inserts()
         if args.restore:
-            restore_database(args.dump_file)
-
-        if args.export_all:
-            export_ddl(args.ddl_out)
-            export_data(args.sqlite_db, args.dml_out)
-        else:
-            if args.export_ddl:
-                export_ddl(args.ddl_out)
-            if args.export_data:
-                export_data(args.sqlite_db, args.dml_out)
-
-        if args.apply_ddl:
-            apply_ddl(args.ddl_out)
-
-        if args.populate:
-            populate_postgresql(args.dml_out, truncate_first=not args.no_truncate)
-
-        if args.verify and not verify_sync(args.sqlite_db):
+            restore_database(args.file)
+        if args.export_sqlite:
+            export_sqlite_to_postgresql(args.sqlite_db, args.dml_out)
+        if args.apply_dump:
+            apply_sql_file(args.dml_out, truncate_first=True)
+        if args.verify and not verify_parity(args.sqlite_db):
             sys.exit(1)
-
     except Exception as e:
         print(f"\n[ERRO]: {e}", file=sys.stderr)
         sys.exit(1)
