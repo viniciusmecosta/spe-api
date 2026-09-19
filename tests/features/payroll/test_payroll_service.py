@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, status
+from sqlalchemy.exc import IntegrityError
 
 import pytest
 from app.features.payroll.payroll_exceptions import (
@@ -325,6 +327,44 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     mock_background_tasks.add_task.assert_called_once_with(
         mock_dispatch, 4, 2024, mock_user_manager.name, mock_closure.report_path, ["main@test.com"]
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("constraint", "expected_error"),
+    [
+        ("uq_payroll_closures_active_period", PayrollAlreadyClosedError),
+        ("fk_payroll_closures_closed_by", IntegrityError),
+    ],
+)
+async def test_close_period_rolls_back_conflict_and_removes_report(
+    mocker, tmp_path, async_db_mock, mock_user_manager, mock_background_tasks,
+    constraint, expected_error,
+):
+    mocker.patch("app.features.payroll.payroll_service.settings.UPLOAD_DIR", str(tmp_path))
+    async_db_mock.rollback = AsyncMock()
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock, return_value=None,
+    )
+    original = Exception("conflict")
+    original.diag = SimpleNamespace(constraint_name=constraint)
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.create",
+        new_callable=AsyncMock, side_effect=IntegrityError("INSERT", {}, original),
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.excel_service.generate_excel_report",
+        return_value=BytesIO(b"report"),
+    )
+
+    with pytest.raises(expected_error):
+        await payroll_service.close_period(
+            async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks,
+        )
+
+    async_db_mock.rollback.assert_awaited_once()
+    assert list((tmp_path / "reports").glob("*.xlsx")) == []
 
 
 @pytest.mark.asyncio

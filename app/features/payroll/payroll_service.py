@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -197,7 +198,7 @@ class PayrollService:
             reports_dir = os.path.join(settings.UPLOAD_DIR, "reports")
             os.makedirs(reports_dir, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             filename = f"folha_ponto_{month:02d}_{year}_{timestamp}.xlsx"
             file_path = os.path.join(reports_dir, filename)
 
@@ -212,7 +213,16 @@ class PayrollService:
 
         await session.commit()
 
-        closure = await self.repo.create(session, month=month, year=year, user_id=current_user.id)
+        try:
+            closure = await self.repo.create(session, month=month, year=year, user_id=current_user.id)
+        except IntegrityError as exc:
+            await session.rollback()
+            await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
+            if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) != "uq_payroll_closures_active_period":
+                raise
+            raise PayrollAlreadyClosedError(
+                f"A folha de ponto referente a {month:02d}/{year} já está fechada."
+            ) from exc
         closure.report_path = f"reports/{filename}"
         await session.commit()
         await session.refresh(closure)

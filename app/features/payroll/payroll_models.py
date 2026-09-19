@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -14,6 +14,12 @@ def get_local_time():
 
 class PayrollClosure(Base):
     __tablename__ = "payroll_closures"
+    __table_args__ = (
+        Index(
+            "uq_payroll_closures_active_period", "year", "month", unique=True,
+            postgresql_where=text("deleted_at IS NULL AND is_closed = TRUE"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     month = Column(Integer, nullable=False)
