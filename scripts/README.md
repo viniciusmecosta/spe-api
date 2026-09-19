@@ -16,20 +16,20 @@ Tenha o Docker instalado. Se o arquivo `.env` ainda não existir, crie-o a parti
 cp .env.example .env
 ```
 
-Confira no `.env` principalmente `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` e `SQLALCHEMY_DATABASE_URI`. Depois execute:
+Confira no `.env` principalmente `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SQLALCHEMY_DATABASE_URI` e a `SECRET_KEY` já usada pela API. Ela precisa ter pelo menos 32 bytes. Para restaurar um backup criptografado em outra máquina, copie a chave **original**; gerar uma chave nova não abre o arquivo. Numa instalação nova, preencha esse campo uma vez e guarde a chave fora do servidor. Nenhuma variável nova é necessária. Depois execute:
 
 ```bash
-make db-init
+make setup && make db-init
 ```
 
 Esse comando inicia o PostgreSQL e cria ou atualiza sua estrutura com o Alembic. Se o banco não iniciar, o Alembic não será executado. Depois, escolha abaixo somente a operação que deseja executar.
 
 ## Opção 1: restaurar um backup PostgreSQL recebido por e-mail
 
-Salve o anexo com o nome `spe.zip` dentro da pasta `scripts`:
+Salve o anexo com o nome `spe.zip.enc` dentro da pasta `scripts`:
 
 ```text
-scripts/spe.zip
+scripts/spe.zip.enc
 ```
 
 Com a preparação inicial concluída, execute:
@@ -38,7 +38,15 @@ Com a preparação inicial concluída, execute:
 make restore
 ```
 
-O restore aceita `spe.zip` ou `spe_dump.sql` na raiz do projeto ou dentro de `scripts/`. Ele apaga os dados atuais do PostgreSQL, preserva a estrutura e o `alembic_version`, valida a revisão do backup e então insere os dados.
+O restore também aceita `spe.zip` ou `spe_dump.sql` antigos, mas exige confirmação especial por não terem manifesto. Para `spe.zip.enc`, ele autentica e descriptografa o pacote com a `SECRET_KEY`, valida o manifesto, preserva a estrutura e o `alembic_version`, insere os dados em transação e compara a quantidade de linhas de cada tabela. Se alguma validação falhar, desfaz a transação.
+
+Para um backup antigo, somente depois de confirmar que o arquivo é confiável e completo, use:
+
+```bash
+.venv/bin/python scripts/apply_sql_to_postgresql.py --file scripts/spe.zip --yes --allow-unverified-dump
+```
+
+Esse modo antigo não consegue comprovar que todas as tabelas estavam presentes. Não o use com arquivos parciais.
 
 ## Opção 2: migrar um banco SQLite para PostgreSQL
 
@@ -74,7 +82,15 @@ scripts/data_inserts_postgresql.sql
 make dump
 ```
 
-O comando gera `spe.zip` com a estrutura e os inserts do PostgreSQL, incluindo a revisão Alembic correta.
+O comando gera `spe.zip.enc` com estrutura e dados de uma única fotografia do PostgreSQL. O arquivo é criptografado com a `SECRET_KEY` atual; os SQLs temporários são removidos ao final. Se `spe.zip.enc` já existir na raiz, o comando **não o sobrescreve**: guarde ou renomeie o arquivo anterior antes de gerar outro. Guarde a chave separadamente do backup e teste uma restauração periódica em um banco descartável.
+
+Com `spe.zip.enc` na raiz ou em `scripts/`, teste sem alterar o banco principal:
+
+```bash
+make db-restore-test
+```
+
+O comando cria um banco temporário, aplica o Alembic e restaura os dados. Ao terminar, apaga somente esse banco temporário. O usuário PostgreSQL precisa de permissão para criar bancos.
 
 ## Encerrar o PostgreSQL
 

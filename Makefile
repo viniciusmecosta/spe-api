@@ -1,4 +1,4 @@
-.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore venv db-init db-pg-up db-dump-ddl db-dump-data db-dump-sqlite db-apply-dump db-check db-migrate-all
+.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore db-restore-test venv db-init db-pg-up db-dump-ddl db-dump-data db-dump-sqlite db-apply-dump db-check db-migrate-all
 
 ifeq ($(OS),Windows_NT)
     PYTHON := .venv\Scripts\python.exe
@@ -74,9 +74,13 @@ db-dump-ddl: db-pg-up
 db-dump-data: db-pg-up
 	$(PYTHON) scripts/db_manager.py --dump-data
 
-# Restaura spe.zip ou spe_dump.sql da raiz ou de scripts/.
+# Restaura spe.zip.enc da raiz ou de scripts/.
 restore: db-pg-up
 	$(PYTHON) scripts/apply_sql_to_postgresql.py --restore --yes
+
+# Testa o backup em um banco temporário sem alterar o banco principal.
+db-restore-test: db-pg-up
+	$(PYTHON) scripts/verify_backup_restore.py
 
 # Abre um terminal com o ambiente virtual.
 venv:
