@@ -2,10 +2,18 @@ import argparse
 import os
 import re
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterator
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.features.system.backup_crypto import decrypt_backup
+from app.features.system.backup_manifest import validate_manifest, validate_manifest_file
 
 try:
     from dotenv import load_dotenv
@@ -22,11 +30,11 @@ try:
 except ModuleNotFoundError:
     from database_migration_config import quote_identifier
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 FILENAME_SPE_DUMP = "spe_dump.sql"
 FILENAME_SPE_DB = "spe-db.sql"
 MAX_SQL_BYTES = 2 * 1024 * 1024 * 1024
+MAX_STATEMENT_BYTES = 128 * 1024 * 1024
 
 TRANSACTION_KEYWORDS = {"BEGIN", "COMMIT", "END", "ROLLBACK"}
 ALLOWED_SET_NAMES = {
@@ -117,7 +125,9 @@ def _dollar_tag_at(sql: str, offset: int) -> str | None:
     return match.group(0) if match else None
 
 
-def split_sql_statements(sql: str) -> list[str]:
+def split_sql_statements(
+    sql: str, *, complete_only: bool = False,
+) -> list[str] | tuple[list[str], str]:
     statements: list[str] = []
     buffer: list[str] = []
     index = 0
@@ -191,6 +201,8 @@ def split_sql_statements(sql: str) -> list[str]:
 
         index += 1
 
+    if complete_only:
+        return statements, "".join(buffer)
     if state in {"single_quote", "double_quote", "block_comment", "dollar_quote"}:
         raise ValueError("SQL inválido ou truncado: literal/comentário não foi fechado")
     remainder = "".join(buffer).strip()
@@ -309,7 +321,9 @@ def _insert_target(statement: str) -> tuple[str | None, str]:
     return schema, _unquote_identifier(match.group(2))
 
 
-def prepare_data_statements(sql_content: str) -> tuple[list[str], set[str]]:
+def prepare_data_statements(
+    sql_content: str, *, allow_empty: bool = False,
+) -> tuple[list[str], set[str]]:
     filtered_lines = [
         line
         for line in sql_content.splitlines()
@@ -363,7 +377,7 @@ def prepare_data_statements(sql_content: str) -> tuple[list[str], set[str]]:
             f"Dump deve conter somente INSERT/SET/setval; comando {keyword} não é permitido"
         )
 
-    if not prepared:
+    if not prepared and not allow_empty:
         raise ValueError("O arquivo não contém comandos de dados aplicáveis")
     return prepared, insert_tables
 
@@ -408,7 +422,11 @@ def _validate_target_schema(
     revisions = {row[0] for row in cursor.fetchall()}
     if not revisions:
         raise RuntimeError("alembic_version está vazia; o schema de destino não foi validado")
-    if dump_revisions and dump_revisions != revisions:
+    compatible_prior_revisions = {("001", "002")}
+    compatible = len(dump_revisions) == len(revisions) == 1 and (
+        next(iter(dump_revisions)), next(iter(revisions))
+    ) in compatible_prior_revisions
+    if dump_revisions and dump_revisions != revisions and not compatible:
         raise RuntimeError(
             "Revisão Alembic do backup não corresponde ao destino: "
             f"backup={sorted(dump_revisions)}, destino={sorted(revisions)}"
@@ -432,24 +450,48 @@ def _truncate_database_tables(cursor: Any, table_names: list[str]) -> None:
     cursor.execute(f"TRUNCATE TABLE {qualified} RESTART IDENTITY CASCADE")
 
 
-def _read_sql_file(sql_path: Path) -> str:
+def _check_sql_file(sql_path: Path) -> None:
     if not sql_path.is_file():
         raise FileNotFoundError(f"Arquivo SQL não encontrado: {sql_path}")
     if sql_path.stat().st_size > MAX_SQL_BYTES:
         raise ValueError(f"Arquivo SQL excede o limite de {MAX_SQL_BYTES} bytes")
-    return sql_path.read_text(encoding="utf-8")
 
 
-def apply_sql_content(
-    sql_content: str,
+def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
+    remainder = ""
+    with sql_path.open("r", encoding="utf-8") as source:
+        for line in source:
+            if line.lstrip().startswith((r"\restrict", r"\unrestrict")):
+                continue
+            remainder += line
+            if len(remainder.encode("utf-8")) > MAX_STATEMENT_BYTES:
+                raise ValueError(f"Comando SQL excede {MAX_STATEMENT_BYTES} bytes")
+            if ";" not in line:
+                continue
+            complete, remainder = split_sql_statements(remainder, complete_only=True)
+            yield from complete
+    if remainder.strip():
+        yield from split_sql_statements(remainder)
+
+
+def _iter_prepared_file_statements(sql_path: Path) -> Iterator[str]:
+    for raw_statement in _iter_sql_file_statements(sql_path):
+        prepared, _ = prepare_data_statements(raw_statement, allow_empty=True)
+        yield from prepared
+
+
+def _apply_prepared_dump(
+    statement_factory: Callable[[], Iterator[str]],
+    statement_count: int,
+    insert_tables: set[str],
+    dump_revisions: set[str],
+    manifest_validator: Callable[[set[str]], dict[str, int] | None],
     *,
-    truncate_first: bool = True,
-    allow_destructive: bool = False,
-    expected_database: str | None = None,
-    dry_run: bool = False,
+    truncate_first: bool,
+    allow_destructive: bool,
+    expected_database: str | None,
+    dry_run: bool,
 ) -> dict[str, Any]:
-    dump_revisions = extract_dump_alembic_revisions(sql_content)
-    statements, insert_tables = prepare_data_statements(sql_content)
     if truncate_first and not allow_destructive and not dry_run:
         raise RuntimeError("Restauração destrutiva não confirmada; use --yes")
 
@@ -465,15 +507,14 @@ def apply_sql_content(
                 f"Banco conectado é {current_database!r}, mas {expected_database!r} foi confirmado"
             )
         application_tables, target_revisions = _validate_target_schema(
-            cursor,
-            insert_tables,
-            dump_revisions,
+            cursor, insert_tables, dump_revisions,
         )
+        row_counts = manifest_validator(set(application_tables)) if truncate_first else None
         if dry_run:
             connection.rollback()
             return {
                 "database": current_database,
-                "statements": len(statements),
+                "statements": statement_count,
                 "insert_tables": sorted(insert_tables),
                 "alembic_revisions": sorted(target_revisions),
                 "truncated_tables": [],
@@ -485,12 +526,26 @@ def apply_sql_content(
         if truncate_first:
             _truncate_database_tables(cursor, application_tables)
         cursor.execute("SET CONSTRAINTS ALL DEFERRED")
-        for statement in statements:
+        executed = 0
+        for statement in statement_factory():
             cursor.execute(statement)
+            executed += 1
+        if executed != statement_count:
+            raise RuntimeError("Dump foi alterado durante a restauração")
+        if row_counts is not None:
+            if manifest_validator(set(application_tables)) != row_counts:
+                raise RuntimeError("Manifesto do backup foi alterado durante a restauração")
+            for table, expected_count in row_counts.items():
+                cursor.execute(f'SELECT COUNT(*) FROM public.{quote_identifier(table)}')
+                actual_count = cursor.fetchone()[0]
+                if actual_count != expected_count:
+                    raise RuntimeError(
+                        f"Backup incompleto na tabela {table}: esperado {expected_count}, aplicado {actual_count}"
+                    )
         connection.commit()
         return {
             "database": current_database,
-            "statements": len(statements),
+            "statements": statement_count,
             "insert_tables": sorted(insert_tables),
             "alembic_revisions": sorted(target_revisions),
             "truncated_tables": application_tables if truncate_first else [],
@@ -503,6 +558,29 @@ def apply_sql_content(
         connection.close()
 
 
+def apply_sql_content(
+    sql_content: str,
+    *,
+    truncate_first: bool = True,
+    allow_destructive: bool = False,
+    expected_database: str | None = None,
+    dry_run: bool = False,
+    allow_unverified_dump: bool = False,
+) -> dict[str, Any]:
+    dump_revisions = extract_dump_alembic_revisions(sql_content)
+    statements, insert_tables = prepare_data_statements(sql_content)
+    return _apply_prepared_dump(
+        lambda: iter(statements), len(statements), insert_tables, dump_revisions,
+        lambda tables: validate_manifest(
+            sql_content, tables, allow_unverified=allow_unverified_dump,
+        ),
+        truncate_first=truncate_first,
+        allow_destructive=allow_destructive,
+        expected_database=expected_database,
+        dry_run=dry_run,
+    )
+
+
 def apply_sql_file(
     sql_path: Path,
     truncate_first: bool = True,
@@ -510,9 +588,27 @@ def apply_sql_file(
     allow_destructive: bool = False,
     expected_database: str | None = None,
     dry_run: bool = False,
+    allow_unverified_dump: bool = False,
 ) -> dict[str, Any]:
-    return apply_sql_content(
-        _read_sql_file(sql_path),
+    _check_sql_file(sql_path)
+    statement_count = 0
+    insert_tables: set[str] = set()
+    dump_revisions: set[str] = set()
+    for raw_statement in _iter_sql_file_statements(sql_path):
+        dump_revisions.update(extract_dump_alembic_revisions(raw_statement))
+        prepared, tables = prepare_data_statements(raw_statement, allow_empty=True)
+        statement_count += len(prepared)
+        insert_tables.update(tables)
+    if not statement_count:
+        raise ValueError("O arquivo não contém comandos de dados aplicáveis")
+    return _apply_prepared_dump(
+        lambda: _iter_prepared_file_statements(sql_path),
+        statement_count,
+        insert_tables,
+        dump_revisions,
+        lambda tables: validate_manifest_file(
+            sql_path, tables, allow_unverified=allow_unverified_dump,
+        ),
         truncate_first=truncate_first,
         allow_destructive=allow_destructive,
         expected_database=expected_database,
@@ -535,8 +631,10 @@ def _find_data_member(archive: zipfile.ZipFile) -> zipfile.ZipInfo:
 
 def find_backup_source() -> Path | None:
     candidates = [
-        ROOT_DIR / "spe.zip",
+        ROOT_DIR / "scripts" / "spe.zip.enc",
+        ROOT_DIR / "spe.zip.enc",
         ROOT_DIR / "scripts" / "spe.zip",
+        ROOT_DIR / "spe.zip",
         ROOT_DIR / FILENAME_SPE_DUMP,
         ROOT_DIR / "scripts" / FILENAME_SPE_DUMP,
         DEFAULT_DML_PATH,
@@ -550,10 +648,25 @@ def restore_backup(
     allow_destructive: bool = False,
     expected_database: str | None = None,
     dry_run: bool = False,
+    allow_unverified_dump: bool = False,
 ) -> dict[str, Any]:
     target = source_path or find_backup_source()
     if not target or not target.is_file():
         raise FileNotFoundError("Arquivo de backup ou dump não encontrado")
+
+    if target.name.endswith(".zip.enc"):
+        load_environment()
+        decrypted = decrypt_backup(target, os.getenv("SECRET_KEY", ""))
+        try:
+            return restore_backup(
+                decrypted,
+                allow_destructive=allow_destructive,
+                expected_database=expected_database,
+                dry_run=dry_run,
+                allow_unverified_dump=allow_unverified_dump,
+            )
+        finally:
+            decrypted.unlink(missing_ok=True)
 
     if target.suffix.lower() != ".zip":
         return apply_sql_file(
@@ -561,19 +674,36 @@ def restore_backup(
             allow_destructive=allow_destructive,
             expected_database=expected_database,
             dry_run=dry_run,
+            allow_unverified_dump=allow_unverified_dump,
         )
 
     with zipfile.ZipFile(target, "r") as archive:
         member = _find_data_member(archive)
         if member.file_size > MAX_SQL_BYTES:
             raise ValueError(f"SQL compactado excede o limite de {MAX_SQL_BYTES} bytes")
-        sql_content = archive.read(member).decode("utf-8")
-    return apply_sql_content(
-        sql_content,
-        allow_destructive=allow_destructive,
-        expected_database=expected_database,
-        dry_run=dry_run,
-    )
+        with tempfile.NamedTemporaryFile(prefix="spe-sql-", suffix=".sql", delete=False) as output:
+            temporary = Path(output.name)
+            try:
+                with archive.open(member) as source:
+                    copied = 0
+                    while chunk := source.read(1024 * 1024):
+                        copied += len(chunk)
+                        if copied > MAX_SQL_BYTES:
+                            raise ValueError(f"SQL compactado excede o limite de {MAX_SQL_BYTES} bytes")
+                        output.write(chunk)
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                raise
+    try:
+        return apply_sql_file(
+            temporary,
+            allow_destructive=allow_destructive,
+            expected_database=expected_database,
+            dry_run=dry_run,
+            allow_unverified_dump=allow_unverified_dump,
+        )
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def main() -> None:
@@ -597,6 +727,10 @@ def main() -> None:
         help="Exige que o nome real do banco seja exatamente este antes de apagar dados",
     )
     parser.add_argument("--dry-run", action="store_true", help="Valida arquivo, conexão e schema sem alterar dados")
+    parser.add_argument(
+        "--allow-unverified-dump", action="store_true",
+        help="Aceita backup antigo sem manifesto; use somente após verificar a origem e a integridade",
+    )
     args = parser.parse_args()
 
     if not args.no_truncate and not args.yes and not args.dry_run:
@@ -610,6 +744,7 @@ def main() -> None:
                 allow_destructive=args.yes,
                 expected_database=args.confirm_database,
                 dry_run=args.dry_run,
+                allow_unverified_dump=args.allow_unverified_dump,
             )
         else:
             result = apply_sql_file(
@@ -618,6 +753,7 @@ def main() -> None:
                 allow_destructive=args.yes,
                 expected_database=args.confirm_database,
                 dry_run=args.dry_run,
+                allow_unverified_dump=args.allow_unverified_dump,
             )
         action = "validado" if args.dry_run else "aplicado"
         print(

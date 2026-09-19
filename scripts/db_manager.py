@@ -4,6 +4,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from scripts.apply_sql_to_postgresql import (
     restore_backup,
     strip_sql_comments,
 )
+from app.features.system.backup_manifest import add_manifest
+from app.features.system.backup_crypto import encrypt_backup
 from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
 from scripts.verify_parity import verify_parity
 FILENAME_SPE_DUMP = "spe_dump.sql"
@@ -28,6 +31,7 @@ DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
 DEFAULT_SCHEMA_PATH = ROOT_DIR / FILENAME_SPE_DB
 DEFAULT_DUMP_PATH = ROOT_DIR / FILENAME_SPE_DUMP
 DEFAULT_ZIP_PATH = ROOT_DIR / FILENAME_SPE_ZIP
+DEFAULT_ENCRYPTED_PATH = ROOT_DIR / "spe.zip.enc"
 DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 
 
@@ -43,8 +47,15 @@ def _clean_pg_dump_bytes(raw_bytes: bytes) -> str:
 def _clean_pg_dump_file(output_path: Path) -> bool:
     if not output_path.is_file() or output_path.stat().st_size == 0:
         return False
-    cleaned = _clean_pg_dump_bytes(output_path.read_bytes())
-    output_path.write_text(cleaned, encoding="utf-8", newline="\n")
+    temporary = output_path.with_name(output_path.name + ".clean.tmp")
+    try:
+        with output_path.open("rb") as source, temporary.open("wb") as destination:
+            for line in source:
+                if not line.lstrip().startswith((b"\\restrict", b"\\unrestrict")):
+                    destination.write(line)
+        temporary.replace(output_path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return output_path.stat().st_size > 0
 
 
@@ -210,11 +221,9 @@ def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: l
         "--encoding=UTF8",
         *extra_flags,
     ]
-    res = subprocess.run(cmd, capture_output=True)
-    if res.returncode == 0 and res.stdout:
-        output_path.write_text(_clean_pg_dump_bytes(res.stdout), encoding="utf-8", newline="\n")
-        return True
-    return False
+    with output_path.open("wb") as output:
+        res = subprocess.run(cmd, stdout=output, stderr=subprocess.PIPE)
+    return res.returncode == 0 and _clean_pg_dump_file(output_path)
 
 
 def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
@@ -248,20 +257,45 @@ def dump_data_inserts(output_path: Path = DEFAULT_DUMP_PATH) -> None:
 
     print(f"Extraindo inserts de dados do PostgreSQL para: {output_path.name}...")
     if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
+        add_manifest(output_path, _database_counts(creds))
         print(f"[OK] Inserts extraídos com sucesso via pg_dump! ({output_path.stat().st_size:,} bytes)")
         return
 
     if _run_docker_pg_dump(output_path, creds, flags):
+        add_manifest(output_path, _database_counts(creds))
         print(f"[OK] Inserts extraídos com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
         return
 
     from app.features.system.backup_service import backup_service
     params = backup_service._get_postgres_connection_params()
     if backup_service._dump_postgresql_python(str(output_path), params):
+        add_manifest(output_path, _database_counts(creds))
         print(f"[OK] Inserts extraídos com sucesso via dumper Python! ({output_path.stat().st_size:,} bytes)")
         return
 
     raise RuntimeError("Não foi possível extrair inserts do PostgreSQL.")
+
+
+def _database_counts(creds: dict[str, str]) -> dict[str, int]:
+    import psycopg2
+    from psycopg2 import sql
+
+    with psycopg2.connect(
+        host=creds["host"], port=int(creds["port"]), user=creds["user"],
+        password=creds["password"], dbname=creds["dbname"],
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                "AND table_name != 'alembic_version'"
+            )
+            tables = [row[0] for row in cursor.fetchall()]
+            counts = {}
+            for table in tables:
+                cursor.execute(sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table)))
+                counts[table] = cursor.fetchone()[0]
+            return counts
 
 
 def dump_database(
@@ -269,18 +303,32 @@ def dump_database(
     dump_path: Path = DEFAULT_DUMP_PATH,
     zip_path: Path = DEFAULT_ZIP_PATH,
 ) -> None:
-    print("Iniciando dump completo desmembrado do PostgreSQL...")
-    dump_schema_ddl(schema_path)
-    dump_data_inserts(dump_path)
+    print("Iniciando backup completo do PostgreSQL...")
+    from app.features.system.backup_service import backup_service
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.write(schema_path, arcname=FILENAME_SPE_DB)
-        z.write(dump_path, arcname=FILENAME_SPE_DUMP)
-    print(f"[OK] Pacote de backup completo gerado em {zip_path.name} ({zip_path.stat().st_size:,} bytes)")
+    load_environment()
+    secret = os.getenv("SECRET_KEY", "")
+    with tempfile.TemporaryDirectory(prefix="spe-dump-") as directory:
+        temporary_dir = Path(directory)
+        temporary_schema = temporary_dir / schema_path.name
+        temporary_dump = temporary_dir / dump_path.name
+        temporary_zip = temporary_dir / zip_path.name
+        with backup_service.consistent_snapshot():
+            if not backup_service._dump_postgresql_schema(str(temporary_schema)):
+                raise RuntimeError("Não foi possível gerar o esquema do backup")
+            if not backup_service._dump_postgresql_inserts(str(temporary_dump)):
+                raise RuntimeError("Não foi possível gerar os dados do backup")
+            add_manifest(temporary_dump, backup_service._snapshot_counts or {})
+        with zipfile.ZipFile(temporary_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.write(temporary_schema, arcname=FILENAME_SPE_DB)
+            archive.write(temporary_dump, arcname=FILENAME_SPE_DUMP)
+        destination = zip_path.with_name(zip_path.name + ".enc")
+        encrypted_path = encrypt_backup(temporary_zip, secret, destination)
+        print(f"[OK] Backup criptografado em {encrypted_path.name} ({encrypted_path.stat().st_size:,} bytes)")
 
 
 def restore_database(
-    input_path: Path = DEFAULT_ZIP_PATH,
+    input_path: Path = DEFAULT_ENCRYPTED_PATH,
     *,
     expected_database: str | None = None,
 ) -> None:
@@ -319,7 +367,7 @@ def main() -> None:
     parser.add_argument(
         "--file",
         type=Path,
-        default=DEFAULT_ZIP_PATH,
+        default=DEFAULT_ENCRYPTED_PATH,
         help="Caminho do arquivo de backup para restauração",
     )
     parser.add_argument(

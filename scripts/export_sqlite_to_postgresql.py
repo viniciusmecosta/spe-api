@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import TextIO
 from zoneinfo import ZoneInfo
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.features.system.backup_manifest import add_manifest
+
 try:
     from scripts.database_migration_config import (
         BOOLEAN_COLUMNS,
@@ -39,7 +45,6 @@ except ModuleNotFoundError:
         sqlite_type_family,
     )
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
 DEFAULT_OUTPUT_SQL_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 
@@ -210,16 +215,17 @@ def _write_dump(
     for table_name in TABLE_ORDER:
         table_sql = quote_identifier(table_name)
         cursor.execute(f"SELECT * FROM {table_sql} ORDER BY {quote_identifier('id')} ASC")
-        rows = cursor.fetchall()
-        stats[table_name] = len(rows)
-        _export_table_data(
-            output,
-            table_name,
-            rows,
-            schema[table_name],
-            batch_size,
-            timezone_name,
-        )
+        stats[table_name] = 0
+        while rows := cursor.fetchmany(batch_size):
+            stats[table_name] += len(rows)
+            _export_table_data(
+                output,
+                table_name,
+                rows,
+                schema[table_name],
+                batch_size,
+                timezone_name,
+            )
 
     for table_name in TABLE_ORDER:
         table_literal = table_name.replace("'", "''")
@@ -266,6 +272,7 @@ def export_sqlite_to_postgresql(
             stats = _write_dump(output, cursor, schema, batch_size, timezone_name)
             output.flush()
             os.fsync(output.fileno())
+        add_manifest(temp_path, stats)
         os.replace(temp_path, output_sql_path)
         temp_path = None
         return stats
