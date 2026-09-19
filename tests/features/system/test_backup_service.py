@@ -1,3 +1,5 @@
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, mock_open, patch
 
 from app.features.system.backup_service import BackupService
@@ -35,15 +37,19 @@ def test_create_safe_backup_exception(mocker):
     mock_logger.assert_called_once()
 
 
-def test_create_sql_dump_success(mocker):
+def test_create_sql_dump_success(mocker, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
     service = BackupService()
-    mocker.patch.object(service, "_dump_postgresql_inserts", return_value=True)
-    mocker.patch("os.path.exists", return_value=True)
-    mocker.patch("os.path.getsize", return_value=1024)
+    service._snapshot_tables = {"users"}
+    mocker.patch.object(
+        service, "_dump_postgresql_inserts",
+        side_effect=lambda path: Path(path).write_text("INSERT INTO users (id) VALUES (1);\n") or True,
+    )
     result = service.create_sql_dump()
     assert result is not None
     assert result.startswith("temp_inserts_")
     assert result.endswith(".sql")
+    assert Path(result).read_text().startswith("-- SPE-DUMP-MANIFEST:")
 
 
 def test_create_sql_dump_failure(mocker):
@@ -60,6 +66,7 @@ def test_compress_files_success(mocker):
 
     zip_instance = MagicMock()
     mock_zipfile.return_value.__enter__.return_value = zip_instance
+    mocker.patch("app.features.system.backup_service.encrypt_backup", return_value=Path("output.zip.enc"))
 
     service = BackupService()
     files = {
@@ -69,7 +76,7 @@ def test_compress_files_success(mocker):
     }
     result = service.compress_files(files, "output.zip")
 
-    assert result == "output.zip"
+    assert result == "output.zip.enc"
     zip_instance.write.assert_called_once_with("file1.db", arcname="backup1.db")
 
 
@@ -120,25 +127,27 @@ def test_dump_postgresql_tier3_python_fallback(mocker):
     mock_py_dump.assert_called_once()
 
 
-def test_dump_postgresql_python_success(mocker):
+def test_dump_postgresql_python_success(mocker, tmp_path):
     service = BackupService()
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_conn.cursor.return_value.__enter__.return_value = mock_cur
     mock_cur.fetchall.side_effect = [
         [("companies",), ("custom_table",)],
-        [(1, "Company A", {"k": "v"}, memoryview(b"abc"))],
-        [(10, "Custom")],
+    ]
+    mock_cur.fetchmany.side_effect = [
+        [(1, "Company A", {"k": "v"}, memoryview(b"abc"))], [],
+        [(10, "Custom")], [],
     ]
     mock_cur.description = [("id",), ("name",), ("data",), ("blob",)]
     mock_cur.fetchone.return_value = ("companies_id_seq",)
     mock_cur.mogrify.return_value = b'INSERT INTO "companies" ("id") VALUES (1);\n'
 
     mocker.patch("psycopg2.connect", return_value=mock_conn)
-    mocker.patch("builtins.open", mocker.mock_open())
+    mocker.patch.object(service, "_open_private", return_value=mocker.mock_open()())
 
     params = {"host": "localhost", "port": 5432, "user": "spe", "password": "pwd", "dbname": "spe_db"}
-    result = service._dump_postgresql_python("output.sql", params)
+    result = service._dump_postgresql_python(str(tmp_path / "output.sql"), params)
 
     assert result is True
     mock_conn.close.assert_called_once()
@@ -170,7 +179,7 @@ def test_dump_table_data_empty(mocker):
     service = BackupService()
     mock_cur = MagicMock()
     mock_cur.description = [("id",)]
-    mock_cur.fetchall.return_value = []
+    mock_cur.fetchmany.return_value = []
     mock_file = MagicMock()
     service._dump_table_data(mock_cur, mock_file, "empty_table")
     mock_file.write.assert_not_called()
@@ -180,7 +189,7 @@ def test_dump_table_data_alembic_version_is_idempotent():
     service = BackupService()
     mock_cur = MagicMock()
     mock_cur.description = [("version_num",)]
-    mock_cur.fetchall.return_value = [("045",)]
+    mock_cur.fetchmany.side_effect = [[("045",)], []]
     mock_cur.mogrify.return_value = b"INSERT INTO alembic_version VALUES ('045');\n"
     mock_file = MagicMock()
 
@@ -222,17 +231,6 @@ def test_filter_pg_dump_output(tmp_path):
     assert "SELECT 1;" in content
 
 
-def test_dump_postgresql_schema_python_success_and_failure(mocker, tmp_path):
-    service = BackupService()
-    out_file = str(tmp_path / "schema.sql")
-    res = service._dump_postgresql_schema_python(out_file)
-    assert res is True
-
-    mocker.patch("builtins.open", side_effect=OSError("Disk full"))
-    res_fail = service._dump_postgresql_schema_python(out_file)
-    assert res_fail is False
-
-
 def test_dump_postgresql_schema_host_success(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value="/usr/bin/pg_dump")
@@ -254,12 +252,11 @@ def test_dump_postgresql_schema_docker_fallback(mocker):
     assert service._dump_postgresql_schema("schema.sql") is True
 
 
-def test_dump_postgresql_schema_python_fallback(mocker):
+def test_dump_postgresql_schema_without_pg_dump_fails_closed(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value=None)
     mocker.patch("shutil.which", return_value=None)
-    mocker.patch.object(service, "_dump_postgresql_schema_python", return_value=True)
-    assert service._dump_postgresql_schema("schema.sql") is True
+    assert service._dump_postgresql_schema("schema.sql") is False
 
 
 def test_dump_postgresql_inserts_host_failure_docker_fallback(mocker):
@@ -288,13 +285,91 @@ def test_find_pg_dump_shutil_which(mocker):
     assert service._find_pg_dump() == "/usr/bin/pg_dump"
 
 
+def test_consistent_snapshot_tracks_tables_and_releases_connection(mocker):
+    service = BackupService()
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.side_effect = [("snapshot-1",), (3,), (0,)]
+    cursor.fetchall.return_value = [("users",), ("companies",)]
+    mocker.patch("psycopg2.connect", return_value=connection)
+    mocker.patch.object(service, "_get_postgres_connection_params", return_value={
+        "host": "localhost", "port": 5432, "user": "spe", "password": "secret", "dbname": "spe_db",
+    })
+
+    with service.consistent_snapshot():
+        assert service._snapshot_id == "snapshot-1"
+        assert service._snapshot_counts == {"users": 3, "companies": 0}
+
+    assert service._snapshot_id is None
+    assert service._snapshot_counts is None
+    connection.rollback.assert_called_once()
+    connection.close.assert_called_once()
+
+
+def test_snapshot_dump_streams_host_output_and_strips_directives(mocker, tmp_path):
+    service = BackupService()
+    service._snapshot_id = "snapshot-1"
+    mocker.patch.object(service, "_get_postgres_connection_params", return_value={
+        "host": "localhost", "port": 5432, "user": "spe", "password": "secret", "dbname": "spe_db",
+    })
+    mocker.patch.object(service, "_find_pg_dump", return_value="/usr/bin/pg_dump")
+    mocker.patch("app.features.system.backup_service.shutil.which", return_value=None)
+
+    def run(command, **kwargs):
+        assert "--snapshot=snapshot-1" in command
+        kwargs["stdout"].write(b"\\restrict x\nSELECT 1;\n\\unrestrict x\n")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    mocker.patch("app.features.system.backup_service.subprocess.run", side_effect=run)
+    path = tmp_path / "schema.sql"
+    assert service._dump_with_snapshot(str(path), schema_only=True)
+    assert path.read_text() == "SELECT 1;\n"
+    assert path.stat().st_mode & 0o077 == 0
+
+
+def test_snapshot_dump_uses_docker_and_cleans_failed_output(mocker, tmp_path):
+    service = BackupService()
+    params = {"host": "localhost", "port": 5432, "user": "spe", "password": "secret", "dbname": "spe_db"}
+    mocker.patch.object(service, "_get_postgres_connection_params", return_value=params)
+    mocker.patch.object(service, "_find_pg_dump", return_value=None)
+    mocker.patch("app.features.system.backup_service.shutil.which", return_value="/usr/bin/docker")
+    assert service._dump_with_snapshot(str(tmp_path / "none.sql"), schema_only=False) is False
+    service._snapshot_id = "snapshot-1"
+
+    def successful_run(command, **kwargs):
+        assert command[:2] == ["docker", "exec"]
+        kwargs["stdout"].write(b"INSERT INTO users (id) VALUES (1);\n")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    run = mocker.patch("app.features.system.backup_service.subprocess.run", side_effect=successful_run)
+    output = tmp_path / "data.sql"
+    assert service._dump_with_snapshot(str(output), schema_only=False)
+    run.assert_called_once()
+    assert output.exists()
+
+    run.side_effect = lambda command, **kwargs: SimpleNamespace(returncode=1, stderr=b"pg_dump failed")
+    failed = tmp_path / "failed.sql"
+    assert service._dump_with_snapshot(str(failed), schema_only=False) is False
+    assert not failed.exists()
+
+
+def test_snapshot_routes_schema_and_data_to_same_dump(mocker):
+    service = BackupService()
+    service._snapshot_id = "snapshot-1"
+    dump = mocker.patch.object(service, "_dump_with_snapshot", return_value=True)
+    assert service._dump_postgresql_schema("schema.sql")
+    assert service._dump_postgresql_inserts("data.sql")
+    assert dump.call_count == 2
+    assert dump.call_args_list[0].kwargs == {"schema_only": True}
+    assert dump.call_args_list[1].kwargs == {"schema_only": False}
+
+
 def test_dump_postgresql_schema_docker_failure(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value=None)
     mocker.patch("shutil.which", side_effect=lambda c: "/usr/bin/docker" if c == "docker" else None)
     mocker.patch("subprocess.run", side_effect=Exception("Docker failed"))
-    mocker.patch.object(service, "_dump_postgresql_schema_python", return_value=True)
-    assert service._dump_postgresql_schema("schema.sql") is True
+    assert service._dump_postgresql_schema("schema.sql") is False
 
 
 def test_create_safe_backup_cleanup_existing_on_failure(mocker):
@@ -333,5 +408,3 @@ def test_create_sql_dump_cleanup_existing_on_exception(mocker):
     mock_remove = mocker.patch("os.remove", side_effect=OSError("Cannot remove"))
     assert service.create_sql_dump() is None
     mock_remove.assert_called_once()
-
-

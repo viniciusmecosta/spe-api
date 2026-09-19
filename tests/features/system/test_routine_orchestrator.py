@@ -510,7 +510,7 @@ async def test_send_manual_backup_email_attaches_yesterday_and_today_logs(
         assert res is True
         call_attachments = mock_email_service.send_email.call_args[0][1]
         filenames = [att[1] for att in call_attachments]
-        assert "spe.zip" in filenames
+        assert "spe.zip.enc" in filenames
         log_files = [f for f in filenames if f.startswith("log_")]
         assert len(log_files) == 2
 
@@ -521,7 +521,7 @@ async def test_execute_manual_backup_telegram_sends_yesterday_and_today_logs(
 ):
     mock_backup_service.create_safe_backup.return_value = "/tmp/schema.sql"
     mock_backup_service.create_sql_dump.return_value = "/tmp/data.sql"
-    mock_backup_service.compress_files.return_value = "/tmp/backup.zip"
+    mock_backup_service.compress_files.return_value = "/tmp/backup.zip.enc"
     mock_telegram_service.send_document.return_value = True
     await orchestrator.execute_manual_backup_telegram()
     assert mock_telegram_service.send_document.call_count == 3
@@ -547,7 +547,7 @@ async def test_run_daily_backup_routine_email_attaches_today_log(
     assert mock_email_service.send_email.called
     attachments = mock_email_service.send_email.call_args[0][1]
     filenames = [att[1] for att in attachments]
-    assert "spe.zip" in filenames
+    assert "spe.zip.enc" in filenames
     log_files = [f for f in filenames if f.startswith("log_")]
     assert len(log_files) >= 2
 
@@ -582,17 +582,18 @@ async def test_routine_orchestrator_environment_dev_and_cleanup_oserror(orchestr
 
 def test_generate_backup_files_zip_sync_postgresql(mocker):
     orchestrator = RoutineOrchestrator()
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.consistent_snapshot")
     mocker.patch("app.features.system.routine_orchestrator.backup_service.create_safe_backup",
                  return_value="temp_backup.sql")
     mocker.patch("app.features.system.routine_orchestrator.backup_service.create_sql_dump",
                  return_value="temp_inserts.sql")
     mock_compress = mocker.patch("app.features.system.routine_orchestrator.backup_service.compress_files",
-                                 return_value="temp_backup.sql.zip")
+                                 return_value="temp_backup.sql.zip.enc")
 
     b_path, s_path, z_path = orchestrator._generate_backup_files_zip_sync()
     assert b_path == "temp_backup.sql"
     assert s_path == "temp_inserts.sql"
-    assert z_path == "temp_backup.sql.zip"
+    assert z_path == "temp_backup.sql.zip.enc"
 
     mock_compress.assert_called_once_with(
         {"temp_backup.sql": "spe-db.sql", "temp_inserts.sql": "spe_dump.sql"},
@@ -602,6 +603,7 @@ def test_generate_backup_files_zip_sync_postgresql(mocker):
 
 def test_generate_backup_files_zip_sync_requires_schema_and_data(mocker):
     orchestrator = RoutineOrchestrator()
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.consistent_snapshot")
     mocker.patch("app.features.system.routine_orchestrator.backup_service.create_safe_backup", return_value="schema.sql")
     mocker.patch("app.features.system.routine_orchestrator.backup_service.create_sql_dump", return_value=None)
     mock_compress = mocker.patch("app.features.system.routine_orchestrator.backup_service.compress_files")
@@ -623,18 +625,18 @@ async def test_build_email_attachments_postgresql(mocker):
         sql_file="inserts.sql",
     )
     filenames_unzipped = [a[1] for a in att_unzipped]
-    assert "spe-db.sql" in filenames_unzipped
-    assert "spe_dump.sql" in filenames_unzipped
+    assert "spe-db.sql" not in filenames_unzipped
+    assert "spe_dump.sql" not in filenames_unzipped
 
     att_zip = await orchestrator._build_email_attachments(
-        "backup.sql.zip",
+        "backup.sql.zip.enc",
         True,
         datetime(2023, 1, 1).date(),
         datetime(2023, 1, 2).date(),
         sql_file="inserts.sql",
     )
     filenames_zip = [a[1] for a in att_zip]
-    assert "spe.zip" in filenames_zip
+    assert "spe.zip.enc" in filenames_zip
     assert "spe_dump.sql" not in filenames_zip
     assert "spe-db.sql" not in filenames_zip
     assert any(f.startswith("log_") for f in filenames_zip)
@@ -668,12 +670,13 @@ async def test_execute_manual_backup_telegram_uncompressed_sql(
     mock_backup_service.compress_files.return_value = None
     mock_telegram_service.send_document.return_value = True
     await orchestrator.execute_manual_backup_telegram()
-    assert mock_telegram_service.send_document.call_count == 4
+    assert mock_telegram_service.send_document.call_count == 0
 
 
 @pytest.mark.asyncio
 async def test_resolve_backup_filename(orchestrator):
     assert orchestrator._resolve_backup_filename("path.zip", None) == "spe.zip"
+    assert orchestrator._resolve_backup_filename("path.zip.enc", None) == "spe.zip.enc"
     assert orchestrator._resolve_backup_filename(None, "path.sql") == "spe-db.sql"
     assert orchestrator._resolve_backup_filename(None, None) == "spe_dump.sql"
 
@@ -682,16 +685,16 @@ async def test_resolve_backup_filename(orchestrator):
 async def test_prepare_backup_attachments_branches(orchestrator, mocker):
     mocker.patch("os.path.exists", return_value=True)
     att = []
-    orchestrator._prepare_backup_attachments(att, "spe.zip", "spe-db.sql", "spe_dump.sql")
-    assert att == [("spe.zip", "spe.zip")]
+    orchestrator._prepare_backup_attachments(att, "spe.zip.enc", "spe-db.sql", "spe_dump.sql")
+    assert att == [("spe.zip.enc", "spe.zip.enc")]
 
     att2 = []
     orchestrator._prepare_backup_attachments(att2, None, "spe-db.sql", "spe_dump.sql")
-    assert att2 == [("spe-db.sql", "spe-db.sql"), ("spe_dump.sql", "spe_dump.sql")]
+    assert att2 == []
 
     att3 = []
     orchestrator._prepare_backup_attachments(att3, None, None, "spe_dump.sql")
-    assert att3 == [("spe_dump.sql", "spe_dump.sql")]
+    assert att3 == []
 
 
 @pytest.mark.asyncio
@@ -745,4 +748,3 @@ async def test_trigger_manual_endpoints(orchestrator):
     telegram_svc.validate_manual_report_dates.assert_called_once_with(d1, d2)
     bg.add_task.assert_called_with(orchestrator.send_manual_report_telegram, d1, d2)
     assert "processamento em background" in res3["message"]
-

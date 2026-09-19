@@ -35,6 +35,7 @@ DATE_FORMAT = "%d/%m/%Y"
 BACKUP_DB_FILENAME = "spe-db.sql"
 BACKUP_SQL_FILENAME = "spe_dump.sql"
 BACKUP_ZIP_FILENAME = "spe.zip"
+ENCRYPTED_BACKUP_FILENAME = "spe.zip.enc"
 
 
 class RoutineOrchestrator:
@@ -52,25 +53,30 @@ class RoutineOrchestrator:
 
     def _resolve_backup_filename(self, zip_path: str | None, backup_path: str | None) -> str:
         if zip_path:
-            return BACKUP_ZIP_FILENAME
+            return ENCRYPTED_BACKUP_FILENAME if zip_path.endswith(".enc") else BACKUP_ZIP_FILENAME
         if backup_path:
             return BACKUP_DB_FILENAME
         return BACKUP_SQL_FILENAME
 
     def _generate_backup_files_zip_sync(self) -> tuple[str | None, str | None, str | None]:
-        backup_path = backup_service.create_safe_backup()
-        sql_path = backup_service.create_sql_dump()
-        if not backup_path or not sql_path:
-            self._cleanup_backup_files_sync(backup_path, sql_path, None)
+        backup_path = sql_path = zip_path = None
+        try:
+            with backup_service.consistent_snapshot():
+                backup_path = backup_service.create_safe_backup()
+                sql_path = backup_service.create_sql_dump()
+            if not backup_path or not sql_path:
+                raise RuntimeError("Schema ou dados não foram gerados")
+            zip_path = backup_service.compress_files(
+                {backup_path: BACKUP_DB_FILENAME, sql_path: BACKUP_SQL_FILENAME},
+                backup_path + '.zip',
+            )
+            if not zip_path or not zip_path.endswith(".enc"):
+                raise RuntimeError("Pacote criptografado não foi gerado")
+            return backup_path, sql_path, zip_path
+        except Exception:
+            logger.exception("Falha ao gerar backup consistente e criptografado")
+            self._cleanup_backup_files_sync(backup_path, sql_path, zip_path)
             return None, None, None
-        files_to_compress = {}
-        if backup_path:
-            files_to_compress[backup_path] = BACKUP_DB_FILENAME
-        if sql_path:
-            files_to_compress[sql_path] = BACKUP_SQL_FILENAME
-        base_path = backup_path or sql_path
-        zip_path = backup_service.compress_files(files_to_compress, base_path + '.zip')
-        return backup_path, sql_path, zip_path
 
     async def _generate_backup_files_zip(self) -> tuple[str | None, str | None, str | None]:
         return await asyncio.to_thread(self._generate_backup_files_zip_sync)
@@ -120,7 +126,7 @@ class RoutineOrchestrator:
         try:
             success = await asyncio.to_thread(
                 telegram_service.send_document,
-                zip_path or backup_path or sql_path,
+                zip_path,
                 caption,
                 filename=self._resolve_backup_filename(zip_path, backup_path),
             )
@@ -240,16 +246,8 @@ class RoutineOrchestrator:
         backup_path: str | None,
         sql_path: str | None,
     ) -> None:
-        if zip_path and os.path.exists(zip_path):
-            attachments.insert(0, (zip_path, BACKUP_ZIP_FILENAME))
-            return
-        if backup_path and os.path.exists(backup_path):
-            attachments.insert(0, (backup_path, BACKUP_DB_FILENAME))
-            if sql_path and os.path.exists(sql_path):
-                attachments.insert(1, (sql_path, BACKUP_SQL_FILENAME))
-            return
-        if sql_path and os.path.exists(sql_path):
-            attachments.insert(0, (sql_path, BACKUP_SQL_FILENAME))
+        if zip_path and zip_path.endswith(".enc") and os.path.exists(zip_path):
+            attachments.insert(0, (zip_path, ENCRYPTED_BACKUP_FILENAME))
 
     async def _log_daily_backup_email_execution(
         self, success: bool, yesterday: date, now_local: datetime
@@ -384,18 +382,10 @@ class RoutineOrchestrator:
         try:
             success = await asyncio.to_thread(
                 telegram_service.send_document,
-                zip_path or backup_path or sql_path,
+                zip_path,
                 caption,
                 filename=self._resolve_backup_filename(zip_path, backup_path),
             )
-
-            if not zip_path and sql_path and os.path.exists(sql_path) and success:
-                await asyncio.to_thread(
-                    telegram_service.send_document,
-                    sql_path,
-                    f"{caption} (SQL Dump)",
-                    filename=BACKUP_SQL_FILENAME
-                )
 
             today = now_local.date()
             yesterday = today - timedelta(days=1)
@@ -483,10 +473,8 @@ class RoutineOrchestrator:
         today: date,
         sql_file: str | None = None,
     ) -> list[tuple[str, str]]:
-        filename = BACKUP_ZIP_FILENAME if is_zip else BACKUP_DB_FILENAME
+        filename = ENCRYPTED_BACKUP_FILENAME if backup_file.endswith(".enc") else BACKUP_ZIP_FILENAME
         attachments = [(backup_file, filename)]
-        if sql_file and not is_zip and await asyncio.to_thread(os.path.exists, sql_file):
-            attachments.append((sql_file, BACKUP_SQL_FILENAME))
         for log_date in [yesterday, today]:
             log_path = get_log_path(log_date)
             if await asyncio.to_thread(os.path.exists, log_path):
@@ -510,7 +498,7 @@ class RoutineOrchestrator:
             logger.error('Backup - "Email manual" Error')
             raise BackupGenerationFailedError()
 
-        backup_file = zip_path or backup_path or sql_path
+        backup_file = zip_path
         attachments = await self._build_email_attachments(backup_file, bool(zip_path), yesterday, today, sql_file=sql_path)
 
         try:

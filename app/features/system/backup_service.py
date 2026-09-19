@@ -2,14 +2,19 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import uuid
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.features.system.backup_crypto import encrypt_backup
+from app.features.system.backup_manifest import add_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +42,100 @@ PG_ENCODING_UTF8 = "--encoding=UTF8"
 
 class BackupService:
     def __init__(self):
-        self._backup_lock = threading.Lock()
+        self._backup_lock = threading.RLock()
+        self._snapshot_id: str | None = None
+        self._snapshot_counts: dict[str, int] | None = None
+
+    @staticmethod
+    def _open_private(path: str, mode: str):
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
+        return os.fdopen(descriptor, mode, encoding="utf-8" if "b" not in mode else None)
+
+    @contextmanager
+    def consistent_snapshot(self):
+        import psycopg2
+        from psycopg2 import sql
+
+        with self._backup_lock:
+            params = self._get_postgres_connection_params()
+            connection = psycopg2.connect(**params)
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                    cursor.execute("SELECT pg_export_snapshot()")
+                    self._snapshot_id = cursor.fetchone()[0]
+                    cursor.execute(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                        "AND table_name != 'alembic_version'"
+                    )
+                    tables = [row[0] for row in cursor.fetchall()]
+                    self._snapshot_counts = {}
+                    for table in tables:
+                        cursor.execute(
+                            sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table))
+                        )
+                        self._snapshot_counts[table] = cursor.fetchone()[0]
+                yield
+            finally:
+                self._snapshot_id = None
+                self._snapshot_counts = None
+                connection.rollback()
+                connection.close()
+
+    def _dump_with_snapshot(self, output_path: str, *, schema_only: bool) -> bool:
+        snapshot = self._snapshot_id
+        if not snapshot:
+            return False
+        params = self._get_postgres_connection_params()
+        flags = ["--schema-only", "--clean", "--if-exists"] if schema_only else [
+            "--data-only", "--inserts", "--column-inserts"
+        ]
+        common = [
+            "-U", str(params["user"]), "-d", str(params["dbname"]),
+            "--no-owner", "--no-privileges", PG_ENCODING_UTF8,
+            f"--snapshot={snapshot}", *flags,
+        ]
+        host_bin = self._find_pg_dump()
+        commands = []
+        if host_bin:
+            commands.append((
+                [host_bin, "-h", str(params["host"]), "-p", str(params["port"]), *common],
+                {**os.environ, "PGPASSWORD": str(params["password"])},
+            ))
+        if shutil.which("docker"):
+            commands.append((
+                ["docker", "exec", "-e", f"PGPASSWORD={params['password']}",
+                 "spe_postgres", "pg_dump", *common],
+                None,
+            ))
+        for command, environment in commands:
+            with self._open_private(output_path, "wb") as output:
+                result = subprocess.run(command, env=environment, stdout=output, stderr=subprocess.PIPE)
+            if result.returncode == 0 and os.path.getsize(output_path) > 0:
+                self._remove_pg_dump_directives(output_path)
+                return True
+            logger.warning("pg_dump com snapshot falhou: %s", result.stderr.decode("utf-8", "replace")[:500])
+        Path(output_path).unlink(missing_ok=True)
+        return False
+
+    @staticmethod
+    def _remove_pg_dump_directives(output_path: str) -> None:
+        source = Path(output_path)
+        temporary = tempfile.NamedTemporaryFile(
+            prefix=f".{source.name}.", suffix=".clean.tmp", dir=source.parent, delete=False,
+        )
+        cleaned = Path(temporary.name)
+        try:
+            with temporary as output, source.open("rb") as original:
+                for line in original:
+                    if not line.lstrip().startswith((b"\\restrict", b"\\unrestrict")):
+                        output.write(line)
+            cleaned.replace(source)
+        finally:
+            cleaned.unlink(missing_ok=True)
 
     def _get_postgres_connection_params(self) -> dict[str, Any]:
         from sqlalchemy.engine import make_url
@@ -69,7 +167,7 @@ class BackupService:
 
         cur.execute(f'SELECT * FROM "{table}";')
         columns = [desc[0] for desc in cur.description]
-        rows = cur.fetchall()
+        rows = cur.fetchmany(1000)
         if not rows:
             return
 
@@ -78,18 +176,20 @@ class BackupService:
         conflict_clause = " ON CONFLICT (version_num) DO NOTHING" if table == "alembic_version" else ""
         insert_tmpl = f'INSERT INTO "{table}" ({col_identifiers}) VALUES ({placeholders}){conflict_clause};\n'
 
-        for row in rows:
-            row_formatted = [
-                json.dumps(v, ensure_ascii=False)
-                if isinstance(v, (dict, list))
-                else bytes(v)
-                if isinstance(v, memoryview)
-                else v
-                for v in row
-            ]
-            mogrified = cur.mogrify(insert_tmpl, row_formatted)
-            val_str = mogrified.decode("utf-8") if isinstance(mogrified, bytes) else str(mogrified)
-            f.write(val_str)
+        while rows:
+            for row in rows:
+                row_formatted = [
+                    json.dumps(v, ensure_ascii=False)
+                    if isinstance(v, (dict, list))
+                    else bytes(v)
+                    if isinstance(v, memoryview)
+                    else v
+                    for v in row
+                ]
+                mogrified = cur.mogrify(insert_tmpl, row_formatted)
+                val_str = mogrified.decode("utf-8") if isinstance(mogrified, bytes) else str(mogrified)
+                f.write(val_str)
+            rows = cur.fetchmany(1000)
         f.write("\n")
 
     def _sync_table_sequences(self, cur: Any, f: Any, sorted_tables: list[str]) -> None:
@@ -118,7 +218,7 @@ class BackupService:
                 connect_timeout=10,
             )
             try:
-                with conn.cursor() as cur, open(output_path, "w", encoding="utf-8") as f:
+                with conn.cursor() as cur, self._open_private(output_path, "w") as f:
                     cur.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                     f.write("BEGIN;\n")
                     f.write("SET client_encoding = 'UTF8';\n")
@@ -134,7 +234,8 @@ class BackupService:
                         sorted_tables.append(t)
 
                     for table in sorted_tables:
-                        self._dump_table_data(cur, f, table)
+                        with conn.cursor(name=f"spe_backup_{uuid.uuid4().hex}") as data_cursor:
+                            self._dump_table_data(data_cursor, f, table)
 
                     self._sync_table_sequences(cur, f, sorted_tables)
 
@@ -162,28 +263,18 @@ class BackupService:
         return None
 
     def _filter_pg_dump_output(self, raw_bytes: bytes, output_path: str) -> bool:
-        from scripts.apply_sql_to_postgresql import strip_sql_comments
-
         text = raw_bytes.decode("utf-8")
         text = "".join(
             line for line in text.splitlines(keepends=True)
             if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
         )
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(strip_sql_comments(text))
+        with self._open_private(output_path, "w") as f:
+            f.write(text)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
-    def _dump_postgresql_schema_python(self, output_path: str) -> bool:
-        try:
-            from scripts.db_manager import get_ddl_sql
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(get_ddl_sql(include_alembic_version=True))
-            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
-        except Exception as e:
-            logger.exception(f"Erro ao gerar schema via Python: {type(e).__name__} - {e}", exc_info=False)
-            return False
-
     def _dump_postgresql_schema(self, output_path: str) -> bool:
+        if self._snapshot_id:
+            return self._dump_with_snapshot(output_path, schema_only=True)
         params = self._get_postgres_connection_params()
         pg_dump_bin = self._find_pg_dump()
 
@@ -233,9 +324,11 @@ class BackupService:
             except Exception as e:
                 logger.warning(f"Docker pg_dump schema falhou: {e}. Tentando fallback...")
 
-        return self._dump_postgresql_schema_python(output_path)
+        return False
 
     def _dump_postgresql_inserts(self, output_path: str) -> bool:
+        if self._snapshot_id:
+            return self._dump_with_snapshot(output_path, schema_only=False)
         params = self._get_postgres_connection_params()
         pg_dump_bin = self._find_pg_dump()
 
@@ -327,6 +420,27 @@ class BackupService:
         try:
             success = self._dump_postgresql_inserts(sql_filename)
             if success and os.path.exists(sql_filename) and os.path.getsize(sql_filename) > 0:
+                row_counts = self._snapshot_counts
+                if row_counts is None:
+                    import psycopg2
+                    from psycopg2 import sql
+
+                    params = self._get_postgres_connection_params()
+                    with psycopg2.connect(**params) as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute(
+                                "SELECT table_name FROM information_schema.tables "
+                                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                                "AND table_name != 'alembic_version'"
+                            )
+                            tables = [row[0] for row in cursor.fetchall()]
+                            row_counts = {}
+                            for table in tables:
+                                cursor.execute(
+                                    sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table))
+                                )
+                                row_counts[table] = cursor.fetchone()[0]
+                add_manifest(Path(sql_filename), row_counts)
                 return sql_filename
 
             if os.path.exists(sql_filename):
@@ -350,17 +464,20 @@ class BackupService:
 
     def compress_files(self, files_to_compress: dict[str, str], output_zip_path: str) -> str | None:
         try:
-            with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for file_path, arcname in files_to_compress.items():
-                    if file_path and os.path.exists(file_path):
-                        zipf.write(file_path, arcname=arcname)
-            return output_zip_path
+            with self._open_private(output_zip_path, "wb") as output:
+                with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for file_path, arcname in files_to_compress.items():
+                        if file_path and os.path.exists(file_path):
+                            zipf.write(file_path, arcname=arcname)
+            return str(encrypt_backup(Path(output_zip_path), settings.SECRET_KEY))
         except Exception as e:
             logger.exception(
                 f"Erro ao compactar arquivos para {output_zip_path}: {type(e).__name__} - {e}",
                 exc_info=False
             )
             return None
+        finally:
+            Path(output_zip_path).unlink(missing_ok=True)
 
 
 backup_service = BackupService()
