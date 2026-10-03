@@ -12,7 +12,7 @@ SET check_function_bodies = false;
 SET client_min_messages = warning;
 SET row_security = off;
 SET timezone = 'America/Fortaleza';
-DO $$ BEGIN EXECUTE format('ALTER DATABASE %%I SET timezone TO %%L', current_database(), 'America/Fortaleza'); END $$;
+DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'America/Fortaleza'); END $$;
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
