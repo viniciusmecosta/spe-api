@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import event, select
+from sqlalchemy import event, inspect, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,20 @@ SOURCE_MODELS = (
     Holiday,
     PayrollClosure,
 )
+RELEVANT_FIELDS = {
+    TimeRecord: ("user_id", "record_datetime", "record_type", "is_ignored", "deleted_at"),
+    AdjustmentRequest: (
+        "user_id", "target_date", "adjustment_type", "status", "amount_hours",
+        "approved_amount_hours", "deleted_at",
+    ),
+    UserWorkScheduleConfig: (
+        "user_id", "day_of_week", "daily_hours", "entry_1", "exit_1",
+        "entry_2", "exit_2", "valid_from", "valid_until",
+        "is_daily_excess_enabled",
+    ),
+    Holiday: ("date",),
+    PayrollClosure: ("year", "month", "is_closed", "deleted_at"),
+}
 
 
 def _local_day(value: datetime) -> date:
@@ -111,8 +125,13 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
         if isinstance(source, SOURCE_MODELS):
             changes.update(_scopes(source, None, False))
     for source in session.dirty:
-        if isinstance(source, SOURCE_MODELS) and session.is_modified(source, include_collections=False):
-            changes.update(_scopes(source, _old_row(session, source), False))
+        if isinstance(source, SOURCE_MODELS):
+            state = inspect(source)
+            if any(
+                state.attrs[field].history.has_changes()
+                for field in RELEVANT_FIELDS[type(source)]
+            ):
+                changes.update(_scopes(source, _old_row(session, source), False))
     for source in session.deleted:
         if isinstance(source, SOURCE_MODELS):
             changes.update(_scopes(source, _old_row(session, source), True))
@@ -152,6 +171,7 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
                 },
             )
         )
+    session.info.setdefault("daily_summary_changed_days", set()).update(days)
 
 
 def register_change_tracking() -> None:
