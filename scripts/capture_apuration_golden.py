@@ -106,7 +106,10 @@ async def capture(output: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Capture current apuration reports")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--use-summaries", action="store_true")
     args = parser.parse_args()
+    if args.use_summaries:
+        settings.DAILY_SUMMARY_READ_ENABLED = True
     output = args.output.resolve()
     if OUTPUT_ROOT.resolve() not in output.parents:
         parser.error("--output must be a new directory inside backups/golden/")
