@@ -1,11 +1,9 @@
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     Date,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
     UniqueConstraint,
     text,
@@ -18,10 +16,6 @@ class DailySummary(Base):
     __tablename__ = "daily_summaries"
     __table_args__ = (
         UniqueConstraint("user_id", "apuration_date", name="uq_daily_summaries_user_date"),
-        Index(
-            "ix_daily_summaries_pending", "updated_at", "id",
-            postgresql_where=text("pending_recalculation = TRUE"),
-        ),
         CheckConstraint(
             "worked_minutes >= 0 AND accounted_minutes >= 0 AND expected_minutes >= 0 "
             "AND excess_minutes >= 0 AND authorized_excess_minutes >= 0 "
@@ -47,5 +41,4 @@ class DailySummary(Base):
     authorized_excess_minutes = Column(Integer, nullable=False, server_default=text("0"))
     missing_minutes = Column(Integer, nullable=False, server_default=text("0"))
     waiver_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    pending_recalculation = Column(Boolean, nullable=False, server_default=text("FALSE"))
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))

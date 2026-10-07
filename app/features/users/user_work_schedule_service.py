@@ -1,12 +1,11 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
-from typing import Annotated, Any, Dict, List
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks, Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated, Any, Dict, List
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.payroll.payroll_repository import (
@@ -22,7 +21,6 @@ from app.features.users.user_exceptions import (
 )
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared import deps
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import DayOfWeek
 
 
@@ -323,13 +321,6 @@ class UserWorkScheduleService:
                 old_data=old_data, new_data=new_data
             )
 
-    def _dispatch_user_ranges_bg(self, background_tasks: BackgroundTasks | None, user_ids: list[int], start_eval: date, end_eval: date):
-        if not background_tasks or start_eval > end_eval:
-            return
-        valid_uids = [u for u in user_ids if u]
-        if valid_uids:
-            background_tasks.add_task(daily_excess_service.reprocess_user_ranges_bg, valid_uids, start_eval, end_eval)
-
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
                                   current_user_id: int = 0,
                                   background_tasks: BackgroundTasks | None = None):
@@ -374,7 +365,6 @@ class UserWorkScheduleService:
             new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, [u.get('user_id') for u in users_input], valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
     @staticmethod
@@ -434,12 +424,6 @@ class UserWorkScheduleService:
             new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
 
-        all_uids = list({u[0] for u in existing_map.keys()} | {u.get('user_id') for u in users_input if u.get('user_id')})
-        self._dispatch_user_ranges_bg(
-            background_tasks, all_uids,
-            min(old_valid_from, new_valid_from),
-            min(max(old_valid_until, new_valid_until), datetime.now(ZoneInfo(settings.TIMEZONE)).date())
-        )
         return {"message": "Expedientes atualizados com sucesso."}
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date = None, valid_until: date = None,
@@ -454,7 +438,6 @@ class UserWorkScheduleService:
             raise BulkScheduleNotFoundError(valid_from=valid_from, valid_until=valid_until)
 
         count = len(configs)
-        all_uids = list({cfg.user_id for cfg in configs})
 
         await self._delete_schedule_configs(session, configs)
 
@@ -463,7 +446,6 @@ class UserWorkScheduleService:
             old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, all_uids, valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{count} registros removidos com sucesso."}
 
 

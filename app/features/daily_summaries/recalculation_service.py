@@ -1,11 +1,9 @@
-import importlib
-import logging
 from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import exists, extract, select
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
@@ -21,9 +19,6 @@ from app.features.users.user_models import User
 from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import AdjustmentStatus, AdjustmentType
 from app.shared.time_calculation_service import time_calculation_service
-
-
-logger = logging.getLogger(__name__)
 
 
 class DailySummaryRecalculationService:
@@ -124,85 +119,43 @@ class DailySummaryRecalculationService:
             session, user_id, day, from_legacy_period(day, period)
         )
 
-    async def _process_row(
-        self, session: AsyncSession, summary: DailySummary, refresh_excess: bool
-    ) -> None:
-        await self._calculate_user_day(
-            session, summary.user_id, summary.apuration_date, refresh_excess
-        )
-
     async def recalculate_day(self, user_id: int, day: date) -> None:
+        await self.calculate_day(user_id, day, refresh_excess=True, allow_closed=False)
+
+    async def calculate_day(
+            self, user_id: int, day: date, refresh_excess: bool, allow_closed: bool
+    ) -> None:
         async with AsyncSessionLocal() as session:
             async with session.begin():
-                summary = await session.scalar(
-                    select(DailySummary)
+                if await session.scalar(select(User.id).where(User.id == user_id)) is None:
+                    return
+                if not allow_closed:
+                    closed_period = await session.scalar(
+                        select(PayrollClosure.id).where(
+                            PayrollClosure.year == day.year,
+                            PayrollClosure.month == day.month,
+                            PayrollClosure.is_closed.is_(True),
+                            PayrollClosure.deleted_at.is_(None),
+                        ).limit(1)
+                    )
+                    if closed_period is not None:
+                        return
+                table = DailySummary.__table__
+                await session.execute(
+                    insert(table)
+                    .values(user_id=user_id, apuration_date=day)
+                    .on_conflict_do_nothing(
+                        constraint="uq_daily_summaries_user_date"
+                    )
+                )
+                await session.scalar(
+                    select(DailySummary.id)
                     .where(
                         DailySummary.user_id == user_id,
                         DailySummary.apuration_date == day,
                     )
                     .with_for_update()
                 )
-                if summary is None or not summary.pending_recalculation:
-                    return
-                closed_period = await session.scalar(
-                    select(PayrollClosure.id).where(
-                        PayrollClosure.year == day.year,
-                        PayrollClosure.month == day.month,
-                        PayrollClosure.is_closed.is_(True),
-                        PayrollClosure.deleted_at.is_(None),
-                    ).limit(1)
-                )
-                if closed_period is not None:
-                    return
-                await self._process_row(session, summary, refresh_excess=True)
-
-    async def run_once(
-        self, allow_closed: bool = False,
-        first_day: date | None = None,
-        last_day: date | None = None,
-    ) -> bool:
-        importlib.import_module("app.features.companies.company_models")
-        importlib.import_module("app.features.printers.printer_models")
-        importlib.import_module("app.features.devices.device_models")
-        failed_error = None
-        async with AsyncSessionLocal() as session:
-            async with session.begin():
-                query = select(DailySummary).where(
-                    DailySummary.pending_recalculation.is_(True)
-                )
-                if first_day is not None:
-                    query = query.where(DailySummary.apuration_date >= first_day)
-                if last_day is not None:
-                    query = query.where(DailySummary.apuration_date <= last_day)
-                if not allow_closed:
-                    closed_period = exists(
-                        select(PayrollClosure.id).where(
-                            PayrollClosure.year == extract("year", DailySummary.apuration_date),
-                            PayrollClosure.month == extract("month", DailySummary.apuration_date),
-                            PayrollClosure.is_closed.is_(True),
-                            PayrollClosure.deleted_at.is_(None),
-                        )
-                    )
-                    query = query.where(~closed_period)
-                summary = await session.scalar(
-                    query.order_by(DailySummary.apuration_date, DailySummary.user_id)
-                    .with_for_update(skip_locked=True)
-                    .limit(1)
-                )
-                if summary is None:
-                    return False
-                try:
-                    async with session.begin_nested():
-                        await self._process_row(session, summary, refresh_excess=not allow_closed)
-                except Exception as error:
-                    summary.updated_at = datetime.now(timezone.utc)
-                    failed_error = error
-                    logger.exception(
-                        "Daily summary recalculation failed for user %s on %s",
-                        summary.user_id, summary.apuration_date,
-                    )
-        if failed_error is not None:
-            raise RuntimeError("Daily summary recalculation failed") from failed_error
-        return True
+                await self._calculate_user_day(session, user_id, day, refresh_excess)
 
 daily_summary_recalculation_service = DailySummaryRecalculationService()

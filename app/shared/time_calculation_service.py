@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -57,6 +57,7 @@ class PeriodTimeResult:
     total_accounted_seconds: float = 0.0
     total_excess_seconds: float = 0.0
     total_approved_excess_seconds: float = 0.0
+    daily_accounted_results: dict[date, DailyAccountedResult] = field(default_factory=dict)
 
 
 class _DailyProcessState:
@@ -351,6 +352,7 @@ class TimeCalculationService:
         daily_expected = {}
         daily_is_holiday = {}
         daily_waivers = {}
+        daily_accounted_results = {}
 
         current_date = start_date
         while current_date <= end_date:
@@ -398,6 +400,7 @@ class TimeCalculationService:
                 waiver_adj=abono,
                 extra_time_adjs=day_extra_time_adjs,
             )
+            daily_accounted_results[current_date] = accounted_res
             unapproved_excess = accounted_res.total_excess_seconds - accounted_res.approved_seconds
 
             daily_result = self.calculate_daily_time(
@@ -440,7 +443,8 @@ class TimeCalculationService:
             daily_waivers=daily_waivers,
             total_accounted_seconds=total_accounted,
             total_excess_seconds=total_excess,
-            total_approved_excess_seconds=total_approved_excess
+            total_approved_excess_seconds=total_approved_excess,
+            daily_accounted_results=daily_accounted_results,
         )
 
 

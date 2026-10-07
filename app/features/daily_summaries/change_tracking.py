@@ -1,9 +1,7 @@
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import event, inspect, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import event, func, inspect, select
 from sqlalchemy.orm import Session
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -12,7 +10,6 @@ from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User, UserWorkScheduleConfig
-
 
 SOURCE_MODELS = (
     TimeRecord,
@@ -71,12 +68,22 @@ def _scope_for_adjustment(source: AdjustmentRequest | dict) -> tuple[int, date, 
     return user_id, day, day
 
 
-def _scope_for_schedule(source: UserWorkScheduleConfig | dict) -> tuple[int, date, date]:
+def _scope_for_schedule(
+        session: Session, source: UserWorkScheduleConfig | dict
+) -> tuple[int, date, date]:
     if isinstance(source, dict):
         user_id, first, last = source["user_id"], source["valid_from"], source["valid_until"]
     else:
         user_id, first, last = source.user_id, source.valid_from, source.valid_until
-    return user_id, first, last or datetime.now(ZoneInfo(settings.TIMEZONE)).date()
+    if last is None:
+        today = datetime.now(ZoneInfo(settings.TIMEZONE)).date()
+        materialized_until = session.connection().execute(
+            select(func.max(DailySummary.__table__.c.apuration_date)).where(
+                DailySummary.__table__.c.user_id == user_id
+            )
+        ).scalar()
+        last = max(today, materialized_until) if materialized_until else today
+    return user_id, first, last
 
 
 def _scope_for_holiday(source: Holiday | dict) -> tuple[None, date, date]:
@@ -94,7 +101,9 @@ def _scope_for_reopening(source: PayrollClosure | dict) -> tuple[None, date, dat
     return None, first, last
 
 
-def _scopes(source: object, old: dict | None, deleted: bool) -> set[tuple[int | None, date, date]]:
+def _scopes(
+        session: Session, source: object, old: dict | None, deleted: bool
+) -> set[tuple[int | None, date, date]]:
     result: set[tuple[int | None, date, date]] = set()
     if isinstance(source, PayrollClosure):
         if old and old["is_closed"] and (
@@ -103,10 +112,16 @@ def _scopes(source: object, old: dict | None, deleted: bool) -> set[tuple[int | 
             result.add(_scope_for_reopening(old))
         return result
 
+    if isinstance(source, UserWorkScheduleConfig):
+        if old is not None:
+            result.add(_scope_for_schedule(session, old))
+        if not deleted:
+            result.add(_scope_for_schedule(session, source))
+        return {item for item in result if item[1] <= item[2]}
+
     handlers = {
         TimeRecord: _scope_for_record,
         AdjustmentRequest: _scope_for_adjustment,
-        UserWorkScheduleConfig: _scope_for_schedule,
         Holiday: _scope_for_holiday,
     }
     handler = handlers[type(source)]
@@ -123,7 +138,7 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
     changes = set()
     for source in session.new:
         if isinstance(source, SOURCE_MODELS):
-            changes.update(_scopes(source, None, False))
+            changes.update(_scopes(session, source, None, False))
     for source in session.dirty:
         if isinstance(source, SOURCE_MODELS):
             state = inspect(source)
@@ -131,10 +146,10 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
                 state.attrs[field].history.has_changes()
                 for field in RELEVANT_FIELDS[type(source)]
             ):
-                changes.update(_scopes(source, _old_row(session, source), False))
+                changes.update(_scopes(session, source, _old_row(session, source), False))
     for source in session.deleted:
         if isinstance(source, SOURCE_MODELS):
-            changes.update(_scopes(source, _old_row(session, source), True))
+            changes.update(_scopes(session, source, _old_row(session, source), True))
     if not changes:
         return
     all_user_ids = None
@@ -148,29 +163,6 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
             days.update((current_user_id, current) for current_user_id in user_ids)
             current += timedelta(days=1)
 
-    table = DailySummary.__table__
-    now = datetime.now(ZoneInfo("UTC"))
-    ordered_days = sorted(days)
-    for offset in range(0, len(ordered_days), 500):
-        batch = ordered_days[offset:offset + 500]
-        statement = insert(table).values([
-            {
-                "user_id": user_id,
-                "apuration_date": day,
-                "pending_recalculation": True,
-                "updated_at": now,
-            }
-            for user_id, day in batch
-        ])
-        session.connection().execute(
-            statement.on_conflict_do_update(
-                constraint="uq_daily_summaries_user_date",
-                set_={
-                    "pending_recalculation": True,
-                    "updated_at": now,
-                },
-            )
-        )
     session.info.setdefault("daily_summary_changed_days", set()).update(days)
 
 

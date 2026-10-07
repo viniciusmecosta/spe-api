@@ -839,10 +839,12 @@ async def test_trigger_auto_print_disabled(db_session_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
+async def test_admin_modifications_persist_without_inline_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
                                                                              mock_payroll_service, mock_audit_service,
                                                                              mocker):
-    reprocess_mock = mocker.patch.object(time_record_service, "_reprocess_daily_excess", return_value=None)
+    reprocess_mock = mocker.patch(
+        "app.shared.daily_excess_service.daily_excess_service.evaluate_user_day_sync"
+    )
 
     dt = datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     create_obj = TimeRecordCreateAdmin(
@@ -855,26 +857,17 @@ async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db
     mock_time_record_repo.create.return_value = rec
 
     await time_record_service.create_admin_record(db_session_mock, create_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     mock_time_record_repo.get.return_value = rec
     update_obj = TimeRecordUpdate(
         record_datetime=datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo(settings.TIMEZONE)),
         edit_justification="Horario alterado"
     )
     await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     delete_obj = TimeRecordDeleteAdmin(edit_justification="Batida indevida")
     await time_record_service.delete_admin_record(db_session_mock, record_id=1, obj_in=delete_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     admin_user = User(id=2, role=UserRole.MANAGER)
     await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=admin_user)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+    reprocess_mock.assert_not_called()
 
 
 def test_time_record_service_custom_repo():
@@ -899,12 +892,6 @@ async def test_time_record_service_async_session_crud(mocker):
 
     await time_record_service._invalidate_extra_time_requests(async_sess, 1, date(2024, 1, 15))
     assert async_sess.delete.called
-
-    await time_record_service._delete_daily_excess_adjustments(async_sess, 1, date(2024, 1, 15))
-    await time_record_service._unverify_daily_time_records(async_sess, 1, date(2024, 1, 15))
-
-    mocker.patch("app.shared.daily_excess_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
-    await time_record_service._reprocess_daily_excess(async_sess, 1, date(2024, 1, 15))
 
     is_first = await time_record_service._is_first_entry_affected(async_sess, 1, date(2024, 1, 15), record_id=1)
     assert is_first is True
@@ -1024,27 +1011,15 @@ async def test_time_record_service_async_session_receipts_and_print(mocker):
 
 @pytest.mark.asyncio
 async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
-    sync_db = MagicMock(spec=["query", "delete", "flush"])
-    mock_adj = MagicMock()
-    mock_rec = MagicMock()
-    sync_db.query.return_value.filter.return_value.all.side_effect = [[mock_adj], [mock_rec]]
-
-    await time_record_service._delete_daily_excess_adjustments(sync_db, 1, date(2026, 8, 1))
-    sync_db.delete.assert_called_once_with(mock_adj)
-
-    await time_record_service._unverify_daily_time_records(sync_db, 1, date(2026, 8, 1))
-    assert mock_rec.is_verified is False
-
     async_sess = AsyncMock()
     async_sess.sync_session = MagicMock()
-    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
                      record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")))
     await time_record_service._commit_and_audit_admin_update(
-        async_sess, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+        async_sess, 99, {}, rec
     )
-    assert time_record_service._reprocess_daily_excess.call_count == 2
+    async_sess.commit.assert_awaited_once()
 
     mock_bg = MagicMock()
     rec.user = User(id=1, auto_print_receipt=True)
@@ -1063,7 +1038,6 @@ async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
 @pytest.mark.asyncio
 async def test_time_record_service_admin_update_date_change_branches(mocker):
     mocker.patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock, return_value=False)
-    mocker.patch.object(time_record_service, "_invalidate_daily_excess_and_unverify", new_callable=AsyncMock)
     rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
                      record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
     obj_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")), edit_justification="Reason")
@@ -1071,15 +1045,12 @@ async def test_time_record_service_admin_update_date_change_branches(mocker):
 
         MagicMock(), rec, obj_in, date(2026, 8, 1), date(2026, 8, 2), RecordType.EXIT
     )
-    assert time_record_service._invalidate_daily_excess_and_unverify.call_count == 2
-
     sync_session = MagicMock(spec=["flush", "commit", "refresh"])
-    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
     await time_record_service._commit_and_audit_admin_update(
-        sync_session, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+        sync_session, 99, {}, rec
     )
-    assert time_record_service._reprocess_daily_excess.call_count == 2
+    sync_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio

@@ -1,9 +1,8 @@
 from datetime import date
-from typing import Any
-
 from sqlalchemy import and_, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
+from typing import Any
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
 from app.features.adjustments.adjustment_models import (
@@ -228,8 +227,11 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
             db.commit()
 
     def delete(self, db: Session, id: int):
+        db_obj = self.get(db, id)
+        if db_obj is None:
+            return
         db.execute(delete(AdjustmentAttachment).where(AdjustmentAttachment.adjustment_request_id == id))
-        db.execute(delete(AdjustmentRequest).where(AdjustmentRequest.id == id))
+        db.delete(db_obj)
         db.commit()
 
 
@@ -451,8 +453,11 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             await db.commit()
 
     async def delete(self, db: AsyncSession, id: int):
+        db_obj = await self.get(db, id)
+        if db_obj is None:
+            return
         await db.execute(delete(AdjustmentAttachment).where(AdjustmentAttachment.adjustment_request_id == id))
-        await db.execute(delete(AdjustmentRequest).where(AdjustmentRequest.id == id))
+        await db.delete(db_obj)
         await db.commit()
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.features.daily_summaries.dispatch import recover_pending_days
+from app.features.daily_summaries.dispatch import bind_dispatch_loop
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -17,12 +17,12 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    bind_dispatch_loop(asyncio.get_running_loop())
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path(os.path.join(settings.UPLOAD_DIR, "public")).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(settings.TIMEZONE)
 
     startup_ntp_task = asyncio.create_task(trusted_time_service.sync_ntp_with_backoff_async())
-    startup_apuration_task = asyncio.create_task(recover_pending_days())
 
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
     trigger_hourly = CronTrigger(minute=0, timezone=tz)
@@ -47,6 +47,5 @@ async def lifespan(app: FastAPI):
     yield
     if not startup_ntp_task.done():
         startup_ntp_task.cancel()
-    if not startup_apuration_task.done():
-        startup_apuration_task.cancel()
     scheduler.shutdown()
+    bind_dispatch_loop(None)

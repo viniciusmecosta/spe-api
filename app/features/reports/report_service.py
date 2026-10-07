@@ -2,15 +2,18 @@ import locale
 import logging
 from calendar import monthrange
 from datetime import date, datetime, timedelta
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import Depends
 from sqlalchemy import exists, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.daily_summaries.read_service import (
+    DailySummaryUnavailableError,
+    daily_summary_read_service,
+)
 from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
@@ -73,6 +76,32 @@ class ReportService:
         return start_date, end_date
 
     _get_month_range = get_month_range
+
+    async def _calculate_period(
+            self, session: Any, user_id: int, start_date: date, end_date: date,
+            records: list[TimeRecord], adjustments: list[AdjustmentRequest],
+            holidays: list, schedules: list,
+    ):
+        schedule_minutes_are_integer = all(
+            abs(schedule.daily_hours * 60 - round(schedule.daily_hours * 60)) < 0.000001
+            for schedule in schedules
+        )
+        if settings.DAILY_SUMMARY_READ_ENABLED and schedule_minutes_are_integer:
+            try:
+                return await daily_summary_read_service.build_period(
+                    session, user_id, start_date, end_date,
+                    records, adjustments, holidays, schedules,
+                )
+            except DailySummaryUnavailableError:
+                pass
+        return time_calc_mod.time_calculation_service.calculate_period_time(
+            start_date=start_date,
+            end_date=end_date,
+            records=records,
+            adjustments=adjustments,
+            holidays=holidays,
+            historical_schedules=schedules,
+        )
 
     def _format_duration(self, total_seconds: float) -> str:
         total_minutes = int(round(total_seconds / 60))
@@ -259,13 +288,15 @@ class ReportService:
             if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
         ]
 
-        accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-            day_records=day_records,
-            schedule=schedule,
-            daily_excess_adj=daily_excess_adj,
-            waiver_adj=abono,
-            extra_time_adjs=day_extra_time_adjs,
-        )
+        accounted_res = period_result.daily_accounted_results.get(current)
+        if accounted_res is None:
+            accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
+                day_records=day_records,
+                schedule=schedule,
+                daily_excess_adj=daily_excess_adj,
+                waiver_adj=abono,
+                extra_time_adjs=day_extra_time_adjs,
+            )
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
@@ -411,13 +442,15 @@ class ReportService:
             if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
         ]
 
-        accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-            day_records=day_records,
-            schedule=schedule,
-            daily_excess_adj=daily_excess_adj,
-            waiver_adj=adjustment_day,
-            extra_time_adjs=day_extra_time_adjs,
-        )
+        accounted_res = period_result.daily_accounted_results.get(current)
+        if accounted_res is None:
+            accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
+                day_records=day_records,
+                schedule=schedule,
+                daily_excess_adj=daily_excess_adj,
+                waiver_adj=adjustment_day,
+                extra_time_adjs=day_extra_time_adjs,
+            )
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 
@@ -570,13 +603,9 @@ class ReportService:
 
         is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
-        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=records,
-            adjustments=all_adjustments,
-            holidays=holidays,
-            historical_schedules=user.historical_schedules if user else []
+        period_result = await self._calculate_period(
+            session, user_id, start_date, end_date, records,
+            all_adjustments, holidays, user.historical_schedules,
         )
 
         history_days = self._build_history_days_loop(
@@ -710,13 +739,9 @@ class ReportService:
 
         is_maintainer = current_user is not None and current_user.role == UserRole.MAINTAINER
 
-        period_result = time_calc_mod.time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=all_records,
-            adjustments=all_adjustments,
-            holidays=holidays,
-            historical_schedules=user.historical_schedules if user else []
+        period_result = await self._calculate_period(
+            session, user_id, start_date, end_date, all_records,
+            all_adjustments, holidays, user.historical_schedules,
         )
 
         total_worked_seconds = period_result.total_net_worked_seconds

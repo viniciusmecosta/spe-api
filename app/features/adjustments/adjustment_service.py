@@ -3,11 +3,10 @@ import os
 import shutil
 import uuid
 from datetime import date, datetime
-from typing import Annotated
-
 from fastapi import BackgroundTasks, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_exceptions import (
@@ -174,7 +173,6 @@ class AdjustmentService:
             session, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
         )
         await audit_service.async_log_change(session, manager_id, "CREATE_WAIVER", new_model=adjustment)
-        await daily_excess_service.evaluate_user_day_async(session, waiver_in.user_id, waiver_in.target_date)
         enriched = await self._enrich_adjustments_with_records(session, [adjustment])
         return enriched[0]
 
@@ -198,7 +196,6 @@ class AdjustmentService:
         await audit_service.async_log_change(
             session, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
-        await self._evaluate_daily_excess_if_needed(session, request)
 
     async def delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, manager_id: int = 0,
                                 reason: str = "") -> None:
@@ -220,7 +217,6 @@ class AdjustmentService:
         await audit_service.async_log_change(
             session, manager_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
-        await self._evaluate_daily_excess_if_needed(session, request)
 
     async def upload_attachment(self, db: AsyncSession | None = None, request_id: int = 0,
                                 file: UploadFile | None = None, user_id: int = 0):
@@ -304,18 +300,8 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment, "approved_amount_hours": approved_amount_hours} if (comment or approved_amount_hours is not None) else None
         )
-        await self._evaluate_daily_excess_if_needed(session, request)
         enriched = await self._enrich_adjustments_with_records(session, [updated])
         return enriched[0]
-
-    async def _evaluate_daily_excess_if_needed(self, session: AsyncSession, request: AdjustmentRequest) -> None:
-        if request.adjustment_type in [
-            AdjustmentType.FORGOT_PUNCH,
-            AdjustmentType.PUNCH_NOT_COUNTED,
-            AdjustmentType.DELETE_PUNCH,
-            AdjustmentType.WAIVER,
-        ]:
-            await daily_excess_service.evaluate_user_day_async(session, request.user_id, request.target_date)
 
     async def _execute_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
         if not request.time:
@@ -369,7 +355,6 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        await self._evaluate_daily_excess_if_needed(session, request)
         enriched = await self._enrich_adjustments_with_records(session, [updated])
         return enriched[0]
 
@@ -454,7 +439,6 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        await self._evaluate_daily_excess_if_needed(session, request)
         enriched = await self._enrich_adjustments_with_records(session, [updated])
         return enriched[0]
 

@@ -212,7 +212,7 @@ async def test_create_manager_waiver(async_db_mock, mocker):
     obj_in = AdjustmentWaiverCreate(user_id=1, target_date=date(2023, 10, 1), amount_hours=8.0, reason_text="teste")
     res = await adjustment_service.create_manager_waiver(async_db_mock, obj_in, 99)
     assert res.id == 1
-    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
+    mock_eval.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -262,7 +262,7 @@ async def test_approve_adjustment(async_db_mock, mocker):
 
     res = await adjustment_service.approve_adjustment(async_db_mock, 1, 99)
     assert res.status == AdjustmentStatus.APPROVED
-    mock_eval.assert_awaited_once_with(async_db_mock, 1, date(2023, 10, 1))
+    mock_eval.assert_not_awaited()
 
 
 @pytest.mark.asyncio
