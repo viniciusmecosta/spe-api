@@ -3,26 +3,48 @@ import asyncio
 import calendar
 import importlib
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import extract, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.config import settings
 from app.database.session import AsyncSessionLocal
+from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.daily_summaries.models import DailySummary
 from app.features.daily_summaries.recalculation_service import daily_summary_recalculation_service
+from app.features.holidays.holiday_models import Holiday
 from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
+from app.features.users.user_models import User, UserWorkScheduleConfig
 
 
 async def _periods() -> list[tuple[int, int]]:
     async with AsyncSessionLocal() as session:
-        record_year = extract("year", TimeRecord.record_datetime)
-        record_month = extract("month", TimeRecord.record_datetime)
-        result = await session.execute(
-            select(record_year, record_month).distinct()
-            .order_by(record_year, record_month)
+        first_record = await session.scalar(
+            select(func.min(TimeRecord.__table__.c.record_datetime))
         )
-        return [(int(year), int(month)) for year, month in result.all()]
+        first_adjustment = await session.scalar(
+            select(func.min(AdjustmentRequest.__table__.c.target_date))
+        )
+        first_schedule = await session.scalar(
+            select(func.min(UserWorkScheduleConfig.__table__.c.valid_from))
+        )
+        first_holiday = await session.scalar(select(func.min(Holiday.__table__.c.date)))
+    candidates = [
+        value.astimezone(ZoneInfo(settings.TIMEZONE)).date()
+        if isinstance(value, datetime) else value
+        for value in (first_record, first_adjustment, first_schedule, first_holiday)
+        if value is not None
+    ]
+    if not candidates:
+        return []
+    first = min(candidates).replace(day=1)
+    last = datetime.now(ZoneInfo(settings.TIMEZONE)).date().replace(day=1)
+    periods = []
+    while first <= last:
+        periods.append((first.year, first.month))
+        first = date(first.year + (first.month == 12), first.month % 12 + 1, 1)
+    return periods
 
 
 async def mark_period(year: int, month: int) -> int:
