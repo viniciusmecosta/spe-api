@@ -257,5 +257,4 @@ htmlcov/
 *.xml
 *.log
 docs/
-scripts/resequence_time_records.py
 backups/
