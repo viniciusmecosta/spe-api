@@ -110,3 +110,8 @@ async def get_async_session_context() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+from app.features.daily_summaries.change_tracking import register_change_tracking
+
+register_change_tracking()
