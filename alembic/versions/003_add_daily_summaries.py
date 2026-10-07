@@ -19,7 +19,6 @@ def upgrade() -> None:
             authorized_excess_minutes INTEGER NOT NULL DEFAULT 0,
             missing_minutes INTEGER NOT NULL DEFAULT 0,
             waiver_minutes INTEGER NOT NULL DEFAULT 0,
-            pending_recalculation BOOLEAN NOT NULL DEFAULT FALSE,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             CONSTRAINT uq_daily_summaries_user_date UNIQUE (user_id, apuration_date),
             CONSTRAINT ck_daily_summaries_nonnegative CHECK (
@@ -35,12 +34,5 @@ def upgrade() -> None:
             )
         )
     """)
-    op.execute("""
-        CREATE INDEX ix_daily_summaries_pending
-        ON daily_summaries (updated_at, id)
-        WHERE pending_recalculation = TRUE
-    """)
-
-
 def downgrade() -> None:
     op.execute("DROP TABLE daily_summaries")
