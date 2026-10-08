@@ -20,20 +20,22 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-mock pytest-asyncio anyio
-          pip install mypy
+        run: uv sync --locked --no-build
 
       - name: Check Python Syntax (Compile)
         run: |
-          python -m compileall -q app/
+          uv run --no-sync python -m compileall -q app/
 
       - name: Run Mypy (Type Checking)
         run: |
-          mypy app/
+          uv run --no-sync mypy app/
 
   test:
     runs-on: ubuntu-latest
@@ -47,11 +49,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-mock pytest-asyncio anyio
+        run: uv sync --locked --no-build
 
       - name: Prepare Environment for Tests
         run: |
@@ -61,4 +66,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml
+          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml
