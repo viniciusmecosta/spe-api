@@ -41,7 +41,7 @@ def test_create_safe_backup_exception(mocker):
 def test_create_sql_dump_success(mocker, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     service = BackupService()
-    service._snapshot_tables = {"users"}
+    service._snapshot_counts = {"users": 1}
     mocker.patch.object(
         service, "_dump_postgresql_inserts",
         side_effect=lambda path: Path(path).write_text("INSERT INTO users (id) VALUES (1);\n") or True,
@@ -51,6 +51,38 @@ def test_create_sql_dump_success(mocker, monkeypatch, tmp_path):
     assert result.startswith("temp_inserts_")
     assert result.endswith(".sql")
     assert Path(result).read_text().startswith("-- SPE-DUMP-MANIFEST:")
+
+
+def test_create_sql_dump_reads_table_counts(mocker, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    service = BackupService()
+    service._get_postgres_connection_params = lambda: {
+        "host": "localhost",
+        "port": 5432,
+        "user": "test",
+        "password": "test",
+        "dbname": "test",
+    }
+    mocker.patch.object(
+        service,
+        "_dump_postgresql_inserts",
+        side_effect=lambda path: Path(path).write_text("INSERT INTO users (id) VALUES (1);\n"),
+    )
+    cursor = MagicMock()
+    cursor.__enter__.return_value = cursor
+    cursor.fetchall.return_value = [("users",)]
+    cursor.fetchone.return_value = (1,)
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value = cursor
+    mock_connect = mocker.patch("psycopg2.connect", return_value=connection)
+
+    result = service.create_sql_dump()
+
+    assert result is not None
+    assert Path(result).read_text().startswith("-- SPE-DUMP-MANIFEST:")
+    mock_connect.assert_called_once()
+    assert cursor.execute.call_count == 2
 
 
 def test_create_sql_dump_failure(mocker):

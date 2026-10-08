@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from app.features.adjustments.adjustment_repository import (
@@ -127,3 +127,28 @@ async def test_async_adjustment_repository(async_db_mock):
 
     await repo.soft_delete(async_db_mock, 1, 1)
     await repo.delete(async_db_mock, 1)
+
+
+def test_sync_delete_removes_related_attachments(mocker):
+    repo = AdjustmentRepository()
+    db = MagicMock()
+    adjustment = MagicMock()
+    mocker.patch.object(repo, "get", return_value=adjustment)
+
+    repo.delete(db, 41)
+
+    db.execute.assert_called_once()
+    db.delete.assert_called_once_with(adjustment)
+    db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_delete_returns_when_adjustment_does_not_exist(mocker, async_db_mock):
+    repo = AsyncAdjustmentRepository()
+    mocker.patch.object(repo, "get", new_callable=AsyncMock, return_value=None)
+
+    await repo.delete(async_db_mock, 41)
+
+    async_db_mock.execute.assert_not_awaited()
+    async_db_mock.delete.assert_not_awaited()
+    async_db_mock.commit.assert_not_awaited()

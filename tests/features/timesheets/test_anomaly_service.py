@@ -1,8 +1,10 @@
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.orm import Session
+from app.features.daily_summaries.daily_summary_exceptions import DailySummaryUnavailableError
 from app.features.timesheets.anomaly_service import anomaly_service
 from app.features.timesheets.timesheet_exceptions import InvalidMonthOrYearError
 from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
@@ -178,6 +180,37 @@ def test_get_expected_entry_time():
 
     entry_time_no_user = anomaly_service._get_expected_entry_time(None, date(2023, 1, 2))
     assert entry_time_no_user is None
+
+
+def test_process_user_anomalies_fails_when_an_active_day_has_no_summary():
+    current = date(2026, 10, 5)
+    user = MockUser(1)
+
+    with pytest.raises(DailySummaryUnavailableError):
+        anomaly_service._process_user_anomalies(
+            1,
+            user,
+            [current],
+            {1: {current: [MockTimeRecord(1, datetime(2026, 10, 5, 8, 0), RecordType.ENTRY)]}},
+            {1: {}},
+            {},
+            False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_fetch_summaries_supports_sync_session():
+    current = date(2026, 10, 5)
+    row = SimpleNamespace(user_id=1, apuration_date=current)
+    scalars = type("ScalarResult", (), {"all": lambda self: [row]})()
+    session = MagicMock(spec=Session)
+    session.scalars.return_value = scalars
+
+    result = await anomaly_service._fetch_summaries(
+        session, [1], current, current
+    )
+
+    assert result == {(1, current): row}
 
 
 @pytest.mark.asyncio

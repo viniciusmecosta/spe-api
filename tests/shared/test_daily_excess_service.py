@@ -73,6 +73,18 @@ async def test_evaluate_user_day_async_with_excess(excess_service):
     assert r2.is_verified is True
 
 
+@pytest.mark.asyncio
+async def test_evaluate_user_day_async_skips_closed_payroll(excess_service):
+    db = AsyncMock()
+    db.scalar.return_value = MagicMock()
+
+    await excess_service.evaluate_user_day_async(db, 10, date(2026, 8, 1))
+
+    db.scalar.assert_awaited_once()
+    db.scalars.assert_not_awaited()
+    db.add.assert_not_called()
+
+
 def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
