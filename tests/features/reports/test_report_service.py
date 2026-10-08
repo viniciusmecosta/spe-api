@@ -73,7 +73,18 @@ def mock_time_calc_service():
             has_schedule=True,
             has_lunch_rule=False,
         )
-        yield mock
+        async def build_period(*args, **kwargs):
+            result = mock.calculate_period_time.return_value
+            result.daily_accounted_results = defaultdict(
+                lambda: mock.calculate_accounted_time.return_value
+            )
+            return result
+
+        with patch(
+            "app.features.reports.report_service.daily_summary_service.build_period",
+            new=build_period,
+        ):
+            yield mock
 
 
 @pytest.fixture
@@ -973,7 +984,8 @@ async def test_report_service_async_session_branches(service):
                return_value=user), \
             patch.object(service, "_fetch_history_data", new_callable=AsyncMock) as mock_fetch, \
             patch(
-                "app.features.reports.report_service.time_calc_mod.time_calculation_service.calculate_period_time") as mock_calc:
+                "app.features.reports.report_service.daily_summary_service.build_period",
+                new_callable=AsyncMock) as mock_calc:
         adj_excess = MagicMock(
             target_date=date(2026, 8, 3),
             adjustment_type=AdjustmentType.DAILY_EXCESS,

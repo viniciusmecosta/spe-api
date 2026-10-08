@@ -1,5 +1,7 @@
 import io
+from collections import defaultdict
 from datetime import date, time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -114,6 +116,10 @@ def test_build_daily_records_table():
     period_result.total_net_worked_seconds = 3600
     period_result.daily_results = {date(2023, 10, 1): mock_daily_1, date(2023, 10, 2): mock_daily_2}
     period_result.daily_is_holiday = {date(2023, 10, 1): False, date(2023, 10, 2): True}
+    period_result.daily_expected_seconds = defaultdict(float)
+    period_result.daily_accounted_results = defaultdict(
+        lambda: SimpleNamespace(accounted_seconds=0)
+    )
     holiday = MagicMock(spec=Holiday)
     holiday.date = date(2023, 10, 2)
     holiday.name = 'Test Holiday'
@@ -174,7 +180,7 @@ async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -198,7 +204,8 @@ async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -285,7 +292,7 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
     mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=DummyLogo)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -309,7 +316,8 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -340,7 +348,7 @@ async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, 
     mocker.patch('os.path.exists', return_value=False)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -364,7 +372,8 @@ async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, 
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -396,7 +405,7 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
     mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=OSError('File not found'))
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -420,7 +429,8 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -453,7 +463,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -477,7 +487,8 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
     captured_story = []
@@ -635,7 +646,7 @@ async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocke
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
 
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -659,7 +670,8 @@ async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocke
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 
@@ -731,7 +743,7 @@ async def test_generate_user_timesheet_pdf_async_session(mocker):
     mock_adj_scalars.all.return_value = []
     async_sess.scalars.return_value = mock_adj_scalars
 
-    mock_calc = mocker.patch("app.shared.time_calculation_service.time_calculation_service.calculate_period_time")
+    mock_calc = mocker.patch("app.features.timesheets.timesheet_service.daily_summary_service.build_period")
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -752,7 +764,8 @@ async def test_generate_user_timesheet_pdf_async_session(mocker):
     mock_period.total_missing_seconds = 0.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 
@@ -807,7 +820,7 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
 
-    mock_calc = mocker.patch('app.shared.time_calculation_service.time_calculation_service.calculate_period_time')
+    mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
     daily_res = {}
     daily_hol = {}
     for d in range(1, 32):
@@ -829,7 +842,8 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
     mock_period.total_net_worked_seconds = 245580.0
     mock_period.daily_results = daily_res
     mock_period.daily_is_holiday = daily_hol
-    mock_period.daily_expected_seconds = {}
+    mock_period.daily_expected_seconds = defaultdict(float)
+    mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
     mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
     mock_calc.return_value = mock_period
 

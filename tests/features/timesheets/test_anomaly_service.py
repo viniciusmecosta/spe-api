@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -154,11 +155,14 @@ def test_check_day_anomalies():
         MockTimeRecord(1, datetime(2023, 1, 1, 8, 0), RecordType.ENTRY),
         MockTimeRecord(1, datetime(2023, 1, 1, 20, 0), RecordType.EXIT)
     ]
-    anomalies = anomaly_service._check_day_anomalies(1, "Test", current_date, records)
+    anomalies = anomaly_service._check_day_anomalies(
+        1, "Test", current_date, records, worked_seconds=12 * 3600
+    )
     assert any(a.type == "EXCESSIVE_HOURS" for a in anomalies)
 
     anomalies_ignored = anomaly_service._check_day_anomalies(1, "Test", current_date, records,
-                                                             ignore_excessive_hours=True)
+                                                             ignore_excessive_hours=True,
+                                                             worked_seconds=12 * 3600)
     assert not any(a.type == "EXCESSIVE_HOURS" for a in anomalies_ignored)
 
 
@@ -189,7 +193,16 @@ async def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_
                                 datetime(2023, 1, 1, 18, 0).time())
     db_session_mock.query.return_value.items = [adj]
 
-    anomalies = await anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1)
+    with patch.object(
+        anomaly_service,
+        "_fetch_summaries",
+        new=AsyncMock(return_value={(1, date(2023, 1, 1)): SimpleNamespace(
+            worked_minutes=540, waiver_minutes=0
+        )}),
+    ):
+        anomalies = await anomaly_service.get_anomalies(
+            db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1
+        )
     assert len(anomalies) == 2
     types = [a.type for a in anomalies]
     assert "LONG_INTERVAL" in types

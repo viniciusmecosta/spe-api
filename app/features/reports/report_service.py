@@ -10,9 +10,6 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.daily_summary_exceptions import (
-    DailySummaryUnavailableError,
-)
 from app.features.daily_summaries.daily_summary_service import (
     daily_summary_service,
 )
@@ -54,7 +51,6 @@ from app.features.users.user_repository import (
     user_repository,
 )
 from app.shared import deps
-from app.shared import time_calculation_service as time_calc_mod
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 
 logger = logging.getLogger(__name__)
@@ -84,25 +80,9 @@ class ReportService:
             records: list[TimeRecord], adjustments: list[AdjustmentRequest],
             holidays: list, schedules: list,
     ):
-        schedule_minutes_are_integer = all(
-            abs(schedule.daily_hours * 60 - round(schedule.daily_hours * 60)) < 0.000001
-            for schedule in schedules
-        )
-        if settings.DAILY_SUMMARY_READ_ENABLED and schedule_minutes_are_integer:
-            try:
-                return await daily_summary_service.build_period(
-                    session, user_id, start_date, end_date,
-                    records, adjustments, holidays, schedules,
-                )
-            except DailySummaryUnavailableError:
-                pass
-        return time_calc_mod.time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=records,
-            adjustments=adjustments,
-            holidays=holidays,
-            historical_schedules=schedules,
+        return await daily_summary_service.build_period(
+            session, user_id, start_date, end_date,
+            records, adjustments, holidays, schedules,
         )
 
     def _format_duration(self, total_seconds: float) -> str:
@@ -285,20 +265,7 @@ class ReportService:
         worked_seconds = daily_res.net_worked_seconds
         abono = period_result.daily_waivers[current]
 
-        day_extra_time_adjs = [
-            adj for adj in (day_adjustments or [])
-            if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
-        ]
-
-        accounted_res = period_result.daily_accounted_results.get(current)
-        if accounted_res is None:
-            accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-                day_records=day_records,
-                schedule=schedule,
-                daily_excess_adj=daily_excess_adj,
-                waiver_adj=abono,
-                extra_time_adjs=day_extra_time_adjs,
-            )
+        accounted_res = period_result.daily_accounted_results[current]
         accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
@@ -439,20 +406,7 @@ class ReportService:
         expected_seconds = period_result.daily_expected_seconds[current]
         worked_seconds, day_worked_hours, day_expected_hours, day_extra, day_missing, day_balance = self._compute_daily_hours_and_balance(daily_res, expected_seconds)
 
-        day_extra_time_adjs = [
-            adj for adj in (day_adjustments or [])
-            if getattr(adj, 'adjustment_type', None) == AdjustmentType.EXTRA_TIME
-        ]
-
-        accounted_res = period_result.daily_accounted_results.get(current)
-        if accounted_res is None:
-            accounted_res = time_calc_mod.time_calculation_service.calculate_accounted_time(
-                day_records=day_records,
-                schedule=schedule,
-                daily_excess_adj=daily_excess_adj,
-                waiver_adj=adjustment_day,
-                extra_time_adjs=day_extra_time_adjs,
-            )
+        accounted_res = period_result.daily_accounted_results[current]
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
         excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
 

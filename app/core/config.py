@@ -37,7 +37,6 @@ class Settings(BaseSettings):
 
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
-    DAILY_SUMMARY_READ_ENABLED: bool = False
     HOURLY_BACKUP_START_HOUR: int
     HOURLY_BACKUP_END_HOUR: int
 

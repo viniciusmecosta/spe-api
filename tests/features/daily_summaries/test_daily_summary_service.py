@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,7 +23,8 @@ from app.features.daily_summaries.daily_summary_service import (
     from_legacy_period,
 )
 from app.features.system.system_models import AuditLog
-from app.shared.enums import AdjustmentStatus, AdjustmentType
+from app.features.time_records.time_record_models import TimeRecord
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.shared.time_calculation_service import (
     DailyTimeResult,
     PeriodTimeResult,
@@ -289,6 +290,44 @@ async def test_build_period_without_schedule_preserves_legacy_balance():
         )
     assert result.final_balance_seconds == 0
     assert result.daily_accounted_results[day].accounted_seconds == 28800
+
+
+@pytest.mark.asyncio
+async def test_build_period_reads_saved_minutes_without_recalculating_records():
+    day = date(2026, 5, 11)
+    summary = DailySummary(
+        user_id=1,
+        apuration_date=day,
+        worked_minutes=540,
+        accounted_minutes=480,
+        expected_minutes=480,
+        excess_minutes=60,
+        authorized_excess_minutes=0,
+        missing_minutes=0,
+        waiver_minutes=0,
+    )
+    records = [
+        TimeRecord(user_id=1, record_type=RecordType.ENTRY,
+                   record_datetime=datetime(2026, 5, 11, 8, 0)),
+        TimeRecord(user_id=1, record_type=RecordType.EXIT,
+                   record_datetime=datetime(2026, 5, 11, 18, 0)),
+    ]
+    service = DailySummaryService()
+    with patch.object(
+        service, "_load_period_rows", new=AsyncMock(return_value={day: summary})
+    ), patch(
+        "app.features.daily_summaries.daily_summary_service.time_calculation_service.calculate_period_time",
+        side_effect=AssertionError("read recalculated period"),
+    ), patch(
+        "app.features.daily_summaries.daily_summary_service.time_calculation_service._process_records",
+        side_effect=AssertionError("read recalculated punches"),
+    ):
+        result = await service.build_period(
+            MagicMock(), 1, day, day, records, [], [], []
+        )
+    assert result.total_accounted_seconds == 480 * 60
+    assert result.total_unapproved_extra_seconds == 60 * 60
+    assert result.daily_results[day].punch_blocks == ["08:00 - 18:00"]
 
 
 @pytest.mark.asyncio

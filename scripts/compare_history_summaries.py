@@ -1,15 +1,27 @@
 import asyncio
 import importlib
 import json
+from unittest.mock import patch
 
 from sqlalchemy import extract, select
 
-from app.core.config import settings
 from app.database.session import SessionLocal
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
+from app.shared.time_calculation_service import time_calculation_service
+
+
+async def legacy_period(session, user_id, first, last, records, adjustments, holidays, schedules):
+    return time_calculation_service.calculate_period_time(
+        start_date=first,
+        end_date=last,
+        records=records,
+        adjustments=adjustments,
+        holidays=holidays,
+        historical_schedules=schedules,
+    )
 
 
 async def compare() -> None:
@@ -36,17 +48,33 @@ async def compare() -> None:
         for year_value, month_value in periods:
             year, month = int(year_value), int(month_value)
             for user_id in user_ids:
-                settings.DAILY_SUMMARY_READ_ENABLED = False
-                legacy = await report_service.get_history_report(
+                with patch.object(report_service, "_calculate_period", new=legacy_period):
+                    legacy_history = await report_service.get_history_report(
+                        session, user_id, month, year, actor
+                    )
+                    legacy_advanced = await report_service.get_advanced_user_report(
+                        session, user_id, month, year, actor
+                    )
+                summary_history = await report_service.get_history_report(
                     session, user_id, month, year, actor
                 )
-                settings.DAILY_SUMMARY_READ_ENABLED = True
-                summary = await report_service.get_history_report(
+                summary_advanced = await report_service.get_advanced_user_report(
                     session, user_id, month, year, actor
                 )
-                compared += 1
-                if legacy.model_dump(mode="json") != summary.model_dump(mode="json"):
-                    differences.append({"user_id": user_id, "period": f"{year:04d}-{month:02d}"})
+                for report_type, legacy, summary in (
+                    ("history", legacy_history, summary_history),
+                    ("advanced", legacy_advanced, summary_advanced),
+                ):
+                    compared += 1
+                    if (legacy is None) != (summary is None) or (
+                        legacy is not None
+                        and legacy.model_dump(mode="json") != summary.model_dump(mode="json")
+                    ):
+                        differences.append({
+                            "user_id": user_id,
+                            "period": f"{year:04d}-{month:02d}",
+                            "report_type": report_type,
+                        })
     print(json.dumps({"compared": compared, "differences": differences}, indent=2))
     if differences:
         raise SystemExit(1)

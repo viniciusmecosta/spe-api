@@ -10,7 +10,6 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.daily_summary_events import schedule_days
 from app.features.daily_summaries.daily_summary_exceptions import (
     DailySummaryUnavailableError,
 )
@@ -25,7 +24,7 @@ from app.features.system.system_models import AuditLog
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared.daily_excess_service import daily_excess_service
-from app.shared.enums import AdjustmentStatus, AdjustmentType
+from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.shared.time_calculation_service import (
     DailyAccountedResult,
     DailyTimeResult,
@@ -55,6 +54,31 @@ def from_legacy_period(day: date, result: PeriodTimeResult) -> DaySummaryValues:
 
 
 class DailySummaryService:
+    def _format_records(
+        self, records: list[TimeRecord]
+    ) -> tuple[list[str], list[str], list[str], list[str]]:
+        entries: list[str] = []
+        exits: list[str] = []
+        punches: list[str] = []
+        blocks: list[str] = []
+        entry: str | None = None
+        for record in records:
+            clock = record.record_datetime.strftime("%H:%M")
+            if record.record_type == RecordType.ENTRY:
+                punches.append(f"{clock} (E)")
+                entries.append(clock)
+                if entry is not None:
+                    blocks.append(f"{entry} - --:--")
+                entry = clock
+            else:
+                punches.append(f"{clock} (S)")
+                exits.append(clock)
+                blocks.append(f"{entry or '--:--'} - {clock}")
+                entry = None
+        if entry is not None:
+            blocks.append(f"{entry} - --:--")
+        return entries, exits, punches, blocks
+
     async def _load_period_rows(
         self, session: Any, user_id: int, first: date, last: date
     ) -> dict[date, DailySummary]:
@@ -77,8 +101,6 @@ class DailySummaryService:
         summaries = await self._load_period_rows(session, user_id, first, last)
         days = (last - first).days + 1
         if len(summaries) != days:
-            all_days = {first + timedelta(days=offset) for offset in range(days)}
-            schedule_days({(user_id, day) for day in all_days.difference(summaries)})
             raise DailySummaryUnavailableError()
 
         records_by_day: dict[date, list[TimeRecord]] = {}
@@ -103,9 +125,7 @@ class DailySummaryService:
             day_records = sorted(
                 records_by_day.get(current, []), key=lambda record: record.record_datetime
             )
-            _, entries, exits, punches, blocks = time_calculation_service._process_records(
-                day_records
-            )
+            entries, exits, punches, blocks = self._format_records(day_records)
             gross = row.worked_minutes * 60
             net = row.accounted_minutes * 60
             expected = row.expected_minutes * 60

@@ -28,6 +28,7 @@ from app.features.companies.company_repository import (
     async_company_repository,
     company_repository,
 )
+from app.features.daily_summaries.daily_summary_service import daily_summary_service
 from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
@@ -49,7 +50,6 @@ from app.features.users.user_repository import (
 )
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
-from app.shared.time_calculation_service import time_calculation_service
 from app.shared.trusted_time_service import trusted_time_service
 
 logger = logging.getLogger(__name__)
@@ -186,12 +186,9 @@ class TimesheetService:
             is_weekend = target_day in (DayOfWeek.SABADO, DayOfWeek.DOMINGO)
 
             day_records = [r for r in (records or []) if r.record_datetime.date() == current_date]
-            day_schedule = self._get_daily_schedule(current_date, target_day, historical_schedules)
-            day_excess, abono, day_extra_time_adjs = self._get_daily_adjustments(current_date, all_adjustments)
+            _, abono, _ = self._get_daily_adjustments(current_date, all_adjustments)
 
-            expected_seconds = getattr(period_result, 'daily_expected_seconds', {}).get(current_date, 0.0)
-            if not expected_seconds and day_schedule and getattr(day_schedule, 'daily_hours', 0.0):
-                expected_seconds = float(day_schedule.daily_hours * 3600.0)
+            expected_seconds = period_result.daily_expected_seconds[current_date]
 
             is_absence = self._is_day_absence(
                 is_weekend, is_holiday, abono, expected_seconds, len(day_records), current_date, today
@@ -203,13 +200,7 @@ class TimesheetService:
             punches_str = self._format_daily_punches(daily_res, is_holiday, holiday_obj)
             punches_str = self._format_absence_punches(punches_str, is_absence)
 
-            accounted_res = time_calculation_service.calculate_accounted_time(
-                day_records=day_records,
-                schedule=day_schedule,
-                daily_excess_adj=day_excess,
-                waiver_adj=abono,
-                extra_time_adjs=day_extra_time_adjs,
-            )
+            accounted_res = period_result.daily_accounted_results[current_date]
             accounted_time_str = self._format_duration(accounted_res.accounted_seconds)
             unapproved_total = daily_res.unapproved_extra_seconds
             unapproved_time_str = self._format_duration(unapproved_total)
@@ -676,13 +667,9 @@ class TimesheetService:
         ]
 
         historical_schedules = user.historical_schedules if user else []
-        period_result = time_calculation_service.calculate_period_time(
-            start_date=start_date,
-            end_date=end_date,
-            records=records,
-            adjustments=all_adjustments,
-            holidays=holidays,
-            historical_schedules=historical_schedules,
+        period_result = await daily_summary_service.build_period(
+            session, user_id, start_date, end_date,
+            records, all_adjustments, holidays, historical_schedules,
         )
 
         story.append(
