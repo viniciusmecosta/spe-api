@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.change_tracking import (
+from app.features.daily_summaries.daily_summary_events import (
     _scope_for_adjustment,
     _scope_for_holiday,
     _scope_for_record,

@@ -1,0 +1,2 @@
+class DailySummaryUnavailableError(Exception):
+    pass

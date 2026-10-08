@@ -112,8 +112,8 @@ async def get_async_session_context() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-from app.features.daily_summaries.change_tracking import register_change_tracking
-from app.features.daily_summaries.dispatch import register_daily_summary_dispatch
+from app.features.daily_summaries.daily_summary_events import (
+    register_daily_summary_events,
+)
 
-register_change_tracking()
-register_daily_summary_dispatch()
+register_daily_summary_events()

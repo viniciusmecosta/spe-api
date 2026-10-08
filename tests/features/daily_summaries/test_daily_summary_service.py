@@ -4,18 +4,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.orm import Session
 
-from app.features.daily_summaries.calculator import (
-    DaySummaryValues,
-    from_legacy_period,
-)
-from app.features.daily_summaries.dispatch import (
+from app.features.daily_summaries.daily_summary_events import (
     _after_commit,
     _after_rollback,
     recalculate_changed_days,
 )
-from app.features.daily_summaries.read_service import (
-    DailySummaryReadService,
+from app.features.daily_summaries.daily_summary_exceptions import (
     DailySummaryUnavailableError,
+)
+from app.features.daily_summaries.daily_summary_schemas import (
+    DaySummaryValues,
+)
+from app.features.daily_summaries.daily_summary_service import (
+    DailySummaryService,
+    daily_summary_service,
+    from_legacy_period,
 )
 from app.shared.time_calculation_service import (
     DailyTimeResult,
@@ -186,7 +189,7 @@ def test_dispatch_after_commit_and_rollback():
         "daily_summary_reset_excess_days": {(1, date(2026, 5, 1))},
     }
 
-    with patch("app.features.daily_summaries.dispatch.schedule_days") as mock_schedule:
+    with patch("app.features.daily_summaries.daily_summary_events.schedule_days") as mock_schedule:
         _after_commit(session)
         mock_schedule.assert_called_once_with(
             {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))},
@@ -207,7 +210,7 @@ def test_dispatch_after_commit_and_rollback():
 @pytest.mark.asyncio
 async def test_recalculate_changed_days_calls_service():
     with patch(
-        "app.features.daily_summaries.recalculation_service.daily_summary_recalculation_service.recalculate_day",
+        "app.features.daily_summaries.daily_summary_service.daily_summary_service.recalculate_day",
         new_callable=AsyncMock,
     ) as mock_recalc:
         days = {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))}
@@ -220,7 +223,7 @@ async def test_recalculate_changed_days_calls_service():
 @pytest.mark.asyncio
 async def test_recalculate_changed_days_with_reset_excess_flag():
     with patch(
-        "app.features.daily_summaries.recalculation_service.daily_summary_recalculation_service.recalculate_day",
+        "app.features.daily_summaries.daily_summary_service.daily_summary_service.recalculate_day",
         new_callable=AsyncMock,
     ) as mock_recalc:
         days = {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))}
@@ -233,7 +236,7 @@ async def test_recalculate_changed_days_with_reset_excess_flag():
 
 @pytest.mark.asyncio
 async def test_read_service_raises_when_summary_missing():
-    service = DailySummaryReadService()
+    service = DailySummaryService()
     session = AsyncMock()
     scalars_mock = MagicMock()
     scalars_mock.all.return_value = []
@@ -254,7 +257,9 @@ async def test_read_service_raises_when_summary_missing():
 
 @pytest.mark.asyncio
 async def test_calculate_user_day_with_reset_excess():
-    from app.features.daily_summaries.recalculation_service import daily_summary_recalculation_service
+    from app.features.daily_summaries.daily_summary_service import (
+        daily_summary_service,
+    )
     from app.features.users.user_models import User
 
     session = AsyncMock()
@@ -266,13 +271,13 @@ async def test_calculate_user_day_with_reset_excess():
     session.scalars.return_value = scalars_mock
 
     with patch(
-        "app.features.daily_summaries.recalculation_service.daily_excess_service.evaluate_user_day_async",
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
         new_callable=AsyncMock,
     ) as mock_excess, patch(
-        "app.features.daily_summaries.recalculation_service.daily_summary_repository.upsert",
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
         new_callable=AsyncMock,
     ) as mock_upsert:
-        await daily_summary_recalculation_service._calculate_user_day(
+        await daily_summary_service._calculate_user_day(
             session, user_id=1, day=date(2026, 5, 10), refresh_excess=True, reset_excess=True
         )
         mock_excess.assert_awaited_once_with(

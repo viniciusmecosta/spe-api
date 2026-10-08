@@ -10,9 +10,11 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.read_service import (
+from app.features.daily_summaries.daily_summary_exceptions import (
     DailySummaryUnavailableError,
-    daily_summary_read_service,
+)
+from app.features.daily_summaries.daily_summary_service import (
+    daily_summary_service,
 )
 from app.features.holidays.holiday_repository import (
     async_holiday_repository,
@@ -88,7 +90,7 @@ class ReportService:
         )
         if settings.DAILY_SUMMARY_READ_ENABLED and schedule_minutes_are_integer:
             try:
-                return await daily_summary_read_service.build_period(
+                return await daily_summary_service.build_period(
                     session, user_id, start_date, end_date,
                     records, adjustments, holidays, schedules,
                 )

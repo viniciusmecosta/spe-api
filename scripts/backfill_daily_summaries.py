@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.recalculation_service import (
-    daily_summary_recalculation_service,
+from app.features.daily_summaries.daily_summary_service import (
+    daily_summary_service,
 )
 from app.features.holidays.holiday_models import Holiday
 from app.features.time_records.time_record_models import TimeRecord
@@ -66,7 +66,7 @@ async def backfill(selected: tuple[int, int] | None, execute: bool) -> None:
         for day in range(1, calendar.monthrange(year, month)[1] + 1):
             current = date(year, month, day)
             for user_id in user_ids:
-                await daily_summary_recalculation_service.calculate_day(
+                await daily_summary_service.calculate_day(
                     user_id, current, refresh_excess=False, allow_closed=True
                 )
                 processed += 1

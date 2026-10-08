@@ -18,7 +18,7 @@ import app.features.payroll.payroll_models
 import app.features.adjustments.adjustment_models
 import app.features.time_records.time_record_models
 import app.features.system.system_models
-import app.features.daily_summaries.models
+import app.features.daily_summaries.daily_summary_models
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole

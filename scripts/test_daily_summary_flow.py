@@ -6,8 +6,10 @@ from sqlalchemy import func, select
 
 from app.database.session import AsyncSessionLocal, SessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.models import DailySummary
-from app.features.daily_summaries.recalculation_service import daily_summary_recalculation_service
+from app.features.daily_summaries.daily_summary_models import DailySummary
+from app.features.daily_summaries.daily_summary_service import (
+    daily_summary_service,
+)
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
@@ -29,7 +31,7 @@ async def _test_calculation_rollback() -> None:
         )).first()
         assert row is not None
         user_id, timestamp = row
-        await daily_summary_recalculation_service._calculate_user_day(
+        await daily_summary_service._calculate_user_day(
             session, user_id, timestamp.date(), refresh_excess=True
         )
         await session.flush()

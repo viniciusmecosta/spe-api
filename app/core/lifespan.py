@@ -8,7 +8,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.features.daily_summaries.dispatch import bind_dispatch_loop
+from app.features.daily_summaries.daily_summary_events import bind_dispatch_loop
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
 

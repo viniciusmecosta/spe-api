@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.database.session import SessionLocal
-from app.features.daily_summaries.models import DailySummary
+from app.features.daily_summaries.daily_summary_models import DailySummary
 
 
 def _minutes(value: str) -> int:
