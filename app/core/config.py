@@ -64,3 +64,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _is_environment(name: str) -> bool:
+    return settings.ENVIRONMENT.strip().casefold() == name
+
+
+def isProd() -> bool:
+    return _is_environment("prod")
+
+
+def isDev() -> bool:
+    return _is_environment("dev")

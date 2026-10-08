@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from app.core.config import settings
+from app.core.config import isDev, isProd, settings
 from app.core.logger import get_log_path
 from app.database.session import get_async_session_context
 from app.features.reports.daily_report_service import daily_report_service
@@ -94,7 +94,7 @@ class RoutineOrchestrator:
         await asyncio.to_thread(self._cleanup_backup_files_sync, backup_path, sql_path, zip_path)
 
     async def execute_hourly_backup_telegram(self):
-        if settings.ENVIRONMENT.lower() != "prod":
+        if not isProd():
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -150,7 +150,7 @@ class RoutineOrchestrator:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
     async def send_managerial_report_telegram(self):
-        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+        if isDev():
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -270,7 +270,7 @@ class RoutineOrchestrator:
             )
 
     async def run_daily_backup_routine_email(self):
-        if settings.ENVIRONMENT.lower() != "prod":
+        if not isProd():
             return
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -327,7 +327,7 @@ class RoutineOrchestrator:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
     async def clean_old_logs(self, days_to_keep: int = None):
-        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+        if isDev():
             return
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
         tz = ZoneInfo(settings.TIMEZONE)

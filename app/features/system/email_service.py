@@ -9,7 +9,7 @@ from email.utils import formataddr, parseaddr
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
-from app.core.config import settings
+from app.core.config import isDev, settings
 from app.features.reports.template_service import template_service
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class EmailService:
 
             subject = f"Folha de Ponto - {month:02d}/{year}"
 
-            if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            if isDev():
                 subject = f"Folha de Ponto DEV - {month:02d}/{year}"
 
             tz = ZoneInfo(settings.TIMEZONE)
@@ -101,7 +101,7 @@ class EmailService:
         if not raw_sender:
             raw_sender = ""
 
-        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+        if isDev():
             name, addr = parseaddr(raw_sender)
 
             if addr:
@@ -154,7 +154,7 @@ class EmailService:
 
         tz = ZoneInfo(settings.TIMEZONE)
         current_date = datetime.now(tz).strftime("%d/%m/%Y")
-        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+        if isDev():
             current_time = datetime.now(tz).strftime("%H:%M:%S")
             msg['Subject'] = f"Backup SPE DEV - {current_date} {current_time}"
         else:

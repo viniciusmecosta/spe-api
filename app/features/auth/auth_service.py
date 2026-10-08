@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
-from app.core.config import settings
+from app.core.config import isDev
 from app.database.session import get_async_db
 from app.features.auth.auth_exceptions import InactiveUserError, InvalidCredentialsError
 from app.features.auth.auth_schemas import Token
@@ -35,8 +35,7 @@ class AuthService:
         if not user:
             raise InvalidCredentialsError()
 
-        is_dev = settings.ENVIRONMENT.lower() == "dev"
-        allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
+        allow_bypass = isDev() and user.role == UserRole.EMPLOYEE
 
         if not allow_bypass:
             if not security.verify_password(password, user.password_hash):

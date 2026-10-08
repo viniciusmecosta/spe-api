@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app.core.config import settings
+from app.core.config import isProd, settings
 from app.features.daily_summaries.daily_summary_events import bind_dispatch_loop
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
     trigger_hourly = CronTrigger(minute=0, timezone=tz)
 
-    if settings.ENVIRONMENT.lower() == "prod":
+    if isProd():
         scheduler.add_job(routine_orchestrator.run_daily_backup_routine_email, trigger=trigger_aligned,
                           id="daily_backup_email",
                           max_instances=1, coalesce=True)
