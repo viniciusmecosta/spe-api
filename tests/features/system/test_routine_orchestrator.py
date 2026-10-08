@@ -352,6 +352,14 @@ async def test_clean_old_logs_success(orchestrator, mock_datetime, mock_get_db_s
     orchestrator._repo.log_execution.assert_called_once()
 
 
+async def test_clean_old_logs_preserves_dev_copy(orchestrator):
+    with patch.object(settings, "ENVIRONMENT", "dev"):
+        await orchestrator.clean_old_logs(days_to_keep=30)
+    orchestrator._repo.has_routine_run_for_target_date.assert_not_called()
+    orchestrator._repo.delete_older_than.assert_not_called()
+    orchestrator._repo.log_execution.assert_not_called()
+
+
 async def test_clean_old_logs_db_error_on_write(orchestrator, mock_datetime, mock_get_db_session, db_session_mock):
     orchestrator._repo.has_routine_run_for_target_date.return_value = False
     orchestrator._repo.delete_older_than.return_value = 5

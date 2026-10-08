@@ -325,6 +325,8 @@ class RoutineOrchestrator:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
     async def clean_old_logs(self, days_to_keep: int = None):
+        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+            return
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
