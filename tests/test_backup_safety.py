@@ -34,7 +34,7 @@ def test_manifest_rejects_partial_and_tampered_dumps(tmp_path):
     path = tmp_path / "data.sql"
     path.write_text("INSERT INTO users (id) VALUES (1);\n", encoding="utf-8")
     add_manifest(path, {"users": 1, "companies": 0})
-    content = path.read_text(encoding="utf-8")
+    content = path.read_bytes().decode("utf-8")
 
     assert validate_manifest(content, {"users", "companies"}) == {
         "users": 1, "companies": 0,
@@ -46,7 +46,7 @@ def test_manifest_rejects_partial_and_tampered_dumps(tmp_path):
         validate_manifest(content, {"users", "companies", "time_records"})
     with pytest.raises(ValueError, match="hash"):
         validate_manifest(content.replace("VALUES (1)", "VALUES (2)"), {"users", "companies"})
-    path.write_text(content.replace("VALUES (1)", "VALUES (2)"), encoding="utf-8")
+    path.write_bytes(content.replace("VALUES (1)", "VALUES (2)").encode("utf-8"))
     with pytest.raises(ValueError, match="hash"):
         validate_manifest_file(path, {"users", "companies"})
     with pytest.raises(ValueError, match="sem manifesto"):
@@ -80,7 +80,7 @@ def test_row_count_mismatch_rolls_back_restore(mocker, tmp_path):
     mocker.patch("scripts.apply_sql_to_postgresql.connect_with_retry", return_value=connection)
 
     with pytest.raises(RuntimeError, match="esperado 2, aplicado 1"):
-        apply_sql_content(path.read_text(encoding="utf-8"), allow_destructive=True)
+        apply_sql_content(path.read_bytes().decode("utf-8"), allow_destructive=True)
 
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, mock_open, patch
@@ -324,7 +325,8 @@ def test_snapshot_dump_streams_host_output_and_strips_directives(mocker, tmp_pat
     path = tmp_path / "schema.sql"
     assert service._dump_with_snapshot(str(path), schema_only=True)
     assert path.read_text() == "SELECT 1;\n"
-    assert path.stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert path.stat().st_mode & 0o077 == 0
 
 
 def test_snapshot_dump_uses_docker_and_cleans_failed_output(mocker, tmp_path):
