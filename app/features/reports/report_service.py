@@ -262,7 +262,7 @@ class ReportService:
         day_anomalies = [a for a in anomalies if a.date == current]
 
         daily_res = period_result.daily_results[current]
-        worked_seconds = daily_res.net_worked_seconds
+        worked_seconds = daily_res.gross_worked_seconds
         abono = period_result.daily_waivers[current]
 
         accounted_res = period_result.daily_accounted_results[current]
@@ -368,7 +368,7 @@ class ReportService:
         return "Normal"
 
     def _compute_daily_hours_and_balance(self, daily_res, expected_seconds: float):
-        worked_seconds = daily_res.net_worked_seconds
+        worked_seconds = daily_res.gross_worked_seconds
         day_worked_hours = worked_seconds / 3600.0
         day_expected_hours = expected_seconds / 3600.0
         day_extra = daily_res.extra_seconds / 3600.0
@@ -568,7 +568,7 @@ class ReportService:
             start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments
         )
 
-        total_month_minutes = int(round(period_result.total_net_worked_seconds / 60))
+        total_month_minutes = int(round(period_result.total_gross_worked_seconds / 60))
         total_month_hours = total_month_minutes // 60
         month_minutes = total_month_minutes % 60
 
@@ -700,7 +700,7 @@ class ReportService:
             all_adjustments, holidays, user.historical_schedules,
         )
 
-        total_worked_seconds = period_result.total_net_worked_seconds
+        total_worked_seconds = period_result.total_gross_worked_seconds
         total_expected_seconds = period_result.total_expected_seconds
         total_extra_hours = period_result.total_extra_seconds / 3600.0
         total_missing_hours = period_result.total_missing_seconds / 3600.0

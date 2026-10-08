@@ -92,15 +92,18 @@ def mock_db(db_session_mock):
     return db_session_mock
 
 
-def _create_daily_time_result(net_worked_seconds=28800.0, extra_seconds=0.0, missing_seconds=0.0,
-                              waiver_seconds=0.0, unapproved_extra_seconds=0.0,
-                              entries=None, exits=None, punches=None):
+def _create_daily_time_result(
+        net_worked_seconds=28800.0, gross_worked_seconds=None,
+        extra_seconds=0.0, missing_seconds=0.0, waiver_seconds=0.0,
+        unapproved_extra_seconds=0.0, entries=None, exits=None, punches=None,
+):
+    gross_seconds = gross_worked_seconds if gross_worked_seconds is not None else net_worked_seconds
     return DailyTimeResult(
-        raw_worked_seconds=net_worked_seconds,
+        raw_worked_seconds=gross_seconds,
         waiver_seconds=waiver_seconds,
         unapproved_extra_seconds=unapproved_extra_seconds,
         net_worked_seconds=net_worked_seconds,
-        gross_worked_seconds=net_worked_seconds,
+        gross_worked_seconds=gross_seconds,
         extra_seconds=extra_seconds,
         missing_seconds=missing_seconds,
         entries=entries or ["08:00"],
@@ -233,8 +236,19 @@ def test_build_history_day_scenarios(service):
     anomaly.description = "Entrada sem saida"
 
     period_res = MagicMock()
-    daily_calc = _create_daily_time_result(net_worked_seconds=28800.0)
+    daily_calc = _create_daily_time_result(net_worked_seconds=28800.0, gross_worked_seconds=28920.0)
     period_res.daily_results = {curr: daily_calc}
+    period_res.daily_accounted_results = {curr: DailyAccountedResult(
+        raw_seconds=28920.0,
+        excess_work_seconds=120.0,
+        excess_lunch_seconds=0.0,
+        early_return_seconds=0.0,
+        total_excess_seconds=120.0,
+        approved_seconds=0.0,
+        accounted_seconds=28800.0,
+        has_schedule=True,
+        has_lunch_rule=False,
+    )}
     period_res.daily_waivers = {curr: None}
 
     h_day = service._build_history_day(
@@ -250,7 +264,8 @@ def test_build_history_day_scenarios(service):
     assert h_day.is_holiday is True
     assert h_day.holiday_name == "Ano Novo"
     assert h_day.status == "Normal"
-    assert h_day.worked_time == "08:00"
+    assert h_day.worked_time == "08:02"
+    assert h_day.accounted_time == "08:00"
     assert h_day.has_anomaly is True
     assert h_day.anomalies == ["Entrada sem saida"]
     assert len(h_day.punches) == 1
@@ -385,6 +400,7 @@ def test_build_daily_report_item(service):
     period_res = MagicMock()
     daily_calc = _create_daily_time_result(
         net_worked_seconds=28800.0,
+        gross_worked_seconds=30600.0,
         unapproved_extra_seconds=1800.0,
         extra_seconds=3600.0,
         missing_seconds=0.0,
@@ -396,6 +412,17 @@ def test_build_daily_report_item(service):
     period_res.daily_results = {curr: daily_calc}
     period_res.daily_waivers = {curr: MagicMock(id=50)}
     period_res.daily_expected_seconds = {curr: 28800.0}
+    period_res.daily_accounted_results = {curr: DailyAccountedResult(
+        raw_seconds=30600.0,
+        excess_work_seconds=1800.0,
+        excess_lunch_seconds=0.0,
+        early_return_seconds=0.0,
+        total_excess_seconds=1800.0,
+        approved_seconds=0.0,
+        accounted_seconds=28800.0,
+        has_schedule=True,
+        has_lunch_rule=False,
+    )}
 
     item = service._build_daily_report_item(
         current=curr,
@@ -410,13 +437,14 @@ def test_build_daily_report_item(service):
     assert item.is_holiday is True
     assert item.holiday_name == "Feriado Local"
     assert item.adjustment_id == 50
-    assert item.worked_hours == 8.0
+    assert item.worked_hours == 8.5
     assert item.expected_hours == 8.0
     assert item.extra_hours == 1.0
     assert item.missing_hours == 0.0
     assert item.balance_hours == 1.0
-    assert item.worked_minutes == 480
-    assert item.worked_time == "08:00"
+    assert item.worked_minutes == 510
+    assert item.worked_time == "08:30"
+    assert item.accounted_time == "08:00"
     assert item.expected_time == "08:00"
     assert item.unapproved_extra_time == "00:30"
     assert "Abono: 02:00" in item.punches
@@ -452,7 +480,8 @@ async def test_get_history_report_success(service, mock_db, mock_repo_user, mock
 
     period_calc = PeriodTimeResult(
         total_net_worked_seconds=57600.0,
-        total_gross_worked_seconds=57600.0,
+        total_gross_worked_seconds=57720.0,
+        total_accounted_seconds=57600.0,
         total_expected_seconds=57600.0,
         total_waiver_seconds=0.0,
         total_unapproved_extra_seconds=0.0,
@@ -470,7 +499,8 @@ async def test_get_history_report_success(service, mock_db, mock_repo_user, mock
     res = await service.get_history_report(mock_db, user_id=1, month=None, year=None, current_user=curr_user)
     assert res.month == datetime.now().month
     assert res.year == datetime.now().year
-    assert res.total_worked_time == "16:00"
+    assert res.total_worked_time == "16:02"
+    assert res.total_accounted_time == "16:00"
     assert len(res.days) >= 1
 
 
@@ -531,7 +561,8 @@ async def test_get_advanced_user_report_success(service, mock_db, mock_repo_user
 
     period_calc = PeriodTimeResult(
         total_net_worked_seconds=72000.0,
-        total_gross_worked_seconds=72000.0,
+        total_gross_worked_seconds=72120.0,
+        total_accounted_seconds=72000.0,
         total_expected_seconds=86400.0,
         total_waiver_seconds=0.0,
         total_unapproved_extra_seconds=0.0,
@@ -551,9 +582,12 @@ async def test_get_advanced_user_report_success(service, mock_db, mock_repo_user
     assert res.summary.user_id == 1
     assert res.summary.absences >= 1
     assert res.summary.user_name == "John Doe"
-    assert res.summary.total_worked_time == "20:00"
+    assert res.summary.total_worked_time == "20:02"
+    assert res.summary.total_accounted_time == "20:00"
+    assert res.summary.total_worked_minutes == 1202
+    assert res.summary.total_accounted_minutes == 1200
     assert res.summary.total_expected_time == "24:00"
-    assert res.summary.total_worked_hours == 20.0
+    assert res.summary.total_worked_hours == 20.03
     assert res.summary.total_expected_hours == 24.0
     assert res.summary.total_extra_hours == 2.0
     assert res.summary.total_missing_hours == 4.0

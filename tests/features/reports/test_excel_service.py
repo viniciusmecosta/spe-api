@@ -300,6 +300,27 @@ def test_build_day_row(excel_service):
     excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
 
 
+def test_build_day_row_keeps_gross_and_accounted_distinct(excel_service):
+    wb = Workbook()
+    ws = wb.active
+    day = MagicMock()
+    day.date = datetime(2026, 9, 4)
+    day.day_name = 'Sexta'
+    day.punches = ['07:28', '17:02']
+    day.worked_time = '08:02'
+    day.accounted_time = '08:00'
+    day.unapproved_extra_time = '00:02'
+    day.is_holiday = False
+    day.is_weekend = False
+    day.status = 'Normal'
+
+    gross, unapproved, accounted = excel_service._build_day_row(ws, day, [2, 3, 13, 2, 2, 2])
+
+    assert round(gross * 1440) == 482
+    assert round(unapproved * 1440) == 2
+    assert round(accounted * 1440) == 480
+
+
 def test_build_employee_sheet_no_phone_endereco(excel_service):
     wb = Workbook()
     mock_user = MagicMock(spec=User)

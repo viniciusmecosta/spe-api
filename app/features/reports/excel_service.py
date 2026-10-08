@@ -722,9 +722,7 @@ class ExcelService:
         last_row = ws_det.max_row
 
         trab_contabilizado = self._time_str_to_fraction(getattr(day, 'accounted_time', '00:00') or day.worked_time or '00:00')
-        trab_liquido = self._time_str_to_fraction(day.worked_time)
-        extra_nao_aut_legacy = self._time_str_to_fraction(getattr(day, 'unapproved_extra_time', '00:00') or '00:00')
-        trab_bruto = trab_liquido + extra_nao_aut_legacy
+        trab_bruto = self._time_str_to_fraction(day.worked_time)
         extra_nao_aut = max(0.0, trab_bruto - trab_contabilizado)
 
         texts = [
