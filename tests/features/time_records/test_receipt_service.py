@@ -1,8 +1,11 @@
+from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from app.features.printers.printer_models import Printer
 from app.features.time_records.receipt_service import ReceiptService
+from app.shared.enums import RecordType
 
 
 @pytest.fixture
@@ -75,3 +78,51 @@ def test_generate_pdf_receipt(receipt_data):
     na_data["company_cnpj"] = ""
     pdf_bytes_empty = ReceiptService.generate_pdf_receipt(na_data)
     assert pdf_bytes_empty.startswith(b"%PDF-")
+
+
+def test_build_receipt_data_preserves_print_and_pdf_fields():
+    user = SimpleNamespace(name="John", cpf="12345678900", pis="12345678901")
+    record = SimpleNamespace(
+        id=7,
+        record_type=RecordType.ENTRY,
+        record_datetime=datetime(2026, 10, 8, 9, 5),
+        device_name="Terminal",
+        user=user,
+    )
+    company = SimpleNamespace(
+        name="Empresa",
+        address="Rua A",
+        cnpj="12345678000199",
+    )
+
+    data = ReceiptService.build_receipt_data(record, company, "ab12")
+
+    assert data == {
+        "company_name": "Empresa",
+        "company_address": "Rua A",
+        "company_cnpj": "12.345.678/0001-99",
+        "employee_name": "John",
+        "employee_cpf": "123.456.789-00",
+        "employee_pis": "12345678901",
+        "record_date": "08/10/2026",
+        "record_time": "09:05",
+        "record_type_str": "Entrada",
+        "device_name": "Terminal",
+        "nsr": 7,
+        "short_id": "AB12",
+    }
+
+    record.record_type = RecordType.EXIT
+    record.device_name = None
+    user.cpf = None
+    user.pis = None
+    missing_data = ReceiptService.build_receipt_data(record, None, "cd34")
+
+    assert missing_data["company_name"] == "N/A"
+    assert missing_data["company_address"] == "N/A"
+    assert missing_data["company_cnpj"] == "N/A"
+    assert missing_data["employee_cpf"] == ""
+    assert missing_data["employee_pis"] == "N/A"
+    assert missing_data["record_type_str"] == "Saída"
+    assert missing_data["device_name"] == "Desconhecido"
+    assert missing_data["short_id"] == "CD34"

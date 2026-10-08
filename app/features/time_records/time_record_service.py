@@ -607,26 +607,6 @@ class TimeRecordService:
             return await self.repo.get_timeline(session, record_id)
         return time_record_repository.get_timeline(session, record_id)
 
-    def _build_print_data(self, record: TimeRecord, company, short_id: str) -> dict:
-        record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-        company_cnpj = mask_cnpj(company.cnpj or "") if company.cnpj else "N/A"
-        employee_cpf = mask_cpf(record.user.cpf or "")
-
-        return {
-            "company_name": company.name,
-            "company_address": company.address or "N/A",
-            "company_cnpj": company_cnpj,
-            "employee_name": record.user.name,
-            "employee_cpf": employee_cpf,
-            "employee_pis": record.user.pis or "N/A",
-            "record_date": record.record_datetime.strftime("%d/%m/%Y"),
-            "record_time": record.record_datetime.strftime("%H:%M"),
-            "record_type_str": record_type_str,
-            "device_name": record.device_name or "Desconhecido",
-            "nsr": record.id,
-            "short_id": short_id.upper(),
-        }
-
     async def trigger_auto_print(self, db: Any | None = None, record: TimeRecord | None = None, background_tasks=None):
         session = db if db is not None else self.db
         assert session is not None
@@ -653,7 +633,7 @@ class TimeRecordService:
             return
 
         short_id = hashid_service.encode(record.id)
-        data = self._build_print_data(record, company, short_id)
+        data = receipt_service.build_receipt_data(record, company, short_id)
         background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
     async def _get_accessible_record(self, db: Any, short_id: str, current_user: User) -> TimeRecord:
@@ -726,24 +706,7 @@ class TimeRecordService:
         else:
             company = company_repository.get_current(session)
 
-        record_type_str = "Entrada" if record.record_type == RecordType.ENTRY else "Saída"
-        date_str = record.record_datetime.strftime("%d/%m/%Y")
-        time_str = record.record_datetime.strftime("%H:%M")
-
-        data = {
-            "company_name": company.name if company else "N/A",
-            "company_address": company.address if company else "N/A",
-            "company_cnpj": mask_cnpj(company.cnpj or "") if company else "N/A",
-            "employee_name": record.user.name,
-            "employee_cpf": mask_cpf(record.user.cpf or ""),
-            "employee_pis": record.user.pis,
-            "record_date": date_str,
-            "record_time": time_str,
-            "record_type_str": record_type_str,
-            "device_name": record.device_name or "Desconhecido",
-            "nsr": record.id,
-            "short_id": short_id.upper(),
-        }
+        data = receipt_service.build_receipt_data(record, company, short_id)
 
         pdf_bytes = receipt_service.generate_pdf_receipt(data)
         filename = f"{record.id}.pdf"

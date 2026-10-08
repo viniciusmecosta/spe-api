@@ -9,11 +9,35 @@ from reportlab.lib.pagesizes import mm
 from reportlab.pdfgen import canvas
 
 from app.features.printers.printer_models import Printer
+from app.shared.enums import RecordType
+from app.utils.formatters import mask_cnpj, mask_cpf
 
 logger = logging.getLogger(__name__)
 
 
 class ReceiptService:
+    @staticmethod
+    def build_receipt_data(record, company, short_id: str) -> dict:
+        company_cnpj = (
+            mask_cnpj(company.cnpj or "")
+            if company and company.cnpj
+            else "N/A"
+        )
+        return {
+            "company_name": company.name if company else "N/A",
+            "company_address": (company.address or "N/A") if company else "N/A",
+            "company_cnpj": company_cnpj,
+            "employee_name": record.user.name,
+            "employee_cpf": mask_cpf(record.user.cpf or ""),
+            "employee_pis": record.user.pis or "N/A",
+            "record_date": record.record_datetime.strftime("%d/%m/%Y"),
+            "record_time": record.record_datetime.strftime("%H:%M"),
+            "record_type_str": "Entrada" if record.record_type == RecordType.ENTRY else "Saída",
+            "device_name": record.device_name or "Desconhecido",
+            "nsr": record.id,
+            "short_id": short_id.upper(),
+        }
+
     @staticmethod
     def _get_escpos_printer(printer_config: Printer):
         address = printer_config.address.strip()
