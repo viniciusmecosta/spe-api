@@ -15,18 +15,20 @@ from app.features.timesheets.timesheet_exceptions import (
     TimesheetUserNotFoundError,
 )
 from app.features.timesheets.timesheet_service import TimesheetService
+from app.features.timesheets.timesheet_pdf_builder import TimesheetPdfBuilder
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
 
 timesheet_service = TimesheetService()
+timesheet_pdf_builder = TimesheetPdfBuilder()
 
 
 def test_format_duration():
-    assert timesheet_service._format_duration(3600) == '01:00'
-    assert timesheet_service._format_duration(3660) == '01:01'
-    assert timesheet_service._format_duration(0) == '00:00'
-    assert timesheet_service._format_duration(None) == '00:00'
+    assert timesheet_pdf_builder._format_duration(3600) == '01:00'
+    assert timesheet_pdf_builder._format_duration(3660) == '01:01'
+    assert timesheet_pdf_builder._format_duration(0) == '00:00'
+    assert timesheet_pdf_builder._format_duration(None) == '00:00'
 
 
 def test_validate_date_not_future():
@@ -37,22 +39,22 @@ def test_validate_date_not_future():
 
 def test_absence_helpers():
     from reportlab.lib import colors
-    assert timesheet_service._is_day_absence(True, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, True, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, False, "abono", 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, False, None, 0, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, False, None, 3600, 1, date(2026, 1, 1), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 3), date(2026, 1, 2)) is False
-    assert timesheet_service._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is True
+    assert timesheet_pdf_builder._is_day_absence(True, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, True, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, False, "abono", 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, False, None, 0, 0, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, False, None, 3600, 1, date(2026, 1, 1), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 3), date(2026, 1, 2)) is False
+    assert timesheet_pdf_builder._is_day_absence(False, False, None, 3600, 0, date(2026, 1, 1), date(2026, 1, 2)) is True
 
-    assert timesheet_service._resolve_day_background(True, False, False) == colors.HexColor("#FEF3C7")
-    assert timesheet_service._resolve_day_background(False, True, False) == colors.HexColor("#FEE2E2")
-    assert timesheet_service._resolve_day_background(False, False, True) == colors.HexColor("#F1F5F9")
-    assert timesheet_service._resolve_day_background(False, False, False) is None
+    assert timesheet_pdf_builder._resolve_day_background(True, False, False) == colors.HexColor("#FEF3C7")
+    assert timesheet_pdf_builder._resolve_day_background(False, True, False) == colors.HexColor("#FEE2E2")
+    assert timesheet_pdf_builder._resolve_day_background(False, False, True) == colors.HexColor("#F1F5F9")
+    assert timesheet_pdf_builder._resolve_day_background(False, False, False) is None
 
-    assert timesheet_service._format_absence_punches("-", True) == "<font color='#991B1B'><b>Falta</b></font>"
-    assert timesheet_service._format_absence_punches("", True) == "<font color='#991B1B'><b>Falta</b></font>"
-    assert timesheet_service._format_absence_punches("08:00", True) == "08:00"
+    assert timesheet_pdf_builder._format_absence_punches("-", True) == "<font color='#991B1B'><b>Falta</b></font>"
+    assert timesheet_pdf_builder._format_absence_punches("", True) == "<font color='#991B1B'><b>Falta</b></font>"
+    assert timesheet_pdf_builder._format_absence_punches("08:00", True) == "08:00"
 
 
 def test_get_daily_schedule_filters_by_date_and_weekday():
@@ -76,53 +78,53 @@ def test_get_daily_schedule_filters_by_date_and_weekday():
         valid_until=None,
     )
 
-    assert timesheet_service._get_daily_schedule(
+    assert timesheet_pdf_builder._get_daily_schedule(
         target, DayOfWeek(target.weekday()),
         [invalid_date, invalid_weekday, expected]
     ) is expected
-    assert timesheet_service._get_daily_schedule(target, DayOfWeek(0), []) is None
-    assert timesheet_service._format_absence_punches("-", False) == "-"
+    assert timesheet_pdf_builder._get_daily_schedule(target, DayOfWeek(0), []) is None
+    assert timesheet_pdf_builder._format_absence_punches("-", False) == "-"
 
 
 def test_resolve_company_logo_path(mocker):
-    assert timesheet_service._resolve_company_logo_path(None) is None
+    assert timesheet_pdf_builder._resolve_company_logo_path(None) is None
     comp_no_logo = MagicMock(logo_path=None)
-    assert timesheet_service._resolve_company_logo_path(comp_no_logo) is None
+    assert timesheet_pdf_builder._resolve_company_logo_path(comp_no_logo) is None
 
     comp = MagicMock(logo_path="logo.png")
     mocker.patch("os.path.exists", side_effect=lambda p: "public" in str(p))
-    assert timesheet_service._resolve_company_logo_path(comp) is not None
+    assert timesheet_pdf_builder._resolve_company_logo_path(comp) is not None
 
     mocker.patch("os.path.exists", side_effect=lambda p: "public" not in str(p) and "logo.png" in str(p))
-    assert timesheet_service._resolve_company_logo_path(comp) is not None
+    assert timesheet_pdf_builder._resolve_company_logo_path(comp) is not None
 
     mocker.patch("os.path.exists", return_value=False)
-    assert timesheet_service._resolve_company_logo_path(comp) is None
+    assert timesheet_pdf_builder._resolve_company_logo_path(comp) is None
 
 
 def test_format_cnpj():
-    assert timesheet_service._format_cnpj('') == '-'
-    assert timesheet_service._format_cnpj('12345678901234') == '12.345.678/9012-34'
-    assert timesheet_service._format_cnpj('1234') == '1234'
+    assert timesheet_pdf_builder._format_cnpj('') == '-'
+    assert timesheet_pdf_builder._format_cnpj('12345678901234') == '12.345.678/9012-34'
+    assert timesheet_pdf_builder._format_cnpj('1234') == '1234'
 
 
 def test_format_cpf():
-    assert timesheet_service._format_cpf(None) == '-'
-    assert timesheet_service._format_cpf('12345678901') == '123.456.789-01'
-    assert timesheet_service._format_cpf('123') == '123'
+    assert timesheet_pdf_builder._format_cpf(None) == '-'
+    assert timesheet_pdf_builder._format_cpf('12345678901') == '123.456.789-01'
+    assert timesheet_pdf_builder._format_cpf('123') == '123'
 
 
 def test_format_pis():
-    assert timesheet_service._format_pis('') == '-'
-    assert timesheet_service._format_pis('12345678901') == '123.45678.90-1'
-    assert timesheet_service._format_pis('123') == '123'
+    assert timesheet_pdf_builder._format_pis('') == '-'
+    assert timesheet_pdf_builder._format_pis('12345678901') == '123.45678.90-1'
+    assert timesheet_pdf_builder._format_pis('123') == '123'
 
 
 def test_format_phone():
-    assert timesheet_service._format_phone('') == '-'
-    assert timesheet_service._format_phone('11987654321') == '(11) 98765-4321'
-    assert timesheet_service._format_phone('1187654321') == '(11) 8765-4321'
-    assert timesheet_service._format_phone('123') == '123'
+    assert timesheet_pdf_builder._format_phone('') == '-'
+    assert timesheet_pdf_builder._format_phone('11987654321') == '(11) 98765-4321'
+    assert timesheet_pdf_builder._format_phone('1187654321') == '(11) 8765-4321'
+    assert timesheet_pdf_builder._format_phone('123') == '123'
 
 
 def test_build_daily_records_table():
@@ -172,7 +174,7 @@ def test_build_daily_records_table():
     adj_extra.status = AdjustmentStatus.REJECTED
     adj_extra.amount_hours = 1.0
 
-    t = timesheet_service._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
+    t = timesheet_pdf_builder._build_daily_records_table(date(2023, 10, 1), date(2023, 10, 2), period_result, [holiday],
                                                      data_table, t_style, table_text_style,
                                                      all_adjustments=[adj_excess, adj_waiver, adj_extra])
     assert t is not None
@@ -317,7 +319,7 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
                  return_value=[])
     mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=DummyLogo)
+    mocker.patch('app.features.timesheets.timesheet_pdf_builder.Image', side_effect=DummyLogo)
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
     mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
@@ -430,7 +432,7 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
                  return_value=[])
     mocker.patch('app.features.holidays.holiday_repository.holiday_repository.get_by_month', return_value=[])
     mocker.patch('os.path.exists', return_value=True)
-    mocker.patch('app.features.timesheets.timesheet_service.Image', side_effect=OSError('File not found'))
+    mocker.patch('app.features.timesheets.timesheet_pdf_builder.Image', side_effect=OSError('File not found'))
     db_session_mock.query.return_value = MagicMock()
     db_session_mock.query.return_value.filter.return_value.all.return_value = []
     mock_calc = mocker.patch('app.features.timesheets.timesheet_service.daily_summary_service.build_period')
@@ -524,7 +526,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     def fake_build(story, onFirstPage=None, onLaterPages=None):
         captured_story.extend(story)
 
-    mocker.patch('app.features.timesheets.timesheet_service.SimpleDocTemplate.build', side_effect=fake_build)
+    mocker.patch('app.features.timesheets.timesheet_pdf_builder.SimpleDocTemplate.build', side_effect=fake_build)
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert buffer is not None
     assert len(captured_story) > 10, 'A story deve conter múltiplos elementos (Parágrafos e Tabelas)'
@@ -550,11 +552,11 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
 
 
 def test_format_day_groups():
-    assert timesheet_service._format_day_groups([]) == ""
-    assert timesheet_service._format_day_groups([0]) == "Segunda"
-    assert timesheet_service._format_day_groups([0, 1]) == "Segunda e Terça"
-    assert timesheet_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
-    assert timesheet_service._format_day_groups([0, 1, 3, 4, 6]) == "Segunda e Terça, Quinta e Sexta e Domingo"
+    assert timesheet_pdf_builder._format_day_groups([]) == ""
+    assert timesheet_pdf_builder._format_day_groups([0]) == "Segunda"
+    assert timesheet_pdf_builder._format_day_groups([0, 1]) == "Segunda e Terça"
+    assert timesheet_pdf_builder._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
+    assert timesheet_pdf_builder._format_day_groups([0, 1, 3, 4, 6]) == "Segunda e Terça, Quinta e Sexta e Domingo"
 
 
 def test_format_schedule_time_interval():
@@ -564,7 +566,7 @@ def test_format_schedule_time_interval():
     schedule.entry_2 = time(13, 0)
     schedule.exit_2 = time(17, 0)
 
-    assert timesheet_service._format_schedule_time_interval(schedule) == "08:00 às 12:00 e 13:00 às 17:00"
+    assert timesheet_pdf_builder._format_schedule_time_interval(schedule) == "08:00 às 12:00 e 13:00 às 17:00"
 
 
 def test_get_schedule_transitions_and_grouping():
@@ -573,11 +575,11 @@ def test_get_schedule_transitions_and_grouping():
     sch1.valid_from = date(2023, 10, 10)
     sch1.valid_until = date(2023, 10, 20)
     user.historical_schedules = [sch1]
-    transitions = timesheet_service._get_schedule_transitions(user, date(2023, 10, 1), date(2023, 10, 31))
+    transitions = timesheet_pdf_builder._get_schedule_transitions(user, date(2023, 10, 1), date(2023, 10, 31))
     assert date(2023, 10, 10) in transitions
     assert date(2023, 10, 21) in transitions
 
-    periods = timesheet_service._group_schedules_by_period(user,
+    periods = timesheet_pdf_builder._group_schedules_by_period(user,
                                                            [date(2023, 10, 1), date(2023, 10, 10), date(2023, 10, 5),
                                                             date(2023, 10, 31)])
     assert len(periods) > 0
@@ -592,8 +594,8 @@ def test_build_work_schedules_section_empty_periods(mocker):
     sch.valid_from = date(2023, 10, 1)
     sch.valid_until = date(2023, 10, 31)
     user.historical_schedules = [sch]
-    mocker.patch.object(timesheet_service, '_group_schedules_by_period', return_value=[])
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+    mocker.patch.object(timesheet_pdf_builder, '_group_schedules_by_period', return_value=[])
+    timesheet_pdf_builder._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
                                                     style_header)
     assert len(story) == 0
 
@@ -603,13 +605,13 @@ def test_build_work_schedules_section_branches():
     style_heading = ParagraphStyle('H', fontSize=10)
     style_header = ParagraphStyle('T', fontSize=10)
 
-    timesheet_service._build_work_schedules_section(story, None, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+    timesheet_pdf_builder._build_work_schedules_section(story, None, date(2023, 10, 1), date(2023, 10, 31), style_heading,
                                                     style_header)
     assert len(story) == 0
 
     user = MagicMock(spec=User)
     user.historical_schedules = []
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+    timesheet_pdf_builder._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
                                                     style_header)
     assert len(story) == 0
 
@@ -621,7 +623,7 @@ def test_build_work_schedules_section_branches():
     sch_empty.entry_2 = None
     sch_empty.exit_2 = None
     user.historical_schedules = [sch_empty]
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+    timesheet_pdf_builder._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
                                                     style_header)
     assert any(isinstance(item, Table) for item in story)
 
@@ -645,7 +647,7 @@ def test_build_work_schedules_section_branches():
     sch_active2.exit_2 = None
 
     user.historical_schedules = [sch_active, sch_active2]
-    timesheet_service._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
+    timesheet_pdf_builder._build_work_schedules_section(story, user, date(2023, 10, 1), date(2023, 10, 31), style_heading,
                                                     style_header)
     assert any(isinstance(item, Table) for item in story)
 
@@ -732,7 +734,7 @@ def test_draw_company_header_and_notes(mocker):
     section_heading_style = ParagraphStyle('Section', parent=styles['Normal'])
     header_style = ParagraphStyle('Header', parent=styles['Normal'])
 
-    timesheet_service._draw_company_header(story, mock_company, title_style, section_heading_style, header_style)
+    timesheet_pdf_builder._draw_company_header(story, mock_company, title_style, section_heading_style, header_style)
 
     found_table = False
     for item in story:
