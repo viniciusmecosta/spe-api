@@ -122,7 +122,29 @@ def test_build_receipt_data_preserves_print_and_pdf_fields():
     assert missing_data["company_address"] == "N/A"
     assert missing_data["company_cnpj"] == "N/A"
     assert missing_data["employee_cpf"] == ""
-    assert missing_data["employee_pis"] == "N/A"
+    assert missing_data["employee_pis"] is None
     assert missing_data["record_type_str"] == "Saída"
     assert missing_data["device_name"] == "Desconhecido"
     assert missing_data["short_id"] == "CD34"
+
+
+def test_build_receipt_data_preserves_empty_values_by_output_type():
+    user = SimpleNamespace(name="John", cpf="12345678900", pis=None)
+    record = SimpleNamespace(
+        id=7,
+        record_type=RecordType.ENTRY,
+        record_datetime=datetime(2026, 10, 8, 9, 5),
+        device_name="Terminal",
+        user=user,
+    )
+    company = SimpleNamespace(name="Empresa", address=None, cnpj=None)
+
+    pdf_data = ReceiptService.build_receipt_data(record, company, "ab12")
+    print_data = ReceiptService.build_receipt_data(record, company, "ab12", for_print=True)
+
+    assert pdf_data["company_address"] is None
+    assert pdf_data["company_cnpj"] == ""
+    assert pdf_data["employee_pis"] is None
+    assert print_data["company_address"] == "N/A"
+    assert print_data["company_cnpj"] == "N/A"
+    assert print_data["employee_pis"] == "N/A"

@@ -17,19 +17,24 @@ logger = logging.getLogger(__name__)
 
 class ReceiptService:
     @staticmethod
-    def build_receipt_data(record, company, short_id: str) -> dict:
-        company_cnpj = (
-            mask_cnpj(company.cnpj or "")
-            if company and company.cnpj
-            else "N/A"
-        )
+    def build_receipt_data(record, company, short_id: str, for_print: bool = False) -> dict:
+        if company is None:
+            company_cnpj = "N/A"
+            company_address = "N/A"
+        elif for_print:
+            company_cnpj = mask_cnpj(company.cnpj) if company.cnpj else "N/A"
+            company_address = company.address or "N/A"
+        else:
+            company_cnpj = mask_cnpj(company.cnpj or "")
+            company_address = company.address
+        employee_pis = record.user.pis or "N/A" if for_print else record.user.pis
         return {
             "company_name": company.name if company else "N/A",
-            "company_address": (company.address or "N/A") if company else "N/A",
+            "company_address": company_address,
             "company_cnpj": company_cnpj,
             "employee_name": record.user.name,
             "employee_cpf": mask_cpf(record.user.cpf or ""),
-            "employee_pis": record.user.pis or "N/A",
+            "employee_pis": employee_pis,
             "record_date": record.record_datetime.strftime("%d/%m/%Y"),
             "record_time": record.record_datetime.strftime("%H:%M"),
             "record_type_str": "Entrada" if record.record_type == RecordType.ENTRY else "Saída",

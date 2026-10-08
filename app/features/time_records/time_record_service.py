@@ -381,7 +381,7 @@ class TimeRecordService:
             return
 
         short_id = hashid_service.encode(record.id)
-        data = receipt_service.build_receipt_data(record, company, short_id)
+        data = receipt_service.build_receipt_data(record, company, short_id, for_print=True)
         background_tasks.add_task(receipt_service.print_receipt_async, printer, data)
 
     async def _get_accessible_record(self, db: Any, short_id: str, current_user: User) -> TimeRecord:
