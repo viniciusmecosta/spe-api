@@ -202,8 +202,14 @@ def _compare_table_rows(
             if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
                 table_diffs += 1
                 if table_diffs <= 3:
+                    if table == "user_biometrics" and col == "template_data":
+                        sq_value = f"<biometria: {len(str(sq_r[c_idx]))} caracteres>"
+                        pg_value = f"<biometria: {len(str(pg_r[c_idx]))} caracteres>"
+                    else:
+                        sq_value = repr(sq_r[c_idx])
+                        pg_value = repr(pg_r[c_idx])
                     print(
-                        f"  [DIVERGÊNCIA] {table} (ID {sq_r[0]}), coluna '{col}': SQLite={repr(sq_r[c_idx])} vs PG={repr(pg_r[c_idx])}"
+                        f"  [DIVERGÊNCIA] {table} (ID {sq_r[0]}), coluna '{col}': SQLite={sq_value} vs PG={pg_value}"
                     )
     return table_diffs
 
@@ -270,8 +276,16 @@ def verify_table_data(
     sq_count = len(sq_rows)
     pg_count = len(pg_rows)
 
-    if sq_count != pg_count:
-        return False, sq_count, pg_count, abs(sq_count - pg_count)
+    sq_ids = {row[0] for row in sq_rows}
+    pg_ids = {row[0] for row in pg_rows}
+    if sq_ids != pg_ids:
+        missing_ids = sorted(sq_ids - pg_ids)
+        extra_ids = sorted(pg_ids - sq_ids)
+        if missing_ids:
+            print(f"  [AUSENTES NO PG] {table}: {missing_ids[:10]}")
+        if extra_ids:
+            print(f"  [EXTRAS NO PG] {table}: {extra_ids[:10]}")
+        return False, sq_count, pg_count, len(missing_ids) + len(extra_ids)
 
     diffs = _compare_table_rows(table, sq_rows, pg_rows, common_cols, target_tz)
     return diffs == 0, sq_count, pg_count, diffs
@@ -315,7 +329,8 @@ def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
     errors = []
     for label, actual in (("SQLite", sqlite_tables), ("PostgreSQL", postgres_tables)):
         missing = sorted(expected - actual)
-        extra = sorted(actual - expected)
+        allowed_extra = {"daily_summaries"} if label == "PostgreSQL" else set()
+        extra = sorted(actual - expected - allowed_extra)
         if missing:
             errors.append(f"{label}: tabelas ausentes: {', '.join(missing)}")
         if extra:

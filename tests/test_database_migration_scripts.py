@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -25,6 +26,7 @@ from scripts.database_migration_config import (
     sqlite_type_family,
 )
 from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql, format_cell
+from scripts.verify_parity import verify_table_data
 
 
 def _declared_type(table: str, column: str) -> str:
@@ -70,6 +72,24 @@ def test_normalize_boolean_accepts_known_values(value, expected):
 def test_normalize_boolean_rejects_unknown_value():
     with pytest.raises(ValueError, match="booleano inválido"):
         normalize_boolean(2)
+
+
+def test_parity_rejects_different_ids_with_equal_row_counts(capsys):
+    sqlite_cursor = MagicMock()
+    postgres_cursor = MagicMock()
+    sqlite_cursor.fetchall.return_value = [(1, "A"), (2, "B")]
+    postgres_cursor.fetchall.return_value = [(1, "A"), (3, "B")]
+
+    matched, sqlite_count, postgres_count, differences = verify_table_data(
+        "companies", sqlite_cursor, postgres_cursor, ["id", "name"],
+        ZoneInfo("America/Fortaleza"),
+    )
+
+    assert not matched
+    assert (sqlite_count, postgres_count, differences) == (2, 2, 2)
+    output = capsys.readouterr().out
+    assert "[2]" in output
+    assert "[3]" in output
 
 
 def test_format_cell_converts_semantic_types_strictly():
