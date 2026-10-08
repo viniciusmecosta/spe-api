@@ -16,6 +16,7 @@ from app.features.printers.printer_repository import (
 )
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.receipt_service import receipt_service
+from app.features.time_records.time_record_change_service import time_record_change_service
 from app.features.time_records.time_record_exceptions import (
     InvalidReceiptIdError,
     ManualPunchUnauthorizedError,
@@ -97,7 +98,7 @@ class TimeRecordService:
         device_name = get_client_device_name(ip_address, request)
         platform = request.headers.get("X-Platform", "desktop").lower()
 
-        await self._validate_period_open_helper(session, current_time.date())
+        await time_record_change_service.validate_period_open(session, current_time.date())
 
         if hasattr(session, "sync_session"):
             record = await self.repo.create(
@@ -156,13 +157,20 @@ class TimeRecordService:
         target_date = record.record_datetime.date()
 
         if previous_type == RecordType.ENTRY:
-            if await self._is_first_entry_affected(db, record.user_id, target_date, record_id=record.id):
-                await self._invalidate_extra_time_requests(db, record.user_id, target_date)
+            if await time_record_change_service.is_first_entry_affected(
+                db, record.user_id, target_date, record_id=record.id
+            ):
+                await time_record_change_service.invalidate_pending_extra_time_requests(
+                    db, record.user_id, target_date
+                )
 
         if new_type == RecordType.ENTRY:
-            if await self._is_first_entry_affected(db, record.user_id, target_date,
-                                                   new_datetime=record.record_datetime):
-                await self._invalidate_extra_time_requests(db, record.user_id, target_date)
+            if await time_record_change_service.is_first_entry_affected(
+                db, record.user_id, target_date, new_datetime=record.record_datetime
+            ):
+                await time_record_change_service.invalidate_pending_extra_time_requests(
+                    db, record.user_id, target_date
+                )
 
 
     def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
@@ -201,7 +209,7 @@ class TimeRecordService:
         if not is_owner and not is_manager:
             raise TimeRecordAccessDeniedError()
 
-        await self._validate_period_open_helper(session, record.record_datetime.date())
+        await time_record_change_service.validate_period_open(session, record.record_datetime.date())
 
         new_type = RecordType.EXIT if record.record_type == RecordType.ENTRY else RecordType.ENTRY
         await self._process_toggle_invalidations(session, record, new_type)
@@ -230,20 +238,6 @@ class TimeRecordService:
             audit_service.log_change(session, user_id, "TOGGLE_RECORD", old_model=old_data,
                                      new_model=new_record)
 
-
-    async def _invalidate_extra_time_requests(self, db: Any, user_id: int, target_date: datetime.date):
-        return await self.admin_service._invalidate_extra_time_requests(db, user_id, target_date)
-
-    async def _is_first_entry_affected(
-        self, db: Any, user_id: int, target_date: datetime.date,
-        record_id: int | None = None, new_datetime: datetime | None = None,
-    ) -> bool:
-        return await self.admin_service._is_first_entry_affected(
-            db, user_id, target_date, record_id=record_id, new_datetime=new_datetime
-        )
-
-    async def _validate_period_open_helper(self, session: Any, date: datetime.date):
-        return await self.admin_service._validate_period_open_helper(session, date)
 
     async def create_admin_record(
         self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
