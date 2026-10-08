@@ -146,15 +146,15 @@ def test_get_month_range_invalid_month_0(service):
 
 
 def test_format_duration_cases(service):
-    assert service._format_duration(0) == "00:00"
-    assert service._format_duration(30) == "00:00"
-    assert service._format_duration(59) == "00:01"
-    assert service._format_duration(60) == "00:01"
-    assert service._format_duration(3599) == "01:00"
-    assert service._format_duration(3600) == "01:00"
-    assert service._format_duration(3660) == "01:01"
-    assert service._format_duration(36000) == "10:00"
-    assert service._format_duration(360000) == "100:00"
+    assert service.response_builder.format_duration(0) == "00:00"
+    assert service.response_builder.format_duration(30) == "00:00"
+    assert service.response_builder.format_duration(59) == "00:01"
+    assert service.response_builder.format_duration(60) == "00:01"
+    assert service.response_builder.format_duration(3599) == "01:00"
+    assert service.response_builder.format_duration(3600) == "01:00"
+    assert service.response_builder.format_duration(3660) == "01:01"
+    assert service.response_builder.format_duration(36000) == "10:00"
+    assert service.response_builder.format_duration(360000) == "100:00"
 
 
 def test_apply_employee_filters(service):
@@ -193,14 +193,14 @@ def test_build_history_punches_manager_and_employee(service):
         platform="WEB",
     )
 
-    punches_emp = service._build_history_punches([rec1, rec2], is_manager=False)
+    punches_emp = service.response_builder._build_history_punches([rec1, rec2], is_manager=False)
     assert len(punches_emp) == 2
     assert punches_emp[0].id == 10
     assert punches_emp[0].time == "08:30"
     assert punches_emp[0].record_type == "ENTRY"
     assert punches_emp[0].ip_address is None
 
-    punches_mgr = service._build_history_punches([rec1, rec2], is_manager=True)
+    punches_mgr = service.response_builder._build_history_punches([rec1, rec2], is_manager=True)
     assert len(punches_mgr) == 2
     assert punches_mgr[0].id == 10
     assert punches_mgr[0].ip_address == "192.168.1.50"
@@ -212,13 +212,13 @@ def test_build_history_punches_manager_and_employee(service):
 
 
 def test_determine_history_status(service):
-    assert service._determine_history_status(True, False, False, False, False) == "Normal"
-    assert service._determine_history_status(True, True, True, True, True) == "Normal"
-    assert service._determine_history_status(False, True, False, False, False) == "Feriado"
-    assert service._determine_history_status(False, False, True, False, False) == "Fim de semana"
-    assert service._determine_history_status(False, False, False, True, False) == "Abono"
-    assert service._determine_history_status(False, False, False, False, True) == ""
-    assert service._determine_history_status(False, False, False, False, False) == "Falta"
+    assert service.response_builder._determine_history_status(True, False, False, False, False) == "Normal"
+    assert service.response_builder._determine_history_status(True, True, True, True, True) == "Normal"
+    assert service.response_builder._determine_history_status(False, True, False, False, False) == "Feriado"
+    assert service.response_builder._determine_history_status(False, False, True, False, False) == "Fim de semana"
+    assert service.response_builder._determine_history_status(False, False, False, True, False) == "Abono"
+    assert service.response_builder._determine_history_status(False, False, False, False, True) == ""
+    assert service.response_builder._determine_history_status(False, False, False, False, False) == "Falta"
 
 
 def test_build_history_day_scenarios(service):
@@ -251,7 +251,7 @@ def test_build_history_day_scenarios(service):
     )}
     period_res.daily_waivers = {curr: None}
 
-    h_day = service._build_history_day(
+    h_day = service.response_builder._build_history_day(
         current=curr,
         today_date=today,
         records=[rec],
@@ -276,7 +276,7 @@ def test_build_history_day_scenarios(service):
     period_res.daily_waivers = {curr: abono_obj}
     period_res.daily_results = {curr: _create_daily_time_result(net_worked_seconds=0.0)}
 
-    h_day_abono_mgr = service._build_history_day(
+    h_day_abono_mgr = service.response_builder._build_history_day(
         current=curr,
         today_date=today,
         records=[],
@@ -289,7 +289,7 @@ def test_build_history_day_scenarios(service):
     assert h_day_abono_mgr.abono_hours == 4.0
     assert h_day_abono_mgr.abono_id == 99
 
-    h_day_abono_emp = service._build_history_day(
+    h_day_abono_emp = service.response_builder._build_history_day(
         current=curr,
         today_date=today,
         records=[],
@@ -321,7 +321,7 @@ def test_build_history_day_with_adjustments(service):
     period_res.daily_results = {curr: _create_daily_time_result(net_worked_seconds=28800.0)}
     period_res.daily_waivers = {curr: None}
 
-    h_day = service._build_history_day(
+    h_day = service.response_builder._build_history_day(
         current=curr,
         today_date=today,
         records=[],
@@ -353,7 +353,7 @@ def test_build_detailed_punches(service):
         edit_justification="Esquecimento",
     )
 
-    res_maintainer = service._build_detailed_punches([rec], is_maintainer=True)
+    res_maintainer = service.response_builder._build_detailed_punches([rec], is_maintainer=True)
     assert len(res_maintainer) == 1
     assert res_maintainer[0].id == 1
     assert res_maintainer[0].time == "08:00:15"
@@ -364,26 +364,26 @@ def test_build_detailed_punches(service):
     assert res_maintainer[0].edited_by == "Supervisor"
     assert res_maintainer[0].edit_justification == "Esquecimento"
 
-    res_not_maintainer = service._build_detailed_punches([rec], is_maintainer=False)
+    res_not_maintainer = service.response_builder._build_detailed_punches([rec], is_maintainer=False)
     assert res_not_maintainer == []
 
 
 def test_determine_daily_status_all_branches(service):
-    assert service._determine_daily_status(True, True, False, False, 0, 0, False, True) == "Feriado"
-    assert service._determine_daily_status(True, False, True, False, 0, 0, False, True) == "Fim de semana"
-    assert service._determine_daily_status(True, False, False, False, 0, 0, False, True) == ""
+    assert service.response_builder._determine_daily_status(True, True, False, False, 0, 0, False, True) == "Feriado"
+    assert service.response_builder._determine_daily_status(True, False, True, False, 0, 0, False, True) == "Fim de semana"
+    assert service.response_builder._determine_daily_status(True, False, False, False, 0, 0, False, True) == ""
 
-    assert service._determine_daily_status(False, False, False, True, 0, 0, False, True) == "Abono"
-    assert service._determine_daily_status(False, True, False, False, 0, 0, False, True) == "Feriado"
+    assert service.response_builder._determine_daily_status(False, False, False, True, 0, 0, False, True) == "Abono"
+    assert service.response_builder._determine_daily_status(False, True, False, False, 0, 0, False, True) == "Feriado"
 
-    assert service._determine_daily_status(False, False, True, False, 3600, 0, False, True) == "Normal"
-    assert service._determine_daily_status(False, False, True, False, 0, 0, False, True) == "Fim de semana"
+    assert service.response_builder._determine_daily_status(False, False, True, False, 3600, 0, False, True) == "Normal"
+    assert service.response_builder._determine_daily_status(False, False, True, False, 0, 0, False, True) == "Fim de semana"
 
-    assert service._determine_daily_status(False, False, False, False, 0, 28800, True, True) == ""
-    assert service._determine_daily_status(False, False, False, False, 0, 28800, False, True) == "Falta"
+    assert service.response_builder._determine_daily_status(False, False, False, False, 0, 28800, True, True) == ""
+    assert service.response_builder._determine_daily_status(False, False, False, False, 0, 28800, False, True) == "Falta"
 
-    assert service._determine_daily_status(False, False, False, False, 0, 0, False, False) == "-"
-    assert service._determine_daily_status(False, False, False, False, 28800, 28800, False, True) == "Normal"
+    assert service.response_builder._determine_daily_status(False, False, False, False, 0, 0, False, False) == "-"
+    assert service.response_builder._determine_daily_status(False, False, False, False, 28800, 28800, False, True) == "Normal"
 
 
 def test_build_daily_report_item(service):
@@ -424,7 +424,7 @@ def test_build_daily_report_item(service):
         has_lunch_rule=False,
     )}
 
-    item = service._build_daily_report_item(
+    item = service.response_builder._build_daily_report_item(
         current=curr,
         today_date=today,
         all_records=[rec],
@@ -739,19 +739,19 @@ def test_determine_excess_info_disabled_or_legacy(service):
     acc_res = MagicMock()
     acc_res.total_excess_seconds = 3600
 
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=None)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, None, schedule=None)
     assert has_excess is False
     assert status is None
     assert adj_id is None
 
     sch_disabled = MagicMock(is_daily_excess_enabled=False)
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_disabled)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, None, schedule=sch_disabled)
     assert has_excess is False
     assert status is None
     assert adj_id is None
 
     sch_legacy = MagicMock(is_daily_excess_enabled=None)
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_legacy)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, None, schedule=sch_legacy)
     assert has_excess is False
     assert status is None
     assert adj_id is None
@@ -763,7 +763,7 @@ def test_determine_excess_info_enabled(service):
     acc_res.total_excess_seconds = 3600
 
     sch_enabled = MagicMock(is_daily_excess_enabled=True)
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, None, schedule=sch_enabled)
     assert has_excess is True
     assert status == "PENDING"
     assert adj_id is None
@@ -771,7 +771,7 @@ def test_determine_excess_info_enabled(service):
     adj = MagicMock()
     adj.id = 42
     adj.status = AdjustmentStatus.APPROVED
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, adj, schedule=sch_enabled)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, adj, schedule=sch_enabled)
     assert has_excess is True
     assert status == AdjustmentStatus.APPROVED.value
     assert adj_id == 42
@@ -782,7 +782,7 @@ def test_determine_excess_info_employee_sees_pending(service):
     acc_res.total_excess_seconds = 3600
     sch_enabled = MagicMock(is_daily_excess_enabled=True)
 
-    has_excess, status, adj_id = service._determine_excess_info(acc_res, None, schedule=sch_enabled)
+    has_excess, status, adj_id = service.response_builder._determine_excess_info(acc_res, None, schedule=sch_enabled)
     assert has_excess is True
     assert status == "PENDING"
     assert adj_id is None
@@ -790,7 +790,7 @@ def test_determine_excess_info_employee_sees_pending(service):
 
 def test_build_daily_excess_info_no_excess(service):
     acc_res = MagicMock()
-    res = service._build_daily_excess_info(acc_res, None, False, None, None)
+    res = service.response_builder._build_daily_excess_info(acc_res, None, False, None, None)
     assert res is None
 
 
@@ -799,7 +799,7 @@ def test_build_daily_excess_info_pending_60m(service):
     acc_res.total_excess_seconds = 3600.0
     acc_res.approved_seconds = 0.0
 
-    res = service._build_daily_excess_info(acc_res, None, True, "PENDING", None)
+    res = service.response_builder._build_daily_excess_info(acc_res, None, True, "PENDING", None)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "PENDING"
@@ -829,7 +829,7 @@ def test_build_daily_excess_info_partial_approved(service):
     adj.amount_hours = 1.0
     adj.approved_amount_hours = 0.5
 
-    res = service._build_daily_excess_info(acc_res, adj, True, "APPROVED", 10)
+    res = service.response_builder._build_daily_excess_info(acc_res, adj, True, "APPROVED", 10)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "APPROVED"
@@ -858,7 +858,7 @@ def test_build_daily_excess_info_rejected(service):
     adj.amount_hours = 1.0
     adj.approved_amount_hours = None
 
-    res = service._build_daily_excess_info(acc_res, adj, True, "REJECTED", 11)
+    res = service.response_builder._build_daily_excess_info(acc_res, adj, True, "REJECTED", 11)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "REJECTED"
@@ -921,12 +921,12 @@ async def test_validate_employee_export_permission_sync(service):
 def test_report_service_helper_branches(service):
     from app.shared.enums import AdjustmentType
     sched_enabled = MagicMock(is_daily_excess_enabled=True)
-    has_excess, excess_status, daily_id = service._determine_excess_info(None, None, sched_enabled)
+    has_excess, excess_status, daily_id = service.response_builder._determine_excess_info(None, None, sched_enabled)
     assert excess_status is None
     assert daily_id is None
 
     mock_adj = MagicMock(amount_hours=2.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=1.0)
-    info = service._build_daily_excess_info(
+    info = service.response_builder._build_daily_excess_info(
         accounted_res=None,
         daily_excess_adj=mock_adj,
         has_excess=True,
@@ -937,7 +937,7 @@ def test_report_service_helper_branches(service):
     assert info.approved_minutes == 60
 
     mock_adj_no_appr = MagicMock(amount_hours=1.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=None)
-    info2 = service._build_daily_excess_info(
+    info2 = service.response_builder._build_daily_excess_info(
         accounted_res=None,
         daily_excess_adj=mock_adj_no_appr,
         has_excess=True,
@@ -949,14 +949,14 @@ def test_report_service_helper_branches(service):
     from app.features.reports.report_schemas import ReportAdjustmentItem
     item1 = ReportAdjustmentItem(id=1, user_id=1, adjustment_type=AdjustmentType.WAIVER,
                                  status=AdjustmentStatus.APPROVED, target_date=date(2026, 8, 1))
-    assert service._to_report_adjustment_item(item1, date(2026, 8, 1)) == item1
+    assert service.response_builder._to_report_adjustment_item(item1, date(2026, 8, 1)) == item1
 
     dict_adj = {"id": 2, "user_id": 1, "adjustment_type": AdjustmentType.WAIVER, "status": AdjustmentStatus.APPROVED,
                 "target_date": date(2026, 8, 1)}
-    item2 = service._to_report_adjustment_item(dict_adj, date(2026, 8, 1))
+    item2 = service.response_builder._to_report_adjustment_item(dict_adj, date(2026, 8, 1))
     assert item2.id == 2
 
-    status_normal = service._determine_daily_status(
+    status_normal = service.response_builder._determine_daily_status(
         is_future=False,
         is_holiday=False,
         is_weekend=False,
@@ -974,7 +974,7 @@ def test_report_service_helper_branches(service):
     sched.day_of_week = 0
     mock_user = MagicMock()
     mock_user.historical_schedules = [sched]
-    found_sched = service._get_schedule_for_date(mock_user, date(2026, 8, 3), 0)
+    found_sched = service.response_builder._get_schedule_for_date(mock_user, date(2026, 8, 3), 0)
     assert found_sched == sched
 
 
@@ -1047,7 +1047,7 @@ async def test_report_service_async_session_branches(service):
 def test_get_schedule_for_date_no_match(service):
     sched = MagicMock(valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30), day_of_week="MONDAY")
     u = MagicMock(historical_schedules=[sched])
-    res = service._get_schedule_for_date(u, date(2026, 8, 1), "MONDAY")
+    res = service.response_builder._get_schedule_for_date(u, date(2026, 8, 1), "MONDAY")
     assert res is None
 
 
@@ -1069,7 +1069,7 @@ def test_build_advanced_daily_details_with_excess_adj(service):
     mock_daily = MagicMock(net_worked_seconds=0, extra_seconds=0, missing_seconds=0, punch_blocks=[])
     period_res.daily_results = defaultdict(lambda: mock_daily)
     u = MagicMock(historical_schedules=[])
-    res, w, a = service._build_advanced_daily_details(
+    res, w, a = service.response_builder.build_advanced_daily_details(
         date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 2),
         [], [], period_res, False, False, u, [adj_excess]
     )

@@ -202,7 +202,7 @@ def test_report_service_includes_daily_excess_in_adjustments_list():
     adj_pending = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.DAILY_EXCESS, status=AdjustmentStatus.PENDING, target_date=d)
     adj_approved = AdjustmentRequest(id=2, adjustment_type=AdjustmentType.DAILY_EXCESS, status=AdjustmentStatus.APPROVED, target_date=d)
 
-    day_adjs = rs._build_day_adjustments_list([adj_pending, adj_approved], d)
+    day_adjs = rs.response_builder._build_day_adjustments_list([adj_pending, adj_approved], d)
     assert len(day_adjs) == 2
     assert day_adjs[0].id == 1
     assert day_adjs[1].id == 2
