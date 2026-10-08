@@ -151,6 +151,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '07:00'
     mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = False
@@ -201,6 +202,7 @@ async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_serv
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '08:00'
     mock_day.unapproved_extra_time = None
     mock_day.is_holiday = True
     mock_day.holiday_name = 'Dia do Trabalho'
@@ -278,6 +280,7 @@ def test_build_day_row(excel_service):
     ws = wb.active
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '07:00'
     mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = True
@@ -309,7 +312,7 @@ def test_build_day_row_keeps_gross_and_accounted_distinct(excel_service):
     day.punches = ['07:28', '17:02']
     day.worked_time = '08:02'
     day.accounted_time = '08:00'
-    day.unapproved_extra_time = '00:02'
+    day.unapproved_extra_time = '00:01'
     day.is_holiday = False
     day.is_weekend = False
     day.status = 'Normal'
@@ -317,7 +320,7 @@ def test_build_day_row_keeps_gross_and_accounted_distinct(excel_service):
     gross, unapproved, accounted = excel_service._build_day_row(ws, day, [2, 3, 13, 2, 2, 2])
 
     assert round(gross * 1440) == 482
-    assert round(unapproved * 1440) == 2
+    assert round(unapproved * 1440) == 1
     assert round(accounted * 1440) == 480
 
 
@@ -767,37 +770,10 @@ async def test_insert_header_includes_generated_at_and_metadata(excel_service, d
 
 
 @pytest.mark.asyncio
-async def test_export_monthly_report_saved_file(excel_service, tmp_path, async_db_mock):
-    test_file = tmp_path / "folha_saved.xlsx"
-    test_file.write_bytes(b"saved content")
-
-    mock_closure = MagicMock()
-    mock_closure.is_closed = True
-    mock_closure.report_path = str(test_file)
-
-    with patch(
-            "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-            new_callable=AsyncMock,
-            return_value=mock_closure,
-    ), patch.object(excel_service, "generate_excel_report", new_callable=AsyncMock) as mock_gen:
-        resp = await excel_service.export_monthly_report(
-            month=7,
-            year=2026,
-            db=async_db_mock,
-        )
-        assert resp.path == str(test_file)
-        mock_gen.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_export_monthly_report_fallback(excel_service, async_db_mock):
+async def test_export_monthly_report_generates_current_data(excel_service, async_db_mock):
     fake_stream = BytesIO(b"generated content")
 
-    with patch(
-            "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-            new_callable=AsyncMock,
-            return_value=None,
-    ), patch.object(
+    with patch.object(
         excel_service,
         "generate_excel_report",
         new_callable=AsyncMock,

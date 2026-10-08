@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -28,7 +28,6 @@ from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
 )
-from app.features.payroll.payroll_repository import async_payroll_repository
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -254,25 +253,6 @@ class ExcelService:
                 db=session, current_user=current_user, month=month, year=year, now=now
             )
 
-    async def _resolve_cached_closure_file(self, session: Any, month: int, year: int) -> FileResponse | None:
-        closure = await async_payroll_repository.get_by_month(session, month, year)
-        if not closure or not getattr(closure, "is_closed", None) or not getattr(closure, "report_path", None):
-            return None
-        report_path = str(closure.report_path)
-        full_path = (
-            report_path
-            if os.path.isabs(report_path)
-            else os.path.join(settings.UPLOAD_DIR, report_path)
-        )
-        if os.path.exists(full_path) and os.path.isfile(full_path):
-            filename = f"folha_ponto_{month:02d}_{year}.xlsx"
-            return FileResponse(
-                path=full_path,
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                filename=filename,
-            )
-        return None
-
     async def export_monthly_report(
             self,
             month: int | None = None,
@@ -284,11 +264,6 @@ class ExcelService:
         session = db if db is not None else self.db
         month_val, year_val, now = self._resolve_target_period(month, year)
         await self._validate_export_access(current_user, session, month_val, year_val, now)
-
-        if not employee_ids and session is not None:
-            cached_file = await self._resolve_cached_closure_file(session, month_val, year_val)
-            if cached_file:
-                return cached_file
 
         file_stream = await self.generate_excel_report(
             db=session,
@@ -721,9 +696,9 @@ class ExcelService:
         ws_det.append([""])
         last_row = ws_det.max_row
 
-        trab_contabilizado = self._time_str_to_fraction(getattr(day, 'accounted_time', '00:00') or day.worked_time or '00:00')
+        trab_contabilizado = self._time_str_to_fraction(day.accounted_time)
         trab_bruto = self._time_str_to_fraction(day.worked_time)
-        extra_nao_aut = max(0.0, trab_bruto - trab_contabilizado)
+        extra_nao_aut = self._time_str_to_fraction(day.unapproved_extra_time)
 
         texts = [
             day.date.strftime("%d/%m/%y"),
