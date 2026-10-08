@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy.orm import Session
 
+from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.daily_summaries.daily_summary_events import (
     _after_commit,
     _after_rollback,
@@ -12,6 +13,7 @@ from app.features.daily_summaries.daily_summary_events import (
 from app.features.daily_summaries.daily_summary_exceptions import (
     DailySummaryUnavailableError,
 )
+from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.daily_summaries.daily_summary_schemas import (
     DaySummaryValues,
 )
@@ -20,6 +22,8 @@ from app.features.daily_summaries.daily_summary_service import (
     daily_summary_service,
     from_legacy_period,
 )
+from app.features.system.system_models import AuditLog
+from app.shared.enums import AdjustmentStatus, AdjustmentType
 from app.shared.time_calculation_service import (
     DailyTimeResult,
     PeriodTimeResult,
@@ -256,6 +260,38 @@ async def test_read_service_raises_when_summary_missing():
 
 
 @pytest.mark.asyncio
+async def test_build_period_without_schedule_preserves_legacy_balance():
+    day = date(2026, 5, 10)
+    summary = DailySummary(
+        user_id=1,
+        apuration_date=day,
+        worked_minutes=480,
+        accounted_minutes=480,
+        expected_minutes=0,
+        excess_minutes=0,
+        authorized_excess_minutes=0,
+        missing_minutes=0,
+        waiver_minutes=0,
+    )
+    service = DailySummaryService()
+    with patch.object(
+        service, "_load_period_rows", new=AsyncMock(return_value={day: summary})
+    ):
+        result = await service.build_period(
+            session=MagicMock(),
+            user_id=1,
+            first=day,
+            last=day,
+            records=[],
+            adjustments=[],
+            holidays=[],
+            historical_schedules=[],
+        )
+    assert result.final_balance_seconds == 0
+    assert result.daily_accounted_results[day].accounted_seconds == 28800
+
+
+@pytest.mark.asyncio
 async def test_calculate_user_day_with_reset_excess():
     from app.features.daily_summaries.daily_summary_service import (
         daily_summary_service,
@@ -263,6 +299,7 @@ async def test_calculate_user_day_with_reset_excess():
     from app.features.users.user_models import User
 
     session = AsyncMock()
+    session.add = MagicMock()
     user = User(id=1, name="Tester")
     user.historical_schedules = []
     session.scalar.return_value = user
@@ -284,4 +321,50 @@ async def test_calculate_user_day_with_reset_excess():
             session, 1, date(2026, 5, 10), overwrite_reviewed=True
         )
         assert mock_upsert.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_change_preserves_reviewed_excess_in_history():
+    from app.features.users.user_models import User
+
+    day = date(2026, 5, 10)
+    reviewed = AdjustmentRequest(
+        id=42,
+        user_id=1,
+        target_date=day,
+        adjustment_type=AdjustmentType.DAILY_EXCESS,
+        status=AdjustmentStatus.APPROVED,
+        amount_hours=1.0,
+        approved_amount_hours=1.0,
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    user = User(id=1, name="Tester")
+    user.historical_schedules = []
+    session.scalar.return_value = user
+    previous = MagicMock()
+    previous.all.return_value = [reviewed]
+    empty = MagicMock()
+    empty.all.return_value = []
+    session.scalars.side_effect = [previous, empty, empty, empty]
+
+    with patch(
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
+        new_callable=AsyncMock,
+    ), patch(
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
+        new_callable=AsyncMock,
+    ):
+        await daily_summary_service._calculate_user_day(
+            session, user_id=1, day=day, refresh_excess=True, reset_excess=True
+        )
+
+    assert reviewed.deleted_at is not None
+    audit = next(
+        call.args[0] for call in session.add.call_args_list
+        if isinstance(call.args[0], AuditLog)
+    )
+    assert audit.entity_id == 42
+    assert audit.old_data["status"] == AdjustmentStatus.APPROVED.value
+    assert audit.new_data["reason"] == "SCHEDULE_CHANGED"
 

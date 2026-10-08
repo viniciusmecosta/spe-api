@@ -156,12 +156,20 @@ def _scope_for_schedule(
         ).scalar()
         ceiling = max(today, materialized_until) if materialized_until else today
         last = max(first, ceiling)
-    month_start = date(first.year, first.month, 1)
-    if last.month == 12:
-        month_end = date(last.year + 1, 1, 1) - timedelta(days=1)
-    else:
-        month_end = date(last.year, last.month + 1, 1) - timedelta(days=1)
-    return user_id, month_start, month_end
+    return user_id, first, last
+
+
+def _schedule_day_scopes(
+    session: Session, source: UserWorkScheduleConfig | dict
+) -> set[tuple[int, date, date]]:
+    user_id, first, last = _scope_for_schedule(session, source)
+    day_of_week = source["day_of_week"] if isinstance(source, dict) else source.day_of_week
+    current = first + timedelta(days=(day_of_week - first.weekday()) % 7)
+    result = set()
+    while current <= last:
+        result.add((user_id, current, current))
+        current += timedelta(days=7)
+    return result
 
 
 def _scope_for_holiday(source: Holiday | dict) -> tuple[None, date, date]:
@@ -192,9 +200,9 @@ def _scopes(
 
     if isinstance(source, UserWorkScheduleConfig):
         if old is not None:
-            result.add(_scope_for_schedule(session, old))
+            result.update(_schedule_day_scopes(session, old))
         if not deleted or old is None:
-            result.add(_scope_for_schedule(session, source))
+            result.update(_schedule_day_scopes(session, source))
         return {item for item in result if item[1] <= item[2]}
 
     if isinstance(source, TimeRecord):

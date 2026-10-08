@@ -67,20 +67,21 @@ def main() -> None:
         assert _queued(session, user_id, first + timedelta(days=2))
 
         session.add(UserWorkScheduleConfig(
-            user_id=user_id, day_of_week=0, daily_hours=8,
+            user_id=user_id, day_of_week=(first + timedelta(days=3)).weekday(), daily_hours=8,
             valid_from=first + timedelta(days=3),
             valid_until=first + timedelta(days=4),
         ))
         session.flush()
         assert _queued(session, user_id, first + timedelta(days=3))
-        assert _queued(session, user_id, first + timedelta(days=4))
+        assert not _queued(session, user_id, first + timedelta(days=4))
 
         session.add(UserWorkScheduleConfig(
             user_id=user_id, day_of_week=0, daily_hours=8,
             valid_from=date(2026, 10, 25), valid_until=None,
         ))
         session.flush()
-        assert _queued(session, user_id, date(2026, 10, 31))
+        assert _queued(session, user_id, date(2026, 10, 26))
+        assert not _queued(session, user_id, date(2026, 10, 31))
 
         closure = session.scalar(select(PayrollClosure).where(
             PayrollClosure.is_closed.is_(True),

@@ -163,7 +163,7 @@ class DailySummaryService:
             total_unapproved_extra_seconds=total_unapproved,
             total_extra_seconds=total_extra,
             total_missing_seconds=total_missing,
-            final_balance_seconds=total_net - total_expected,
+            final_balance_seconds=total_extra - total_missing,
             daily_results=daily_results,
             daily_expected_seconds=daily_expected,
             daily_is_holiday=daily_is_holiday,
@@ -171,6 +171,7 @@ class DailySummaryService:
             total_accounted_seconds=total_net,
             total_excess_seconds=total_excess,
             total_approved_excess_seconds=total_approved,
+            daily_accounted_results=daily_accounted_results,
         )
 
     async def _calculate_user_day(
@@ -190,6 +191,31 @@ class DailySummaryService:
             return
 
         if reset_excess:
+            previous_excess = list((await session.scalars(
+                select(AdjustmentRequest).where(
+                    AdjustmentRequest.user_id == user_id,
+                    AdjustmentRequest.target_date == day,
+                    AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                    AdjustmentRequest.deleted_at.is_(None),
+                )
+            )).all())
+            for adjustment in previous_excess:
+                adjustment.deleted_at = datetime.now(timezone.utc)
+                if adjustment.status in (
+                    AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED
+                ):
+                    session.add(AuditLog(
+                        action="INVALIDATE_DAILY_EXCESS",
+                        entity="ADJUSTMENT_REQUESTS",
+                        entity_id=adjustment.id,
+                        old_data={
+                            "status": adjustment.status.value,
+                            "amount_hours": adjustment.amount_hours,
+                            "approved_amount_hours": adjustment.approved_amount_hours,
+                        },
+                        new_data={"reason": "SCHEDULE_CHANGED"},
+                    ))
+            await session.flush()
             await daily_excess_service.evaluate_user_day_async(
                 session, user_id, day, overwrite_reviewed=True
             )

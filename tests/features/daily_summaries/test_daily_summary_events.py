@@ -72,8 +72,8 @@ def test_scope_for_schedule():
     )
     user_id, start_date, end_date = _scope_for_schedule(session, sched)
     assert user_id == 10
-    assert start_date == date(2026, 1, 1)
-    assert end_date == date(2026, 1, 31)
+    assert start_date == date(2026, 1, 15)
+    assert end_date == date(2026, 1, 20)
 
 
 def test_scope_for_schedule_open_ended():
@@ -88,8 +88,32 @@ def test_scope_for_schedule_open_ended():
     )
     user_id, start_date, end_date = _scope_for_schedule(session, sched)
     assert user_id == 10
-    assert start_date == date(2026, 7, 1)
-    assert end_date == date(2026, 10, 31)
+    assert start_date == date(2026, 7, 5)
+    assert end_date == max(
+        date(2026, 7, 5), date(2026, 7, 10),
+        datetime.now(ZoneInfo(settings.TIMEZONE)).date(),
+    )
+
+
+def test_schedule_edit_recalculates_only_old_and_new_weekdays():
+    session = MagicMock(spec=Session)
+    new = UserWorkScheduleConfig(
+        user_id=7,
+        day_of_week=2,
+        daily_hours=8.0,
+        valid_from=date(2026, 9, 10),
+        valid_until=date(2026, 9, 20),
+    )
+    old = {
+        "user_id": 7,
+        "day_of_week": 1,
+        "valid_from": date(2026, 9, 10),
+        "valid_until": date(2026, 9, 20),
+    }
+    assert _scopes(session, new, old, False) == {
+        (7, date(2026, 9, 15), date(2026, 9, 15)),
+        (7, date(2026, 9, 16), date(2026, 9, 16)),
+    }
 
 
 def test_scopes_returns_expected_scope():
@@ -144,10 +168,8 @@ def test_enqueue_changed_days_tracks_schedule_changes_in_reset_excess():
     session.deleted = []
 
     enqueue_changed_days(session, None, None)
-    assert (7, date(2026, 9, 1)) in session.info["daily_summary_changed_days"]
-    assert (7, date(2026, 9, 30)) in session.info["daily_summary_changed_days"]
-    assert (7, date(2026, 9, 1)) in session.info["daily_summary_reset_excess_days"]
-    assert (7, date(2026, 9, 30)) in session.info["daily_summary_reset_excess_days"]
+    assert session.info["daily_summary_changed_days"] == {(7, date(2026, 9, 15))}
+    assert session.info["daily_summary_reset_excess_days"] == {(7, date(2026, 9, 15))}
 
 
 def test_enqueue_changed_days_tracks_punch_inversion():
