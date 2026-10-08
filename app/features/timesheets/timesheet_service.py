@@ -50,6 +50,13 @@ from app.features.users.user_repository import (
 )
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
+from app.shared.schedule_report_service import (
+    format_day_groups,
+    format_schedule_time_interval,
+    get_schedule_transitions,
+    group_schedules_by_interval,
+    group_schedules_by_period,
+)
 from app.shared.trusted_time_service import trusted_time_service
 
 logger = logging.getLogger(__name__)
@@ -309,73 +316,19 @@ class TimesheetService:
         story.append(Spacer(1, 8))
 
     def _format_day_groups(self, days: list[int]) -> str:
-        if not days:
-            return ""
-        days = sorted(set(days))
-
-        blocks = []
-        current_block = [days[0]]
-        for d in days[1:]:
-            if d == current_block[-1] + 1:
-                current_block.append(d)
-            else:
-                blocks.append(current_block)
-                current_block = [d]
-        blocks.append(current_block)
-
-        parts = []
-        for block in blocks:
-            if len(block) >= 3:
-                parts.append(f"{DayOfWeek(block[0]).abreviado} a {DayOfWeek(block[-1]).abreviado}")
-            elif len(block) == 2:
-                parts.append(f"{DayOfWeek(block[0]).abreviado} e {DayOfWeek(block[1]).abreviado}")
-            else:
-                parts.append(DayOfWeek(block[0]).abreviado)
-
-        if len(parts) > 1:
-            return ", ".join(parts[:-1]) + " e " + parts[-1]
-        return parts[0]
+        return format_day_groups(days)
 
     def _get_schedule_transitions(self, user, start_date, end_date):
-        transitions = {start_date, end_date + timedelta(days=1)}
-        for sch in user.historical_schedules:
-            if sch.valid_from and start_date <= sch.valid_from <= end_date:
-                transitions.add(sch.valid_from)
-            if sch.valid_until and start_date <= sch.valid_until <= end_date:
-                transitions.add(sch.valid_until + timedelta(days=1))
-        return sorted(transitions)
+        return get_schedule_transitions(user, start_date, end_date)
 
     def _group_schedules_by_period(self, user, transitions):
-        periods = []
-        for i in range(len(transitions) - 1):
-            p_start = transitions[i]
-            p_end = transitions[i + 1] - timedelta(days=1)
-            if p_start > p_end:
-                continue
-            active_schedules = []
-            for sch in user.historical_schedules:
-                if sch.valid_from <= p_end and (not sch.valid_until or sch.valid_until >= p_start):
-                    active_schedules.append(sch)
-            periods.append((p_start, p_end, active_schedules))
-        return periods
+        return group_schedules_by_period(user, transitions)
 
     def _format_schedule_time_interval(self, sch) -> str | None:
-        if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
-            return None
-        parts = []
-        if sch.entry_1 and sch.exit_1:
-            parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
-        if sch.entry_2 and sch.exit_2:
-            parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
-        return " e ".join(parts) if parts else None
+        return format_schedule_time_interval(sch)
 
     def _group_schedules_by_interval(self, schedules) -> dict[str, list[int]]:
-        grouped = {}
-        for sch in schedules:
-            time_str = self._format_schedule_time_interval(sch)
-            if time_str:
-                grouped.setdefault(time_str, []).append(sch.day_of_week)
-        return grouped
+        return group_schedules_by_interval(schedules)
 
     def _build_schedule_table_element(self, grouped: dict[str, list[int]], header_style) -> Table:
         if not grouped:

@@ -3,6 +3,7 @@ import pytest
 import sys
 from datetime import datetime
 from io import BytesIO
+from types import SimpleNamespace
 from openpyxl import Workbook
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,6 +33,50 @@ def mock_user():
 
 def test_setup_styles(excel_service):
     assert excel_service.font_regular.name == 'Times New Roman'
+
+
+@pytest.mark.asyncio
+@patch('app.features.reports.excel_service.report_service')
+async def test_generate_user_reports_list_includes_waiver_without_worked_minutes(
+        mock_report_service, excel_service):
+    waiver_user = MagicMock(spec=User)
+    waiver_user.id = 1
+    empty_user = MagicMock(spec=User)
+    empty_user.id = 2
+    worked_user = MagicMock(spec=User)
+    worked_user.id = 3
+
+    waiver_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=0),
+        daily_details=[SimpleNamespace(adjustment_id=10)],
+    )
+    empty_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=0),
+        daily_details=[SimpleNamespace(adjustment_id=None)],
+    )
+    worked_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=1),
+        daily_details=[SimpleNamespace(adjustment_id=None)],
+    )
+    mock_report_service.get_advanced_user_report = AsyncMock(
+        side_effect=[waiver_report, empty_report, worked_report]
+    )
+
+    reports = await excel_service._generate_user_reports_list(
+        session=MagicMock(),
+        users=[waiver_user, empty_user, worked_user],
+        month=5,
+        year=2023,
+        current_user=None,
+        all_records_batch=[],
+        all_adjustments_batch=[],
+        holidays_batch=[],
+    )
+
+    assert [(user.id, report) for user, report in reports] == [
+        (waiver_user.id, waiver_report),
+        (worked_user.id, worked_report),
+    ]
 
 
 def test_set_columns_width(excel_service):

@@ -160,19 +160,75 @@ def test_export_monthly_report_excel_generates_current_data(client: TestClient, 
     mock_generate.assert_called_once()
 
 
+def test_export_monthly_report_excel_returns_saved_closed_file(
+    client: TestClient, mocker: MagicMock, tmp_path
+) -> None:
+    saved_file = tmp_path / "closed.xlsx"
+    saved_file.write_bytes(b"official closed report")
+    closure = MagicMock(is_closed=True, report_path=str(saved_file))
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=closure,
+    )
+    generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026")
+
+    assert response.status_code == 200
+    assert response.content == b"official closed report"
+    assert "folha_ponto_07_2026.xlsx" in response.headers["content-disposition"]
+    generate.assert_not_called()
+
+
+def test_export_monthly_report_excel_generates_when_closed_file_is_missing(
+    client: TestClient, mocker: MagicMock
+) -> None:
+    closure = MagicMock(is_closed=True, report_path="/missing/closed.xlsx")
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=closure,
+    )
+    generate = mocker.patch.object(
+        ExcelService,
+        "generate_excel_report",
+        new_callable=AsyncMock,
+        return_value=io.BytesIO(b"current report"),
+    )
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026")
+
+    assert response.status_code == 200
+    assert response.content == b"current report"
+    generate.assert_called_once()
+
+
 def test_export_monthly_report_excel_with_employee_ids(client: TestClient, mocker: MagicMock) -> None:
     fake_stream = io.BytesIO(b"dynamically filtered excel")
     mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    get_closure = mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+    )
     mock_generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock, return_value=fake_stream)
 
     response = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids=1&employee_ids=2")
     assert response.status_code == 200
     assert response.content == b"dynamically filtered excel"
+    get_closure.assert_not_called()
     mock_generate.assert_called_once()
 
 
 def test_export_monthly_report_excel_empty_employee_ids_param(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
     mock_generate = mocker.patch.object(
         ExcelService,
         "generate_excel_report",

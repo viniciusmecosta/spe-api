@@ -1,13 +1,13 @@
 import os
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from io import BytesIO
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
@@ -28,12 +28,19 @@ from app.features.holidays.holiday_repository import (
     async_holiday_repository,
     holiday_repository,
 )
+from app.features.payroll.payroll_repository import async_payroll_repository
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared import deps
-from app.shared.enums import DayOfWeek, UserRole
+from app.shared.enums import UserRole
+from app.shared.schedule_report_service import (
+    format_day_groups,
+    get_schedule_transitions,
+    group_schedules_by_interval,
+    group_schedules_by_period,
+)
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
 
@@ -232,7 +239,8 @@ class ExcelService:
                 prefetched_adjustments=adjustments_by_user.get(user.id, []),
                 prefetched_holidays=holidays_batch
             )
-            if report and report.summary.total_worked_minutes > 0:
+            has_waiver = report and any(day.adjustment_id is not None for day in report.daily_details)
+            if report and (report.summary.total_worked_minutes > 0 or has_waiver):
                 user_reports.append((user, report))
         return user_reports
 
@@ -253,6 +261,25 @@ class ExcelService:
                 db=session, current_user=current_user, month=month, year=year, now=now
             )
 
+    async def _resolve_cached_closure_file(self, session: Any, month: int, year: int) -> FileResponse | None:
+        closure = await async_payroll_repository.get_by_month(session, month, year)
+        if not closure or not getattr(closure, "is_closed", None) or not getattr(closure, "report_path", None):
+            return None
+        report_path = str(closure.report_path)
+        full_path = (
+            report_path
+            if os.path.isabs(report_path)
+            else os.path.join(settings.UPLOAD_DIR, report_path)
+        )
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            filename = f"folha_ponto_{month:02d}_{year}.xlsx"
+            return FileResponse(
+                path=full_path,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=filename,
+            )
+        return None
+
     async def export_monthly_report(
             self,
             month: int | None = None,
@@ -264,6 +291,11 @@ class ExcelService:
         session = db if db is not None else self.db
         month_val, year_val, now = self._resolve_target_period(month, year)
         await self._validate_export_access(current_user, session, month_val, year_val, now)
+
+        if not employee_ids and session is not None:
+            cached_file = await self._resolve_cached_closure_file(session, month_val, year_val)
+            if cached_file:
+                return cached_file
 
         file_stream = await self.generate_excel_report(
             db=session,
@@ -447,55 +479,13 @@ class ExcelService:
             col += width
 
     def _format_day_groups(self, days: list[int]) -> str:
-        if not days:
-            return ""
-        days = sorted(set(days))
-
-        blocks = []
-        current_block = [days[0]]
-        for d in days[1:]:
-            if d == current_block[-1] + 1:
-                current_block.append(d)
-            else:
-                blocks.append(current_block)
-                current_block = [d]
-        blocks.append(current_block)
-
-        parts = []
-        for block in blocks:
-            if len(block) >= 3:
-                parts.append(f"{DayOfWeek(block[0]).abreviado} a {DayOfWeek(block[-1]).abreviado}")
-            elif len(block) == 2:
-                parts.append(f"{DayOfWeek(block[0]).abreviado} e {DayOfWeek(block[1]).abreviado}")
-            else:
-                parts.append(DayOfWeek(block[0]).abreviado)
-
-        if len(parts) > 1:
-            return ", ".join(parts[:-1]) + " e " + parts[-1]
-        return parts[0]
+        return format_day_groups(days)
 
     def _get_schedule_transitions(self, user, start_date, end_date):
-        transitions = {start_date, end_date + timedelta(days=1)}
-        for sch in user.historical_schedules:
-            if sch.valid_from and start_date <= sch.valid_from <= end_date:
-                transitions.add(sch.valid_from)
-            if sch.valid_until and start_date <= sch.valid_until <= end_date:
-                transitions.add(sch.valid_until + timedelta(days=1))
-        return sorted(transitions)
+        return get_schedule_transitions(user, start_date, end_date)
 
     def _group_schedules_by_period(self, user, transitions):
-        periods = []
-        for i in range(len(transitions) - 1):
-            p_start = transitions[i]
-            p_end = transitions[i + 1] - timedelta(days=1)
-            if p_start > p_end:
-                continue
-            active_schedules = []
-            for sch in user.historical_schedules:
-                if sch.valid_from <= p_end and (not sch.valid_until or sch.valid_until >= p_start):
-                    active_schedules.append(sch)
-            periods.append((p_start, p_end, active_schedules))
-        return periods
+        return group_schedules_by_period(user, transitions)
 
     def _write_schedules_to_sheet(self, ws, periods, start_date, end_date):
         ws.append([""])
@@ -522,18 +512,7 @@ class ExcelService:
             c_per.value = f"Período: {p_start.strftime('%d/%m/%Y')} a {p_end.strftime('%d/%m/%Y')}"
             c_per.font = self.font_italic
             c_per.alignment = self.align_left
-        grouped = {}
-        for sch in schedules:
-            if not sch.entry_1 and not sch.entry_2 and not sch.exit_1 and not sch.exit_2:
-                continue
-            parts = []
-            if sch.entry_1 and sch.exit_1:
-                parts.append(f"{sch.entry_1.strftime('%H:%M')} às {sch.exit_1.strftime('%H:%M')}")
-            if sch.entry_2 and sch.exit_2:
-                parts.append(f"{sch.entry_2.strftime('%H:%M')} às {sch.exit_2.strftime('%H:%M')}")
-            if parts:
-                time_str = " e ".join(parts)
-                grouped.setdefault(time_str, []).append(sch.day_of_week)
+        grouped = group_schedules_by_interval(schedules)
         if not grouped:
             ws.append([""])
             no_sch_row = ws.max_row
@@ -542,7 +521,7 @@ class ExcelService:
             ws.cell(row=no_sch_row, column=1).font = self.font_regular
             return
         for time_str, days in grouped.items():
-            day_str = self._format_day_groups(days)
+            day_str = format_day_groups(days)
             ws.append([""])
             row = ws.max_row
             self._apply_key_value(ws, row, start_col=1, key_text=day_str, key_width=6, val_text=time_str, val_width=18,

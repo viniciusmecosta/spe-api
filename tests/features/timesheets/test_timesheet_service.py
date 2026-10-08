@@ -16,7 +16,7 @@ from app.features.timesheets.timesheet_exceptions import (
 )
 from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User, UserWorkScheduleConfig
-from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
 from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
 
 timesheet_service = TimesheetService()
@@ -53,6 +53,34 @@ def test_absence_helpers():
     assert timesheet_service._format_absence_punches("-", True) == "<font color='#991B1B'><b>Falta</b></font>"
     assert timesheet_service._format_absence_punches("", True) == "<font color='#991B1B'><b>Falta</b></font>"
     assert timesheet_service._format_absence_punches("08:00", True) == "08:00"
+
+
+def test_get_daily_schedule_filters_by_date_and_weekday():
+    target = date(2026, 10, 5)
+    expected = UserWorkScheduleConfig(
+        day_of_week=target.weekday(),
+        daily_hours=8,
+        valid_from=date(2026, 1, 1),
+        valid_until=None,
+    )
+    invalid_date = UserWorkScheduleConfig(
+        day_of_week=target.weekday(),
+        daily_hours=7,
+        valid_from=date(2026, 10, 6),
+        valid_until=None,
+    )
+    invalid_weekday = UserWorkScheduleConfig(
+        day_of_week=(target.weekday() + 1) % 7,
+        daily_hours=6,
+        valid_from=date(2026, 1, 1),
+        valid_until=None,
+    )
+
+    assert timesheet_service._get_daily_schedule(
+        target, DayOfWeek(target.weekday()),
+        [invalid_date, invalid_weekday, expected]
+    ) is expected
+    assert timesheet_service._get_daily_schedule(target, DayOfWeek(0), []) is None
     assert timesheet_service._format_absence_punches("-", False) == "-"
 
 
@@ -527,6 +555,16 @@ def test_format_day_groups():
     assert timesheet_service._format_day_groups([0, 1]) == "Segunda e Terça"
     assert timesheet_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
     assert timesheet_service._format_day_groups([0, 1, 3, 4, 6]) == "Segunda e Terça, Quinta e Sexta e Domingo"
+
+
+def test_format_schedule_time_interval():
+    schedule = MagicMock(spec=UserWorkScheduleConfig)
+    schedule.entry_1 = time(8, 0)
+    schedule.exit_1 = time(12, 0)
+    schedule.entry_2 = time(13, 0)
+    schedule.exit_2 = time(17, 0)
+
+    assert timesheet_service._format_schedule_time_interval(schedule) == "08:00 às 12:00 e 13:00 às 17:00"
 
 
 def test_get_schedule_transitions_and_grouping():
