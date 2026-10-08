@@ -24,6 +24,7 @@ from app.features.daily_summaries.daily_summary_service import (
 )
 from app.features.system.system_models import AuditLog
 from app.features.time_records.time_record_models import TimeRecord
+from app.features.users.user_models import UserWorkScheduleConfig
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.shared.time_calculation_service import (
     DailyTimeResult,
@@ -253,11 +254,42 @@ async def test_read_service_raises_when_summary_missing():
             user_id=1,
             first=date(2026, 1, 1),
             last=date(2026, 1, 2),
-            records=[],
+            records=[
+                TimeRecord(
+                    user_id=1,
+                    record_type=RecordType.ENTRY,
+                    record_datetime=datetime(2026, 1, 1, 8, 0),
+                )
+            ],
             adjustments=[],
             holidays=[],
             historical_schedules=[],
         )
+
+
+@pytest.mark.asyncio
+async def test_build_period_treats_missing_inactive_days_as_zero_without_inserting_rows():
+    first = date(2026, 5, 11)
+    last = date(2026, 5, 12)
+    schedule = UserWorkScheduleConfig(
+        day_of_week=first.weekday(),
+        daily_hours=8,
+        valid_from=date(2026, 1, 1),
+        valid_until=None,
+    )
+    service = DailySummaryService()
+    with patch.object(
+        service, "_load_period_rows", new=AsyncMock(return_value={})
+    ):
+        result = await service.build_period(
+            MagicMock(), 1, first, last, [], [], [], [schedule]
+        )
+
+    assert result.total_gross_worked_seconds == 0
+    assert result.total_accounted_seconds == 0
+    assert result.total_expected_seconds == 8 * 3600
+    assert result.total_missing_seconds == 8 * 3600
+    assert result.daily_expected_seconds[last] == 0
 
 
 @pytest.mark.asyncio

@@ -75,9 +75,6 @@ class DailySummaryService:
         holidays: list, historical_schedules: list,
     ) -> PeriodTimeResult:
         summaries = await self._load_period_rows(session, user_id, first, last)
-        days = (last - first).days + 1
-        if len(summaries) != days:
-            raise DailySummaryUnavailableError()
 
         records_by_day: dict[date, list[TimeRecord]] = {}
         for record in records:
@@ -97,18 +94,48 @@ class DailySummaryService:
         total_excess = total_approved = 0
         current = first
         while current <= last:
-            row = summaries[current]
+            row = summaries.get(current)
             day_records = sorted(
                 records_by_day.get(current, []), key=lambda record: record.record_datetime
             )
+            day_adjustments = adjustments_by_day.get(current, [])
+            if row is None and (
+                day_records
+                or any(
+                    adjustment.deleted_at is None
+                    and adjustment.status == AdjustmentStatus.APPROVED
+                    and adjustment.adjustment_type in (
+                        AdjustmentType.FORGOT_PUNCH,
+                        AdjustmentType.PUNCH_NOT_COUNTED,
+                        AdjustmentType.DELETE_PUNCH,
+                        AdjustmentType.WAIVER,
+                        AdjustmentType.EXTRA_TIME,
+                        AdjustmentType.DAILY_EXCESS,
+                    )
+                    for adjustment in day_adjustments
+                )
+            ):
+                raise DailySummaryUnavailableError()
+
             entries, exits, punches, blocks = format_daily_records(day_records)
-            gross = row.worked_minutes * 60
-            net = row.accounted_minutes * 60
-            expected = row.expected_minutes * 60
-            waiver = row.waiver_minutes * 60
+            is_holiday = current in holiday_days
+            schedule = next((
+                item for item in historical_schedules
+                if item.day_of_week == current.weekday()
+                and item.valid_from <= current
+                and (item.valid_until is None or item.valid_until >= current)
+            ), None)
+            expected = (
+                round(schedule.daily_hours * 60) * 60
+                if row is None and schedule is not None and not is_holiday
+                else row.expected_minutes * 60 if row is not None else 0
+            )
+            gross = row.worked_minutes * 60 if row is not None else 0
+            net = row.accounted_minutes * 60 if row is not None else 0
+            waiver = row.waiver_minutes * 60 if row is not None else 0
             unapproved = gross - net
             extra = max(0, net - expected) if historical_schedules else 0
-            missing = row.missing_minutes * 60
+            missing = row.missing_minutes * 60 if row is not None else expected
             daily_results[current] = DailyTimeResult(
                 raw_worked_seconds=gross,
                 waiver_seconds=waiver,
@@ -127,16 +154,16 @@ class DailySummaryService:
                 excess_work_seconds=0,
                 excess_lunch_seconds=0,
                 early_return_seconds=0,
-                total_excess_seconds=row.excess_minutes * 60,
-                approved_seconds=row.authorized_excess_minutes * 60,
+                total_excess_seconds=row.excess_minutes * 60 if row is not None else 0,
+                approved_seconds=row.authorized_excess_minutes * 60 if row is not None else 0,
                 accounted_seconds=net,
                 has_schedule=expected > 0,
                 has_lunch_rule=False,
             )
             daily_expected[current] = expected
-            daily_is_holiday[current] = current in holiday_days
+            daily_is_holiday[current] = is_holiday
             daily_waivers[current] = next((
-                adjustment for adjustment in adjustments_by_day.get(current, [])
+                adjustment for adjustment in day_adjustments
                 if adjustment.adjustment_type == AdjustmentType.WAIVER
                 and adjustment.status == AdjustmentStatus.APPROVED
             ), None)
@@ -147,8 +174,8 @@ class DailySummaryService:
             total_unapproved += unapproved
             total_extra += extra
             total_missing += missing
-            total_excess += row.excess_minutes * 60
-            total_approved += row.authorized_excess_minutes * 60
+            total_excess += row.excess_minutes * 60 if row is not None else 0
+            total_approved += row.authorized_excess_minutes * 60 if row is not None else 0
             current += timedelta(days=1)
 
         return PeriodTimeResult(
