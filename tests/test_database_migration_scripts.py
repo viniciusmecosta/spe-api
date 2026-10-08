@@ -92,6 +92,27 @@ def test_parity_rejects_different_ids_with_equal_row_counts(capsys):
     assert "[3]" in output
 
 
+def test_parity_applies_login_audit_migration_to_sqlite_expectation():
+    sqlite_cursor = MagicMock()
+    postgres_cursor = MagicMock()
+    sqlite_cursor.fetchall.return_value = [
+        (1, "CREATE", "first"),
+        (2, "LOGIN", "removed"),
+        (3, "UPDATE", "last"),
+    ]
+    postgres_cursor.fetchall.return_value = [
+        (1, "CREATE", "first"),
+        (2, "UPDATE", "last"),
+    ]
+
+    result = verify_table_data(
+        "audit_logs", sqlite_cursor, postgres_cursor, ["id", "action", "entity"],
+        ZoneInfo("America/Fortaleza"),
+    )
+
+    assert result == (True, 2, 2, 0)
+
+
 def test_format_cell_converts_semantic_types_strictly():
     assert format_cell("users", "is_active", "1", "BOOLEAN") == "TRUE"
     assert format_cell("users", "created_at", "2026-01-02 03:04:05", "DATETIME", "America/Fortaleza") == (

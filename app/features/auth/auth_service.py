@@ -8,7 +8,6 @@ from app.core.config import settings
 from app.database.session import get_async_db
 from app.features.auth.auth_exceptions import InactiveUserError, InvalidCredentialsError
 from app.features.auth.auth_schemas import Token
-from app.features.system.audit_service import audit_service
 from app.features.users.user_repository import async_user_repository
 from app.shared.enums import UserRole
 
@@ -47,5 +46,4 @@ class AuthService:
             raise InactiveUserError()
 
         access_token = security.create_access_token(subject=user.id, name=user.name)
-        await audit_service.async_log(self.db, user.id, "LOGIN", entity="USER", entity_id=user.id)
         return Token(access_token=access_token, token_type="bearer")

@@ -273,6 +273,15 @@ def verify_table_data(
     sq_rows = sq_cur.fetchall()
     pg_rows = pg_cur.fetchall()
 
+    if table == "audit_logs":
+        action_index = common_cols.index("action")
+        sq_rows = [
+            (new_id, *row[1:])
+            for new_id, row in enumerate(
+                (row for row in sq_rows if row[action_index] != "LOGIN"), 1
+            )
+        ]
+
     sq_count = len(sq_rows)
     pg_count = len(pg_rows)
 

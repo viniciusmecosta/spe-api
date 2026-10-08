@@ -77,12 +77,13 @@ async def test_authenticate_dev_bypass_success(async_db_mock: AsyncMock, mocker:
                  return_value=user)
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "dev")
     mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="fake_token")
-    mocker.patch("app.features.auth.auth_service.audit_service.async_log", new_callable=AsyncMock)
+    audit_log = mocker.patch("app.features.system.audit_service.audit_service.async_log", new_callable=AsyncMock)
     auth_service = AuthService(async_db_mock)
 
     token = await auth_service.authenticate("dev_employee", "anypass")
     assert token.access_token == "fake_token"
     assert token.token_type == "bearer"
+    audit_log.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -98,12 +99,13 @@ async def test_authenticate_success(async_db_mock: AsyncMock, mocker: MagicMock)
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
     mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=True)
     mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="prod_token")
-    mocker.patch("app.features.auth.auth_service.audit_service.async_log", new_callable=AsyncMock)
+    audit_log = mocker.patch("app.features.system.audit_service.audit_service.async_log", new_callable=AsyncMock)
     auth_service = AuthService(async_db_mock)
 
     token = await auth_service.authenticate("manager", "goodpass")
     assert token.access_token == "prod_token"
     assert token.token_type == "bearer"
+    audit_log.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -119,7 +121,7 @@ async def test_authenticate_with_form_data_and_request(async_db_mock: AsyncMock,
     mocker.patch("app.features.auth.auth_service.settings.ENVIRONMENT", "prod")
     mocker.patch("app.features.auth.auth_service.security.verify_password", return_value=True)
     mocker.patch("app.features.auth.auth_service.security.create_access_token", return_value="prod_token")
-    mocker.patch("app.features.auth.auth_service.audit_service.async_log", new_callable=AsyncMock)
+    audit_log = mocker.patch("app.features.system.audit_service.audit_service.async_log", new_callable=AsyncMock)
     auth_service = AuthService(async_db_mock)
 
     form_data = MagicMock(username="manager", password="goodpass")
@@ -127,3 +129,4 @@ async def test_authenticate_with_form_data_and_request(async_db_mock: AsyncMock,
     token = await auth_service.authenticate(form_data=form_data, request=mock_request)
     assert token.access_token == "prod_token"
     assert mock_request.state.attempted_user == "manager"
+    audit_log.assert_not_awaited()
