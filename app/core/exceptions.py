@@ -17,6 +17,14 @@ class DomainException(Exception):
         super().__init__(self.detail)
 
 
+class DailySummaryRecalculationError(DomainException):
+    def __init__(self):
+        super().__init__(
+            "A alteração foi gravada, mas a apuração diária não foi atualizada. Consulte o resultado antes de repetir a operação.",
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+
 def _translate_pydantic_msg(msg: str) -> str:
     translations = {
         "field required": "Campo obrigatório",

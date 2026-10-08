@@ -51,12 +51,13 @@ def bind_dispatch_loop(loop: asyncio.AbstractEventLoop | None) -> None:
 async def recalculate_changed_days(
     days: set[tuple[int, date]],
     reset_excess_days: set[tuple[int, date]] | None = None,
-) -> None:
+) -> bool:
     from app.features.daily_summaries.daily_summary_service import (
         daily_summary_service,
     )
 
     reset_days = reset_excess_days or set()
+    succeeded = True
     for user_id, day in sorted(days, key=lambda item: (item[1], item[0])):
         reset = (user_id, day) in reset_days
         for attempt in range(3):
@@ -71,12 +72,15 @@ async def recalculate_changed_days(
                 )
                 if attempt < 2:
                     await asyncio.sleep(2 ** attempt)
+                else:
+                    succeeded = False
+    return succeeded
 
 
 def schedule_days(
     days: set[tuple[int, date]],
     reset_excess_days: set[tuple[int, date]] | None = None,
-) -> None:
+) -> asyncio.Task[bool] | None:
     if not days:
         return
     reset_days = reset_excess_days or set()
@@ -93,12 +97,15 @@ def schedule_days(
     task = loop.create_task(recalculate_changed_days(days, reset_days))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+    return task
 
 
 def _after_commit(session: Session) -> None:
     days = session.info.pop("daily_summary_changed_days", set())
     reset_excess_days = session.info.pop("daily_summary_reset_excess_days", set())
-    schedule_days(days, reset_excess_days)
+    task = schedule_days(days, reset_excess_days)
+    if task is not None and session.info.get("await_daily_summary"):
+        session.info.setdefault("daily_summary_pending_tasks", []).append(task)
 
 
 def _after_rollback(session: Session) -> None:

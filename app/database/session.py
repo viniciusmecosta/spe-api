@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
+from app.core.exceptions import DailySummaryRecalculationError
 
 POSTGRESQL_ASYNCPG_PREFIX = "postgresql+asyncpg://"
 POSTGRESQL_SYNC_PREFIX = "postgresql://"
@@ -31,8 +33,23 @@ if db_uri_async.startswith(POSTGRESQL_SYNC_PREFIX) and not db_uri_async.startswi
     db_uri_async = db_uri_async.replace(POSTGRESQL_SYNC_PREFIX, POSTGRESQL_ASYNCPG_PREFIX, 1)
 
 async_engine = create_async_engine(db_uri_async, **pool_kwargs)
+
+
+class ApurationAsyncSession(AsyncSession):
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.sync_session.info["await_daily_summary"] = True
+
+    async def commit(self) -> None:
+        await super().commit()
+        tasks = self.sync_session.info.pop("daily_summary_pending_tasks", [])
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        if any(result is not True for result in results):
+            raise DailySummaryRecalculationError()
+
+
 AsyncSessionLocal = async_sessionmaker(
-    bind=async_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False
+    bind=async_engine, class_=ApurationAsyncSession, expire_on_commit=False, autoflush=False
 )
 
 

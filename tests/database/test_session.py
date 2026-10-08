@@ -1,8 +1,10 @@
+import asyncio
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from app.database.session import get_db, get_db_session
+from app.core.exceptions import DailySummaryRecalculationError
 
 
 def test_get_db_session_exception():
@@ -33,6 +35,47 @@ def test_get_db_generator(mocker):
     except StopIteration:
         pass
     mock_session.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_commit_waits_for_daily_summary(mocker):
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.database.session import ApurationAsyncSession
+
+    mocker.patch.object(AsyncSession, "commit", new_callable=AsyncMock)
+    session = ApurationAsyncSession()
+    completed = asyncio.Event()
+
+    async def recalculate():
+        await completed.wait()
+        return True
+
+    session.sync_session.info["daily_summary_pending_tasks"] = [
+        asyncio.create_task(recalculate())
+    ]
+    commit = asyncio.create_task(session.commit())
+    await asyncio.sleep(0)
+    assert not commit.done()
+    completed.set()
+    await commit
+
+
+@pytest.mark.asyncio
+async def test_commit_reports_failed_daily_summary(mocker):
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from app.database.session import ApurationAsyncSession
+
+    mocker.patch.object(AsyncSession, "commit", new_callable=AsyncMock)
+    session = ApurationAsyncSession()
+
+    async def fail():
+        return False
+
+    session.sync_session.info["daily_summary_pending_tasks"] = [
+        asyncio.create_task(fail())
+    ]
+    with pytest.raises(DailySummaryRecalculationError):
+        await session.commit()
 
 
 def test_encode_timestamptz():
