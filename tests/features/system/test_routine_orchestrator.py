@@ -91,6 +91,15 @@ def mock_get_log_path():
         yield m
 
 
+@pytest.mark.parametrize("environment", ["dev", "test"])
+async def test_automatic_backups_only_run_in_prod(orchestrator, environment):
+    with patch.object(settings, "ENVIRONMENT", environment):
+        await orchestrator.execute_hourly_backup_telegram()
+        await orchestrator.run_daily_backup_routine_email()
+    orchestrator._repo.has_hourly_routine_run.assert_not_called()
+    orchestrator._repo.has_routine_run_for_target_date.assert_not_called()
+
+
 async def test_execute_hourly_backup_telegram_out_of_hours(orchestrator, mock_datetime):
     with patch.object(settings, 'HOURLY_BACKUP_START_HOUR', 14), patch.object(settings, 'HOURLY_BACKUP_END_HOUR', 18):
         await orchestrator.execute_hourly_backup_telegram()

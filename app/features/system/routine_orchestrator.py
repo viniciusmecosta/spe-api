@@ -94,7 +94,7 @@ class RoutineOrchestrator:
         await asyncio.to_thread(self._cleanup_backup_files_sync, backup_path, sql_path, zip_path)
 
     async def execute_hourly_backup_telegram(self):
-        if settings.ENVIRONMENT and settings.ENVIRONMENT.lower() == "dev":
+        if settings.ENVIRONMENT.lower() != "prod":
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -270,6 +270,8 @@ class RoutineOrchestrator:
             )
 
     async def run_daily_backup_routine_email(self):
+        if settings.ENVIRONMENT.lower() != "prod":
+            return
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
         now_local = now.replace(tzinfo=None)
