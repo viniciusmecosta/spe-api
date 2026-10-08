@@ -38,8 +38,6 @@ def schedule_8h():
 
 
 def test_scenario_3_seconds_punch_no_excess(time_service, schedule_8h, excess_service):
-    """Caso Funcionário 3: 2 batidas com 3s de diferença.
-    Não há intervalo de almoço registrado. Excedente DEVE ser 0."""
     tz = ZoneInfo("America/Sao_Paulo")
     d = date(2026, 9, 2)
     dt1 = datetime(2026, 9, 2, 16, 33, 29, tzinfo=tz)
@@ -50,7 +48,7 @@ def test_scenario_3_seconds_punch_no_excess(time_service, schedule_8h, excess_se
     res = time_service.calculate_accounted_time([r1, r2], schedule_8h)
     assert res.total_excess_seconds == 0.0
     assert res.early_return_seconds == 0.0
-    assert res.raw_seconds == 0.0  # Menos de 1 minuto arredonda para 0s em minutos
+    assert res.raw_seconds == 0.0
     assert res.accounted_seconds == 0.0
 
     adj = excess_service._create_daily_excess_adjustment(3, d, [r1, r2], res)
@@ -58,11 +56,6 @@ def test_scenario_3_seconds_punch_no_excess(time_service, schedule_8h, excess_se
 
 
 def test_scenario_8h_worked_30m_early_lunch_leaves_early(time_service, schedule_8h, excess_service):
-    """Cenário: Trabalhou 8h brutas (08:00 às 12:00 = 4h, 12:30 às 16:30 = 4h).
-    Voltou 30 min adiantado do almoço (almoço de 30m em vez de 1h).
-    Tempo contabilizado pendente/rejeitado DEVE ser 7:30 (27.000s).
-    Ajuste criado DEVE ser de 30min de almoço adiantado.
-    Quando aprovado 30min, contabilizado DEVE voltar para 8:00 (28.800s)."""
     tz = ZoneInfo("America/Sao_Paulo")
     d = date(2026, 9, 2)
     r1 = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 9, 2, 8, 0, tzinfo=tz), record_type=RecordType.ENTRY)
@@ -93,12 +86,6 @@ def test_scenario_8h_worked_30m_early_lunch_leaves_early(time_service, schedule_
 
 
 def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, schedule_8h, excess_service):
-    """Cenário: Trabalhou 9h30 brutas (08:00 às 12:00 = 4h, 12:30 às 18:00 = 5h30).
-    Excedente de 1h30 (90 min).
-    30min de almoço adiantado e 60min de jornada excedente.
-    Pendente/rejeitado: contabilizado = 8h00.
-    Aprovado total (1.5h): contabilizado = 9h30.
-    Aprovado parcial (1.0h): contabilizado = 9h00."""
     tz = ZoneInfo("America/Sao_Paulo")
     d = date(2026, 9, 2)
     r1 = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 9, 2, 8, 0, tzinfo=tz), record_type=RecordType.ENTRY)
@@ -108,11 +95,11 @@ def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, sche
     records = [r1, r2, r3, r4]
 
     res_pending = time_service.calculate_accounted_time(records, schedule_8h, daily_excess_adj=None)
-    assert res_pending.raw_seconds == 34200.0  # 9h30
-    assert res_pending.excess_work_seconds == 5400.0  # 1h30 além de 8h
-    assert res_pending.early_return_seconds == 1800.0  # 30m
-    assert res_pending.total_excess_seconds == 5400.0  # 1h30 total
-    assert res_pending.accounted_seconds == 28800.0  # 8h00
+    assert res_pending.raw_seconds == 34200.0
+    assert res_pending.excess_work_seconds == 5400.0
+    assert res_pending.early_return_seconds == 1800.0
+    assert res_pending.total_excess_seconds == 5400.0
+    assert res_pending.accounted_seconds == 28800.0
 
     adj = excess_service._create_daily_excess_adjustment(1, d, records, res_pending)
     assert adj is not None
@@ -130,8 +117,6 @@ def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, sche
 
 
 def test_scenario_legacy_schedule_disabled(time_service):
-    """Cenário: Escala com is_daily_excess_enabled = False (meses legados).
-    Todo o tempo bruto é contabilizado, total_excess = 0."""
     legacy_sched = UserWorkScheduleConfig(
         id=2, user_id=1, day_of_week=DayOfWeek.SEGUNDA.value,
         daily_hours=8.0, is_daily_excess_enabled=False, valid_from=date(2026, 1, 1),
@@ -142,15 +127,12 @@ def test_scenario_legacy_schedule_disabled(time_service):
     records = [r1, r2]
 
     res = time_service.calculate_accounted_time(records, legacy_sched)
-    assert res.raw_seconds == 36000.0  # 10h
+    assert res.raw_seconds == 36000.0
     assert res.total_excess_seconds == 0.0
-    assert res.accounted_seconds == 36000.0  # 10h integralmente contabilizadas
+    assert res.accounted_seconds == 36000.0
 
 
 def test_scenario_multiple_punch_pairs_doctor_visit(time_service, schedule_8h):
-    """Cenário: Saída intermediária para médico das 10:00 às 10:15.
-    Almoço das 12:00 às 13:00.
-    Sistema deve identificar corretamente o almoço às 12:00, e não a saída de 15min do médico."""
     tz = ZoneInfo("America/Sao_Paulo")
     r1 = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 9, 2, 8, 0, tzinfo=tz), record_type=RecordType.ENTRY)
     r2 = TimeRecord(id=2, user_id=1, record_datetime=datetime(2026, 9, 2, 10, 0, tzinfo=tz), record_type=RecordType.EXIT)
@@ -163,13 +145,10 @@ def test_scenario_multiple_punch_pairs_doctor_visit(time_service, schedule_8h):
     has_rule, excess_lunch, early_return = time_service._compute_lunch_metrics(records, schedule_8h)
     assert has_rule is True
     assert excess_lunch == 0.0
-    assert early_return == 0.0  # Almoço foi de 12:00 às 13:00 (exatamente 1h)
+    assert early_return == 0.0
 
 
 def test_period_time_unapproved_excess_deducted_from_balance(time_service, schedule_8h):
-    """Cenário: calculate_period_time com excedente rejeitado.
-    O excedente rejeitado de 2h DEVE ser computado em unapproved_extra_seconds.
-    extra_seconds DEVE ser 0.0 e final_balance DEVE ser 0.0."""
     tz = ZoneInfo("America/Sao_Paulo")
     d = date(2026, 9, 1)
     r1 = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 9, 1, 8, 0, tzinfo=tz), record_type=RecordType.ENTRY)
@@ -188,12 +167,12 @@ def test_period_time_unapproved_excess_deducted_from_balance(time_service, sched
     )
 
     daily_res = period_res.daily_results[d]
-    assert daily_res.gross_worked_seconds == 36000.0  # 10h bruto
-    assert daily_res.unapproved_extra_seconds == 7200.0  # 2h não autorizadas
-    assert daily_res.net_worked_seconds == 28800.0  # 8h líquido
-    assert daily_res.extra_seconds == 0.0  # 0h extras no saldo
+    assert daily_res.gross_worked_seconds == 36000.0
+    assert daily_res.unapproved_extra_seconds == 7200.0
+    assert daily_res.net_worked_seconds == 28800.0
+    assert daily_res.extra_seconds == 0.0
     assert period_res.total_extra_seconds == 0.0
-    assert period_res.total_accounted_seconds == 28800.0  # 8h contabilizadas
+    assert period_res.total_accounted_seconds == 28800.0
 
 
 def test_report_service_includes_daily_excess_in_adjustments_list():
