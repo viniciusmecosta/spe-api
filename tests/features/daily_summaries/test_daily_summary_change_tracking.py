@@ -19,6 +19,7 @@ from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
+from app.shared.enums import AdjustmentType, RecordType
 
 
 def test_scope_for_record():
@@ -66,13 +67,29 @@ def test_scope_for_schedule():
         user_id=10,
         day_of_week=0,
         daily_hours=8.0,
-        valid_from=date(2026, 1, 1),
-        valid_until=date(2026, 1, 15),
+        valid_from=date(2026, 1, 15),
+        valid_until=date(2026, 1, 20),
     )
     user_id, start_date, end_date = _scope_for_schedule(session, sched)
     assert user_id == 10
     assert start_date == date(2026, 1, 1)
-    assert end_date == date(2026, 1, 15)
+    assert end_date == date(2026, 1, 31)
+
+
+def test_scope_for_schedule_open_ended():
+    session = MagicMock(spec=Session)
+    session.connection.return_value.execute.return_value.scalar.return_value = date(2026, 7, 10)
+    sched = UserWorkScheduleConfig(
+        user_id=10,
+        day_of_week=0,
+        daily_hours=8.0,
+        valid_from=date(2026, 7, 5),
+        valid_until=None,
+    )
+    user_id, start_date, end_date = _scope_for_schedule(session, sched)
+    assert user_id == 10
+    assert start_date == date(2026, 7, 1)
+    assert end_date == date(2026, 10, 31)
 
 
 def test_scopes_returns_expected_scope():
@@ -109,3 +126,82 @@ def test_enqueue_changed_days_tracks_new_time_record():
 
     enqueue_changed_days(session, None, None)
     assert (5, date(2026, 8, 14)) in session.info["daily_summary_changed_days"]
+
+
+def test_enqueue_changed_days_tracks_schedule_changes_in_reset_excess():
+    session = MagicMock(spec=Session)
+    session.get_bind.return_value.dialect.name = "postgresql"
+    session.info = {}
+    sched = UserWorkScheduleConfig(
+        user_id=7,
+        day_of_week=1,
+        daily_hours=8.0,
+        valid_from=date(2026, 9, 10),
+        valid_until=date(2026, 9, 20),
+    )
+    session.new = [sched]
+    session.dirty = []
+    session.deleted = []
+
+    enqueue_changed_days(session, None, None)
+    assert (7, date(2026, 9, 1)) in session.info["daily_summary_changed_days"]
+    assert (7, date(2026, 9, 30)) in session.info["daily_summary_changed_days"]
+    assert (7, date(2026, 9, 1)) in session.info["daily_summary_reset_excess_days"]
+    assert (7, date(2026, 9, 30)) in session.info["daily_summary_reset_excess_days"]
+
+
+def test_enqueue_changed_days_tracks_punch_inversion():
+    session = MagicMock(spec=Session)
+    session.get_bind.return_value.dialect.name = "postgresql"
+    session.info = {}
+    tz = ZoneInfo(settings.TIMEZONE)
+    rec = TimeRecord(
+        id=12,
+        user_id=3,
+        record_type=RecordType.EXIT,
+        record_datetime=datetime(2026, 6, 2, 8, 0, tzinfo=tz),
+        is_ignored=False,
+    )
+    session.new = []
+    session.dirty = [rec]
+    session.deleted = []
+    session.connection.return_value.execute.return_value.mappings.return_value.first.return_value = {
+        "id": 12,
+        "user_id": 3,
+        "record_type": RecordType.ENTRY,
+        "record_datetime": datetime(2026, 6, 2, 8, 0, tzinfo=tz),
+        "is_ignored": False,
+        "deleted_at": None,
+    }
+
+    enqueue_changed_days(session, None, None)
+    assert (3, date(2026, 6, 2)) in session.info["daily_summary_changed_days"]
+
+
+def test_enqueue_changed_days_tracks_waiver_creation():
+    session = MagicMock(spec=Session)
+    session.get_bind.return_value.dialect.name = "postgresql"
+    session.info = {}
+    adj = AdjustmentRequest(
+        user_id=4,
+        target_date=date(2026, 11, 15),
+        adjustment_type=AdjustmentType.WAIVER,
+    )
+    session.new = [adj]
+    session.dirty = []
+    session.deleted = []
+
+    enqueue_changed_days(session, None, None)
+    assert (4, date(2026, 11, 15)) in session.info["daily_summary_changed_days"]
+
+
+def test_enqueue_changed_days_skips_when_flag_present():
+    session = MagicMock(spec=Session)
+    session.info = {"skip_daily_summary_tracking": True}
+    rec = TimeRecord(user_id=1, record_datetime=datetime(2026, 1, 1, 8, 0))
+    session.new = [rec]
+    session.dirty = []
+    session.deleted = []
+
+    enqueue_changed_days(session, None, None)
+    assert "daily_summary_changed_days" not in session.info

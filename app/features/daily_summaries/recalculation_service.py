@@ -23,7 +23,12 @@ from app.shared.time_calculation_service import time_calculation_service
 
 class DailySummaryRecalculationService:
     async def _calculate_user_day(
-        self, session: AsyncSession, user_id: int, day: date, refresh_excess: bool
+        self,
+        session: AsyncSession,
+        user_id: int,
+        day: date,
+        refresh_excess: bool,
+        reset_excess: bool = False,
     ) -> None:
         user = await session.scalar(
             select(User)
@@ -32,6 +37,12 @@ class DailySummaryRecalculationService:
         )
         if user is None:
             return
+
+        if reset_excess:
+            await daily_excess_service.evaluate_user_day_async(
+                session, user_id, day, overwrite_reviewed=True
+            )
+            await session.flush()
 
         timezone_local = ZoneInfo(settings.TIMEZONE)
         first = datetime.combine(day, time.min, tzinfo=timezone_local)
@@ -65,67 +76,80 @@ class DailySummaryRecalculationService:
             holidays=holidays,
             historical_schedules=user.historical_schedules,
         )
-        reviewed = [
-            adjustment for adjustment in adjustments
-            if adjustment.adjustment_type == AdjustmentType.DAILY_EXCESS
-            and adjustment.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
-        ]
-        current_minutes = round(period.total_excess_seconds / 60)
-        if reviewed and refresh_excess:
-            previous_minutes = round((reviewed[0].amount_hours or 0) * 60)
-            if current_minutes != previous_minutes:
-                for adjustment in reviewed:
-                    adjustment.deleted_at = datetime.now(timezone.utc)
-                    session.add(AuditLog(
-                        action="INVALIDATE_DAILY_EXCESS",
-                        entity="ADJUSTMENT_REQUESTS",
-                        entity_id=adjustment.id,
-                        old_data={
-                            "status": adjustment.status.value,
-                            "amount_hours": adjustment.amount_hours,
-                            "approved_amount_hours": adjustment.approved_amount_hours,
-                        },
-                        new_data={"recalculated_minutes": current_minutes},
-                    ))
-                await session.flush()
 
-        existing_excess = [
-            adjustment for adjustment in adjustments
-            if adjustment.adjustment_type == AdjustmentType.DAILY_EXCESS
-        ]
-        excess_is_current = (
-            len(existing_excess) == 1
-            and round((existing_excess[0].amount_hours or 0) * 60) == current_minutes
-        ) or (not existing_excess and current_minutes == 0)
-        if refresh_excess and not excess_is_current:
-            await daily_excess_service.evaluate_user_day_async(session, user_id, day)
-            await session.flush()
-            adjustments = list((await session.scalars(
-                select(AdjustmentRequest).where(
-                    AdjustmentRequest.user_id == user_id,
-                    AdjustmentRequest.target_date == day,
-                    AdjustmentRequest.deleted_at.is_(None),
+        if not reset_excess:
+            reviewed = [
+                adjustment for adjustment in adjustments
+                if adjustment.adjustment_type == AdjustmentType.DAILY_EXCESS
+                and adjustment.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
+            ]
+            current_minutes = round(period.total_excess_seconds / 60)
+            if reviewed and refresh_excess:
+                previous_minutes = round((reviewed[0].amount_hours or 0) * 60)
+                if current_minutes != previous_minutes:
+                    for adjustment in reviewed:
+                        adjustment.deleted_at = datetime.now(timezone.utc)
+                        session.add(AuditLog(
+                            action="INVALIDATE_DAILY_EXCESS",
+                            entity="ADJUSTMENT_REQUESTS",
+                            entity_id=adjustment.id,
+                            old_data={
+                                "status": adjustment.status.value,
+                                "amount_hours": adjustment.amount_hours,
+                                "approved_amount_hours": adjustment.approved_amount_hours,
+                            },
+                            new_data={"recalculated_minutes": current_minutes},
+                        ))
+                    await session.flush()
+
+            existing_excess = [
+                adjustment for adjustment in adjustments
+                if adjustment.adjustment_type == AdjustmentType.DAILY_EXCESS
+                and adjustment.deleted_at is None
+            ]
+            excess_is_current = (
+                len(existing_excess) == 1
+                and round((existing_excess[0].amount_hours or 0) * 60) == current_minutes
+            ) or (not existing_excess and current_minutes == 0)
+            if refresh_excess and not excess_is_current:
+                await daily_excess_service.evaluate_user_day_async(session, user_id, day)
+                await session.flush()
+                adjustments = list((await session.scalars(
+                    select(AdjustmentRequest).where(
+                        AdjustmentRequest.user_id == user_id,
+                        AdjustmentRequest.target_date == day,
+                        AdjustmentRequest.deleted_at.is_(None),
+                    )
+                )).all())
+                period = time_calculation_service.calculate_period_time(
+                    start_date=day,
+                    end_date=day,
+                    records=records,
+                    adjustments=adjustments,
+                    holidays=holidays,
+                    historical_schedules=user.historical_schedules,
                 )
-            )).all())
-            period = time_calculation_service.calculate_period_time(
-                start_date=day,
-                end_date=day,
-                records=records,
-                adjustments=adjustments,
-                holidays=holidays,
-                historical_schedules=user.historical_schedules,
-            )
         await daily_summary_repository.upsert(
             session, user_id, day, from_legacy_period(day, period)
         )
 
-    async def recalculate_day(self, user_id: int, day: date) -> None:
-        await self.calculate_day(user_id, day, refresh_excess=True, allow_closed=False)
+    async def recalculate_day(
+        self, user_id: int, day: date, reset_excess: bool = False
+    ) -> None:
+        await self.calculate_day(
+            user_id, day, refresh_excess=True, allow_closed=False, reset_excess=reset_excess
+        )
 
     async def calculate_day(
-            self, user_id: int, day: date, refresh_excess: bool, allow_closed: bool
+        self,
+        user_id: int,
+        day: date,
+        refresh_excess: bool,
+        allow_closed: bool,
+        reset_excess: bool = False,
     ) -> None:
         async with AsyncSessionLocal() as session:
+            session.sync_session.info["skip_daily_summary_tracking"] = True
             async with session.begin():
                 if await session.scalar(select(User.id).where(User.id == user_id)) is None:
                     return
@@ -156,6 +180,8 @@ class DailySummaryRecalculationService:
                     )
                     .with_for_update()
                 )
-                await self._calculate_user_day(session, user_id, day, refresh_excess)
+                await self._calculate_user_day(
+                    session, user_id, day, refresh_excess, reset_excess=reset_excess
+                )
 
 daily_summary_recalculation_service = DailySummaryRecalculationService()

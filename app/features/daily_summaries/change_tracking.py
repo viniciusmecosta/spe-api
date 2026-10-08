@@ -82,8 +82,14 @@ def _scope_for_schedule(
                 DailySummary.__table__.c.user_id == user_id
             )
         ).scalar()
-        last = max(today, materialized_until) if materialized_until else today
-    return user_id, first, last
+        ceiling = max(today, materialized_until) if materialized_until else today
+        last = max(first, ceiling)
+    month_start = date(first.year, first.month, 1)
+    if last.month == 12:
+        month_end = date(last.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        month_end = date(last.year, last.month + 1, 1) - timedelta(days=1)
+    return user_id, month_start, month_end
 
 
 def _scope_for_holiday(source: Holiday | dict) -> tuple[None, date, date]:
@@ -115,7 +121,7 @@ def _scopes(
     if isinstance(source, UserWorkScheduleConfig):
         if old is not None:
             result.add(_scope_for_schedule(session, old))
-        if not deleted:
+        if not deleted or old is None:
             result.add(_scope_for_schedule(session, source))
         return {item for item in result if item[1] <= item[2]}
 
@@ -127,18 +133,24 @@ def _scopes(
     handler = handlers[type(source)]
     if old is not None:
         result.add(handler(old))
-    if not deleted:
+    if not deleted or old is None:
         result.add(handler(source))
     return {item for item in result if item[1] <= item[2]}
 
 
 def enqueue_changed_days(session: Session, flush_context: object, instances: object) -> None:
+    if session.info.get("skip_daily_summary_tracking"):
+        return
     if session.get_bind().dialect.name != "postgresql":
         return
     changes = set()
+    schedule_changes = set()
     for source in session.new:
         if isinstance(source, SOURCE_MODELS):
-            changes.update(_scopes(session, source, None, False))
+            scoped = _scopes(session, source, None, False)
+            changes.update(scoped)
+            if isinstance(source, UserWorkScheduleConfig):
+                schedule_changes.update(scoped)
     for source in session.dirty:
         if isinstance(source, SOURCE_MODELS):
             state = inspect(source)
@@ -146,10 +158,16 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
                 state.attrs[field].history.has_changes()
                 for field in RELEVANT_FIELDS[type(source)]
             ):
-                changes.update(_scopes(session, source, _old_row(session, source), False))
+                scoped = _scopes(session, source, _old_row(session, source), False)
+                changes.update(scoped)
+                if isinstance(source, UserWorkScheduleConfig):
+                    schedule_changes.update(scoped)
     for source in session.deleted:
         if isinstance(source, SOURCE_MODELS):
-            changes.update(_scopes(session, source, _old_row(session, source), True))
+            scoped = _scopes(session, source, _old_row(session, source), True)
+            changes.update(scoped)
+            if isinstance(source, UserWorkScheduleConfig):
+                schedule_changes.update(scoped)
     if not changes:
         return
     all_user_ids = None
@@ -164,6 +182,16 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
             current += timedelta(days=1)
 
     session.info.setdefault("daily_summary_changed_days", set()).update(days)
+
+    if schedule_changes:
+        reset_days = set()
+        for user_id, first, last in schedule_changes:
+            user_ids = all_user_ids if user_id is None else [user_id]
+            current = first
+            while current <= last:
+                reset_days.update((current_user_id, current) for current_user_id in user_ids)
+                current += timedelta(days=1)
+        session.info.setdefault("daily_summary_reset_excess_days", set()).update(reset_days)
 
 
 def register_change_tracking() -> None:

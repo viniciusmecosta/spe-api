@@ -181,16 +181,27 @@ def test_calculate_daily_summary_rejects_accounted_exceeding_worked():
 
 def test_dispatch_after_commit_and_rollback():
     session = MagicMock(spec=Session)
-    session.info = {"daily_summary_changed_days": {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))}}
+    session.info = {
+        "daily_summary_changed_days": {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))},
+        "daily_summary_reset_excess_days": {(1, date(2026, 5, 1))},
+    }
 
     with patch("app.features.daily_summaries.dispatch.schedule_days") as mock_schedule:
         _after_commit(session)
-        mock_schedule.assert_called_once_with({(1, date(2026, 5, 1)), (2, date(2026, 5, 2))})
+        mock_schedule.assert_called_once_with(
+            {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))},
+            {(1, date(2026, 5, 1))},
+        )
         assert "daily_summary_changed_days" not in session.info
+        assert "daily_summary_reset_excess_days" not in session.info
 
-    session.info = {"daily_summary_changed_days": {(1, date(2026, 5, 1))}}
+    session.info = {
+        "daily_summary_changed_days": {(1, date(2026, 5, 1))},
+        "daily_summary_reset_excess_days": {(1, date(2026, 5, 1))},
+    }
     _after_rollback(session)
     assert "daily_summary_changed_days" not in session.info
+    assert "daily_summary_reset_excess_days" not in session.info
 
 
 @pytest.mark.asyncio
@@ -202,8 +213,22 @@ async def test_recalculate_changed_days_calls_service():
         days = {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))}
         await recalculate_changed_days(days)
         assert mock_recalc.await_count == 2
-        mock_recalc.assert_any_await(1, date(2026, 5, 1))
-        mock_recalc.assert_any_await(2, date(2026, 5, 2))
+        mock_recalc.assert_any_await(1, date(2026, 5, 1), reset_excess=False)
+        mock_recalc.assert_any_await(2, date(2026, 5, 2), reset_excess=False)
+
+
+@pytest.mark.asyncio
+async def test_recalculate_changed_days_with_reset_excess_flag():
+    with patch(
+        "app.features.daily_summaries.recalculation_service.daily_summary_recalculation_service.recalculate_day",
+        new_callable=AsyncMock,
+    ) as mock_recalc:
+        days = {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))}
+        reset_days = {(1, date(2026, 5, 1))}
+        await recalculate_changed_days(days, reset_excess_days=reset_days)
+        assert mock_recalc.await_count == 2
+        mock_recalc.assert_any_await(1, date(2026, 5, 1), reset_excess=True)
+        mock_recalc.assert_any_await(2, date(2026, 5, 2), reset_excess=False)
 
 
 @pytest.mark.asyncio
@@ -225,3 +250,33 @@ async def test_read_service_raises_when_summary_missing():
             holidays=[],
             historical_schedules=[],
         )
+
+
+@pytest.mark.asyncio
+async def test_calculate_user_day_with_reset_excess():
+    from app.features.daily_summaries.recalculation_service import daily_summary_recalculation_service
+    from app.features.users.user_models import User
+
+    session = AsyncMock()
+    user = User(id=1, name="Tester")
+    user.historical_schedules = []
+    session.scalar.return_value = user
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = []
+    session.scalars.return_value = scalars_mock
+
+    with patch(
+        "app.features.daily_summaries.recalculation_service.daily_excess_service.evaluate_user_day_async",
+        new_callable=AsyncMock,
+    ) as mock_excess, patch(
+        "app.features.daily_summaries.recalculation_service.daily_summary_repository.upsert",
+        new_callable=AsyncMock,
+    ) as mock_upsert:
+        await daily_summary_recalculation_service._calculate_user_day(
+            session, user_id=1, day=date(2026, 5, 10), refresh_excess=True, reset_excess=True
+        )
+        mock_excess.assert_awaited_once_with(
+            session, 1, date(2026, 5, 10), overwrite_reviewed=True
+        )
+        assert mock_upsert.await_count == 1
+
