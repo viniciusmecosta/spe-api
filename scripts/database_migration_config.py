@@ -134,24 +134,20 @@ def normalize_boolean(value: object) -> bool:
 
 def sqlite_type_family(declared_type: str) -> str:
     declared = (declared_type or "").strip().upper()
-    if declared == "BOOLEAN" or declared.startswith("BOOL"):
-        return "boolean"
-    if declared == "JSON" or declared.startswith("JSON"):
-        return "json"
-    if declared.startswith("DATETIME") or declared.startswith("TIMESTAMP"):
-        return "datetime"
-    if declared == "DATE" or declared.startswith("DATE("):
-        return "date"
-    if declared == "TIME" or declared.startswith("TIME("):
-        return "time"
-    if "INT" in declared:
-        return "integer"
-    if any(token in declared for token in ("CHAR", "CLOB", "TEXT")) or declared == "":
-        return "text"
-    if any(token in declared for token in ("REAL", "FLOA", "DOUB")):
-        return "real"
-    if "BLOB" in declared:
-        return "binary"
+    checks = (
+        (declared == "BOOLEAN" or declared.startswith("BOOL"), "boolean"),
+        (declared == "JSON" or declared.startswith("JSON"), "json"),
+        (declared.startswith(("DATETIME", "TIMESTAMP")), "datetime"),
+        (declared == "DATE" or declared.startswith("DATE("), "date"),
+        (declared == "TIME" or declared.startswith("TIME("), "time"),
+        ("INT" in declared, "integer"),
+        (any(token in declared for token in ("CHAR", "CLOB", "TEXT")) or not declared, "text"),
+        (any(token in declared for token in ("REAL", "FLOA", "DOUB")), "real"),
+        ("BLOB" in declared, "binary"),
+    )
+    for matches, family in checks:
+        if matches:
+            return family
     return "numeric"
 
 

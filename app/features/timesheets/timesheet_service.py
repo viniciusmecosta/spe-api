@@ -123,7 +123,6 @@ class TimesheetService:
             records=records,
             holidays=holidays,
             all_adjustments=all_adjustments,
-            historical_schedules=historical_schedules,
             period_result=period_result,
         )
 

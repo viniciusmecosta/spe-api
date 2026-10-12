@@ -50,50 +50,11 @@ async def capture(output: Path) -> dict:
         user_ids = session.scalars(select(User.id).order_by(User.id)).all()
 
         for year_value, month_value in periods:
-            year, month = int(year_value), int(month_value)
-            key = f"{year:04d}-{month:02d}"
-            print(f"Capturing {key}", flush=True)
-            reports = {}
-            for user_id in user_ids:
-                report = await report_service.get_advanced_user_report(
-                    session, user_id, month, year
-                )
-                if report is not None:
-                    reports[str(user_id)] = report.model_dump(mode="json")
-
-            json_path = output / f"{key}.json"
-            json_path.write_text(
-                json.dumps(reports, ensure_ascii=False, sort_keys=True, indent=2),
-                encoding="utf-8",
+            period = int(year_value), int(month_value)
+            key = f"{period[0]:04d}-{period[1]:02d}"
+            manifest["periods"][key] = await _capture_period(
+                session, output, key, *period, user_ids
             )
-            excel_path = output / f"{key}.xlsx"
-            workbook = await excel_service.generate_excel_report(session, month, year)
-            excel_path.write_bytes(workbook.getvalue())
-            period_files = {
-                json_path.name: _sha256(json_path),
-                excel_path.name: _sha256(excel_path),
-            }
-
-            closure = session.scalar(
-                select(PayrollClosure).where(
-                    PayrollClosure.year == year,
-                    PayrollClosure.month == month,
-                    PayrollClosure.is_closed.is_(True),
-                    PayrollClosure.deleted_at.is_(None),
-                )
-            )
-            if closure and closure.report_path:
-                official = Path(closure.report_path)
-                if not official.is_absolute():
-                    official = Path(settings.UPLOAD_DIR) / official
-                if official.is_file():
-                    copy_path = output / f"{key}-official.xlsx"
-                    shutil.copy2(official, copy_path)
-                    period_files[copy_path.name] = _sha256(copy_path)
-                else:
-                    period_files["official_report_missing"] = str(official)
-
-            manifest["periods"][key] = {"users": len(reports), "files": period_files}
 
     manifest_path = output / "manifest.json"
     manifest_path.write_text(
@@ -101,6 +62,48 @@ async def capture(output: Path) -> dict:
         encoding="utf-8",
     )
     return manifest
+
+
+async def _capture_period(session, output: Path, key: str, year: int, month: int, user_ids) -> dict:
+    print(f"Capturing {key}", flush=True)
+    reports = {}
+    for user_id in user_ids:
+        report = await report_service.get_advanced_user_report(session, user_id, month, year)
+        if report is not None:
+            reports[str(user_id)] = report.model_dump(mode="json")
+
+    json_path = output / f"{key}.json"
+    json_path.write_text(
+        json.dumps(reports, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8"
+    )
+    excel_path = output / f"{key}.xlsx"
+    workbook = await excel_service.generate_excel_report(session, month, year)
+    excel_path.write_bytes(workbook.getvalue())
+    period_files = {json_path.name: _sha256(json_path), excel_path.name: _sha256(excel_path)}
+    _capture_official_report(session, output, key, year, month, period_files)
+    return {"users": len(reports), "files": period_files}
+
+
+def _capture_official_report(session, output: Path, key: str, year: int, month: int, files: dict) -> None:
+    closure = session.scalar(
+        select(PayrollClosure).where(
+            PayrollClosure.year == year,
+            PayrollClosure.month == month,
+            PayrollClosure.is_closed.is_(True),
+            PayrollClosure.deleted_at.is_(None),
+        )
+    )
+    if not closure or not closure.report_path:
+        return
+    official = Path(closure.report_path)
+    if not official.is_absolute():
+        official = Path(settings.UPLOAD_DIR) / official
+    if official.is_file():
+        copy_path = output / f"{key}-official.xlsx"
+        shutil.copy2(official, copy_path)
+        files[copy_path.name] = _sha256(copy_path)
+    else:
+        files["official_report_missing"] = str(official)
 
 
 def main() -> None:

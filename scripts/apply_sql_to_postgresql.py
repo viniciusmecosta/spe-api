@@ -121,8 +121,80 @@ def connect_with_retry(
 
 
 def _dollar_tag_at(sql: str, offset: int) -> str | None:
-    match = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", sql[offset:])
+    match = re.match(r"\$(?:[^\W\d]\w*)?\$", sql[offset:])
     return match.group(0) if match else None
+
+
+def _step_comment(char, next_char, buffer, state):
+    if state == "line_comment":
+        return ("normal" if char == "\n" else state), 0
+    if char == "*" and next_char == "/":
+        buffer.append(next_char)
+        return "normal", 1
+    return state, 0
+
+
+def _step_quoted(char, next_char, buffer, state, escape_string):
+    if state == "single_quote" and char == "\\" and escape_string and next_char:
+        buffer.append(next_char)
+        return state, 1
+    closing_quote = "'" if state == "single_quote" else '"'
+    if char != closing_quote:
+        return state, 0
+    if next_char == closing_quote:
+        buffer.append(next_char)
+        return state, 1
+    return "normal", 0
+
+
+def _step_dollar_quote(sql, index, char, buffer, dollar_tag):
+    if char == "$" and dollar_tag and sql.startswith(dollar_tag, index):
+        buffer.extend(dollar_tag[1:])
+        return "normal", None, len(dollar_tag) - 1
+    return "dollar_quote", dollar_tag, 0
+
+
+def _step_normal(sql, index, char, next_char, buffer):
+    if char == "-" and next_char == "-":
+        buffer.append(next_char)
+        return "line_comment", None, False, 1
+    if char == "/" and next_char == "*":
+        buffer.append(next_char)
+        return "block_comment", None, False, 1
+    if char == "'":
+        previous = sql[index - 1] if index else ""
+        return "single_quote", None, previous in {"e", "E"}, 0
+    if char == '"':
+        return "double_quote", None, False, 0
+    if char == "$":
+        tag = _dollar_tag_at(sql, index)
+        if tag:
+            buffer.extend(tag[1:])
+            return "dollar_quote", tag, False, len(tag) - 1
+    return "normal", None, False, 0
+
+
+def _step_split(sql, index, char, next_char, state, dollar_tag,
+                escape_string, buffer, statements):
+    if state in {"line_comment", "block_comment"}:
+        state, consumed = _step_comment(char, next_char, buffer, state)
+    elif state in {"single_quote", "double_quote"}:
+        state, consumed = _step_quoted(char, next_char, buffer, state, escape_string)
+    elif state == "dollar_quote":
+        state, dollar_tag, consumed = _step_dollar_quote(
+            sql, index, char, buffer, dollar_tag
+        )
+    elif char == ";":
+        statement = "".join(buffer).strip()
+        if statement:
+            statements.append(statement)
+        buffer = []
+        consumed = 0
+    else:
+        state, dollar_tag, escape_string, consumed = _step_normal(
+            sql, index, char, next_char, buffer
+        )
+    return state, dollar_tag, escape_string, buffer, consumed
 
 
 def split_sql_statements(
@@ -139,67 +211,11 @@ def split_sql_statements(
         char = sql[index]
         next_char = sql[index + 1] if index + 1 < len(sql) else ""
         buffer.append(char)
-
-        if state == "line_comment":
-            if char == "\n":
-                state = "normal"
-        elif state == "block_comment":
-            if char == "*" and next_char == "/":
-                buffer.append(next_char)
-                index += 1
-                state = "normal"
-        elif state == "single_quote":
-            if char == "\\" and escape_string and next_char:
-                buffer.append(next_char)
-                index += 1
-            elif char == "'":
-                if next_char == "'":
-                    buffer.append(next_char)
-                    index += 1
-                else:
-                    state = "normal"
-        elif state == "double_quote":
-            if char == '"':
-                if next_char == '"':
-                    buffer.append(next_char)
-                    index += 1
-                else:
-                    state = "normal"
-        elif state == "dollar_quote":
-            if dollar_tag and sql.startswith(dollar_tag, index):
-                for extra in dollar_tag[1:]:
-                    buffer.append(extra)
-                index += len(dollar_tag) - 1
-                state = "normal"
-                dollar_tag = None
-        elif char == "-" and next_char == "-":
-            buffer.append(next_char)
-            index += 1
-            state = "line_comment"
-        elif char == "/" and next_char == "*":
-            buffer.append(next_char)
-            index += 1
-            state = "block_comment"
-        elif char == "'":
-            previous = sql[index - 1] if index else ""
-            escape_string = previous in {"e", "E"}
-            state = "single_quote"
-        elif char == '"':
-            state = "double_quote"
-        elif char == "$":
-            dollar_tag = _dollar_tag_at(sql, index)
-            if dollar_tag:
-                for extra in dollar_tag[1:]:
-                    buffer.append(extra)
-                index += len(dollar_tag) - 1
-                state = "dollar_quote"
-        elif char == ";":
-            statement = "".join(buffer).strip()
-            if statement:
-                statements.append(statement)
-            buffer = []
-
-        index += 1
+        state, dollar_tag, escape_string, buffer, consumed = _step_split(
+            sql, index, char, next_char, state, dollar_tag,
+            escape_string, buffer, statements,
+        )
+        index += consumed + 1
 
     if complete_only:
         return statements, "".join(buffer)
@@ -220,71 +236,76 @@ def strip_sql_comments(sql: str) -> str:
     while index < len(sql):
         char = sql[index]
         next_char = sql[index + 1] if index + 1 < len(sql) else ""
-        if state == "line_comment":
-            if char == "\n":
-                output.append(char)
-                state = "normal"
-        elif state == "block_comment":
-            if char == "\n":
-                output.append(char)
-            elif char == "*" and next_char == "/":
-                index += 1
-                state = "normal"
-        elif state == "single_quote":
-            output.append(char)
-            if char == "\\" and escape_string and next_char:
-                output.append(next_char)
-                index += 1
-            elif char == "'":
-                if next_char == "'":
-                    output.append(next_char)
-                    index += 1
-                else:
-                    state = "normal"
-        elif state == "double_quote":
-            output.append(char)
-            if char == '"':
-                if next_char == '"':
-                    output.append(next_char)
-                    index += 1
-                else:
-                    state = "normal"
-        elif state == "dollar_quote":
-            if dollar_tag and sql.startswith(dollar_tag, index):
-                output.append(dollar_tag)
-                index += len(dollar_tag) - 1
-                dollar_tag = None
-                state = "normal"
-            else:
-                output.append(char)
-        elif char == "-" and next_char == "-":
-            index += 1
-            state = "line_comment"
-        elif char == "/" and next_char == "*":
-            index += 1
-            state = "block_comment"
-        elif char == "'":
-            output.append(char)
-            previous = sql[index - 1] if index else ""
-            escape_string = previous in {"e", "E"}
-            state = "single_quote"
-        elif char == '"':
-            output.append(char)
-            state = "double_quote"
-        elif char == "$":
-            dollar_tag = _dollar_tag_at(sql, index)
-            if dollar_tag:
-                output.append(dollar_tag)
-                index += len(dollar_tag) - 1
-                state = "dollar_quote"
-            else:
-                output.append(char)
-        else:
-            output.append(char)
+        state, dollar_tag, escape_string, consumed = _strip_step(
+            sql, index, char, next_char, output, state, dollar_tag, escape_string
+        )
+        index += consumed
         index += 1
     if state in {"single_quote", "double_quote", "block_comment", "dollar_quote"}:
         raise ValueError("SQL inválido ou truncado: literal/comentário não foi fechado")
     return "".join(output)
+
+
+def _strip_comment_step(char, next_char, output, state, dollar_tag, escape_string):
+    if state == "line_comment":
+        if char == "\n":
+            output.append(char)
+            state = "normal"
+        return state, dollar_tag, escape_string, 0
+    if char == "\n":
+        output.append(char)
+    if char == "*" and next_char == "/":
+        return "normal", dollar_tag, escape_string, 1
+    return state, dollar_tag, escape_string, 0
+
+
+def _strip_quoted_step(char, next_char, output, state, dollar_tag, escape_string):
+    output.append(char)
+    state, consumed = _step_quoted(char, next_char, output, state, escape_string)
+    return state, dollar_tag, escape_string, consumed
+
+
+def _strip_dollar_step(sql, index, char, output, dollar_tag, escape_string):
+    if dollar_tag and sql.startswith(dollar_tag, index):
+        output.append(dollar_tag)
+        return "normal", None, escape_string, len(dollar_tag) - 1
+    output.append(char)
+    return "dollar_quote", dollar_tag, escape_string, 0
+
+
+def _strip_normal_step(sql, index, char, next_char, output, dollar_tag, escape_string):
+    if char == "-" and next_char == "-":
+        return "line_comment", dollar_tag, escape_string, 1
+    if char == "/" and next_char == "*":
+        return "block_comment", dollar_tag, escape_string, 1
+    if char == "'":
+        output.append(char)
+        previous = sql[index - 1] if index else ""
+        return "single_quote", dollar_tag, previous in {"e", "E"}, 0
+    if char == '"':
+        output.append(char)
+        return "double_quote", dollar_tag, False, 0
+    if char == "$":
+        tag = _dollar_tag_at(sql, index)
+        if tag:
+            output.append(tag)
+            return "dollar_quote", tag, escape_string, len(tag) - 1
+    output.append(char)
+    return "normal", dollar_tag, escape_string, 0
+
+
+def _strip_step(sql, index, char, next_char, output, state, dollar_tag, escape_string):
+    if state in {"line_comment", "block_comment"}:
+        return _strip_comment_step(
+            char, next_char, output, state, dollar_tag, escape_string
+        )
+    if state in {"single_quote", "double_quote"}:
+        return _strip_quoted_step(char, next_char, output, state, dollar_tag, escape_string)
+    if state == "dollar_quote":
+        return _strip_dollar_step(sql, index, char, output, dollar_tag, escape_string)
+    return _strip_normal_step(
+        sql, index, char, next_char, output, dollar_tag, escape_string
+    )
 
 
 def _without_leading_comments(statement: str) -> str:
@@ -310,15 +331,63 @@ def _unquote_identifier(identifier: str) -> str:
 
 
 def _insert_target(statement: str) -> tuple[str | None, str]:
+    quoted_identifier = r'"(?:""|[^"])+"'
+    identifier = rf"(?:{quoted_identifier}|[^\W\d][\w$]*)"
     match = re.match(
-        r"(?is)^INSERT\s+INTO\s+(?:(\"(?:\"\"|[^\"])+\"|[A-Za-z_][\w$]*)\s*\.\s*)?"
-        r"(\"(?:\"\"|[^\"])+\"|[A-Za-z_][\w$]*)",
+        rf"(?s)^INSERT\s+INTO\s+(?:({identifier})\s*\.\s*)?({identifier})",
         statement,
+        re.IGNORECASE,
     )
     if not match:
         raise ValueError("Não foi possível identificar a tabela de um INSERT")
     schema = _unquote_identifier(match.group(1)) if match.group(1) else None
     return schema, _unquote_identifier(match.group(2))
+
+
+def _prepare_insert(statement: str, insert_tables: set[str]) -> str | None:
+    schema, table = _insert_target(statement)
+    if schema not in (None, "public"):
+        raise ValueError(f"INSERT fora do schema public não é permitido: {schema}.{table}")
+    if table == "alembic_version":
+        return None
+    insert_tables.add(table)
+    return statement
+
+
+def _prepare_select(statement: str) -> str | None:
+    if re.match(r"(?is)^SELECT\s+(?:pg_catalog\.)?set_config\s*\(", statement):
+        return None
+    if re.match(r"(?is)^SELECT\s+(?:pg_catalog\.)?setval\s*\(", statement):
+        return statement
+    raise ValueError(f"SELECT não permitido em dump de dados: {statement[:100]!r}")
+
+
+def _prepare_set(statement: str) -> str | None:
+    setting_match = re.match(
+        r"(?s)^SET\s+(?:SESSION\s+|LOCAL\s+)?(\w+)", statement.upper()
+    )
+    setting = setting_match.group(1).lower() if setting_match else ""
+    if setting not in ALLOWED_SET_NAMES:
+        raise ValueError(f"SET não permitido em dump de dados: {setting or statement[:80]}")
+    return None if setting in {"search_path", "client_encoding", "standard_conforming_strings"} else statement
+
+
+def _prepare_statement(statement: str, insert_tables: set[str]) -> str | None:
+    first_match = re.match(r"^([A-Z]+)", statement.upper())
+    if not first_match:
+        raise ValueError(f"Comando SQL não reconhecido: {statement[:80]!r}")
+    keyword = first_match.group(1).upper()
+    if keyword in TRANSACTION_KEYWORDS:
+        return None
+    if keyword == "START" and re.match(r"(?is)^START\s+TRANSACTION\b", statement):
+        return None
+    handlers = {"INSERT": _prepare_insert, "SELECT": _prepare_select, "SET": _prepare_set}
+    handler = handlers.get(keyword)
+    if handler is not None:
+        return handler(statement, insert_tables) if keyword == "INSERT" else handler(statement)
+    raise ValueError(
+        f"Dump deve conter somente INSERT/SET/setval; comando {keyword} não é permitido"
+    )
 
 
 def prepare_data_statements(
@@ -339,43 +408,9 @@ def prepare_data_statements(
         statement = _without_leading_comments(raw_statement)
         if not statement:
             continue
-        first_match = re.match(r"(?i)^([A-Z]+)", statement)
-        if not first_match:
-            raise ValueError(f"Comando SQL não reconhecido: {statement[:80]!r}")
-        keyword = first_match.group(1).upper()
-
-        if keyword in TRANSACTION_KEYWORDS or (
-            keyword == "START" and re.match(r"(?is)^START\s+TRANSACTION\b", statement)
-        ):
-            continue
-        if keyword == "INSERT":
-            schema, table = _insert_target(statement)
-            if schema not in (None, "public"):
-                raise ValueError(f"INSERT fora do schema public não é permitido: {schema}.{table}")
-            if table == "alembic_version":
-                continue
-            insert_tables.add(table)
-            prepared.append(statement)
-            continue
-        if keyword == "SELECT":
-            if re.match(r"(?is)^SELECT\s+(?:pg_catalog\.)?set_config\s*\(", statement):
-                continue
-            if not re.match(r"(?is)^SELECT\s+(?:pg_catalog\.)?setval\s*\(", statement):
-                raise ValueError(f"SELECT não permitido em dump de dados: {statement[:100]!r}")
-            prepared.append(statement)
-            continue
-        if keyword == "SET":
-            setting_match = re.match(r"(?is)^SET\s+(?:SESSION\s+|LOCAL\s+)?([A-Za-z_]+)", statement)
-            setting = setting_match.group(1).lower() if setting_match else ""
-            if setting not in ALLOWED_SET_NAMES:
-                raise ValueError(f"SET não permitido em dump de dados: {setting or statement[:80]}")
-            if setting in {"search_path", "client_encoding", "standard_conforming_strings"}:
-                continue
-            prepared.append(statement)
-            continue
-        raise ValueError(
-            f"Dump deve conter somente INSERT/SET/setval; comando {keyword} não é permitido"
-        )
+        candidate = _prepare_statement(statement, insert_tables)
+        if candidate is not None:
+            prepared.append(candidate)
 
     if not prepared and not allow_empty:
         raise ValueError("O arquivo não contém comandos de dados aplicáveis")
@@ -457,6 +492,29 @@ def _check_sql_file(sql_path: Path) -> None:
         raise ValueError(f"Arquivo SQL excede o limite de {MAX_SQL_BYTES} bytes")
 
 
+def _execute_statements(cursor, statement_factory, statement_count: int) -> None:
+    executed = 0
+    for statement in statement_factory():
+        cursor.execute(statement)
+        executed += 1
+    if executed != statement_count:
+        raise RuntimeError("Dump foi alterado durante a restauração")
+
+
+def _validate_applied_row_counts(cursor, application_tables, validator, expected_counts) -> None:
+    if expected_counts is None:
+        return
+    if validator(set(application_tables)) != expected_counts:
+        raise RuntimeError("Manifesto do backup foi alterado durante a restauração")
+    for table, expected_count in expected_counts.items():
+        cursor.execute(f'SELECT COUNT(*) FROM public.{quote_identifier(table)}')
+        actual_count = cursor.fetchone()[0]
+        if actual_count != expected_count:
+            raise RuntimeError(
+                f"Backup incompleto na tabela {table}: esperado {expected_count}, aplicado {actual_count}"
+            )
+
+
 def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
     remainder = ""
     with sql_path.open("r", encoding="utf-8") as source:
@@ -526,22 +584,10 @@ def _apply_prepared_dump(
         if truncate_first:
             _truncate_database_tables(cursor, application_tables)
         cursor.execute("SET CONSTRAINTS ALL DEFERRED")
-        executed = 0
-        for statement in statement_factory():
-            cursor.execute(statement)
-            executed += 1
-        if executed != statement_count:
-            raise RuntimeError("Dump foi alterado durante a restauração")
-        if row_counts is not None:
-            if manifest_validator(set(application_tables)) != row_counts:
-                raise RuntimeError("Manifesto do backup foi alterado durante a restauração")
-            for table, expected_count in row_counts.items():
-                cursor.execute(f'SELECT COUNT(*) FROM public.{quote_identifier(table)}')
-                actual_count = cursor.fetchone()[0]
-                if actual_count != expected_count:
-                    raise RuntimeError(
-                        f"Backup incompleto na tabela {table}: esperado {expected_count}, aplicado {actual_count}"
-                    )
+        _execute_statements(cursor, statement_factory, statement_count)
+        _validate_applied_row_counts(
+            cursor, application_tables, manifest_validator, row_counts
+        )
         connection.commit()
         return {
             "database": current_database,
@@ -655,27 +701,49 @@ def restore_backup(
         raise FileNotFoundError("Arquivo de backup ou dump não encontrado")
 
     if target.name.endswith(".zip.enc"):
-        load_environment()
-        decrypted = decrypt_backup(target, os.getenv("SECRET_KEY", ""))
-        try:
-            return restore_backup(
-                decrypted,
-                allow_destructive=allow_destructive,
-                expected_database=expected_database,
-                dry_run=dry_run,
-                allow_unverified_dump=allow_unverified_dump,
-            )
-        finally:
-            decrypted.unlink(missing_ok=True)
+        return _restore_encrypted_backup(
+            target, allow_destructive, expected_database, dry_run, allow_unverified_dump
+        )
 
     if target.suffix.lower() != ".zip":
-        return apply_sql_file(
-            target,
+        return _apply_backup_sql(
+            target, allow_destructive, expected_database, dry_run, allow_unverified_dump
+        )
+
+    return _restore_zip_backup(
+        target, allow_destructive, expected_database, dry_run, allow_unverified_dump
+    )
+
+
+def _restore_encrypted_backup(target, allow_destructive, expected_database,
+                              dry_run, allow_unverified_dump):
+    load_environment()
+    decrypted = decrypt_backup(target, os.getenv("SECRET_KEY", ""))
+    try:
+        return restore_backup(
+            decrypted,
             allow_destructive=allow_destructive,
             expected_database=expected_database,
             dry_run=dry_run,
             allow_unverified_dump=allow_unverified_dump,
         )
+    finally:
+        decrypted.unlink(missing_ok=True)
+
+
+def _apply_backup_sql(target, allow_destructive, expected_database,
+                      dry_run, allow_unverified_dump):
+    return apply_sql_file(
+        target,
+        allow_destructive=allow_destructive,
+        expected_database=expected_database,
+        dry_run=dry_run,
+        allow_unverified_dump=allow_unverified_dump,
+    )
+
+
+def _restore_zip_backup(target, allow_destructive, expected_database,
+                        dry_run, allow_unverified_dump):
 
     with zipfile.ZipFile(target, "r") as archive:
         member = _find_data_member(archive)
@@ -694,13 +762,16 @@ def restore_backup(
             except Exception:
                 temporary.unlink(missing_ok=True)
                 raise
+    return _apply_temporary_dump(
+        temporary, allow_destructive, expected_database, dry_run, allow_unverified_dump
+    )
+
+
+def _apply_temporary_dump(temporary, allow_destructive, expected_database,
+                          dry_run, allow_unverified_dump):
     try:
-        return apply_sql_file(
-            temporary,
-            allow_destructive=allow_destructive,
-            expected_database=expected_database,
-            dry_run=dry_run,
-            allow_unverified_dump=allow_unverified_dump,
+        return _apply_backup_sql(
+            temporary, allow_destructive, expected_database, dry_run, allow_unverified_dump
         )
     finally:
         temporary.unlink(missing_ok=True)

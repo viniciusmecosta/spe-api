@@ -14,6 +14,37 @@ def _minutes(value: str) -> int:
     return hours * 60 + minutes
 
 
+def _verify_item(session, user_id: int, item: dict) -> list[str]:
+    day = date.fromisoformat(item["date"])
+    row = session.execute(
+        select(DailySummary.__table__).where(
+            DailySummary.__table__.c.user_id == user_id,
+            DailySummary.__table__.c.apuration_date == day,
+        )
+    ).mappings().first()
+    if row is None:
+        return [f"{user_id}/{day}: missing summary"]
+
+    net = item["worked_minutes"]
+    waiver = sum(
+        _minutes(punch.split("Abono: ", 1)[1])
+        for punch in item["punches"]
+        if punch.startswith("Abono: ")
+    )
+    expected = {
+        "worked_minutes": net + _minutes(item["unapproved_extra_time"]),
+        "accounted_minutes": _minutes(item["accounted_time"]),
+        "expected_minutes": _minutes(item["expected_time"]),
+        "missing_minutes": max(0, _minutes(item["expected_time"]) - net),
+        "waiver_minutes": waiver,
+    }
+    return [
+        f"{user_id}/{day}/{field}: {row[field]} != {value}"
+        for field, value in expected.items()
+        if row[field] != value
+    ]
+
+
 def verify(golden: Path) -> list[str]:
     errors = []
     with SessionLocal() as session:
@@ -22,34 +53,7 @@ def verify(golden: Path) -> list[str]:
             for user_id_text, report in users.items():
                 user_id = int(user_id_text)
                 for item in report["daily_details"]:
-                    day = date.fromisoformat(item["date"])
-                    row = session.execute(
-                        select(DailySummary.__table__).where(
-                            DailySummary.__table__.c.user_id == user_id,
-                            DailySummary.__table__.c.apuration_date == day,
-                        )
-                    ).mappings().first()
-                    if row is None:
-                        errors.append(f"{user_id}/{day}: missing summary")
-                        continue
-                    net = item["worked_minutes"]
-                    waiver = sum(
-                        _minutes(punch.split("Abono: ", 1)[1])
-                        for punch in item["punches"]
-                        if punch.startswith("Abono: ")
-                    )
-                    expected = {
-                        "worked_minutes": net + _minutes(item["unapproved_extra_time"]),
-                        "accounted_minutes": _minutes(item["accounted_time"]),
-                        "expected_minutes": _minutes(item["expected_time"]),
-                        "missing_minutes": max(0, _minutes(item["expected_time"]) - net),
-                        "waiver_minutes": waiver,
-                    }
-                    for field, value in expected.items():
-                        if row[field] != value:
-                            errors.append(
-                                f"{user_id}/{day}/{field}: {row[field]} != {value}"
-                            )
+                    errors.extend(_verify_item(session, user_id, item))
     return errors
 
 

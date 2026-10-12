@@ -197,34 +197,78 @@ def _scope_for_reopening(source: PayrollClosure | dict) -> tuple[None, date, dat
 def _scopes(
         session: Session, source: object, old: dict | None, deleted: bool
 ) -> set[tuple[int | None, date, date]]:
-    result: set[tuple[int | None, date, date]] = set()
     if isinstance(source, PayrollClosure):
-        if old and old["is_closed"] and (
-            not source.is_closed or source.deleted_at is not None
-        ):
-            result.add(_scope_for_reopening(old))
-        return result
-
+        return _reopening_scopes(source, old)
     if isinstance(source, UserWorkScheduleConfig):
-        if old is not None:
-            result.update(_schedule_day_scopes(session, old))
-        if not deleted or old is None:
-            result.update(_schedule_day_scopes(session, source))
-        return {item for item in result if item[1] <= item[2]}
+        return _schedule_scopes(session, source, old, deleted)
+    handler = _scope_handler(source)
+    return _source_scopes(source, old, deleted, handler) if handler else set()
 
-    if isinstance(source, TimeRecord):
-        handler = _scope_for_record
-    elif isinstance(source, AdjustmentRequest):
-        handler = _scope_for_adjustment
-    elif isinstance(source, Holiday):
-        handler = _scope_for_holiday
-    else:
-        return {item for item in result if item[1] <= item[2]}
-    if old is not None:
-        result.add(handler(old))
-    if not deleted or old is None:
+
+def _reopening_scopes(source: PayrollClosure, old: dict | None) -> set[tuple[None, date, date]]:
+    is_reopening = old and old["is_closed"] and (
+        not source.is_closed or source.deleted_at is not None
+    )
+    return {_scope_for_reopening(old)} if is_reopening else set()
+
+
+def _schedule_scopes(session, source, old, deleted):
+    result = set(_schedule_day_scopes(session, old)) if old is not None else set()
+    if old is None or not deleted:
+        result.update(_schedule_day_scopes(session, source))
+    return {item for item in result if item[1] <= item[2]}
+
+
+def _scope_handler(source):
+    for model, handler in (
+        (TimeRecord, _scope_for_record),
+        (AdjustmentRequest, _scope_for_adjustment),
+        (Holiday, _scope_for_holiday),
+    ):
+        if isinstance(source, model):
+            return handler
+    return None
+
+
+def _source_scopes(source, old, deleted, handler):
+    result = {handler(old)} if old is not None else set()
+    if old is None or not deleted:
         result.add(handler(source))
     return {item for item in result if item[1] <= item[2]}
+
+
+def _collect_changes(session: Session, sources, *, deleted: bool = False):
+    changes = set()
+    schedule_changes = set()
+    for source in sources:
+        if not isinstance(source, SOURCE_MODELS):
+            continue
+        old = _old_row(session, source) if deleted else None
+        if not deleted and source in session.dirty:
+            state = inspect(source)
+            relevant = any(
+                state.attrs[field].history.has_changes()
+                for field in RELEVANT_FIELDS[type(source)]
+            )
+            if not relevant:
+                continue
+            old = _old_row(session, source)
+        scoped = _scopes(session, source, old, deleted)
+        changes.update(scoped)
+        if isinstance(source, UserWorkScheduleConfig):
+            schedule_changes.update(scoped)
+    return changes, schedule_changes
+
+
+def _expand_scopes(scopes, all_user_ids):
+    days = set()
+    for user_id, first, last in scopes:
+        user_ids = all_user_ids if user_id is None else [user_id]
+        current = first
+        while current <= last:
+            days.update((current_user_id, current) for current_user_id in user_ids)
+            current += timedelta(days=1)
+    return days
 
 
 def enqueue_changed_days(session: Session, flush_context: object, instances: object) -> None:
@@ -232,54 +276,24 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
         return
     if session.get_bind().dialect.name != "postgresql":
         return
-    changes = set()
-    schedule_changes = set()
-    for source in session.new:
-        if isinstance(source, SOURCE_MODELS):
-            scoped = _scopes(session, source, None, False)
-            changes.update(scoped)
-            if isinstance(source, UserWorkScheduleConfig):
-                schedule_changes.update(scoped)
-    for source in session.dirty:
-        if isinstance(source, SOURCE_MODELS):
-            state = inspect(source)
-            if any(
-                state.attrs[field].history.has_changes()
-                for field in RELEVANT_FIELDS[type(source)]
-            ):
-                scoped = _scopes(session, source, _old_row(session, source), False)
-                changes.update(scoped)
-                if isinstance(source, UserWorkScheduleConfig):
-                    schedule_changes.update(scoped)
-    for source in session.deleted:
-        if isinstance(source, SOURCE_MODELS):
-            scoped = _scopes(session, source, _old_row(session, source), True)
-            changes.update(scoped)
-            if isinstance(source, UserWorkScheduleConfig):
-                schedule_changes.update(scoped)
+    new_changes, new_schedule_changes = _collect_changes(session, session.new)
+    dirty_changes, dirty_schedule_changes = _collect_changes(session, session.dirty)
+    deleted_changes, deleted_schedule_changes = _collect_changes(
+        session, session.deleted, deleted=True
+    )
+    changes = new_changes | dirty_changes | deleted_changes
+    schedule_changes = new_schedule_changes | dirty_schedule_changes | deleted_schedule_changes
     if not changes:
         return
     all_user_ids = None
     if any(user_id is None for user_id, _, _ in changes):
         all_user_ids = session.connection().execute(select(User.__table__.c.id)).scalars().all()
-    days = set()
-    for user_id, first, last in changes:
-        user_ids = all_user_ids if user_id is None else [user_id]
-        current = first
-        while current <= last:
-            days.update((current_user_id, current) for current_user_id in user_ids)
-            current += timedelta(days=1)
+    days = _expand_scopes(changes, all_user_ids)
 
     session.info.setdefault("daily_summary_changed_days", set()).update(days)
 
     if schedule_changes:
-        reset_days = set()
-        for user_id, first, last in schedule_changes:
-            user_ids = all_user_ids if user_id is None else [user_id]
-            current = first
-            while current <= last:
-                reset_days.update((current_user_id, current) for current_user_id in user_ids)
-                current += timedelta(days=1)
+        reset_days = _expand_scopes(schedule_changes, all_user_ids)
         session.info.setdefault("daily_summary_reset_excess_days", set()).update(reset_days)
 
 

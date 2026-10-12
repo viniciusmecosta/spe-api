@@ -1,4 +1,4 @@
-from app.core.config import Settings, isDev, isProd, settings
+from app.core.config import Settings, is_dev, is_prod, settings
 
 
 def test_config_settings_initialization():
@@ -32,13 +32,13 @@ def test_cors_origins_validator_string():
 
 def test_environment_helpers(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", " PROD ")
-    assert isProd()
-    assert not isDev()
+    assert is_prod()
+    assert not is_dev()
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "Dev")
-    assert isDev()
-    assert not isProd()
+    assert is_dev()
+    assert not is_prod()
 
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
-    assert not isDev()
-    assert not isProd()
+    assert not is_dev()
+    assert not is_prod()

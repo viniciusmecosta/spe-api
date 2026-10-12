@@ -138,8 +138,7 @@ class TimesheetPdfBuilder:
 
     def _build_daily_records_table(self, start_date, end_date, period_result, holidays, data_table, t_style,
                                    table_text_style, records: list[TimeRecord] | None = None,
-                                   all_adjustments: list[AdjustmentRequest] | None = None,
-                                   historical_schedules: list | None = None):
+                                   all_adjustments: list[AdjustmentRequest] | None = None):
         tz = ZoneInfo(settings.TIMEZONE)
         today = datetime.now(tz).date()
         current_date = start_date
@@ -437,7 +436,6 @@ class TimesheetPdfBuilder:
         records: list[TimeRecord],
         holidays,
         all_adjustments,
-        historical_schedules,
         period_result,
     ):
         buffer = io.BytesIO()
@@ -549,7 +547,6 @@ class TimesheetPdfBuilder:
                 table_text_style=table_text_style,
                 records=records,
                 all_adjustments=all_adjustments,
-                historical_schedules=historical_schedules,
             )
         )
         story.append(Spacer(1, 10))

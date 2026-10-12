@@ -156,21 +156,19 @@ class TimeRecordService:
         previous_type = record.record_type
         target_date = record.record_datetime.date()
 
-        if previous_type == RecordType.ENTRY:
-            if await time_record_change_service.is_first_entry_affected(
+        if previous_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
                 db, record.user_id, target_date, record_id=record.id
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(
-                    db, record.user_id, target_date
-                )
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(
+                db, record.user_id, target_date
+            )
 
-        if new_type == RecordType.ENTRY:
-            if await time_record_change_service.is_first_entry_affected(
+        if new_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
                 db, record.user_id, target_date, new_datetime=record.record_datetime
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(
-                    db, record.user_id, target_date
-                )
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(
+                db, record.user_id, target_date
+            )
 
 
     def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
@@ -192,8 +190,7 @@ class TimeRecordService:
         )
 
     async def toggle_record_type(self, db: Any | None = None, record_id: int = 0,
-                                 current_user: User | None = None,
-                                 background_tasks: BackgroundTasks | None = None) -> TimeRecord:
+                                 current_user: User | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
         assert current_user is not None

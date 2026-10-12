@@ -185,13 +185,14 @@ def test_get_expected_entry_time():
 def test_process_user_anomalies_fails_when_an_active_day_has_no_summary():
     current = date(2026, 10, 5)
     user = MockUser(1)
+    records = {1: {current: [MockTimeRecord(1, datetime(2026, 10, 5, 8, 0), RecordType.ENTRY)]}}
 
     with pytest.raises(DailySummaryUnavailableError):
         anomaly_service._process_user_anomalies(
             1,
             user,
             [current],
-            {1: {current: [MockTimeRecord(1, datetime(2026, 10, 5, 8, 0), RecordType.ENTRY)]}},
+            records,
             {1: {}},
             {},
             False,

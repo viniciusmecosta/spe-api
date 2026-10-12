@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
-from fastapi import BackgroundTasks, Depends
+from fastapi import Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -322,8 +322,7 @@ class UserWorkScheduleService:
             )
 
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
-                                  current_user_id: int = 0,
-                                  background_tasks: BackgroundTasks | None = None):
+                                  current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(bulk_data, "model_dump"):
@@ -378,8 +377,7 @@ class UserWorkScheduleService:
 
     async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
                                     old_valid_until: date = None, bulk_data: Any = None,
-                                    current_user_id: int = 0,
-                                    background_tasks: BackgroundTasks | None = None):
+                                    current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(bulk_data, "model_dump"):
@@ -427,8 +425,7 @@ class UserWorkScheduleService:
         return {"message": "Expedientes atualizados com sucesso."}
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date = None, valid_until: date = None,
-                                    current_user_id: int = 0,
-                                    background_tasks: BackgroundTasks | None = None):
+                                    current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         await self.check_payroll_closure(session, valid_from, valid_until)

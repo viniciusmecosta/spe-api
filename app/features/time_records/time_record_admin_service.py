@@ -75,17 +75,15 @@ class TimeRecordAdminService:
     async def _handle_admin_update_invalidations(self, db: Any, record: TimeRecord, obj_in: TimeRecordUpdate,
                                            old_date: datetime.date, new_date: datetime.date,
                                            new_record_type: RecordType):
-        if record.record_type == RecordType.ENTRY:
-            if await time_record_change_service.is_first_entry_affected(
+        if record.record_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
                 db, record.user_id, old_date, record_id=record.id
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(db, record.user_id, old_date)
-        if new_record_type == RecordType.ENTRY:
-            new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
-            if await time_record_change_service.is_first_entry_affected(
-                db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(db, record.user_id, new_date)
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(db, record.user_id, old_date)
+        new_dt = obj_in.record_datetime if obj_in.record_datetime else record.record_datetime
+        if new_record_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
+            db, record.user_id, new_date, record_id=record.id, new_datetime=new_dt
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(db, record.user_id, new_date)
 
     def _build_updated_admin_record(
             self,
@@ -177,13 +175,12 @@ class TimeRecordAdminService:
         return TimeRecordDeleteAdmin(edit_justification=justification_val)
 
     async def _handle_delete_invalidations(self, session: Any, record: TimeRecord) -> None:
-        if record.record_type == RecordType.ENTRY:
-            if await time_record_change_service.is_first_entry_affected(
+        if record.record_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
                 session, record.user_id, record.record_datetime.date(), record_id=record.id
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(
-                    session, record.user_id, record.record_datetime.date()
-                )
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(
+                session, record.user_id, record.record_datetime.date()
+            )
 
     async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
                                   manager_id: int = 0, ip_address: str = "",
@@ -198,13 +195,12 @@ class TimeRecordAdminService:
         assert obj_in is not None
         await time_record_change_service.validate_period_open(session, obj_in.record_datetime.date())
 
-        if obj_in.record_type == RecordType.ENTRY:
-            if await time_record_change_service.is_first_entry_affected(
+        if obj_in.record_type == RecordType.ENTRY and await time_record_change_service.is_first_entry_affected(
                 session, obj_in.user_id, obj_in.record_datetime.date(), new_datetime=obj_in.record_datetime
-            ):
-                await time_record_change_service.invalidate_pending_extra_time_requests(
-                    session, obj_in.user_id, obj_in.record_datetime.date()
-                )
+        ):
+            await time_record_change_service.invalidate_pending_extra_time_requests(
+                session, obj_in.user_id, obj_in.record_datetime.date()
+            )
 
 
         if hasattr(session, "sync_session"):

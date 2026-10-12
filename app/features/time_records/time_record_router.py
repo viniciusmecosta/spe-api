@@ -65,12 +65,11 @@ async def register_exit(
 )
 async def toggle_record_type(
         id: int,
-        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
     return await service.toggle_record_type(
-        record_id=id, current_user=current_user, background_tasks=background_tasks
+        record_id=id, current_user=current_user
     )
 
 

@@ -44,9 +44,10 @@ def test_manifest_rejects_partial_and_tampered_dumps(tmp_path):
     }
     with pytest.raises(ValueError, match="não correspondem"):
         validate_manifest(content, {"users", "companies", "time_records"})
+    tampered_content = content.replace("VALUES (1)", "VALUES (2)")
     with pytest.raises(ValueError, match="hash"):
-        validate_manifest(content.replace("VALUES (1)", "VALUES (2)"), {"users", "companies"})
-    path.write_bytes(content.replace("VALUES (1)", "VALUES (2)").encode("utf-8"))
+        validate_manifest(tampered_content, {"users", "companies"})
+    path.write_bytes(tampered_content.encode("utf-8"))
     with pytest.raises(ValueError, match="hash"):
         validate_manifest_file(path, {"users", "companies"})
     with pytest.raises(ValueError, match="sem manifesto"):
@@ -79,8 +80,9 @@ def test_row_count_mismatch_rolls_back_restore(mocker, tmp_path):
     mocker.patch("scripts.apply_sql_to_postgresql.get_pg_credentials", return_value={})
     mocker.patch("scripts.apply_sql_to_postgresql.connect_with_retry", return_value=connection)
 
+    content = path.read_bytes().decode("utf-8")
     with pytest.raises(RuntimeError, match="esperado 2, aplicado 1"):
-        apply_sql_content(path.read_bytes().decode("utf-8"), allow_destructive=True)
+        apply_sql_content(content, allow_destructive=True)
 
     connection.rollback.assert_called_once()
     connection.commit.assert_not_called()
@@ -206,7 +208,8 @@ def test_manifest_legacy_and_invalid_metadata(tmp_path):
     ]
     for metadata in cases:
         document = "-- SPE-DUMP-MANIFEST: " + json.dumps(metadata) + "\n"
+        tables = set(metadata.get("row_counts", {}))
         with pytest.raises(ValueError, match="inválid"):
-            validate_manifest(document, set(metadata.get("row_counts", {})))
+            validate_manifest(document, tables)
     with pytest.raises(ValueError, match="inválido"):
         validate_manifest("-- SPE-DUMP-MANIFEST: {\n", set())

@@ -12,6 +12,19 @@ def _cell_value(value: object) -> str:
     return repr(value)
 
 
+def _walk_json(left: object, right: object, path: str, differences: list[str]) -> None:
+    if isinstance(left, dict) and isinstance(right, dict):
+        for key in sorted(left.keys() | right.keys()):
+            _walk_json(left.get(key), right.get(key), f"{path}.{key}", differences)
+        return
+    if isinstance(left, list) and isinstance(right, list):
+        for index, (lhs, rhs) in enumerate(zip_longest(left, right)):
+            _walk_json(lhs, rhs, f"{path}[{index}]", differences)
+        return
+    if left != right:
+        differences.append(f"{path}: {left!r} != {right!r}")
+
+
 def _compare_json(expected: Path, actual: Path) -> list[str]:
     before = json.loads(expected.read_text(encoding="utf-8"))
     after = json.loads(actual.read_text(encoding="utf-8"))
@@ -19,19 +32,7 @@ def _compare_json(expected: Path, actual: Path) -> list[str]:
         return []
     differences = []
 
-    def walk(left: object, right: object, path: str) -> None:
-        if isinstance(left, dict) and isinstance(right, dict):
-            for key in sorted(left.keys() | right.keys()):
-                walk(left.get(key), right.get(key), f"{path}.{key}")
-        elif isinstance(left, list) and isinstance(right, list):
-            for index in range(max(len(left), len(right))):
-                lhs = left[index] if index < len(left) else None
-                rhs = right[index] if index < len(right) else None
-                walk(lhs, rhs, f"{path}[{index}]")
-        elif left != right:
-            differences.append(f"{path}: {left!r} != {right!r}")
-
-    walk(before, after, expected.name)
+    _walk_json(before, after, expected.name, differences)
     return differences
 
 
@@ -44,30 +45,45 @@ def _compare_excel(expected: Path, actual: Path) -> list[str]:
             differences.append(f"{expected.name}: sheets differ")
             return differences
         for sheet_name in before.sheetnames:
-            left_sheet = before[sheet_name]
-            right_sheet = after[sheet_name]
-            rows = zip_longest(
-                left_sheet.iter_rows(values_only=True),
-                right_sheet.iter_rows(values_only=True),
-            )
-            for row_index, (left, right) in enumerate(rows, 1):
-                left = left or ()
-                right = right or ()
-                if any(
-                    isinstance(value, str) and "Documento gerado em:" in value
-                    for value in left + right
-                ):
-                    continue
-                for column_index, (left_value, right_value) in enumerate(zip_longest(left, right), 1):
-                    if left_value != right_value:
-                        differences.append(
-                            f"{expected.name}/{sheet_name}/R{row_index}C{column_index}: "
-                            f"{_cell_value(left_value)} != {_cell_value(right_value)}"
-                        )
+            differences.extend(_compare_sheet(
+                expected.name, sheet_name, before[sheet_name], after[sheet_name]
+            ))
     finally:
         before.close()
         after.close()
     return differences
+
+
+def _compare_sheet(filename: str, sheet_name: str, left_sheet, right_sheet) -> list[str]:
+    differences = []
+    rows = zip_longest(
+        left_sheet.iter_rows(values_only=True), right_sheet.iter_rows(values_only=True)
+    )
+    for row_index, (left, right) in enumerate(rows, 1):
+        differences.extend(_compare_excel_row(filename, sheet_name, row_index, left, right))
+    return differences
+
+
+def _compare_excel_row(filename: str, sheet_name: str, row_index: int,
+                       left: tuple | None, right: tuple | None) -> list[str]:
+    left, right = left or (), right or ()
+    if _contains_generated_timestamp(left, right):
+        return []
+    differences = []
+    for column_index, (left_value, right_value) in enumerate(zip_longest(left, right), 1):
+        if left_value != right_value:
+            differences.append(
+                f"{filename}/{sheet_name}/R{row_index}C{column_index}: "
+                f"{_cell_value(left_value)} != {_cell_value(right_value)}"
+            )
+    return differences
+
+
+def _contains_generated_timestamp(left: tuple, right: tuple) -> bool:
+    return any(
+        isinstance(value, str) and "Documento gerado em:" in value
+        for value in left + right
+    )
 
 
 def compare(expected: Path, actual: Path) -> list[str]:

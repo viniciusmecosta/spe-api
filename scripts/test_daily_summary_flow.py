@@ -1,15 +1,19 @@
 import importlib
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
+from app.core.config import settings
 from app.database.session import AsyncSessionLocal, SessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.daily_summaries.daily_summary_service import (
     daily_summary_service,
 )
+from app.features.daily_summaries.daily_summary_events import _scopes
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
@@ -19,6 +23,33 @@ from app.shared.enums import AdjustmentType, RecordType
 
 def _queued(session, user_id: int, day: date) -> bool:
     return (user_id, day) in session.info.get("daily_summary_changed_days", set())
+
+
+def test_time_record_change_tracks_both_its_previous_and_current_days():
+    session = SimpleNamespace()
+    local_timezone = ZoneInfo(settings.TIMEZONE)
+    previous_day, current_day = date(2026, 10, 1), date(2026, 10, 2)
+    previous = datetime.combine(previous_day, time(12), tzinfo=local_timezone)
+    current = datetime.combine(current_day, time(12), tzinfo=local_timezone)
+    record = TimeRecord(
+        user_id=7, record_type=RecordType.ENTRY, record_datetime=current,
+    )
+    scopes = _scopes(session, record, {"user_id": 7, "record_datetime": previous}, False)
+    assert scopes == {
+        (7, previous_day, previous_day),
+        (7, current_day, current_day),
+    }
+
+
+def test_deleted_time_record_tracks_only_the_persisted_day():
+    session = SimpleNamespace()
+    persisted = datetime(2026, 10, 3, 8, tzinfo=timezone.utc)
+    record = TimeRecord(
+        user_id=7, record_type=RecordType.ENTRY,
+        record_datetime=datetime(2026, 10, 4, 8, tzinfo=timezone.utc),
+    )
+    scopes = _scopes(session, record, {"user_id": 7, "record_datetime": persisted}, True)
+    assert scopes == {(7, date(2026, 10, 3), date(2026, 10, 3))}
 
 
 async def _test_calculation_rollback() -> None:

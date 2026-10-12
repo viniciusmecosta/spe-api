@@ -202,16 +202,22 @@ def _compare_table_rows(
             if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
                 table_diffs += 1
                 if table_diffs <= 3:
-                    if table == "user_biometrics" and col == "template_data":
-                        sq_value = f"<biometria: {len(str(sq_r[c_idx]))} caracteres>"
-                        pg_value = f"<biometria: {len(str(pg_r[c_idx]))} caracteres>"
-                    else:
-                        sq_value = repr(sq_r[c_idx])
-                        pg_value = repr(pg_r[c_idx])
-                    print(
-                        f"  [DIVERGÊNCIA] {table} (ID {sq_r[0]}), coluna '{col}': SQLite={sq_value} vs PG={pg_value}"
-                    )
+                    _log_cell_difference(table, sq_r, pg_r, c_idx, col)
     return table_diffs
+
+
+def _log_cell_difference(table: str, sqlite_row, postgres_row, column_index: int,
+                         column: str) -> None:
+    sqlite_value, postgres_value = sqlite_row[column_index], postgres_row[column_index]
+    if table == "user_biometrics" and column == "template_data":
+        sqlite_value = f"<biometria: {len(str(sqlite_value))} caracteres>"
+        postgres_value = f"<biometria: {len(str(postgres_value))} caracteres>"
+    else:
+        sqlite_value, postgres_value = repr(sqlite_value), repr(postgres_value)
+    print(
+        f"  [DIVERGÊNCIA] {table} (ID {sqlite_row[0]}), coluna '{column}': "
+        f"SQLite={sqlite_value} vs PG={postgres_value}"
+    )
 
 
 def get_table_schema(
@@ -236,13 +242,8 @@ def get_table_schema(
     pg_cols = [column for column, _, _ in pg_info]
     schema_errors: list[str] = []
 
-    if set(sq_cols) != set(pg_cols):
-        missing = sorted(set(sq_cols) - set(pg_cols))
-        extra = sorted(set(pg_cols) - set(sq_cols))
-        if missing:
-            schema_errors.append("ausentes no PostgreSQL: " + ", ".join(missing))
-        if extra:
-            schema_errors.append("extras no PostgreSQL: " + ", ".join(extra))
+    schema_errors = _column_set_errors(sq_cols, pg_cols)
+    if schema_errors:
         return sq_cols, pg_cols, schema_errors
 
     sq_types = {column: sqlite_type_family(declared) for column, declared in sq_info}
@@ -256,6 +257,27 @@ def get_table_schema(
                 f"{column}: SQLite={sq_types[column]} PostgreSQL={pg_types[column]}"
             )
     return sq_cols, pg_cols, schema_errors
+
+
+def _column_set_errors(sqlite_columns: list[str], postgres_columns: list[str]) -> list[str]:
+    missing = sorted(set(sqlite_columns) - set(postgres_columns))
+    extra = sorted(set(postgres_columns) - set(sqlite_columns))
+    errors = []
+    if missing:
+        errors.append("ausentes no PostgreSQL: " + ", ".join(missing))
+    if extra:
+        errors.append("extras no PostgreSQL: " + ", ".join(extra))
+    return errors
+
+
+def _report_row_id_differences(table: str, sqlite_ids: set, postgres_ids: set) -> int:
+    missing_ids = sorted(sqlite_ids - postgres_ids)
+    extra_ids = sorted(postgres_ids - sqlite_ids)
+    if missing_ids:
+        print(f"  [AUSENTES NO PG] {table}: {missing_ids[:10]}")
+    if extra_ids:
+        print(f"  [EXTRAS NO PG] {table}: {extra_ids[:10]}")
+    return len(missing_ids) + len(extra_ids)
 
 
 def verify_table_data(
@@ -288,13 +310,8 @@ def verify_table_data(
     sq_ids = {row[0] for row in sq_rows}
     pg_ids = {row[0] for row in pg_rows}
     if sq_ids != pg_ids:
-        missing_ids = sorted(sq_ids - pg_ids)
-        extra_ids = sorted(pg_ids - sq_ids)
-        if missing_ids:
-            print(f"  [AUSENTES NO PG] {table}: {missing_ids[:10]}")
-        if extra_ids:
-            print(f"  [EXTRAS NO PG] {table}: {extra_ids[:10]}")
-        return False, sq_count, pg_count, len(missing_ids) + len(extra_ids)
+        diffs = _report_row_id_differences(table, sq_ids, pg_ids)
+        return False, sq_count, pg_count, diffs
 
     diffs = _compare_table_rows(table, sq_rows, pg_rows, common_cols, target_tz)
     return diffs == 0, sq_count, pg_count, diffs
@@ -309,10 +326,7 @@ def verify_single_table(
     sq_cols, pg_cols, schema_errors = get_table_schema(table, sq_cur, pg_cur)
 
     if not sq_cols or not pg_cols or schema_errors:
-        status_msg = "ERRO DE SCHEMA"
-        print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'N/A':>12} | {status_msg:^12}")
-        for error in schema_errors[:5]:
-            print(f"  [SCHEMA] {error}")
+        _print_schema_failure(table, schema_errors)
         return False, 0, 0, max(1, len(schema_errors))
 
     matched, sq_count, pg_count, diffs = verify_table_data(table, sq_cur, pg_cur, sq_cols, target_tz)
@@ -320,6 +334,37 @@ def verify_single_table(
     print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {diffs:>12} | {status_str:^12}")
 
     return matched, sq_count, pg_count, diffs
+
+
+def _print_schema_failure(table: str, errors: list[str]) -> None:
+    print(f"{table:28} | {'N/A':>7} | {'N/A':>8} | {'N/A':>12} | {'ERRO DE SCHEMA':^12}")
+    for error in errors[:5]:
+        print(f"  [SCHEMA] {error}")
+
+
+def _verify_tables(sq_cur, pg_cur, target_tz: ZoneInfo) -> tuple[bool, int, int, int]:
+    all_matched = True
+    total_sq_rows = total_pg_rows = total_diffs = 0
+    for table in TABLE_ORDER:
+        matched, sqlite_count, postgres_count, differences = verify_single_table(
+            table, sq_cur, pg_cur, target_tz
+        )
+        total_sq_rows += sqlite_count
+        total_pg_rows += postgres_count
+        total_diffs += differences
+        if not matched:
+            all_matched = False
+    return all_matched, total_sq_rows, total_pg_rows, total_diffs
+
+
+def _print_audit_totals(all_matched: bool, sqlite_rows: int,
+                        postgres_rows: int, differences: int) -> None:
+    print("-" * 75)
+    print(f"Total de registros: SQLite={sqlite_rows:,} | PostgreSQL={postgres_rows:,}")
+    print(f"Total de divergências detectadas: {differences}")
+    status = "100% IDÊNTICO E AUDITADO COM SUCESSO" if all_matched else "DIVERGÊNCIAS DETECTADAS"
+    print(f"Resultado Final: {status}")
+    print("=" * 75)
 
 
 def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
@@ -370,11 +415,6 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
     print(f"{'Tabela':28} | {'SQLite':>7} | {'PG':>8} | {'Divergências':>12} | {'Status':^12}")
     print("-" * 75)
 
-    all_matched = True
-    total_sq_rows = 0
-    total_pg_rows = 0
-    total_diffs = 0
-
     try:
         table_errors = validate_table_sets(sq_cur, pg_cur)
         if table_errors:
@@ -382,20 +422,10 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
                 print(f"[SCHEMA] {error}")
             return False
 
-        for table in TABLE_ORDER:
-            matched, sq_c, pg_c, diffs = verify_single_table(table, sq_cur, pg_cur, target_tz)
-            total_sq_rows += sq_c
-            total_pg_rows += pg_c
-            total_diffs += diffs
-            if not matched:
-                all_matched = False
-
-        print("-" * 75)
-        print(f"Total de registros: SQLite={total_sq_rows:,} | PostgreSQL={total_pg_rows:,}")
-        print(f"Total de divergências detectadas: {total_diffs}")
-        final_status = "100% IDÊNTICO E AUDITADO COM SUCESSO" if all_matched else "DIVERGÊNCIAS DETECTADAS"
-        print(f"Resultado Final: {final_status}")
-        print("=" * 75)
+        all_matched, sqlite_rows, postgres_rows, differences = _verify_tables(
+            sq_cur, pg_cur, target_tz
+        )
+        _print_audit_totals(all_matched, sqlite_rows, postgres_rows, differences)
     finally:
         sq_cur.close()
         sq_conn.close()

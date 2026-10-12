@@ -1084,8 +1084,9 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
     mocker.patch.object(time_record_service, "_process_toggle_invalidations", new_callable=AsyncMock)
     mocker.patch.object(time_record_service, "_commit_and_audit_toggle_record", new_callable=AsyncMock)
     mgr_user = User(id=2, role=UserRole.MANAGER)
-    res3 = await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=mgr_user,
-                                                        background_tasks=bg)
+    res3 = await time_record_service.toggle_record_type(
+        db_session_mock, record_id=1, current_user=mgr_user
+    )
     assert res3.record_type == RecordType.EXIT
 
     req = MagicMock()

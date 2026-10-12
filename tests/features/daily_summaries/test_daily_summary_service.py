@@ -258,23 +258,22 @@ async def test_read_service_raises_when_summary_missing():
     scalars_mock.all.return_value = []
     session.scalars = AsyncMock(return_value=scalars_mock)
     session.sync_session = MagicMock()
-    with pytest.raises(DailySummaryUnavailableError):
-        await service.build_period(
-            session=session,
+    period_arguments = {
+        "session": session,
+        "user_id": 1,
+        "first": date(2026, 1, 1),
+        "last": date(2026, 1, 2),
+        "records": [TimeRecord(
             user_id=1,
-            first=date(2026, 1, 1),
-            last=date(2026, 1, 2),
-            records=[
-                TimeRecord(
-                    user_id=1,
-                    record_type=RecordType.ENTRY,
-                    record_datetime=datetime(2026, 1, 1, 8, 0),
-                )
-            ],
-            adjustments=[],
-            holidays=[],
-            historical_schedules=[],
-        )
+            record_type=RecordType.ENTRY,
+            record_datetime=datetime(2026, 1, 1, 8, 0),
+        )],
+        "adjustments": [],
+        "holidays": [],
+        "historical_schedules": [],
+    }
+    with pytest.raises(DailySummaryUnavailableError):
+        await service.build_period(**period_arguments)
 
 
 @pytest.mark.asyncio
@@ -681,4 +680,3 @@ async def test_schedule_change_preserves_reviewed_excess_in_history():
     assert audit.entity_id == 42
     assert audit.old_data["status"] == AdjustmentStatus.APPROVED.value
     assert audit.new_data["reason"] == "SCHEDULE_CHANGED"
-

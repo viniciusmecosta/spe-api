@@ -98,23 +98,33 @@ def format_cell(
     if value is None:
         return "NULL"
 
+    formatted = _format_semantic_cell(
+        table_name, col_name, value, timezone_name
+    )
+    if formatted is not None:
+        return formatted
+    return _format_scalar_cell(table_name, col_name, value, declared_type)
+
+
+def _format_semantic_cell(table_name: str, col_name: str, value: object,
+                          timezone_name: str | None) -> str | None:
     if col_name in BOOLEAN_COLUMNS.get(table_name, set()):
         return "TRUE" if normalize_boolean(value) else "FALSE"
-
     if col_name in JSONB_COLUMNS.get(table_name, set()):
         parsed = value if isinstance(value, (dict, list)) else json.loads(str(value))
         serialized = json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))
         return f"'{_escape_text(serialized)}'::jsonb"
-
     if col_name in TIMESTAMPTZ_COLUMNS.get(table_name, set()):
         return _format_timestamptz(value, timezone_name or get_timezone())
-
     if col_name in DATE_COLUMNS.get(table_name, set()):
         return _format_date(value)
-
     if col_name in TIME_COLUMNS.get(table_name, set()):
         return _format_time(value)
+    return None
 
+
+def _format_scalar_cell(table_name: str, col_name: str, value: object,
+                        declared_type: str) -> str:
     family = sqlite_type_family(declared_type)
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
@@ -128,7 +138,6 @@ def format_cell(
         if family != "binary":
             raise ValueError(f"valor binário inesperado em {table_name}.{col_name}")
         return f"decode('{bytes(value).hex()}', 'hex')"
-
     return f"'{_escape_text(str(value))}'"
 
 
@@ -137,33 +146,41 @@ def _sqlite_schema(cursor: sqlite3.Cursor) -> dict[str, dict[str, str]]:
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     )
     table_names = {row[0] for row in cursor.fetchall()}
-    expected_tables = set(MIGRATION_TABLES)
-    missing_tables = sorted(expected_tables - table_names)
-    extra_tables = sorted(table_names - expected_tables)
-    if missing_tables or extra_tables:
-        details = []
-        if missing_tables:
-            details.append(f"tabelas ausentes: {', '.join(missing_tables)}")
-        if extra_tables:
-            details.append(f"tabelas não suportadas: {', '.join(extra_tables)}")
-        raise ValueError("Schema SQLite incompatível (" + "; ".join(details) + ")")
+    _validate_table_names(table_names)
 
     schema: dict[str, dict[str, str]] = {}
     for table_name in MIGRATION_TABLES:
         cursor.execute(f"PRAGMA table_info({quote_identifier(table_name)})")
         columns = {str(row[1]): str(row[2] or "") for row in cursor.fetchall()}
-        expected_columns = EXPECTED_COLUMNS[table_name]
-        if set(columns) != expected_columns:
-            missing = sorted(expected_columns - set(columns))
-            extra = sorted(set(columns) - expected_columns)
-            details = []
-            if missing:
-                details.append(f"ausentes: {', '.join(missing)}")
-            if extra:
-                details.append(f"extras: {', '.join(extra)}")
-            raise ValueError(f"Colunas incompatíveis em {table_name} ({'; '.join(details)})")
+        _validate_table_columns(table_name, set(columns))
         schema[table_name] = columns
     return schema
+
+
+def _validate_table_names(actual: set[str]) -> None:
+    expected = set(MIGRATION_TABLES)
+    missing, extra = sorted(expected - actual), sorted(actual - expected)
+    if not missing and not extra:
+        return
+    details = []
+    if missing:
+        details.append(f"tabelas ausentes: {', '.join(missing)}")
+    if extra:
+        details.append(f"tabelas não suportadas: {', '.join(extra)}")
+    raise ValueError("Schema SQLite incompatível (" + "; ".join(details) + ")")
+
+
+def _validate_table_columns(table_name: str, actual: set[str]) -> None:
+    expected = EXPECTED_COLUMNS[table_name]
+    missing, extra = sorted(expected - actual), sorted(actual - expected)
+    if not missing and not extra:
+        return
+    details = []
+    if missing:
+        details.append(f"ausentes: {', '.join(missing)}")
+    if extra:
+        details.append(f"extras: {', '.join(extra)}")
+    raise ValueError(f"Colunas incompatíveis em {table_name} ({'; '.join(details)})")
 
 
 def _export_table_data(

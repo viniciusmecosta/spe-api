@@ -64,20 +64,18 @@ async def test_reprocess_all_users_and_invalid_requests(mocker):
         service._run, [1, 3], date(2026, 8, 1), date(2026, 8, 2)
     )
 
+    invalid_date_request = DailySummaryReprocessRequest(
+        start_date=date(2026, 8, 2), end_date=date(2026, 8, 1)
+    )
     with pytest.raises(HTTPException) as invalid_dates:
-        await service.start(
-            DailySummaryReprocessRequest(start_date=date(2026, 8, 2), end_date=date(2026, 8, 1)),
-            background, operator_id=9,
-        )
+        await service.start(invalid_date_request, background, operator_id=9)
     assert invalid_dates.value.status_code == 400
 
+    missing_user_request = DailySummaryReprocessRequest(
+        start_date=date(2026, 8, 1), end_date=date(2026, 8, 2), user_ids=[1, 2]
+    )
     with pytest.raises(HTTPException) as missing_user:
-        await service.start(
-            DailySummaryReprocessRequest(
-                start_date=date(2026, 8, 1), end_date=date(2026, 8, 2), user_ids=[1, 2]
-            ),
-            background, operator_id=9,
-        )
+        await service.start(missing_user_request, background, operator_id=9)
     assert missing_user.value.status_code == 404
 
 
@@ -93,11 +91,11 @@ async def test_closed_period_is_rejected_before_scheduling(mocker):
     )
     background = MagicMock()
 
+    request = DailySummaryReprocessRequest(
+        start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)
+    )
     with pytest.raises(HTTPException) as closed:
-        await service.start(
-            DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)),
-            background, operator_id=9,
-        )
+        await service.start(request, background, operator_id=9)
     assert closed.value.status_code == 409
     payroll.assert_awaited_once()
     db.scalars.assert_not_awaited()

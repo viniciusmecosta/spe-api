@@ -636,10 +636,8 @@ async def test_build_email_attachments_postgresql(mocker):
 
     att_unzipped = await orchestrator._build_email_attachments(
         "backup.sql",
-        False,
         datetime(2023, 1, 1).date(),
         datetime(2023, 1, 2).date(),
-        sql_file="inserts.sql",
     )
     filenames_unzipped = [a[1] for a in att_unzipped]
     assert "spe-db.sql" not in filenames_unzipped
@@ -647,10 +645,8 @@ async def test_build_email_attachments_postgresql(mocker):
 
     att_zip = await orchestrator._build_email_attachments(
         "backup.sql.zip.enc",
-        True,
         datetime(2023, 1, 1).date(),
         datetime(2023, 1, 2).date(),
-        sql_file="inserts.sql",
     )
     filenames_zip = [a[1] for a in att_zip]
     assert "spe.zip.enc" in filenames_zip
@@ -702,15 +698,15 @@ async def test_resolve_backup_filename(orchestrator):
 async def test_prepare_backup_attachments_branches(orchestrator, mocker):
     mocker.patch("os.path.exists", return_value=True)
     att = []
-    orchestrator._prepare_backup_attachments(att, "spe.zip.enc", "spe-db.sql", "spe_dump.sql")
+    orchestrator._prepare_backup_attachments(att, "spe.zip.enc")
     assert att == [("spe.zip.enc", "spe.zip.enc")]
 
     att2 = []
-    orchestrator._prepare_backup_attachments(att2, None, "spe-db.sql", "spe_dump.sql")
+    orchestrator._prepare_backup_attachments(att2, None)
     assert att2 == []
 
     att3 = []
-    orchestrator._prepare_backup_attachments(att3, None, None, "spe_dump.sql")
+    orchestrator._prepare_backup_attachments(att3, None)
     assert att3 == []
 
 

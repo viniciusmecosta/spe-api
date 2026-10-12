@@ -160,6 +160,21 @@ def test_strip_sql_comments_preserves_comment_markers_inside_data():
     assert "'/* dado */'" in cleaned
 
 
+def test_sql_parser_preserves_comments_and_semicolons_inside_dollar_quotes():
+    sql = """-- remover
+    DO $body$ BEGIN RAISE NOTICE 'a;b -- c'; /* não remover */; END $body$;
+    INSERT INTO users (id) VALUES (1);
+    """
+
+    statements = split_sql_statements(sql)
+    cleaned = strip_sql_comments(sql)
+
+    assert len(statements) == 2
+    assert "'a;b -- c'" in statements[0]
+    assert "/* não remover */" in cleaned
+    assert "-- remover" not in cleaned
+
+
 @pytest.mark.parametrize(
     "sql",
     [

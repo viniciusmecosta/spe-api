@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from app.core.config import isDev, isProd, settings
+from app.core.config import is_dev, is_prod, settings
 from app.core.logger import get_log_path
 from app.database.session import get_async_session_context
 from app.features.reports.daily_report_service import daily_report_service
@@ -94,7 +94,7 @@ class RoutineOrchestrator:
         await asyncio.to_thread(self._cleanup_backup_files_sync, backup_path, sql_path, zip_path)
 
     async def execute_hourly_backup_telegram(self):
-        if not isProd():
+        if not is_prod():
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -150,7 +150,7 @@ class RoutineOrchestrator:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
     async def send_managerial_report_telegram(self):
-        if isDev():
+        if is_dev():
             return
 
         tz = ZoneInfo(settings.TIMEZONE)
@@ -243,8 +243,6 @@ class RoutineOrchestrator:
         self,
         attachments: list[tuple[str, str]],
         zip_path: str | None,
-        backup_path: str | None,
-        sql_path: str | None,
     ) -> None:
         if zip_path and zip_path.endswith(".enc") and os.path.exists(zip_path):
             attachments.insert(0, (zip_path, ENCRYPTED_BACKUP_FILENAME))
@@ -270,7 +268,7 @@ class RoutineOrchestrator:
             )
 
     async def run_daily_backup_routine_email(self):
-        if not isProd():
+        if not is_prod():
             return
         tz = ZoneInfo(settings.TIMEZONE)
         now = datetime.now(tz)
@@ -313,7 +311,7 @@ class RoutineOrchestrator:
             logger.error('Backup - "Email diário" Error')
             return
 
-        self._prepare_backup_attachments(attachments, zip_path, backup_path, sql_path)
+        self._prepare_backup_attachments(attachments, zip_path)
 
         today_log_path = get_log_path(today)
         if await asyncio.to_thread(os.path.exists, today_log_path):
@@ -327,7 +325,7 @@ class RoutineOrchestrator:
             await self._cleanup_backup_files(backup_path, sql_path, zip_path)
 
     async def clean_old_logs(self, days_to_keep: int = None):
-        if isDev():
+        if is_dev():
             return
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
         tz = ZoneInfo(settings.TIMEZONE)
@@ -472,10 +470,8 @@ class RoutineOrchestrator:
     async def _build_email_attachments(
         self,
         backup_file: str,
-        is_zip: bool,
         yesterday: date,
         today: date,
-        sql_file: str | None = None,
     ) -> list[tuple[str, str]]:
         filename = ENCRYPTED_BACKUP_FILENAME if backup_file.endswith(".enc") else BACKUP_ZIP_FILENAME
         attachments = [(backup_file, filename)]
@@ -503,7 +499,7 @@ class RoutineOrchestrator:
             raise BackupGenerationFailedError()
 
         backup_file = zip_path
-        attachments = await self._build_email_attachments(backup_file, bool(zip_path), yesterday, today, sql_file=sql_path)
+        attachments = await self._build_email_attachments(backup_file, yesterday, today)
 
         try:
             success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,

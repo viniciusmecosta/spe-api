@@ -98,7 +98,14 @@ class BackupService:
             "--no-owner", "--no-privileges", PG_ENCODING_UTF8,
             f"--snapshot={snapshot}", *flags,
         ]
-        host_bin = self._find_pg_dump()
+        commands = self._snapshot_commands(params, common, self._find_pg_dump())
+        for command, environment in commands:
+            if self._run_snapshot_dump(command, environment, output_path):
+                return True
+        Path(output_path).unlink(missing_ok=True)
+        return False
+
+    def _snapshot_commands(self, params, common, host_bin):
         commands = []
         if host_bin:
             commands.append((
@@ -111,14 +118,18 @@ class BackupService:
                  "spe_postgres", "pg_dump", *common],
                 None,
             ))
-        for command, environment in commands:
-            with self._open_private(output_path, "wb") as output:
-                result = subprocess.run(command, env=environment, stdout=output, stderr=subprocess.PIPE)
-            if result.returncode == 0 and os.path.getsize(output_path) > 0:
-                self._remove_pg_dump_directives(output_path)
-                return True
-            logger.warning("pg_dump com snapshot falhou: %s", result.stderr.decode("utf-8", "replace")[:500])
-        Path(output_path).unlink(missing_ok=True)
+        return commands
+
+    def _run_snapshot_dump(self, command, environment, output_path: str) -> bool:
+        with self._open_private(output_path, "wb") as output:
+            result = subprocess.run(command, env=environment, stdout=output, stderr=subprocess.PIPE)
+        if result.returncode == 0 and os.path.getsize(output_path) > 0:
+            self._remove_pg_dump_directives(output_path)
+            return True
+        logger.warning(
+            "pg_dump com snapshot falhou: %s",
+            result.stderr.decode("utf-8", "replace")[:500],
+        )
         return False
 
     @staticmethod
@@ -272,6 +283,36 @@ class BackupService:
             f.write(text)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
+    @staticmethod
+    def _remove_file_safely(path: str) -> None:
+        if not os.path.exists(path):
+            return
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    def _load_live_row_counts(self) -> dict[str, int]:
+        import psycopg2
+        from psycopg2 import sql
+
+        params = self._get_postgres_connection_params()
+        with psycopg2.connect(**params) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
+                    "AND table_name != 'alembic_version'"
+                )
+                tables = [row[0] for row in cursor.fetchall()]
+                counts = {}
+                for table in tables:
+                    cursor.execute(
+                        sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table))
+                    )
+                    counts[table] = cursor.fetchone()[0]
+                return counts
+
     def _dump_postgresql_schema(self, output_path: str) -> bool:
         if self._snapshot_id:
             return self._dump_with_snapshot(output_path, schema_only=True)
@@ -392,11 +433,7 @@ class BackupService:
                 if success and os.path.exists(backup_filename) and os.path.getsize(backup_filename) > 0:
                     return backup_filename
 
-                if os.path.exists(backup_filename):
-                    try:
-                        os.remove(backup_filename)
-                    except OSError:
-                        pass
+                self._remove_file_safely(backup_filename)
                 logger.error("Falha ao gerar schema do PostgreSQL.")
                 return None
             except Exception as e:
@@ -404,11 +441,7 @@ class BackupService:
                     f"Erro de banco PostgreSQL ao criar backup seguro: {type(e).__name__} - {e}",
                     exc_info=False
                 )
-                if os.path.exists(backup_filename):
-                    try:
-                        os.remove(backup_filename)
-                    except OSError:
-                        pass
+                self._remove_file_safely(backup_filename)
                 return None
 
     def create_sql_dump(self) -> str | None:
@@ -420,34 +453,15 @@ class BackupService:
         try:
             success = self._dump_postgresql_inserts(sql_filename)
             if success and os.path.exists(sql_filename) and os.path.getsize(sql_filename) > 0:
-                row_counts = self._snapshot_counts
-                if row_counts is None:
-                    import psycopg2
-                    from psycopg2 import sql
-
-                    params = self._get_postgres_connection_params()
-                    with psycopg2.connect(**params) as connection:
-                        with connection.cursor() as cursor:
-                            cursor.execute(
-                                "SELECT table_name FROM information_schema.tables "
-                                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-                                "AND table_name != 'alembic_version'"
-                            )
-                            tables = [row[0] for row in cursor.fetchall()]
-                            row_counts = {}
-                            for table in tables:
-                                cursor.execute(
-                                    sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table))
-                                )
-                                row_counts[table] = cursor.fetchone()[0]
+                row_counts = (
+                    self._snapshot_counts
+                    if self._snapshot_counts is not None
+                    else self._load_live_row_counts()
+                )
                 add_manifest(Path(sql_filename), row_counts)
                 return sql_filename
 
-            if os.path.exists(sql_filename):
-                try:
-                    os.remove(sql_filename)
-                except OSError:
-                    pass
+            self._remove_file_safely(sql_filename)
             logger.error("Falha ao gerar dump de inserts do PostgreSQL.")
             return None
         except Exception as e:
@@ -455,11 +469,7 @@ class BackupService:
                 f"Erro ao gerar dump SQL de inserts: {type(e).__name__} - {e}",
                 exc_info=False
             )
-            if os.path.exists(sql_filename):
-                try:
-                    os.remove(sql_filename)
-                except OSError:
-                    pass
+            self._remove_file_safely(sql_filename)
             return None
 
     def compress_files(self, files_to_compress: dict[str, str], output_zip_path: str) -> str | None:
