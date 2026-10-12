@@ -106,13 +106,15 @@ def main() -> None:
         assert _queued(session, user_id, first + timedelta(days=3))
         assert not _queued(session, user_id, first + timedelta(days=4))
 
+        local_today = datetime.now(ZoneInfo(settings.TIMEZONE)).date()
+        open_start = local_today - timedelta(days=14)
         session.add(UserWorkScheduleConfig(
-            user_id=user_id, day_of_week=0, daily_hours=8,
-            valid_from=date(2026, 10, 25), valid_until=None,
+            user_id=user_id, day_of_week=open_start.weekday(), daily_hours=8,
+            valid_from=open_start, valid_until=None,
         ))
         session.flush()
-        assert _queued(session, user_id, date(2026, 10, 26))
-        assert not _queued(session, user_id, date(2026, 10, 31))
+        assert _queued(session, user_id, open_start)
+        assert not _queued(session, user_id, local_today + timedelta(days=7))
 
         closure = session.scalar(select(PayrollClosure).where(
             PayrollClosure.is_closed.is_(True),

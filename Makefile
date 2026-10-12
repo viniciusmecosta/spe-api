@@ -111,9 +111,13 @@ db-apply-dump: db-pg-up
 db-check: db-pg-up
 	$(PYTHON) scripts/verify_parity.py
 
-# Executa a migração completa e confere os dados.
+# Migra SQLite na revisão 002, aplica as demais migrações e cria a apuração histórica.
 db-migrate-all: db-pg-up
-	$(ALEMBIC) upgrade head
+	$(ALEMBIC) upgrade 002
 	$(PYTHON) scripts/export_sqlite_to_postgresql.py
+	$(PYTHON) scripts/apply_sql_to_postgresql.py --dry-run
 	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
+	$(ALEMBIC) upgrade head
+	$(PYTHON) scripts/verify_parity.py
+	$(PYTHON) -m scripts.backfill_daily_summaries --execute
 	$(PYTHON) scripts/verify_parity.py

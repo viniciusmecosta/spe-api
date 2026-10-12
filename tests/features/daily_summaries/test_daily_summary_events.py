@@ -387,7 +387,6 @@ def test_enqueue_changed_days_expands_holiday_change_to_all_users():
 
 def test_after_commit_waits_for_recalculation_and_rollback_clears_state():
     task = MagicMock()
-    task_result = MagicMock()
     session = MagicMock(spec=Session)
     session.info = {
         "daily_summary_changed_days": {(1, date(2026, 4, 1))},

@@ -61,9 +61,13 @@ async def backfill(selected: tuple[int, int] | None, execute: bool) -> None:
         importlib.import_module(module)
     async with AsyncSessionLocal() as session:
         user_ids = list((await session.scalars(select(User.id).order_by(User.id))).all())
+    today = datetime.now(ZoneInfo(settings.TIMEZONE)).date()
     for year, month in periods:
         processed = 0
-        for day in range(1, calendar.monthrange(year, month)[1] + 1):
+        last_day = calendar.monthrange(year, month)[1]
+        if (year, month) == (today.year, today.month):
+            last_day = today.day
+        for day in range(1, last_day + 1):
             current = date(year, month, day)
             for user_id in user_ids:
                 await daily_summary_service.calculate_day(

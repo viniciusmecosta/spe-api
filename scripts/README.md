@@ -19,10 +19,10 @@ cp .env.example .env
 Confira no `.env` principalmente `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SQLALCHEMY_DATABASE_URI` e a `SECRET_KEY` já usada pela API. Ela precisa ter pelo menos 32 bytes. Para restaurar um backup criptografado em outra máquina, copie a chave **original**; gerar uma chave nova não abre o arquivo. Numa instalação nova, preencha esse campo uma vez e guarde a chave fora do servidor. Nenhuma variável nova é necessária. Depois execute:
 
 ```bash
-make setup && make db-init
+make setup && make db-pg-up
 ```
 
-Esse comando inicia o PostgreSQL e cria ou atualiza sua estrutura com o Alembic. Se o banco não iniciar, o Alembic não será executado. Depois, escolha abaixo somente a operação que deseja executar.
+Esse comando instala as dependências e inicia o PostgreSQL. A estrutura é criada na etapa específica de cada operação.
 
 ## Opção 1: restaurar um backup PostgreSQL recebido por e-mail
 
@@ -32,10 +32,10 @@ Salve o anexo com o nome `spe.zip.enc` dentro da pasta `scripts`:
 scripts/spe.zip.enc
 ```
 
-Com a preparação inicial concluída, execute:
+Com a preparação inicial concluída, crie a estrutura e restaure:
 
 ```bash
-make restore
+make db-init && make restore
 ```
 
 O restore também aceita `spe.zip` ou `spe_dump.sql` antigos, mas exige confirmação especial por não terem manifesto. Para `spe.zip.enc`, ele autentica e descriptografa o pacote com a `SECRET_KEY`, valida o manifesto, preserva a estrutura e o `alembic_version`, insere os dados em transação e compara a quantidade de linhas de cada tabela. Se alguma validação falhar, desfaz a transação.
@@ -56,19 +56,13 @@ Coloque o banco SQLite com o nome `spe.db` na raiz do projeto:
 spe.db
 ```
 
-Com a preparação inicial concluída, execute as três etapas:
-
-```bash
-make db-dump-sqlite && make db-apply-dump && make db-check
-```
-
-Elas convertem os dados do SQLite, limpam os dados atuais do PostgreSQL, importam o dump e comparam os dois bancos célula por célula.
-
-Como atalho, o comando abaixo faz a preparação do PostgreSQL e todas essas etapas:
+Com a preparação inicial concluída, execute:
 
 ```bash
 make db-migrate-all
 ```
+
+O comando aplica as revisões `001` e `002`, exporta o SQLite, valida e importa os dados, aplica `003`, compara as tabelas e cria os resumos diários até a data atual. Use apenas em um PostgreSQL novo para essa migração; ele substitui os dados das tabelas de destino.
 
 O dump convertido é criado automaticamente em:
 

@@ -30,5 +30,3 @@ async def test_lifespan_dev_does_not_schedule_backups(mocker):
         assert "daily_backup_email" not in job_ids
         assert "hourly_backup_telegram" not in job_ids
         assert "hourly_ntp_sync" in job_ids
-
-
