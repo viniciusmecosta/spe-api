@@ -198,12 +198,25 @@ def _compare_table_rows(
 ) -> int:
     table_diffs = 0
     for sq_r, pg_r in zip(sq_rows, pg_rows):
-        for c_idx, col in enumerate(common_cols):
-            if not are_cells_equal(sq_r[c_idx], pg_r[c_idx], col, table, target_tz):
-                table_diffs += 1
-                if table_diffs <= 3:
-                    _log_cell_difference(table, sq_r, pg_r, c_idx, col)
+        table_diffs += _compare_row(
+            table, sq_r, pg_r, common_cols, target_tz, table_diffs
+        )
     return table_diffs
+
+
+def _compare_row(table: str, sqlite_row: tuple, postgres_row: tuple,
+                 columns: list[str], target_tz: ZoneInfo, prior_diffs: int) -> int:
+    row_diffs = 0
+    for column_index, column in enumerate(columns):
+        if are_cells_equal(
+            sqlite_row[column_index], postgres_row[column_index],
+            column, table, target_tz,
+        ):
+            continue
+        row_diffs += 1
+        if prior_diffs + row_diffs <= 3:
+            _log_cell_difference(table, sqlite_row, postgres_row, column_index, column)
+    return row_diffs
 
 
 def _log_cell_difference(table: str, sqlite_row, postgres_row, column_index: int,
@@ -367,6 +380,24 @@ def _print_audit_totals(all_matched: bool, sqlite_rows: int,
     print("=" * 75)
 
 
+def _print_table_set_errors(errors: list[str]) -> None:
+    for error in errors:
+        print(f"[SCHEMA] {error}")
+
+
+def _run_parity_checks(sq_cur: Any, pg_cur: Any, target_tz: ZoneInfo) -> bool:
+    table_errors = validate_table_sets(sq_cur, pg_cur)
+    if table_errors:
+        _print_table_set_errors(table_errors)
+        return False
+
+    all_matched, sqlite_rows, postgres_rows, differences = _verify_tables(
+        sq_cur, pg_cur, target_tz
+    )
+    _print_audit_totals(all_matched, sqlite_rows, postgres_rows, differences)
+    return all_matched
+
+
 def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
     sq_cur.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
@@ -416,23 +447,12 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
     print("-" * 75)
 
     try:
-        table_errors = validate_table_sets(sq_cur, pg_cur)
-        if table_errors:
-            for error in table_errors:
-                print(f"[SCHEMA] {error}")
-            return False
-
-        all_matched, sqlite_rows, postgres_rows, differences = _verify_tables(
-            sq_cur, pg_cur, target_tz
-        )
-        _print_audit_totals(all_matched, sqlite_rows, postgres_rows, differences)
+        return _run_parity_checks(sq_cur, pg_cur, target_tz)
     finally:
         sq_cur.close()
         sq_conn.close()
         pg_cur.close()
         pg_conn.close()
-
-    return all_matched
 
 
 def main() -> None:

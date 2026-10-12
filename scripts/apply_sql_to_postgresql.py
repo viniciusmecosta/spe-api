@@ -515,6 +515,42 @@ def _validate_applied_row_counts(cursor, application_tables, validator, expected
             )
 
 
+def _validate_restore_target(cursor, insert_tables, dump_revisions,
+                             manifest_validator, truncate_first, expected_database):
+    cursor.execute("SELECT current_database()")
+    current_database = cursor.fetchone()[0]
+    if expected_database and current_database != expected_database:
+        raise RuntimeError(
+            f"Banco conectado é {current_database!r}, mas {expected_database!r} foi confirmado"
+        )
+    application_tables, target_revisions = _validate_target_schema(
+        cursor, insert_tables, dump_revisions
+    )
+    row_counts = manifest_validator(set(application_tables)) if truncate_first else None
+    result = {
+        "database": current_database,
+        "statements": None,
+        "insert_tables": sorted(insert_tables),
+        "alembic_revisions": sorted(target_revisions),
+        "truncated_tables": application_tables if truncate_first else [],
+    }
+    return application_tables, row_counts, result
+
+
+def _execute_restore(cursor, statement_factory, statement_count, application_tables,
+                     manifest_validator, row_counts, truncate_first):
+    cursor.execute("SELECT pg_advisory_xact_lock(hashtext('spe:data_restore'))")
+    cursor.execute("SET LOCAL search_path = public, pg_catalog")
+    cursor.execute("SET LOCAL standard_conforming_strings = on")
+    if truncate_first:
+        _truncate_database_tables(cursor, application_tables)
+    cursor.execute("SET CONSTRAINTS ALL DEFERRED")
+    _execute_statements(cursor, statement_factory, statement_count)
+    _validate_applied_row_counts(
+        cursor, application_tables, manifest_validator, row_counts
+    )
+
+
 def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
     remainder = ""
     with sql_path.open("r", encoding="utf-8") as source:
@@ -558,44 +594,21 @@ def _apply_prepared_dump(
     connection.autocommit = False
     cursor = connection.cursor()
     try:
-        cursor.execute("SELECT current_database()")
-        current_database = cursor.fetchone()[0]
-        if expected_database and current_database != expected_database:
-            raise RuntimeError(
-                f"Banco conectado é {current_database!r}, mas {expected_database!r} foi confirmado"
-            )
-        application_tables, target_revisions = _validate_target_schema(
-            cursor, insert_tables, dump_revisions,
+        application_tables, row_counts, result = _validate_restore_target(
+            cursor, insert_tables, dump_revisions, manifest_validator,
+            truncate_first, expected_database,
         )
-        row_counts = manifest_validator(set(application_tables)) if truncate_first else None
+        result["statements"] = statement_count
         if dry_run:
             connection.rollback()
-            return {
-                "database": current_database,
-                "statements": statement_count,
-                "insert_tables": sorted(insert_tables),
-                "alembic_revisions": sorted(target_revisions),
-                "truncated_tables": [],
-            }
-
-        cursor.execute("SELECT pg_advisory_xact_lock(hashtext('spe:data_restore'))")
-        cursor.execute("SET LOCAL search_path = public, pg_catalog")
-        cursor.execute("SET LOCAL standard_conforming_strings = on")
-        if truncate_first:
-            _truncate_database_tables(cursor, application_tables)
-        cursor.execute("SET CONSTRAINTS ALL DEFERRED")
-        _execute_statements(cursor, statement_factory, statement_count)
-        _validate_applied_row_counts(
-            cursor, application_tables, manifest_validator, row_counts
+            result["truncated_tables"] = []
+            return result
+        _execute_restore(
+            cursor, statement_factory, statement_count, application_tables,
+            manifest_validator, row_counts, truncate_first,
         )
         connection.commit()
-        return {
-            "database": current_database,
-            "statements": statement_count,
-            "insert_tables": sorted(insert_tables),
-            "alembic_revisions": sorted(target_revisions),
-            "truncated_tables": application_tables if truncate_first else [],
-        }
+        return result
     except Exception as exc:
         connection.rollback()
         raise RuntimeError(f"Falha ao aplicar SQL no PostgreSQL: {exc}") from exc
