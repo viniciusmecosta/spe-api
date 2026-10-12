@@ -826,8 +826,8 @@ def test_build_daily_excess_info_partial_approved(service):
     adj = MagicMock()
     adj.id = 10
     adj.status = AdjustmentStatus.APPROVED
-    adj.amount_hours = 1.0
-    adj.approved_amount_hours = 0.5
+    adj.amount_hours = 2.0
+    adj.approved_amount_hours = 1.0
 
     res = service.response_builder._build_daily_excess_info(acc_res, adj, True, "APPROVED", 10)
     assert res is not None
@@ -933,8 +933,8 @@ def test_report_service_helper_branches(service):
         excess_status="APPROVED",
         daily_excess_id=1,
     )
-    assert info.total_minutes == 120
-    assert info.approved_minutes == 60
+    assert info.total_minutes == 0
+    assert info.approved_minutes == 0
 
     mock_adj_no_appr = MagicMock(amount_hours=1.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=None)
     info2 = service.response_builder._build_daily_excess_info(
@@ -944,7 +944,7 @@ def test_report_service_helper_branches(service):
         excess_status="APPROVED",
         daily_excess_id=2,
     )
-    assert info2.approved_minutes == 60
+    assert info2.approved_minutes == 0
 
     from app.features.reports.report_schemas import ReportAdjustmentItem
     item1 = ReportAdjustmentItem(id=1, user_id=1, adjustment_type=AdjustmentType.WAIVER,

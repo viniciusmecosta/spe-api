@@ -90,19 +90,7 @@ class ReportResponseBuilder:
             return None
 
         total_sec = float(getattr(accounted_res, 'total_excess_seconds', 0.0) or 0.0)
-        if total_sec <= 0.0 and daily_excess_adj:
-            amount = getattr(daily_excess_adj, 'amount_hours', 0.0)
-            if isinstance(amount, (int, float)):
-                total_sec = float(amount * 3600.0)
-
         approved_sec = float(getattr(accounted_res, 'approved_seconds', 0.0) or 0.0)
-        if approved_sec <= 0.0 and daily_excess_adj and getattr(daily_excess_adj, 'status', None) == AdjustmentStatus.APPROVED:
-            appr_amount = getattr(daily_excess_adj, 'approved_amount_hours', None)
-            if isinstance(appr_amount, (int, float)):
-                approved_sec = min(total_sec, max(0.0, float(appr_amount * 3600.0)))
-            elif total_sec > 0:
-                approved_sec = total_sec
-
         unapproved_sec = max(0.0, total_sec - approved_sec)
 
         total_min = int(round(total_sec / 60))
