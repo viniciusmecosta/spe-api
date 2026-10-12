@@ -3,7 +3,7 @@ import os
 import shutil
 import uuid
 from datetime import date, datetime
-from fastapi import BackgroundTasks, Depends, HTTPException, UploadFile, status
+from fastapi import Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
@@ -29,7 +29,6 @@ from app.features.adjustments.adjustment_repository import (
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentWaiverCreate,
-    BulkReprocessDailyExcessRequest,
 )
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service, serialize_model
@@ -37,7 +36,6 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
@@ -472,61 +470,5 @@ class AdjustmentService:
                 )
 
         return safe_file_path, filename
-
-    async def reprocess_historical_daily_excess(
-            self,
-            db: AsyncSession | None = None,
-            request_in: BulkReprocessDailyExcessRequest | None = None,
-            background_tasks: BackgroundTasks | None = None,
-            current_user: User | None = None,
-    ) -> dict[str, str]:
-        session = db if db is not None else self.db
-        assert session is not None
-        assert request_in is not None
-        assert current_user is not None
-        assert background_tasks is not None
-        if current_user.role != UserRole.MAINTAINER:
-            raise AdjustmentPermissionError(
-                "Acesso negado. Requer privilégios de Mantenedor.",
-            )
-
-        if request_in.start_date > request_in.end_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A data inicial não pode ser maior que a data final.",
-            )
-
-        curr = request_in.start_date.replace(day=1)
-        while curr <= request_in.end_date:
-            await self._validate_period_open(session, curr)
-            if curr.month == 12:
-                curr = curr.replace(year=curr.year + 1, month=1)
-            else:
-                curr = curr.replace(month=curr.month + 1)
-
-        background_tasks.add_task(
-            daily_excess_service.reprocess_user_ranges_bg,
-            request_in.user_ids,
-            request_in.start_date,
-            request_in.end_date,
-            request_in.overwrite_reviewed,
-        )
-
-        await audit_service.async_log_change(
-            session,
-            current_user.id,
-            "REPROCESS",
-            entity="DAILY_EXCESS",
-            entity_id=0,
-            new_data={
-                "start_date": str(request_in.start_date),
-                "end_date": str(request_in.end_date),
-                "user_ids": request_in.user_ids,
-                "overwrite_reviewed": request_in.overwrite_reviewed,
-            },
-        )
-
-        return {"status": "success", "message": "Reprocessamento de excedente diário iniciado em segundo plano."}
-
 
 adjustment_service = AdjustmentService()

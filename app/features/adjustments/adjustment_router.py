@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -18,7 +17,6 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
     AdjustmentWaiverCreate,
-    BulkReprocessDailyExcessRequest,
 )
 from app.features.adjustments.adjustment_service import AdjustmentService
 from app.features.users.user_models import User
@@ -59,24 +57,6 @@ async def waive_absence_admin(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
     return await service.create_manager_waiver(waiver_in=waiver_in, manager_id=current_user.id)
-
-
-@router.post(
-    "/admin/reprocess-daily-excess",
-    status_code=status.HTTP_200_OK,
-    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
-)
-async def reprocess_historical_daily_excess(
-        request_in: BulkReprocessDailyExcessRequest,
-        background_tasks: BackgroundTasks,
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-) -> dict[str, str]:
-    return await service.reprocess_historical_daily_excess(
-        request_in=request_in,
-        background_tasks=background_tasks,
-        current_user=current_user,
-    )
 
 
 @router.post(

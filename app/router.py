@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.core.config import settings
 from app.features.adjustments.adjustment_router import router as adjustments_router
 from app.features.auth.auth_router import router as auth_router
+from app.features.daily_summaries.daily_summary_router import router as daily_summaries_router
 from app.features.companies.company_router import router as companies_router
 from app.features.devices.device_router import (
     biometrics_router,
@@ -40,6 +41,7 @@ api_router.include_router(auth_router, prefix="/auth", tags=["Auth"])
 api_router.include_router(backup_router, prefix="/backup", tags=["Backup"])
 api_router.include_router(biometrics_router, prefix="/biometrics", tags=["Biometrics"])
 api_router.include_router(companies_router, prefix="/companies", tags=["Companies"])
+api_router.include_router(daily_summaries_router, prefix="/daily-summaries", tags=["Daily Summaries"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(device_router, prefix="/devices", tags=["Devices"])
 api_router.include_router(device_credentials_router, prefix="/device-credentials", tags=["Device Credentials"])

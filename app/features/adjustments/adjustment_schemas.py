@@ -42,13 +42,6 @@ class AdjustmentApproveRequest(BaseModel):
     approved_amount_hours: float | None = Field(default=None, ge=0)
 
 
-class BulkReprocessDailyExcessRequest(BaseModel):
-    start_date: date
-    end_date: date
-    user_ids: list[int]
-    overwrite_reviewed: bool = False
-
-
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
     file_path: str
