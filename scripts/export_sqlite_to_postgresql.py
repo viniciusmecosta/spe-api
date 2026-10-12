@@ -190,6 +190,7 @@ def _export_table_data(
     column_types: dict[str, str],
     batch_size: int,
     timezone_name: str,
+    first_id: int | None = None,
 ) -> None:
     if not rows:
         return
@@ -201,12 +202,14 @@ def _export_table_data(
     for offset in range(0, len(rows), batch_size):
         batch = rows[offset: offset + batch_size]
         values = []
-        for row in batch:
+        for row_offset, row in enumerate(batch):
             formatted = [
                 format_cell(
                     table_name,
                     column,
-                    row[column],
+                    first_id + offset + row_offset
+                    if first_id is not None and column == "id"
+                    else row[column],
                     column_types[column],
                     timezone_name,
                 )
@@ -234,6 +237,11 @@ def _write_dump(
         cursor.execute(f"SELECT * FROM {table_sql} ORDER BY {quote_identifier('id')} ASC")
         stats[table_name] = 0
         while rows := cursor.fetchmany(batch_size):
+            if table_name == "audit_logs":
+                rows = [row for row in rows if row["action"] != "LOGIN"]
+            if not rows:
+                continue
+            first_id = stats[table_name] + 1 if table_name == "audit_logs" else None
             stats[table_name] += len(rows)
             _export_table_data(
                 output,
@@ -242,6 +250,7 @@ def _write_dump(
                 schema[table_name],
                 batch_size,
                 timezone_name,
+                first_id,
             )
 
     for table_name in TABLE_ORDER:

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -211,6 +212,10 @@ def test_export_is_data_only_atomic_and_adds_explicit_timezone(tmp_path):
             VALUES (1, 'user', 'Usuário', 1, '2026-01-02 03:04:05')
             """
         )
+        connection.executemany(
+            "INSERT INTO audit_logs (id, action) VALUES (?, ?)",
+            [(10, "CREATE"), (20, "LOGIN"), (30, "UPDATE")],
+        )
         connection.commit()
     finally:
         connection.close()
@@ -219,8 +224,15 @@ def test_export_is_data_only_atomic_and_adds_explicit_timezone(tmp_path):
     sql = output_path.read_text(encoding="utf-8")
     assert stats["companies"] == 1
     assert stats["users"] == 1
+    assert stats["audit_logs"] == 2
+    assert "daily_summaries" not in stats
     assert "CREATE TABLE" not in sql
     assert "alembic_version" not in sql
+    assert "'LOGIN'" not in sql
+    assert "(1, 'CREATE'" in sql
+    assert "(2, 'UPDATE'" in sql
+    manifest = json.loads(sql.splitlines()[0].removeprefix("-- SPE-DUMP-MANIFEST: "))
+    assert "daily_summaries" not in manifest["row_counts"]
     assert "'2026-01-02T03:04:05-03:00'::timestamptz" in sql
     assert "EXISTS (SELECT 1 FROM \"printers\")" in sql
 
