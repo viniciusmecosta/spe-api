@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 from app.features.time_records.time_record_schemas import TimeRecordSimple
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.timezone import to_app_timezone
 
 
 class AdjustmentRequestBase(BaseModel):
@@ -99,7 +100,10 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
         return {
             "horario_solicitado": req_time,
             "tipo_batida": self.record_type.value if self.record_type else None,
-            "batidas_do_dia": [r.record_datetime.strftime("%H:%M") for r in self.time_records]
+            "batidas_do_dia": [
+                to_app_timezone(record.record_datetime).strftime("%H:%M")
+                for record in self.time_records
+            ]
         }
 
     @computed_field

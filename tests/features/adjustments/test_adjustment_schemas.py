@@ -1,4 +1,5 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
@@ -8,6 +9,8 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
 )
+from app.features.time_records.time_record_schemas import TimeRecordSimple
+from app.core.config import settings
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 
 
@@ -121,6 +124,31 @@ def test_adjustment_request_response_metadata_waiver_and_punch():
     )
     assert resp_punch.metadata_info["horario_solicitado"] == "08:30"
     assert resp_punch.metadata_info["tipo_batida"] == "ENTRY"
+
+
+def test_adjustment_punch_times_are_normalized_to_app_timezone():
+    utc_datetime = datetime(2026, 1, 2, 1, 15, tzinfo=timezone.utc)
+    local_datetime = utc_datetime.astimezone(ZoneInfo(settings.TIMEZONE))
+    record = TimeRecordSimple(
+        record_type=RecordType.ENTRY,
+        record_datetime=utc_datetime,
+    )
+    response = AdjustmentRequestResponse(
+        id=6,
+        user_id=1,
+        user_name="User",
+        status=AdjustmentStatus.PENDING,
+        adjustment_type=AdjustmentType.PUNCH_NOT_COUNTED,
+        target_date=local_datetime.date(),
+        time_records=[record],
+        created_at=datetime.now(timezone.utc),
+    )
+
+    assert record.record_datetime == local_datetime
+    assert response.metadata_info["batidas_do_dia"] == [local_datetime.strftime("%H:%M")]
+    assert response.model_dump(mode="json")["time_records"][0]["record_datetime"] == (
+        local_datetime.isoformat()
+    )
 
 
 def test_adjustment_request_metadata_info_fallback():

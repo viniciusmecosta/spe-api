@@ -1,5 +1,5 @@
 import pytest
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from fastapi import HTTPException, UploadFile
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock
@@ -105,6 +105,32 @@ async def test_enrich_adjustments_with_records(async_db_mock):
     assert len(res) == 2
     assert len(res[0].time_records) == 1
     assert len(res[1].time_records) == 0
+
+
+@pytest.mark.asyncio
+async def test_enrich_adjustments_matches_local_day_for_utc_record(async_db_mock):
+    target_date = date(2023, 10, 1)
+    adjustment = AdjustmentRequest(id=1, user_id=1, target_date=target_date)
+    record = TimeRecord(
+        user_id=1,
+        record_datetime=datetime(2023, 10, 2, 1, 0, tzinfo=timezone.utc),
+    )
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = [record]
+    async_db_mock.scalars.return_value = mock_scalars
+
+    result = await adjustment_service._enrich_adjustments_with_records(
+        async_db_mock, [adjustment]
+    )
+
+    assert result[0].time_records == [record]
+    query = async_db_mock.scalars.call_args.args[0]
+    datetime_params = [
+        value for value in query.compile().params.values()
+        if isinstance(value, datetime)
+    ]
+    assert len(datetime_params) == 2
+    assert all(value.tzinfo is not None for value in datetime_params)
 
 
 @pytest.mark.asyncio

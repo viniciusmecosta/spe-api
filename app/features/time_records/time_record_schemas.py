@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
+from app.shared.timezone import to_app_timezone
 from app.shared.enums import RecordType
 
 
@@ -44,6 +45,12 @@ class TimeRecordDeleteAdmin(BaseModel):
 class TimeRecordSimple(BaseModel):
     record_type: RecordType
     record_datetime: datetime
+
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime) -> datetime:
+        return to_app_timezone(value)
+
     model_config = ConfigDict(from_attributes=True)
 
 

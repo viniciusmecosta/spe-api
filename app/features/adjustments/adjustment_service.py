@@ -37,6 +37,7 @@ from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
+from app.shared.timezone import local_day_bounds, to_app_timezone
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
 
@@ -67,13 +68,13 @@ class AdjustmentService:
         min_date = min(a.target_date for a in adjustments)
         max_date = max(a.target_date for a in adjustments)
 
-        min_dt = datetime.combine(min_date, datetime.min.time())
-        max_dt = datetime.combine(max_date, datetime.max.time())
+        min_dt, _ = local_day_bounds(min_date)
+        _, max_dt = local_day_bounds(max_date)
 
         stmt = select(TimeRecord).where(
             TimeRecord.user_id.in_(user_ids),
             TimeRecord.record_datetime >= min_dt,
-            TimeRecord.record_datetime <= max_dt,
+            TimeRecord.record_datetime < max_dt,
             TimeRecord.is_ignored.is_(False),
         ).order_by(TimeRecord.record_datetime.asc())
         result = await db.scalars(stmt)
@@ -82,7 +83,8 @@ class AdjustmentService:
         for adj in adjustments:
             adj.time_records = [
                 r for r in records
-                if r.user_id == adj.user_id and r.record_datetime.date() == adj.target_date
+                if r.user_id == adj.user_id
+                and to_app_timezone(r.record_datetime).date() == adj.target_date
             ]
 
         return adjustments
