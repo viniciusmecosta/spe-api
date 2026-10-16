@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 import threading
 import uuid
 import zipfile
@@ -13,6 +12,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.database.connection import postgres_connection_params
+from app.shared.sql_text import remove_psql_directives, sql_lines
 from app.features.system.backup_crypto import encrypt_backup
 from app.features.system.backup_manifest import add_manifest
 
@@ -134,53 +135,19 @@ class BackupService:
 
     @staticmethod
     def _remove_pg_dump_directives(output_path: str) -> None:
-        source = Path(output_path)
-        temporary = tempfile.NamedTemporaryFile(
-            prefix=f".{source.name}.", suffix=".clean.tmp", dir=source.parent, delete=False,
-        )
-        cleaned = Path(temporary.name)
-        try:
-            with temporary as output, source.open("rb") as original:
-                for line in original:
-                    if not line.lstrip().startswith((b"\\restrict", b"\\unrestrict")):
-                        output.write(line)
-            cleaned.replace(source)
-        finally:
-            cleaned.unlink(missing_ok=True)
+        remove_psql_directives(Path(output_path))
 
     def _get_postgres_connection_params(self) -> dict[str, Any]:
-        from sqlalchemy.engine import make_url
-
-        try:
-            url = make_url(settings.SQLALCHEMY_DATABASE_URI)
-            host = settings.POSTGRES_HOST or url.host or "localhost"
-            port = settings.POSTGRES_PORT or url.port or 5432
-            user = settings.POSTGRES_USER or url.username or "spe"
-            password = settings.POSTGRES_PASSWORD or url.password or ""
-            dbname = settings.POSTGRES_DB or url.database or "spe_db"
-        except Exception:
-            host = settings.POSTGRES_HOST or "localhost"
-            port = settings.POSTGRES_PORT or 5432
-            user = settings.POSTGRES_USER or "spe"
-            password = settings.POSTGRES_PASSWORD or ""
-            dbname = settings.POSTGRES_DB or "spe_db"
-
-        return {
-            "host": host,
-            "port": port,
-            "user": user,
-            "password": password,
-            "dbname": dbname,
-        }
+        return postgres_connection_params(settings.SQLALCHEMY_DATABASE_URI, settings.model_dump())
 
     def _dump_table_data(self, cur: Any, f: Any, table: str) -> None:
         import json
 
         cur.execute(f'SELECT * FROM "{table}";')
-        columns = [desc[0] for desc in cur.description]
         rows = cur.fetchmany(1000)
         if not rows:
             return
+        columns = [desc[0] for desc in cur.description]
 
         col_identifiers = ", ".join(f'"{c}"' for c in columns)
         placeholders = ", ".join(["%s"] * len(columns))
@@ -275,10 +242,7 @@ class BackupService:
 
     def _filter_pg_dump_output(self, raw_bytes: bytes, output_path: str) -> bool:
         text = raw_bytes.decode("utf-8")
-        text = "".join(
-            line for line in text.splitlines(keepends=True)
-            if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
-        )
+        text = "".join(sql_lines(text.splitlines(keepends=True)))
         with self._open_private(output_path, "w") as f:
             f.write(text)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0

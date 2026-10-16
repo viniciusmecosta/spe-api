@@ -13,6 +13,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.features.system.backup_crypto import decrypt_backup
+from app.database.connection import postgres_connection_params
+from app.shared.sql_text import sql_lines
 from app.features.system.backup_manifest import validate_manifest, validate_manifest_file
 
 try:
@@ -64,32 +66,10 @@ def load_environment() -> None:
 
 def get_pg_credentials() -> dict[str, str]:
     load_environment()
-    uri = os.getenv("SQLALCHEMY_DATABASE_URI", "")
-    host = os.getenv("POSTGRES_HOST")
-    port = os.getenv("POSTGRES_PORT")
-    user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
-    dbname = os.getenv("POSTGRES_DB")
-
-    if uri and (not host or not user or not dbname):
-        try:
-            from sqlalchemy.engine import make_url
-
-            parsed = make_url(uri)
-            host = host or parsed.host
-            port = port or (str(parsed.port) if parsed.port else None)
-            user = user or parsed.username
-            password = password if password is not None else parsed.password
-            dbname = dbname or parsed.database
-        except Exception:
-            pass
-
     return {
-        "host": host or "localhost",
-        "port": port or "5432",
-        "user": user or "spe",
-        "password": password or "",
-        "dbname": dbname or "spe_db",
+        key: str(value) for key, value in postgres_connection_params(
+            os.getenv("SQLALCHEMY_DATABASE_URI", ""), os.environ,
+        ).items()
     }
 
 
@@ -393,14 +373,9 @@ def _prepare_statement(statement: str, insert_tables: set[str]) -> str | None:
 def prepare_data_statements(
     sql_content: str, *, allow_empty: bool = False,
 ) -> tuple[list[str], set[str]]:
-    filtered_lines = [
-        line
-        for line in sql_content.splitlines()
-        if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
-    ]
-    cleaned_sql = "\n".join(filtered_lines)
-    if re.search(r"(?m)^\s*\\", cleaned_sql):
-        raise ValueError("Comando interno do psql não suportado no dump")
+    cleaned_sql = "".join(sql_lines(
+        sql_content.splitlines(keepends=True), reject_psql_commands=True,
+    ))
 
     prepared: list[str] = []
     insert_tables: set[str] = set()
@@ -457,7 +432,7 @@ def _validate_target_schema(
     revisions = {row[0] for row in cursor.fetchall()}
     if not revisions:
         raise RuntimeError("alembic_version está vazia; o schema de destino não foi validado")
-    compatible_prior_revisions = {("001", "002")}
+    compatible_prior_revisions = {("001", "002"), ("003", "004")}
     compatible = len(dump_revisions) == len(revisions) == 1 and (
         next(iter(dump_revisions)), next(iter(revisions))
     ) in compatible_prior_revisions
@@ -554,9 +529,7 @@ def _execute_restore(cursor, statement_factory, statement_count, application_tab
 def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
     remainder = ""
     with sql_path.open("r", encoding="utf-8") as source:
-        for line in source:
-            if line.lstrip().startswith((r"\restrict", r"\unrestrict")):
-                continue
+        for line in sql_lines(source, reject_psql_commands=True):
             remainder += line
             if len(remainder.encode("utf-8")) > MAX_STATEMENT_BYTES:
                 raise ValueError(f"Comando SQL excede {MAX_STATEMENT_BYTES} bytes")

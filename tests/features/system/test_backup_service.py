@@ -1,7 +1,8 @@
+import pytest
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock
 
 from app.features.system.backup_service import BackupService
 
@@ -94,7 +95,7 @@ def test_create_sql_dump_failure(mocker):
 
 def test_compress_files_success(mocker):
     mock_zipfile = mocker.patch("app.features.system.backup_service.zipfile.ZipFile")
-    mock_exists = mocker.patch("app.features.system.backup_service.os.path.exists",
+    mocker.patch("app.features.system.backup_service.os.path.exists",
                                side_effect=lambda p: p != "missing.db")
 
     zip_instance = MagicMock()
@@ -200,12 +201,9 @@ def test_dump_postgresql_python_failure(mocker):
 
 def test_get_postgres_connection_params_exception(mocker):
     service = BackupService()
-    mocker.patch("sqlalchemy.engine.make_url", side_effect=Exception("Bad URL"))
-    params = service._get_postgres_connection_params()
-    assert params["host"] == "localhost"
-    assert params["port"] == 5432
-    assert params["user"] == "spe"
-    assert params["dbname"] == "spe_db"
+    mocker.patch("app.database.connection.make_url", side_effect=ValueError("Bad URL"))
+    with pytest.raises(ValueError, match="Bad URL"):
+        service._get_postgres_connection_params()
 
 
 def test_dump_table_data_empty(mocker):

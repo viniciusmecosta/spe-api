@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+from app.database.connection import postgres_connection_params
+
 try:
     from dotenv import load_dotenv
 except ImportError:
@@ -57,32 +62,10 @@ def load_environment() -> None:
 
 def get_pg_credentials() -> dict[str, str]:
     load_environment()
-    uri = os.getenv("SQLALCHEMY_DATABASE_URI", "")
-    host = os.getenv("POSTGRES_HOST")
-    port = os.getenv("POSTGRES_PORT")
-    user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
-    dbname = os.getenv("POSTGRES_DB")
-
-    if uri and (not host or not user or not dbname):
-        try:
-            from sqlalchemy.engine import make_url
-
-            parsed = make_url(uri)
-            host = host or parsed.host
-            port = port or (str(parsed.port) if parsed.port else None)
-            user = user or parsed.username
-            password = password if password is not None else parsed.password
-            dbname = dbname or parsed.database
-        except Exception:
-            pass
-
     return {
-        "host": host or "localhost",
-        "port": port or "5432",
-        "user": user or "spe",
-        "password": password or "",
-        "dbname": dbname or "spe_db",
+        key: str(value) for key, value in postgres_connection_params(
+            os.getenv("SQLALCHEMY_DATABASE_URI", ""), os.environ,
+        ).items()
     }
 
 

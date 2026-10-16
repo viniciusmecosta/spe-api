@@ -22,6 +22,7 @@ from scripts.apply_sql_to_postgresql import (
 )
 from app.features.system.backup_manifest import add_manifest
 from app.features.system.backup_crypto import encrypt_backup
+from app.shared.sql_text import remove_psql_directives, sql_lines
 from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
 from scripts.verify_parity import verify_parity
 FILENAME_SPE_DUMP = "spe_dump.sql"
@@ -37,25 +38,14 @@ DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 
 def _clean_pg_dump_bytes(raw_bytes: bytes) -> str:
     text = raw_bytes.decode("utf-8")
-    text = "".join(
-        line for line in text.splitlines(keepends=True)
-        if not line.lstrip().startswith((r"\restrict", r"\unrestrict"))
-    )
+    text = "".join(sql_lines(text.splitlines(keepends=True)))
     return strip_sql_comments(text)
 
 
 def _clean_pg_dump_file(output_path: Path) -> bool:
     if not output_path.is_file() or output_path.stat().st_size == 0:
         return False
-    temporary = output_path.with_name(output_path.name + ".clean.tmp")
-    try:
-        with output_path.open("rb") as source, temporary.open("wb") as destination:
-            for line in source:
-                if not line.lstrip().startswith((b"\\restrict", b"\\unrestrict")):
-                    destination.write(line)
-        temporary.replace(output_path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    remove_psql_directives(output_path)
     return output_path.stat().st_size > 0
 
 
@@ -117,9 +107,10 @@ def _extract_tables_and_indexes(engine: Any, metadata: Any, include_alembic_vers
 
 def extract_live_ddl_from_postgres(include_alembic_version: bool = False) -> str:
     from sqlalchemy import create_engine, MetaData
+    from sqlalchemy.engine import URL
 
     creds = get_pg_credentials()
-    url = f"postgresql://{creds['user']}:{creds['password']}@{creds['host']}:{creds['port']}/{creds['dbname']}"
+    url = URL.create("postgresql", username=creds["user"], password=creds["password"], host=creds["host"], port=int(creds["port"]), database=creds["dbname"])
     engine = create_engine(url)
     metadata = MetaData()
     metadata.reflect(bind=engine)
