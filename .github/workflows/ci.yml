@@ -67,3 +67,34 @@ jobs:
           PYTHONPATH: .
         run: |
           uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml
+
+  postgresql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: spe_test
+          POSTGRES_USER: spe_test
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U spe_test -d spe_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+      - run: uv sync --locked --no-build
+      - run: cp .env.example .env
+      - name: Test native PostgreSQL migrations and transactional apuration
+        env:
+          ENVIRONMENT: dev
+          SPE_TEST_DATABASE_URL: postgresql+asyncpg://spe_test:ci-only-password@localhost:5432/spe_test
+          SQLALCHEMY_DATABASE_URI: postgresql+asyncpg://spe_test:ci-only-password@localhost:5432/spe_test
+        run: uv run --no-sync python -m pytest tests/integration/ -q --tb=short --no-cov
