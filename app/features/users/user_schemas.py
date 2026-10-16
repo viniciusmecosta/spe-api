@@ -132,6 +132,8 @@ class UserUpdate(BaseModel):
     biometrics: list[UserBiometricUpdate] | None = None
 
     @field_validator(
+        "username",
+        "role",
         "is_active",
         "can_manual_punch_desktop",
         "can_manual_punch_mobile",
@@ -141,9 +143,9 @@ class UserUpdate(BaseModel):
         mode="before",
     )
     @classmethod
-    def reject_null_required_flags(cls, value: bool | None) -> bool | None:
+    def reject_null_required_flags(cls, value: Any) -> Any:
         if value is None:
-            raise ValueError("Este campo booleano não pode ser nulo.")
+            raise ValueError("Este campo obrigatório não pode ser nulo.")
         return value
 
 

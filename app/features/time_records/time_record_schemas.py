@@ -31,11 +31,21 @@ class TimeRecordCreateAdmin(BaseModel):
     record_datetime: datetime
     edit_justification: str = Field(..., max_length=300)
 
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime) -> datetime:
+        return to_app_timezone(value)
+
 
 class TimeRecordUpdate(BaseModel):
     record_type: RecordType | None = None
     record_datetime: datetime | None = None
     edit_justification: str = Field(..., max_length=300)
+
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime | None) -> datetime | None:
+        return to_app_timezone(value) if value is not None else None
 
 
 class TimeRecordDeleteAdmin(BaseModel):

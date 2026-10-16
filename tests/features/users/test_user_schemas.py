@@ -45,7 +45,7 @@ def test_user_update_valid():
     assert u_up.username == "adminuser"
     assert u_up.cpf == "52998224725"
 
-    u_up_none = UserUpdate(username=None, cpf=None)
+    u_up_none = UserUpdate(cpf=None)
     assert u_up_none.username is None
     assert u_up_none.cpf is None
 
