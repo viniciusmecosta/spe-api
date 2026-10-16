@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-16",
+  "branch": "feature/apuracao",
+  "audit_base_commit": "8a3b172bba8c33345cc3cc7dc1a67e4ff058e347",
+  "code_commits": [
+    "75a4153",
+    "8ba078c",
+    "66ca01b",
+    "3483cdb",
+    "f0e06ab"
+  ],
+  "schema_revision": "004",
+  "environment": {
+    "python": "3.12.13",
+    "postgresql": "17.11",
+    "timezone": "America/Fortaleza",
+    "isolated": true,
+    "production_accessed": false
+  },
+  "test_suite": {
+    "passed": 1066,
+    "failed": 0,
+    "duration_seconds": 18.79,
+    "coverage_percent": 99,
+    "postgresql_integration_passed": 11
+  },
+  "sqlite_migration": {
+    "application_rows": 5550,
+    "cell_differences": 0,
+    "intentional_login_exclusion": true,
+    "daily_summary_rows": 4046,
+    "users": 14
+  },
+  "report_comparison": {
+    "compared": 280,
+    "differences": []
+  },
+  "encrypted_snapshot_roundtrip": {
+    "success": true,
+    "statements": 9619,
+    "application_tables": 15,
+    "application_rows": 9596,
+    "all_content_checksums_equal": true,
+    "sequences_checked": 15,
+    "all_next_ids_exceed_maximum": true
+  },
+  "schema_checks": {
+    "alembic_check_no_new_operations": true,
+    "time_record_self_fk_deferrable": true,
+    "time_record_self_fk_initially_deferred": true
+  },
+  "static_checks": {
+    "compileall": true,
+    "ruff_F_changed_python": true,
+    "ty_new_connection_errors_lock_sql_helpers": true
+  },
+  "remote_ci_executed": false,
+  "production_load_tested": false,
+  "raw_personal_data_included": false
+}

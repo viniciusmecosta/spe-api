@@ -1,0 +1,242 @@
+{
+  "date": "2026-10-16",
+  "branch": "feature/apuracao",
+  "head": "8a3b172bba8c33345cc3cc7dc1a67e4ff058e347",
+  "base": "ba2bcb9bebb7801d470ce46cdd2eb1d34ab3e2a7",
+  "verdict": "não liberar antes de corrigir os quatro achados P1",
+  "findings": {
+    "P1": [
+      "A01",
+      "A02",
+      "A03",
+      "A04"
+    ],
+    "P2": [
+      "A05",
+      "A06",
+      "A07",
+      "A08",
+      "A09",
+      "A10",
+      "A11",
+      "A12"
+    ]
+  },
+  "source": {
+    "revision": "045",
+    "foreign_key_violations": 0,
+    "login_rows_removed_by_design": 875
+  },
+  "migration_parity": {
+    "application_rows_compared": 5550,
+    "cell_differences": 0,
+    "daily_summaries_created": 4046
+  },
+  "historical_comparison": {
+    "reports_compared": 280,
+    "differences": 0,
+    "method": "scripts.compare_history_summaries: cálculo legado vs materialização na branch"
+  },
+  "pytest_ci_equivalent": {
+    "python": "3.12.13",
+    "passed": 1042,
+    "failed": 1,
+    "failure": "test_get_postgres_connection_params_exception: spe_user != spe",
+    "environment": "Valores de .env.example; somente SQLALCHEMY_DATABASE_URI sobrescrito para banco isolado"
+  },
+  "type_check": {
+    "result": "passed",
+    "source_files": 144
+  },
+  "docker_build": {
+    "result": "passed",
+    "tag": "spe-audit-app:20261016"
+  },
+  "postgresql": "17.11",
+  "checks": [
+    {
+      "test": "closed_month_utc_bypass",
+      "request_date": "2026-02-01 UTC",
+      "persisted_local_datetime": "2026-01-31 21:30:00-03:00",
+      "closed_january_record_created": true,
+      "january_summary_exists": false
+    },
+    {
+      "test": "recalculation_failure",
+      "error": "DailySummaryRecalculationError",
+      "attempts": 3
+    },
+    {
+      "test": "recalculation_no_durable_retry",
+      "attempts_after_second_commit": 3,
+      "pending_tasks": 0
+    },
+    {
+      "test": "recalculation_stale_summary",
+      "records_persisted": 2,
+      "saved_minutes": 0
+    },
+    {
+      "test": "stale_summary_read",
+      "worked_minutes_returned": 0.0,
+      "punch_count": 2
+    },
+    {
+      "test": "backup_heap_order",
+      "ids": [
+        1,
+        2,
+        3,
+        101,
+        100
+      ]
+    },
+    {
+      "test": "pg_dump_edited_rows",
+      "returncode": 0,
+      "circular_warning": true
+    },
+    {
+      "test": "restore_edited_rows",
+      "success": false,
+      "error": "ForeignKeyViolation",
+      "constraint": "fk_time_records_original_record_id"
+    },
+    {
+      "test": "multiline_sql_text",
+      "accepted": false,
+      "error": "Comando interno do psql não suportado no dump"
+    },
+    {
+      "test": "asyncpg_unique_error",
+      "caught_type": "IntegrityError",
+      "diag_constraint": null,
+      "cause_constraint": "uq_payroll_closures_active_period",
+      "sqlstate": "23505"
+    },
+    {
+      "test": "nullable_role",
+      "accepted_by_schema": true,
+      "db_result": "NotNullViolation",
+      "column": "role"
+    },
+    {
+      "test": "docker_custom_host_port",
+      "api_port": 5432,
+      "backup_port": 55439
+    },
+    {
+      "test": "percent_encoded_database_uri",
+      "accepted": false,
+      "error": "ValueError: invalid interpolation syntax (URL sintético com %40)"
+    },
+    {
+      "test": "fractional_schedule_rounding",
+      "days": 10,
+      "daily_hours": 8.08,
+      "legacy_expected_minutes": 4848,
+      "materialized_expected_minutes": 4850,
+      "legacy_missing_hours": 80.8,
+      "materialized_missing_hours": 80.83
+    },
+    {
+      "test": "period_close_race",
+      "source_commit_succeeded": true,
+      "new_record_hours": 8,
+      "saved_worked_minutes": 0
+    },
+    {
+      "test": "snapshot_encrypted_roundtrip",
+      "success": true,
+      "statements": 9619,
+      "tables_with_data": 13
+    },
+    {
+      "test": "roundtrip_cell_checksums",
+      "tables_compared": 15,
+      "all_equal": true,
+      "rows": 9596
+    },
+    {
+      "test": "foreign_key_index_coverage",
+      "missing_indexes": []
+    },
+    {
+      "test": "query_plan",
+      "query": "daily_summaries",
+      "nodes": [
+        {
+          "Node Type": "Bitmap Heap Scan"
+        },
+        {
+          "Node Type": "Result"
+        },
+        {
+          "Node Type": "Limit"
+        },
+        {
+          "Node Type": "Index Only Scan",
+          "Index Name": "ix_users_id"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "uq_daily_summaries_user_date"
+        }
+      ],
+      "execution_ms": 0.139
+    },
+    {
+      "test": "query_plan",
+      "query": "time_records",
+      "nodes": [
+        {
+          "Node Type": "Sort"
+        },
+        {
+          "Node Type": "Result"
+        },
+        {
+          "Node Type": "Limit"
+        },
+        {
+          "Node Type": "Index Only Scan",
+          "Index Name": "ix_users_id"
+        },
+        {
+          "Node Type": "Bitmap Heap Scan"
+        },
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Index Name": "idx_tr_active_period"
+        }
+      ],
+      "execution_ms": 0.131
+    },
+    {
+      "test": "docker_health",
+      "status_code": 200,
+      "status": "ok"
+    },
+    {
+      "test": "docker_login",
+      "status_code": 200,
+      "token_returned": true
+    },
+    {
+      "test": "docker_users_query",
+      "status_code": 200
+    },
+    {
+      "test": "backup_literal_line_removed",
+      "literal_line_removed": true,
+      "sql_remains_parseable": true
+    }
+  ],
+  "constraints": [
+    "Banco e serviços de produção não acessados para escrita",
+    "Sem envio de mensagens ou e-mails",
+    "Sem benchmark de carga de produção",
+    "Dados sintéticos nos cenários de falha",
+    "Não inclui dumps nem dados pessoais"
+  ]
+}
