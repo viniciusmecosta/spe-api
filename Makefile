@@ -10,8 +10,7 @@ endif
 
 # Instala e sincroniza as dependências.
 setup:
-	pip install uv
-	uv sync
+	uv sync --locked --no-build
 
 # Inicia a API em desenvolvimento.
 run:
@@ -63,23 +62,23 @@ lint:
 	mypy app
 
 # Gera o backup completo do PostgreSQL.
-dump: db-pg-up
+dump:
 	$(PYTHON) scripts/db_manager.py --dump
 
 # Gera somente a estrutura do PostgreSQL.
-db-dump-ddl: db-pg-up
+db-dump-ddl:
 	$(PYTHON) scripts/db_manager.py --dump-ddl
 
 # Gera somente os inserts do PostgreSQL.
-db-dump-data: db-pg-up
+db-dump-data:
 	$(PYTHON) scripts/db_manager.py --dump-data
 
 # Restaura spe.zip.enc da raiz ou de scripts/.
-restore: db-pg-up
+restore:
 	$(PYTHON) scripts/apply_sql_to_postgresql.py --restore --yes
 
 # Testa o backup em um banco temporário sem alterar o banco principal.
-db-restore-test: db-pg-up
+db-restore-test:
 	$(PYTHON) scripts/verify_backup_restore.py
 
 # Abre um terminal com o ambiente virtual.
@@ -94,9 +93,8 @@ venv:
 db-pg-up:
 	docker compose up -d --wait db
 
-# Inicia o PostgreSQL e aplica a estrutura do banco.
+# Aplica a estrutura no PostgreSQL já provisionado.
 db-init:
-	docker compose up -d --wait db
 	$(ALEMBIC) upgrade head
 
 # Converte spe.db em inserts para PostgreSQL.
@@ -104,15 +102,15 @@ db-dump-sqlite:
 	$(PYTHON) scripts/export_sqlite_to_postgresql.py
 
 # Limpa os dados e aplica o dump convertido.
-db-apply-dump: db-pg-up
+db-apply-dump:
 	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
 
 # Compara todos os dados do SQLite e PostgreSQL.
-db-check: db-pg-up
+db-check:
 	$(PYTHON) scripts/verify_parity.py
 
 # Migra SQLite na revisão 002, aplica as demais migrações e cria a apuração histórica.
-db-migrate-all: db-pg-up
+db-migrate-all:
 	$(ALEMBIC) upgrade 002
 	$(PYTHON) scripts/export_sqlite_to_postgresql.py
 	$(PYTHON) scripts/apply_sql_to_postgresql.py --dry-run

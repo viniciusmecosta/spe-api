@@ -11,9 +11,9 @@ integração com sistemas de recursos humanos, dispositivos de coleta de ponto e
 
 ## Stack Tecnológica
 
-* **Linguagem:** Python 3.11
+* **Linguagem:** Python 3.12
 * **Framework Web:** FastAPI
-* **Persistência:** SQLite
+* **Persistência:** PostgreSQL 17
 * **ORM:** SQLAlchemy
 * **Versionamento de esquema:** Alembic
 * **Autenticação e Segurança:** JWT e hash de senhas com Passlib (Bcrypt)
@@ -31,7 +31,7 @@ execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.
   Nome descritivo da aplicação.
 
 * **`TIMEZONE`**
-  Fuso horário utilizado para persistência e validação temporal dos registros.
+  Fuso horário utilizado na interpretação e validação temporal dos registros: `America/Fortaleza`.
 
 * **`UPLOAD_DIR`**
   Diretório destinado ao armazenamento de arquivos enviados ou gerados pelo sistema.
@@ -42,7 +42,15 @@ execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.
 ### Banco de Dados
 
 * **`SQLALCHEMY_DATABASE_URI`**
-  String de conexão utilizada pelo ORM. O padrão utiliza SQLite local.
+  String de conexão PostgreSQL utilizada pela API, pelos backups e pelos scripts:
+  `postgresql+asyncpg://usuario:senha@host:5432/spe`.
+  Codifique os caracteres reservados da senha no URI.
+
+Em produção, utilize o PostgreSQL externo já provisionado. O banco não depende do
+Docker Compose. Instale um cliente `pg_dump` compatível com o servidor na máquina ou
+container que executa a API. Consulte o [procedimento de migração e restauração](scripts/README.md)
+antes de inicializar a aplicação. Durante a migração, suspenda as gravações, conclua o
+backfill e migre os arquivos físicos manualmente antes de liberar o acesso.
 
 ### Segurança e Autenticação
 
@@ -86,7 +94,7 @@ execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.
 * **`EMAIL_TO`**
   Destinatário principal dos relatórios operacionais e backups automatizados.
 
-## Execução com Docker
+## Desenvolvimento local com Docker Compose
 
 A aplicação está containerizada, garantindo padronização de ambiente e simplificação do processo de implantação.
 
@@ -102,9 +110,8 @@ Em seguida, inicialize os serviços:
 docker compose up -d
 ```
 
-Durante a inicialização, o processo de bootstrap executa automaticamente:
+No ambiente local, o processo de bootstrap executa automaticamente:
 
-* Criação do banco de dados
 * Aplicação das migrações estruturais
 * Provisionamento do usuário administrador inicial
 * Inicialização do servidor na porta 8000

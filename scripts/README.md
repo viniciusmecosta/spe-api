@@ -10,19 +10,19 @@ Todos os comandos deste documento devem ser executados na pasta que contém o `M
 
 ### 2. Inicialize o ambiente
 
-Tenha o Docker instalado. Se o arquivo `.env` ainda não existir, crie-o a partir do exemplo:
+Em produção, use o PostgreSQL externo já provisionado e o cliente nativo `pg_dump` instalado na máquina/container da API (versão compatível com o servidor). O Compose é apenas uma opção local de desenvolvimento. Se o arquivo `.env` ainda não existir, crie-o a partir do exemplo:
 
 ```bash
 cp .env.example .env
 ```
 
-Confira no `.env` principalmente `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SQLALCHEMY_DATABASE_URI` e a `SECRET_KEY` já usada pela API. Ela precisa ter pelo menos 32 bytes. Para restaurar um backup criptografado em outra máquina, copie a chave **original**; gerar uma chave nova não abre o arquivo. Numa instalação nova, preencha esse campo uma vez e guarde a chave fora do servidor. Nenhuma variável nova é necessária. Depois execute:
+Configure `SQLALCHEMY_DATABASE_URI` para o PostgreSQL correto; a API, o backup e os scripts usam esse URI como fonte de verdade. Codifique os caracteres reservados da senha no URI. Use `TIMEZONE=America/Fortaleza`. Confira também a `SECRET_KEY` já usada pela API: ela precisa ter pelo menos 32 bytes. Para restaurar um backup criptografado em outra máquina, use a chave **original**. Depois execute:
 
 ```bash
-make setup && make db-pg-up
+make setup
 ```
 
-Esse comando instala as dependências e inicia o PostgreSQL. A estrutura é criada na etapa específica de cada operação.
+Esse comando instala as dependências travadas. Os comandos de banco não iniciam o Docker nem provisionam o PostgreSQL. A estrutura é criada na etapa específica de cada operação. Para desenvolvimento local com Compose, inicie o serviço explicitamente com `make db-pg-up`.
 
 ## Opção 1: restaurar um backup PostgreSQL recebido por e-mail
 
@@ -62,7 +62,9 @@ Com a preparação inicial concluída, execute:
 make db-migrate-all
 ```
 
-O comando aplica as revisões `001` e `002`, exporta o SQLite, valida e importa os dados, aplica `003`, compara as tabelas e cria os resumos diários até a data atual. Use apenas em um PostgreSQL novo para essa migração; ele substitui os dados das tabelas de destino.
+Com a origem sem novas gravações e o PostgreSQL de destino novo, o comando aplica `001/002`, exporta e importa o SQLite, aplica `003/004`, verifica a paridade e cria os resumos diários até a data atual. A revisão `003` remove os logins e reenumera os IDs de auditoria intencionalmente; `004` preserva a precisão dos resumos e permite restaurar referências entre batidas fora de ordem. Os arquivos físicos devem ser migrados manualmente. Inicie a API somente após o backfill e as verificações.
+
+Para um PostgreSQL que já esteja na revisão `003`, aplique `make upgrade` e execute `.venv/bin/python -m scripts.backfill_daily_summaries --execute` antes de liberar a API. O backfill reconstrói os resumos com a precisão nova, inclusive os períodos fechados, sem alterar as batidas e os ajustes da origem. As revisões `001` e `003` continuam sem downgrade automático.
 
 O dump convertido é criado automaticamente em:
 
@@ -88,7 +90,7 @@ O comando cria um banco temporário, aplica o Alembic e restaura os dados. Ao te
 
 ## Encerrar o PostgreSQL
 
-Quando terminar qualquer uma das operações:
+Somente se o PostgreSQL local tiver sido iniciado pelo Compose:
 
 ```bash
 make docker-down
