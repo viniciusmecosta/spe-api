@@ -32,13 +32,13 @@ class AuditLog(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String, nullable=False)
     entity = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=True)
     old_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     new_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
-    timestamp = Column(DateTime(timezone=True), default=get_local_time)
+    timestamp = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
 
     user = relationship("User", foreign_keys=[user_id])
 

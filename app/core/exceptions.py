@@ -20,7 +20,7 @@ class DomainException(Exception):
 class DailySummaryRecalculationError(DomainException):
     def __init__(self):
         super().__init__(
-            "A alteração foi gravada, mas a apuração diária não foi atualizada. Consulte o resultado antes de repetir a operação.",
+            "Não foi possível atualizar a apuração diária. A alteração não foi gravada; tente novamente.",
             status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 

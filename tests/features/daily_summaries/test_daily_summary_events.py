@@ -396,10 +396,8 @@ def test_after_commit_waits_for_recalculation_and_rollback_clears_state():
     with patch("app.features.daily_summaries.daily_summary_events.schedule_days", return_value=task) as schedule:
         _after_commit(session)
 
-    schedule.assert_called_once_with(
-        {(1, date(2026, 4, 1))}, {(1, date(2026, 4, 1))}
-    )
-    assert session.info["daily_summary_pending_tasks"] == [task]
+    schedule.assert_not_called()
+    assert "daily_summary_pending_tasks" not in session.info
     assert "daily_summary_changed_days" not in session.info
 
     session.info["daily_summary_changed_days"] = set()

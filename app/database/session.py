@@ -1,4 +1,3 @@
-import asyncio
 from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
@@ -14,7 +13,6 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
-from app.core.exceptions import DailySummaryRecalculationError
 
 POSTGRESQL_ASYNCPG_PREFIX = "postgresql+asyncpg://"
 POSTGRESQL_SYNC_PREFIX = "postgresql://"
@@ -36,16 +34,7 @@ async_engine = create_async_engine(db_uri_async, **pool_kwargs)
 
 
 class ApurationAsyncSession(AsyncSession):
-    def __init__(self, *args: Any, **kwargs: Any):
-        super().__init__(*args, **kwargs)
-        self.sync_session.info["await_daily_summary"] = True
-
-    async def commit(self) -> None:
-        await super().commit()
-        tasks = self.sync_session.info.pop("daily_summary_pending_tasks", [])
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        if any(result is not True for result in results):
-            raise DailySummaryRecalculationError()
+    pass
 
 
 AsyncSessionLocal = async_sessionmaker(

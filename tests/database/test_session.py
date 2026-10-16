@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
@@ -37,45 +36,32 @@ def test_get_db_generator(mocker):
     mock_session.close.assert_called_once()
 
 
-@pytest.mark.asyncio
-async def test_commit_waits_for_daily_summary(mocker):
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from app.database.session import ApurationAsyncSession
-
-    mocker.patch.object(AsyncSession, "commit", new_callable=AsyncMock)
-    session = ApurationAsyncSession()
-    completed = asyncio.Event()
-
-    async def recalculate():
-        await completed.wait()
-        return True
-
-    session.sync_session.info["daily_summary_pending_tasks"] = [
-        asyncio.create_task(recalculate())
-    ]
-    commit = asyncio.create_task(session.commit())
-    await asyncio.sleep(0)
-    assert not commit.done()
-    completed.set()
-    await commit
+def test_daily_summary_is_flushed_before_commit(mocker):
+    from datetime import date
+    from app.features.daily_summaries.daily_summary_events import _before_commit
+    from app.features.daily_summaries.daily_summary_service import daily_summary_service
+    session = MagicMock()
+    session.info = {"daily_summary_changed_days": {(1, date(2026, 5, 11))}}
+    order = []
+    session.flush.side_effect = lambda: order.append("flush")
+    recalculate = mocker.patch.object(daily_summary_service, "calculate_in_session", side_effect=lambda *a, **kw: order.append("recalculate"))
+    _before_commit(session)
+    assert order == ["flush", "recalculate", "flush"]
+    recalculate.assert_called_once_with(session, 1, date(2026, 5, 11), reset_excess=False)
+    session.commit.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_commit_reports_failed_daily_summary(mocker):
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from app.database.session import ApurationAsyncSession
-
-    mocker.patch.object(AsyncSession, "commit", new_callable=AsyncMock)
-    session = ApurationAsyncSession()
-
-    async def fail():
-        return False
-
-    session.sync_session.info["daily_summary_pending_tasks"] = [
-        asyncio.create_task(fail())
-    ]
+def test_failed_recalculation_aborts_commit(mocker):
+    from datetime import date
+    from app.features.daily_summaries.daily_summary_events import _before_commit
+    from app.features.daily_summaries.daily_summary_service import daily_summary_service
+    session = MagicMock()
+    session.info = {"daily_summary_changed_days": {(1, date(2026, 5, 11))}}
+    mocker.patch.object(daily_summary_service, "calculate_in_session", side_effect=RuntimeError("calculation unavailable"))
     with pytest.raises(DailySummaryRecalculationError):
-        await session.commit()
+        _before_commit(session)
+    session.commit.assert_not_called()
+    assert "skip_daily_summary_tracking" not in session.info
 
 
 def test_encode_timestamptz():

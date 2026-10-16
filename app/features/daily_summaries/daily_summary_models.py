@@ -5,6 +5,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     UniqueConstraint,
     text,
 )
@@ -34,11 +35,11 @@ class DailySummary(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     apuration_date = Column(Date, nullable=False)
-    worked_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    accounted_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    expected_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    excess_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    authorized_excess_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    missing_minutes = Column(Integer, nullable=False, server_default=text("0"))
-    waiver_minutes = Column(Integer, nullable=False, server_default=text("0"))
+    worked_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    accounted_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    expected_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    excess_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    authorized_excess_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    missing_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
+    waiver_minutes = Column(Numeric(14, 6), nullable=False, server_default=text("0"))
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP"))

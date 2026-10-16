@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Time,
 )
+from sqlalchemy import CheckConstraint, SmallInteger
 from sqlalchemy.orm import relationship
 from zoneinfo import ZoneInfo
 
@@ -25,10 +26,11 @@ def get_local_time():
 
 class UserWorkScheduleConfig(Base):
     __tablename__ = "user_work_schedule_configs"
+    __table_args__ = (CheckConstraint("day_of_week BETWEEN 0 AND 6", name="user_work_schedule_configs_day_of_week_check"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    day_of_week = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    day_of_week = Column(SmallInteger, nullable=False)
     daily_hours = Column(Float, nullable=False)
     entry_1 = Column(Time, nullable=True)
     exit_1 = Column(Time, nullable=True)
@@ -43,6 +45,7 @@ class UserWorkScheduleConfig(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (CheckConstraint("role IN ('EMPLOYEE', 'MANAGER', 'MAINTAINER')", name="users_role_check"),)
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
@@ -53,17 +56,17 @@ class User(Base):
     endereco = Column(String, nullable=True)
     data_nascimento = Column(Date, nullable=True)
     password_hash = Column(String)
-    is_active = Column(Boolean, default=True)
-    role = Column(Enum(UserRole, native_enum=False, length=50), default=UserRole.EMPLOYEE)
-    can_manual_punch_desktop = Column(Boolean, default=True)
-    can_manual_punch_mobile = Column(Boolean, default=False)
-    can_export_report = Column(Boolean, default=False)
-    is_exempt_from_rules = Column(Boolean, default=False)
-    is_tolerance_exempt = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    role = Column(Enum(UserRole, native_enum=False, length=50), default=UserRole.EMPLOYEE, nullable=False)
+    can_manual_punch_desktop = Column(Boolean, default=True, nullable=False)
+    can_manual_punch_mobile = Column(Boolean, default=False, nullable=False)
+    can_export_report = Column(Boolean, default=False, nullable=False)
+    is_exempt_from_rules = Column(Boolean, default=False, nullable=False)
+    is_tolerance_exempt = Column(Boolean, default=False, nullable=False)
     auto_print_receipt = Column(Boolean, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
-    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time, nullable=False)
 
     historical_schedules = relationship("UserWorkScheduleConfig", back_populates="user", cascade="all, delete-orphan")
     time_records = relationship("TimeRecord", back_populates="user", foreign_keys="TimeRecord.user_id")

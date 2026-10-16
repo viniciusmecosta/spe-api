@@ -4,8 +4,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload
+
+from app.database.payroll_lock import lock_payroll_periods
 
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
@@ -37,13 +38,13 @@ from app.shared.time_calculation_service import (
 def from_legacy_period(day: date, result: PeriodTimeResult) -> DaySummaryValues:
     daily = result.daily_results[day]
     values = DaySummaryValues(
-        worked_minutes=round(daily.gross_worked_seconds / 60),
-        accounted_minutes=round(result.total_accounted_seconds / 60),
-        expected_minutes=round(result.daily_expected_seconds[day] / 60),
-        excess_minutes=round(result.total_excess_seconds / 60),
-        authorized_excess_minutes=round(result.total_approved_excess_seconds / 60),
-        missing_minutes=round(daily.missing_seconds / 60),
-        waiver_minutes=round(daily.waiver_seconds / 60),
+        worked_minutes=daily.gross_worked_seconds / 60,
+        accounted_minutes=result.total_accounted_seconds / 60,
+        expected_minutes=result.daily_expected_seconds[day] / 60,
+        excess_minutes=result.total_excess_seconds / 60,
+        authorized_excess_minutes=result.total_approved_excess_seconds / 60,
+        missing_minutes=daily.missing_seconds / 60,
+        waiver_minutes=daily.waiver_seconds / 60,
     )
     if any(value < 0 for value in vars(values).values()):
         raise ValueError(f"Negative apuration value for {day}")
@@ -62,7 +63,7 @@ class DailySummaryService:
             DailySummary.user_id == user_id,
             DailySummary.apuration_date >= first,
             DailySummary.apuration_date <= last,
-        )
+        ).execution_options(populate_existing=True)
         if hasattr(session, "sync_session"):
             rows = list((await session.scalars(statement)).all())
         else:
@@ -89,9 +90,9 @@ class DailySummaryService:
     @staticmethod
     def _expected_seconds(row, schedule, is_holiday: bool) -> int:
         if row is not None:
-            return row.expected_minutes * 60
+            return float(row.expected_minutes) * 60
         if schedule is not None and not is_holiday:
-            return round(schedule.daily_hours * 60) * 60
+            return schedule.daily_hours * 3600
         return 0
 
     @staticmethod
@@ -111,12 +112,12 @@ class DailySummaryService:
         is_holiday = current in holiday_days
         schedule = self._schedule_for_day(historical_schedules, current)
         expected = self._expected_seconds(row, schedule, is_holiday)
-        gross = row.worked_minutes * 60 if row is not None else 0
-        net = row.accounted_minutes * 60 if row is not None else 0
-        waiver = row.waiver_minutes * 60 if row is not None else 0
+        gross = float(row.worked_minutes) * 60 if row is not None else 0
+        net = float(row.accounted_minutes) * 60 if row is not None else 0
+        waiver = float(row.waiver_minutes) * 60 if row is not None else 0
         unapproved = gross - net
         extra = max(0, net - expected) if historical_schedules else 0
-        missing = row.missing_minutes * 60 if row is not None else expected
+        missing = float(row.missing_minutes) * 60 if row is not None else expected
         daily_result = DailyTimeResult(
             raw_worked_seconds=gross,
             waiver_seconds=waiver,
@@ -135,8 +136,8 @@ class DailySummaryService:
             excess_work_seconds=0,
             excess_lunch_seconds=0,
             early_return_seconds=0,
-            total_excess_seconds=row.excess_minutes * 60 if row is not None else 0,
-            approved_seconds=row.authorized_excess_minutes * 60 if row is not None else 0,
+            total_excess_seconds=float(row.excess_minutes) * 60 if row is not None else 0,
+            approved_seconds=float(row.authorized_excess_minutes) * 60 if row is not None else 0,
             accounted_seconds=net,
             has_schedule=expected > 0,
             has_lunch_rule=False,
@@ -148,13 +149,13 @@ class DailySummaryService:
         ), None)
         totals = (
             net, gross, expected, waiver, unapproved, extra, missing,
-            row.excess_minutes * 60 if row is not None else 0,
-            row.authorized_excess_minutes * 60 if row is not None else 0,
+            float(row.excess_minutes) * 60 if row is not None else 0,
+            float(row.authorized_excess_minutes) * 60 if row is not None else 0,
         )
         return daily_result, accounted_result, expected, is_holiday, approved_waiver, totals
 
-    async def _reset_excess(self, session, user_id: int, day: date) -> None:
-        previous_excess = list((await session.scalars(
+    def _reset_excess(self, session, user_id: int, day: date) -> None:
+        previous_excess = list((session.scalars(
             select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date == day,
@@ -176,11 +177,11 @@ class DailySummaryService:
                     },
                     new_data={"reason": "SCHEDULE_CHANGED"},
                 ))
-        await session.flush()
-        await daily_excess_service.evaluate_user_day_async(
+        session.flush()
+        daily_excess_service.evaluate_user_day_sync(
             session, user_id, day, overwrite_reviewed=True
         )
-        await session.flush()
+        session.flush()
 
     @staticmethod
     def _invalidate_reviewed_excess(session, reviewed, current_minutes: int) -> None:
@@ -205,7 +206,7 @@ class DailySummaryService:
             and round((existing_excess[0].amount_hours or 0) * 60) == current_minutes
         ) or (not existing_excess and current_minutes == 0)
 
-    async def _refresh_excess(self, session, user_id, day, records, holidays,
+    def _refresh_excess(self, session, user_id, day, records, holidays,
                               historical_schedules, adjustments, period):
         reviewed = [
             adjustment for adjustment in adjustments
@@ -219,7 +220,7 @@ class DailySummaryService:
         )
         if changed_reviewed_value:
             self._invalidate_reviewed_excess(session, reviewed, current_minutes)
-            await session.flush()
+            session.flush()
 
         existing_excess = [
             adjustment for adjustment in adjustments
@@ -228,9 +229,9 @@ class DailySummaryService:
         ]
         if self._excess_is_current(existing_excess, current_minutes):
             return adjustments, period
-        await daily_excess_service.evaluate_user_day_async(session, user_id, day)
-        await session.flush()
-        adjustments = list((await session.scalars(
+        daily_excess_service.evaluate_user_day_sync(session, user_id, day)
+        session.flush()
+        adjustments = list((session.scalars(
             select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date == day,
@@ -317,29 +318,30 @@ class DailySummaryService:
             daily_accounted_results=daily_accounted_results,
         )
 
-    async def _calculate_user_day(
+    def _calculate_user_day(
         self,
-        session: AsyncSession,
+        session: Session,
         user_id: int,
         day: date,
         refresh_excess: bool,
         reset_excess: bool = False,
     ) -> None:
-        user = await session.scalar(
+        user = session.scalar(
             select(User)
             .options(selectinload(User.historical_schedules))
             .where(User.id == user_id)
+            .execution_options(populate_existing=True)
         )
         if user is None:
             return
 
         if reset_excess:
-            await self._reset_excess(session, user_id, day)
+            self._reset_excess(session, user_id, day)
 
         timezone_local = ZoneInfo(settings.TIMEZONE)
         first = datetime.combine(day, time.min, tzinfo=timezone_local)
         last = first + timedelta(days=1)
-        records = list((await session.scalars(
+        records = list((session.scalars(
             select(TimeRecord)
             .where(
                 TimeRecord.user_id == user_id,
@@ -349,15 +351,17 @@ class DailySummaryService:
                 TimeRecord.is_ignored.is_(False),
             )
             .order_by(TimeRecord.record_datetime)
+            .execution_options(populate_existing=True)
         )).all())
-        adjustments = list((await session.scalars(
+        adjustments = list((session.scalars(
             select(AdjustmentRequest).where(
                 AdjustmentRequest.user_id == user_id,
                 AdjustmentRequest.target_date == day,
                 AdjustmentRequest.deleted_at.is_(None),
             )
+            .execution_options(populate_existing=True)
         )).all())
-        holidays = list((await session.scalars(
+        holidays = list((session.scalars(
             select(Holiday).where(Holiday.date == day)
         )).all())
         period = time_calculation_service.calculate_period_time(
@@ -370,11 +374,11 @@ class DailySummaryService:
         )
 
         if not reset_excess and refresh_excess:
-            adjustments, period = await self._refresh_excess(
+            adjustments, period = self._refresh_excess(
                 session, user_id, day, records, holidays,
                 user.historical_schedules, adjustments, period,
             )
-        await daily_summary_repository.upsert(
+        daily_summary_repository.upsert_sync(
             session, user_id, day, from_legacy_period(day, period)
         )
 
@@ -396,38 +400,44 @@ class DailySummaryService:
         async with AsyncSessionLocal() as session:
             session.sync_session.info["skip_daily_summary_tracking"] = True
             async with session.begin():
-                if await session.scalar(select(User.id).where(User.id == user_id)) is None:
-                    return
-                if not allow_closed:
-                    closed_period = await session.scalar(
-                        select(PayrollClosure.id).where(
-                            PayrollClosure.year == day.year,
-                            PayrollClosure.month == day.month,
-                            PayrollClosure.is_closed.is_(True),
-                            PayrollClosure.deleted_at.is_(None),
-                        ).limit(1)
-                    )
-                    if closed_period is not None:
-                        return
-                table = DailySummary.__table__
-                await session.execute(
-                    insert(table)
-                    .values(user_id=user_id, apuration_date=day)
-                    .on_conflict_do_nothing(
-                        constraint="uq_daily_summaries_user_date"
+                await session.run_sync(
+                    lambda db: self.calculate_in_session(
+                        db, user_id, day, refresh_excess, allow_closed, reset_excess
                     )
                 )
-                await session.scalar(
-                    select(DailySummary.id)
-                    .where(
-                        DailySummary.user_id == user_id,
-                        DailySummary.apuration_date == day,
-                    )
-                    .with_for_update()
-                )
-                await self._calculate_user_day(
-                    session, user_id, day, refresh_excess, reset_excess=reset_excess
-                )
+
+    def calculate_in_session(
+        self, session: Session, user_id: int, day: date,
+        refresh_excess: bool = True, allow_closed: bool = False,
+        reset_excess: bool = False,
+    ) -> None:
+        lock_payroll_periods(session, {(day.year, day.month)})
+        if session.scalar(select(User.id).where(User.id == user_id)) is None:
+            return
+        if not allow_closed:
+            closed_period = session.scalar(
+                select(PayrollClosure.id).where(
+                    PayrollClosure.year == day.year,
+                    PayrollClosure.month == day.month,
+                    PayrollClosure.is_closed.is_(True),
+                    PayrollClosure.deleted_at.is_(None),
+                ).limit(1)
+            )
+            if closed_period is not None:
+                return
+        table = DailySummary.__table__
+        session.execute(
+            insert(table).values(user_id=user_id, apuration_date=day)
+            .on_conflict_do_nothing(constraint="uq_daily_summaries_user_date")
+        )
+        session.scalar(
+            select(DailySummary.id).where(
+                DailySummary.user_id == user_id, DailySummary.apuration_date == day,
+            ).with_for_update()
+        )
+        self._calculate_user_day(
+            session, user_id, day, refresh_excess, reset_excess=reset_excess
+        )
 
 
 daily_summary_service = DailySummaryService()

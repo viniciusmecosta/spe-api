@@ -319,8 +319,8 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
         result = await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
 
     assert result == mock_closure
-    mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id)
-    assert async_db_mock.commit.call_count == 2
+    mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id, commit=False)
+    assert async_db_mock.commit.call_count == 1
     mock_audit.assert_called_once_with(
         async_db_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure
     )

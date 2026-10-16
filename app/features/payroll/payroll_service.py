@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.database.errors import constraint_name
+from app.database.payroll_lock import lock_payroll_periods
 from app.features.payroll.payroll_exceptions import (
     PayrollAlreadyClosedError,
     PayrollClosureNotFoundError,
@@ -185,6 +187,8 @@ class PayrollService:
                 f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lambda db: lock_payroll_periods(db, {(year, month)}, exclusive=True))
         existing = await self.repo.get_by_month(session, month, year)
         if existing:
             raise PayrollAlreadyClosedError(
@@ -211,23 +215,26 @@ class PayrollService:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
             raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
 
-        await session.commit()
-
         try:
-            closure = await self.repo.create(session, month=month, year=year, user_id=current_user.id)
+            closure = await self.repo.create(
+                session, month=month, year=year, user_id=current_user.id, commit=False
+            )
+            closure.report_path = f"reports/{filename}"
+            await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
+            await session.commit()
         except IntegrityError as exc:
             await session.rollback()
             await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
-            if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) != "uq_payroll_closures_active_period":
+            if constraint_name(exc) != "uq_payroll_closures_active_period":
                 raise
             raise PayrollAlreadyClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} já está fechada."
             ) from exc
-        closure.report_path = f"reports/{filename}"
-        await session.commit()
+        except Exception:
+            await session.rollback()
+            await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
+            raise
         await session.refresh(closure)
-
-        await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
 
         stmt = select(User).where(
             User.role == UserRole.MAINTAINER,
@@ -265,6 +272,8 @@ class PayrollService:
         if current_user.role != UserRole.MAINTAINER:
             raise PayrollPermissionError("Acesso negado: Apenas mantenedores reabrem folhas.")
 
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lambda db: lock_payroll_periods(db, {(year, month)}, exclusive=True))
         existing = await self.repo.get_by_month(session, month, year)
         if not existing:
             raise PayrollNotClosedError(

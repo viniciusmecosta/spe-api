@@ -10,6 +10,22 @@ from app.features.daily_summaries.daily_summary_schemas import DaySummaryValues
 
 
 class DailySummaryRepository:
+    @staticmethod
+    def _upsert_statement(user_id: int, target_date: date, values: DaySummaryValues):
+        table = DailySummary.__table__
+        update_values = asdict(values)
+        update_values["updated_at"] = datetime.now(timezone.utc)
+        return (
+            insert(table)
+            .values(user_id=user_id, apuration_date=target_date, **update_values)
+            .on_conflict_do_update(
+                constraint="uq_daily_summaries_user_date", set_=update_values,
+            )
+        )
+
+    def upsert_sync(self, session: Any, user_id: int, target_date: date, values: DaySummaryValues) -> None:
+        session.execute(self._upsert_statement(user_id, target_date, values))
+
     async def get_by_date(
         self, session: Any, user_id: int, target_date: date
     ) -> DailySummary | None:
@@ -42,17 +58,7 @@ class DailySummaryRepository:
     async def upsert(
         self, session: Any, user_id: int, target_date: date, values: DaySummaryValues
     ) -> None:
-        table = DailySummary.__table__
-        update_values = asdict(values)
-        update_values["updated_at"] = datetime.now(timezone.utc)
-        statement = (
-            insert(table)
-            .values(user_id=user_id, apuration_date=target_date, **update_values)
-            .on_conflict_do_update(
-                constraint="uq_daily_summaries_user_date",
-                set_=update_values,
-            )
-        )
+        statement = self._upsert_statement(user_id, target_date, values)
         if hasattr(session, "sync_session"):
             await session.execute(statement)
         else:

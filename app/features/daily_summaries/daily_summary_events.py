@@ -8,6 +8,9 @@ from sqlalchemy import event, func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.exceptions import DailySummaryRecalculationError
+from app.database.payroll_lock import lock_payroll_periods
+from app.features.payroll.payroll_exceptions import PayrollPeriodClosedError
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.holidays.holiday_models import Holiday
@@ -101,11 +104,30 @@ def schedule_days(
 
 
 def _after_commit(session: Session) -> None:
+    _after_rollback(session)
+
+
+def _before_commit(session: Session) -> None:
+    if session.info.get("skip_daily_summary_tracking"):
+        return
+    session.flush()
     days = session.info.pop("daily_summary_changed_days", set())
-    reset_excess_days = session.info.pop("daily_summary_reset_excess_days", set())
-    task = schedule_days(days, reset_excess_days)
-    if task is not None and session.info.get("await_daily_summary"):
-        session.info.setdefault("daily_summary_pending_tasks", []).append(task)
+    reset_days = session.info.pop("daily_summary_reset_excess_days", set())
+    if not days:
+        return
+    from app.features.daily_summaries.daily_summary_service import daily_summary_service
+
+    session.info["skip_daily_summary_tracking"] = True
+    try:
+        for user_id, day in sorted(days, key=lambda item: (item[1], item[0])):
+            daily_summary_service.calculate_in_session(
+                session, user_id, day, reset_excess=(user_id, day) in reset_days
+            )
+        session.flush()
+    except Exception as exc:
+        raise DailySummaryRecalculationError() from exc
+    finally:
+        session.info.pop("skip_daily_summary_tracking", None)
 
 
 def _after_rollback(session: Session) -> None:
@@ -283,12 +305,43 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
     )
     changes = new_changes | dirty_changes | deleted_changes
     schedule_changes = new_schedule_changes | dirty_schedule_changes | deleted_schedule_changes
+    closure_periods = {
+        (source.year, source.month)
+        for source in (*session.new, *session.dirty, *session.deleted)
+        if isinstance(source, PayrollClosure)
+    }
     if not changes:
+        if closure_periods:
+            lock_payroll_periods(session, closure_periods, exclusive=True)
         return
     all_user_ids = None
     if any(user_id is None for user_id, _, _ in changes):
         all_user_ids = session.connection().execute(select(User.__table__.c.id)).scalars().all()
     days = _expand_scopes(changes, all_user_ids)
+
+    periods = {(day.year, day.month) for _, day in days}
+    periods.update(closure_periods)
+    if lock_payroll_periods(session, periods, exclusive=bool(closure_periods)):
+        closed = session.connection().execute(
+            select(PayrollClosure.__table__.c.year, PayrollClosure.__table__.c.month).where(
+                PayrollClosure.is_closed.is_(True), PayrollClosure.deleted_at.is_(None),
+            )
+        ).all()
+        mutations, removed = changes, set()
+        if closure_periods:
+            mutations, _ = _collect_changes(
+                session, [source for source in (*session.new, *session.dirty)
+                          if not isinstance(source, PayrollClosure)],
+            )
+            removed, _ = _collect_changes(
+                session, [source for source in session.deleted
+                          if not isinstance(source, PayrollClosure)], deleted=True,
+            )
+        mutation_periods = {
+            (day.year, day.month) for _, day in _expand_scopes(mutations | removed, all_user_ids)
+        }
+        if mutation_periods.intersection(closed):
+            raise PayrollPeriodClosedError("A competência foi fechada; a alteração não foi gravada.")
 
     session.info.setdefault("daily_summary_changed_days", set()).update(days)
 
@@ -298,9 +351,12 @@ def enqueue_changed_days(session: Session, flush_context: object, instances: obj
 
 
 def register_daily_summary_events() -> None:
-    event.listen(Session, "before_flush", enqueue_changed_days)
-    event.listen(Session, "after_commit", _after_commit)
-    event.listen(Session, "after_rollback", _after_rollback)
+    for name, listener in (
+        ("before_flush", enqueue_changed_days), ("before_commit", _before_commit),
+        ("after_commit", _after_commit), ("after_rollback", _after_rollback),
+    ):
+        if not event.contains(Session, name, listener):
+            event.listen(Session, name, listener)
 
 
 register_change_tracking = register_daily_summary_events

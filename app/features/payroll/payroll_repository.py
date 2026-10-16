@@ -91,6 +91,7 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             month: int | None = None,
             year: int | None = None,
             user_id: int | None = None,
+            commit: bool = True,
     ) -> PayrollClosure:
         if obj_in is not None:
             if isinstance(obj_in, PayrollClosure):
@@ -107,8 +108,11 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
         else:
             db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
         db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        if commit:
+            await db.commit()
+            await db.refresh(db_obj)
+        else:
+            await db.flush()
         return db_obj
 
     async def get_by_month(self, db: AsyncSession, month: int, year: int) -> PayrollClosure | None:

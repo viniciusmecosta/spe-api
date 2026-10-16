@@ -33,24 +33,24 @@ class TimeRecord(Base):
     USERS_ID = "users.id"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey(USERS_ID), nullable=False)
+    user_id = Column(Integer, ForeignKey(USERS_ID, ondelete="RESTRICT"), nullable=False)
     record_type = Column(Enum(RecordType), nullable=False)
     record_datetime = Column(DateTime(timezone=True), nullable=False)
     ip_address = Column(String, nullable=True)
     device_name = Column(String, nullable=True)
     platform = Column(String, nullable=True)
-    biometric_id = Column(Integer, ForeignKey("user_biometrics.id"), nullable=True)
+    biometric_id = Column(Integer, ForeignKey("user_biometrics.id", ondelete="SET NULL"), nullable=True)
 
-    edited_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    edited_by = Column(Integer, ForeignKey(USERS_ID, ondelete="SET NULL"), nullable=True)
     edit_justification = Column(String, nullable=True)
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete="SET NULL"), nullable=True)
     is_ignored = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
-    original_record_id = Column(Integer, ForeignKey("time_records.id"), nullable=True)
+    original_record_id = Column(Integer, ForeignKey("time_records.id", name="fk_time_records_original_record_id", ondelete="SET NULL", deferrable=True, initially="DEFERRED"), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=get_local_time, nullable=True)
 
     user = relationship("User", back_populates="time_records", foreign_keys=[user_id])

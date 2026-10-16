@@ -14,9 +14,6 @@ from app.features.daily_summaries.daily_summary_exceptions import (
     DailySummaryUnavailableError,
 )
 from app.features.daily_summaries.daily_summary_models import DailySummary
-from app.features.daily_summaries.daily_summary_schemas import (
-    DaySummaryValues,
-)
 from app.features.daily_summaries.daily_summary_service import (
     DailySummaryService,
     daily_summary_service,
@@ -207,10 +204,7 @@ def test_dispatch_after_commit_and_rollback():
 
     with patch("app.features.daily_summaries.daily_summary_events.schedule_days") as mock_schedule:
         _after_commit(session)
-        mock_schedule.assert_called_once_with(
-            {(1, date(2026, 5, 1)), (2, date(2026, 5, 2))},
-            {(1, date(2026, 5, 1))},
-        )
+        mock_schedule.assert_not_called()
         assert "daily_summary_changed_days" not in session.info
         assert "daily_summary_reset_excess_days" not in session.info
 
@@ -394,14 +388,14 @@ async def test_load_period_rows_supports_sync_session():
 
 @pytest.mark.asyncio
 async def test_calculate_user_day_returns_when_user_is_missing():
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.scalar.return_value = None
 
-    await DailySummaryService()._calculate_user_day(
+    DailySummaryService()._calculate_user_day(
         session, 1, date(2026, 5, 11), refresh_excess=False
     )
 
-    session.scalars.assert_not_awaited()
+    session.scalars.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -412,7 +406,7 @@ async def test_recalculate_day_dispatches_with_refresh_enabled(mocker):
 
     await service.recalculate_day(1, target, reset_excess=True)
 
-    calculate.assert_awaited_once_with(
+    calculate.assert_called_once_with(
         1, target, refresh_excess=True, allow_closed=False, reset_excess=True
     )
 
@@ -437,7 +431,7 @@ async def test_calculate_user_day_invalidates_changed_reviewed_excess(mocker):
         approved_amount_hours=0.5,
     )
     period = _make_period_result(day, 36000, 28800, 28800, 7200, 0, 0, 0)
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.add = MagicMock()
     session.scalar.return_value = MagicMock(historical_schedules=[])
     session.scalars.side_effect = [
@@ -451,21 +445,21 @@ async def test_calculate_user_day_invalidates_changed_reviewed_excess(mocker):
         side_effect=[period, period],
     )
     evaluate = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_sync",
+        new_callable=MagicMock,
     )
     upsert = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert_sync",
+        new_callable=MagicMock,
     )
 
-    await service._calculate_user_day(session, 1, day, refresh_excess=True)
+    service._calculate_user_day(session, 1, day, refresh_excess=True)
 
     assert reviewed.deleted_at is not None
     assert session.add.call_args.args[0].action == "INVALIDATE_DAILY_EXCESS"
-    evaluate.assert_awaited_once_with(session, 1, day)
+    evaluate.assert_called_once_with(session, 1, day)
     assert calculate.call_count == 2
-    upsert.assert_awaited_once()
+    upsert.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -481,7 +475,7 @@ async def test_calculate_user_day_keeps_current_reviewed_excess(mocker):
         amount_hours=2,
     )
     period = _make_period_result(day, 36000, 28800, 28800, 7200, 0, 0, 0)
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.scalar.return_value = MagicMock(historical_schedules=[])
     session.scalars.side_effect = [
         _scalar_result([]),
@@ -493,19 +487,19 @@ async def test_calculate_user_day_keeps_current_reviewed_excess(mocker):
         return_value=period,
     )
     evaluate = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_sync",
+        new_callable=MagicMock,
     )
     upsert = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert_sync",
+        new_callable=MagicMock,
     )
 
-    await service._calculate_user_day(session, 1, day, refresh_excess=True)
+    service._calculate_user_day(session, 1, day, refresh_excess=True)
 
     assert reviewed.deleted_at is None
-    evaluate.assert_not_awaited()
-    upsert.assert_awaited_once()
+    evaluate.assert_not_called()
+    upsert.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -529,7 +523,7 @@ async def test_calculate_user_day_resets_reviewed_excess_before_calculating(mock
         amount_hours=1,
     )
     period = _make_period_result(day, 28800, 28800, 28800, 0, 0, 0, 0)
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.add = MagicMock()
     session.scalar.return_value = MagicMock(historical_schedules=[])
     session.scalars.side_effect = [
@@ -543,21 +537,21 @@ async def test_calculate_user_day_resets_reviewed_excess_before_calculating(mock
         return_value=period,
     )
     evaluate = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_sync",
+        new_callable=MagicMock,
     )
     upsert = mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert_sync",
+        new_callable=MagicMock,
     )
 
-    await service._calculate_user_day(session, 1, day, refresh_excess=False, reset_excess=True)
+    service._calculate_user_day(session, 1, day, refresh_excess=False, reset_excess=True)
 
     assert reviewed.deleted_at is not None
     assert pending.deleted_at is not None
     assert session.add.call_count == 1
-    evaluate.assert_awaited_once_with(session, 1, day, overwrite_reviewed=True)
-    upsert.assert_awaited_once()
+    evaluate.assert_called_once_with(session, 1, day, overwrite_reviewed=True)
+    upsert.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -575,33 +569,17 @@ async def test_calculate_day_checks_user_and_closure_before_upsert(
 ):
     service = DailySummaryService()
     day = date(2026, 5, 11)
-    session = AsyncMock()
-    session.sync_session = MagicMock(info={})
-    transaction = MagicMock()
-    transaction.__aenter__ = AsyncMock(return_value=None)
-    transaction.__aexit__ = AsyncMock(return_value=False)
-    session.begin = MagicMock(return_value=transaction)
+    session = MagicMock(spec=Session)
     session.scalar.side_effect = (
         [user_id]
         + ([closed_id] if user_id is not None and not allow_closed else [])
         + ([49] if should_calculate else [])
     )
-    manager = MagicMock()
-    manager.__aenter__ = AsyncMock(return_value=session)
-    manager.__aexit__ = AsyncMock(return_value=False)
-    calculated = mocker.patch.object(service, "_calculate_user_day", new_callable=AsyncMock)
-    mocker.patch(
-        "app.features.daily_summaries.daily_summary_service.AsyncSessionLocal",
-        return_value=manager,
-    )
-
-    await service.calculate_day(
-        1, day, refresh_excess=True, allow_closed=allow_closed
-    )
-
-    assert session.scalar.await_count == expected_scalar_calls
-    assert session.execute.await_count == int(should_calculate)
-    assert calculated.await_count == int(should_calculate)
+    calculated = mocker.patch.object(service, "_calculate_user_day")
+    service.calculate_in_session(session, 1, day, refresh_excess=True, allow_closed=allow_closed)
+    assert session.scalar.call_count == expected_scalar_calls
+    assert session.execute.call_count == int(should_calculate)
+    assert calculated.call_count == int(should_calculate)
 
 
 @pytest.mark.asyncio
@@ -611,7 +589,7 @@ async def test_calculate_user_day_with_reset_excess():
     )
     from app.features.users.user_models import User
 
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.add = MagicMock()
     user = User(id=1, name="Tester")
     user.historical_schedules = []
@@ -621,19 +599,19 @@ async def test_calculate_user_day_with_reset_excess():
     session.scalars.return_value = scalars_mock
 
     with patch(
-        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_sync",
+        new_callable=MagicMock,
     ) as mock_excess, patch(
-        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert_sync",
+        new_callable=MagicMock,
     ) as mock_upsert:
-        await daily_summary_service._calculate_user_day(
+        daily_summary_service._calculate_user_day(
             session, user_id=1, day=date(2026, 5, 10), refresh_excess=True, reset_excess=True
         )
-        mock_excess.assert_awaited_once_with(
+        mock_excess.assert_called_once_with(
             session, 1, date(2026, 5, 10), overwrite_reviewed=True
         )
-        assert mock_upsert.await_count == 1
+        assert mock_upsert.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -650,7 +628,7 @@ async def test_schedule_change_preserves_reviewed_excess_in_history():
         amount_hours=1.0,
         approved_amount_hours=1.0,
     )
-    session = AsyncMock()
+    session = MagicMock(spec=Session)
     session.add = MagicMock()
     user = User(id=1, name="Tester")
     user.historical_schedules = []
@@ -662,13 +640,13 @@ async def test_schedule_change_preserves_reviewed_excess_in_history():
     session.scalars.side_effect = [previous, empty, empty, empty]
 
     with patch(
-        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_async",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_excess_service.evaluate_user_day_sync",
+        new_callable=MagicMock,
     ), patch(
-        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert",
-        new_callable=AsyncMock,
+        "app.features.daily_summaries.daily_summary_service.daily_summary_repository.upsert_sync",
+        new_callable=MagicMock,
     ):
-        await daily_summary_service._calculate_user_day(
+        daily_summary_service._calculate_user_day(
             session, user_id=1, day=day, refresh_excess=True, reset_excess=True
         )
 
