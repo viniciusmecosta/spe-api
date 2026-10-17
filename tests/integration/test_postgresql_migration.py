@@ -1,4 +1,5 @@
 import asyncio
+import json
 import subprocess
 import sys
 from datetime import date, datetime
@@ -77,6 +78,28 @@ async def test_summary_failure_rolls_back_source_and_keeps_previous_summary(
         assert row.worked_minutes == 0
     async with factory() as session:
         session.add_all(punches(user.id))
+        await session.commit()
+    async with factory() as session:
+        assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
+        assert (await session.scalar(select(DailySummary))).worked_minutes == 480
+
+
+@pytest.mark.asyncio
+async def test_retrying_commit_after_calculation_failure_refreshes_summary(
+    pg_session_factory,
+):
+    factory = pg_session_factory
+    user = await seed(factory)
+    await daily_summary_service.calculate_day(user.id, date(2026, 2, 2), False, True)
+    async with factory() as session:
+        session.add_all(punches(user.id))
+        with patch.object(
+            daily_summary_service,
+            "_calculate_user_day",
+            side_effect=RuntimeError("outage"),
+        ):
+            with pytest.raises(DailySummaryRecalculationError):
+                await session.commit()
         await session.commit()
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
@@ -258,6 +281,55 @@ async def test_actual_asyncpg_duplicate_constraint_is_recognized(pg_session_fact
 
 def test_alembic_metadata_matches_migrated_schema(pg_url):
     subprocess.run([sys.executable, "-m", "alembic", "check"], check=True, timeout=30)
+
+
+def test_sync_session_keeps_fortaleza_for_late_evening_records(pg_url):
+    program = """
+import json
+from datetime import datetime
+from sqlalchemy import select, text
+from app.database.models import Base
+from app.database.session import SessionLocal
+from app.features.users.user_models import User
+from app.features.time_records.time_record_models import TimeRecord
+from app.features.daily_summaries.daily_summary_models import DailySummary
+from app.shared.enums import UserRole, RecordType
+with SessionLocal() as session:
+    user = User(username="synthetic-sync", role=UserRole.EMPLOYEE)
+    session.add(user)
+    session.commit()
+    session.add_all([
+        TimeRecord(
+            user_id=user.id, record_type=kind,
+            record_datetime=datetime.fromisoformat(f"2026-02-02T{clock}:00-03:00")
+        )
+        for kind, clock in [(RecordType.ENTRY, "22:00"), (RecordType.EXIT, "23:00")]
+    ])
+    session.commit()
+with SessionLocal() as session:
+    row = session.scalar(select(DailySummary))
+    first = session.scalar(select(TimeRecord).order_by(TimeRecord.record_datetime))
+    print(json.dumps({
+        "worked_minutes": float(row.worked_minutes),
+        "first_record_day": first.record_datetime.date().isoformat(),
+        "first_record_hour": first.record_datetime.hour,
+        "session_timezone": session.scalar(text("SHOW timezone")),
+    }))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    values = json.loads(result.stdout)
+    assert values == {
+        "worked_minutes": 60,
+        "first_record_day": "2026-02-02",
+        "first_record_hour": 22,
+        "session_timezone": "America/Fortaleza",
+    }
 
 
 @pytest.mark.asyncio
