@@ -137,17 +137,17 @@ def test_dump_postgresql_tier1_pg_dump_success(mocker):
     assert result is True
 
 
-def test_dump_postgresql_tier2_docker_success(mocker):
+def test_dump_postgresql_without_native_client_uses_python(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value=None)
     mocker.patch("shutil.which", side_effect=lambda cmd: "/usr/bin/docker" if cmd == "docker" else None)
-    proc_mock = MagicMock()
-    proc_mock.stdout = b"-- pg_dump dump"
-    mocker.patch("subprocess.run", return_value=proc_mock)
-    mocker.patch.object(service, "_filter_pg_dump_output", return_value=True)
+    run = mocker.patch("subprocess.run")
+    dump = mocker.patch.object(service, "_dump_postgresql_python", return_value=True)
 
     result = service._dump_postgresql_inserts("output.sql")
     assert result is True
+    dump.assert_called_once()
+    run.assert_not_called()
 
 
 def test_dump_postgresql_tier3_python_fallback(mocker):
@@ -272,15 +272,13 @@ def test_dump_postgresql_schema_host_success(mocker):
     assert service._dump_postgresql_schema("schema.sql") is True
 
 
-def test_dump_postgresql_schema_docker_fallback(mocker):
+def test_dump_postgresql_schema_native_failure_fails_closed(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value="/usr/bin/pg_dump")
     mocker.patch("shutil.which", side_effect=lambda c: "/usr/bin/docker" if c == "docker" else None)
-    proc = MagicMock()
-    proc.stdout = b"CREATE TABLE x();"
-    mocker.patch("subprocess.run", side_effect=[Exception("Host failed"), proc])
-    mocker.patch.object(service, "_filter_pg_dump_output", return_value=True)
-    assert service._dump_postgresql_schema("schema.sql") is True
+    run = mocker.patch("subprocess.run", side_effect=Exception("Host failed"))
+    assert service._dump_postgresql_schema("schema.sql") is False
+    run.assert_called_once()
 
 
 def test_dump_postgresql_schema_without_pg_dump_fails_closed(mocker):
@@ -290,24 +288,25 @@ def test_dump_postgresql_schema_without_pg_dump_fails_closed(mocker):
     assert service._dump_postgresql_schema("schema.sql") is False
 
 
-def test_dump_postgresql_inserts_host_failure_docker_fallback(mocker):
+def test_dump_postgresql_inserts_host_failure_uses_python(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value="/usr/bin/pg_dump")
     mocker.patch("shutil.which", side_effect=lambda c: "/usr/bin/docker" if c == "docker" else None)
-    proc = MagicMock()
-    proc.stdout = b"INSERT INTO x VALUES (1);"
-    mocker.patch("subprocess.run", side_effect=[Exception("Host failed"), proc])
-    mocker.patch.object(service, "_filter_pg_dump_output", return_value=True)
+    run = mocker.patch("subprocess.run", side_effect=Exception("Host failed"))
+    dump = mocker.patch.object(service, "_dump_postgresql_python", return_value=True)
     assert service._dump_postgresql_inserts("inserts.sql") is True
+    run.assert_called_once()
+    dump.assert_called_once()
 
 
-def test_dump_postgresql_inserts_docker_failure_python_fallback(mocker):
+def test_dump_postgresql_inserts_python_failure_returns_false(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value=None)
     mocker.patch("shutil.which", side_effect=lambda c: "/usr/bin/docker" if c == "docker" else None)
-    mocker.patch("subprocess.run", side_effect=Exception("Docker failed"))
-    mocker.patch.object(service, "_dump_postgresql_python", return_value=True)
-    assert service._dump_postgresql_inserts("inserts.sql") is True
+    run = mocker.patch("subprocess.run")
+    mocker.patch.object(service, "_dump_postgresql_python", return_value=False)
+    assert service._dump_postgresql_inserts("inserts.sql") is False
+    run.assert_not_called()
 
 
 def test_find_pg_dump_shutil_which(mocker):
@@ -359,17 +358,17 @@ def test_snapshot_dump_streams_host_output_and_strips_directives(mocker, tmp_pat
         assert path.stat().st_mode & 0o077 == 0
 
 
-def test_snapshot_dump_uses_docker_and_cleans_failed_output(mocker, tmp_path):
+def test_snapshot_dump_uses_native_client_and_cleans_failed_output(mocker, tmp_path):
     service = BackupService()
     params = {"host": "localhost", "port": 5432, "user": "spe", "password": "secret", "dbname": "spe_db"}
     mocker.patch.object(service, "_get_postgres_connection_params", return_value=params)
-    mocker.patch.object(service, "_find_pg_dump", return_value=None)
+    mocker.patch.object(service, "_find_pg_dump", return_value="/native/pg_dump")
     mocker.patch("app.features.system.backup_service.shutil.which", return_value="/usr/bin/docker")
     assert service._dump_with_snapshot(str(tmp_path / "none.sql"), schema_only=False) is False
     service._snapshot_id = "snapshot-1"
 
     def successful_run(command, **kwargs):
-        assert command[:2] == ["docker", "exec"]
+        assert command[:3] == ["/native/pg_dump", "-h", params["host"]]
         kwargs["stdout"].write(b"INSERT INTO users (id) VALUES (1);\n")
         return SimpleNamespace(returncode=0, stderr=b"")
 
@@ -396,12 +395,13 @@ def test_snapshot_routes_schema_and_data_to_same_dump(mocker):
     assert dump.call_args_list[1].kwargs == {"schema_only": False}
 
 
-def test_dump_postgresql_schema_docker_failure(mocker):
+def test_dump_postgresql_schema_missing_client_never_runs_other_commands(mocker):
     service = BackupService()
     mocker.patch.object(service, "_find_pg_dump", return_value=None)
     mocker.patch("shutil.which", side_effect=lambda c: "/usr/bin/docker" if c == "docker" else None)
-    mocker.patch("subprocess.run", side_effect=Exception("Docker failed"))
+    run = mocker.patch("subprocess.run")
     assert service._dump_postgresql_schema("schema.sql") is False
+    run.assert_not_called()
 
 
 def test_create_safe_backup_cleanup_existing_on_failure(mocker):
