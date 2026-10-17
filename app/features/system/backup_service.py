@@ -107,19 +107,12 @@ class BackupService:
         return False
 
     def _snapshot_commands(self, params, common, host_bin):
-        commands = []
-        if host_bin:
-            commands.append((
-                [host_bin, "-h", str(params["host"]), "-p", str(params["port"]), *common],
-                {**os.environ, "PGPASSWORD": str(params["password"])},
-            ))
-        if shutil.which("docker"):
-            commands.append((
-                ["docker", "exec", "-e", f"PGPASSWORD={params['password']}",
-                 "spe_postgres", "pg_dump", *common],
-                None,
-            ))
-        return commands
+        if not host_bin:
+            return []
+        return [(
+            [host_bin, "-h", str(params["host"]), "-p", str(params["port"]), *common],
+            {**os.environ, "PGPASSWORD": str(params["password"])},
+        )]
 
     def _run_snapshot_dump(self, command, environment, output_path: str) -> bool:
         with self._open_private(output_path, "wb") as output:
@@ -305,29 +298,7 @@ class BackupService:
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
                     return True
             except Exception as e:
-                logger.warning(f"Host pg_dump schema falhou: {e}. Tentando fallback...")
-
-        if shutil.which("docker"):
-            try:
-                cmd = [
-                    "docker", "exec",
-                    "-e", f"PGPASSWORD={params['password']}",
-                    "spe_postgres",
-                    "pg_dump",
-                    "-U", str(params["user"]),
-                    "-d", str(params["dbname"]),
-                    "--schema-only",
-                    "--clean",
-                    "--if-exists",
-                    "--no-owner",
-                    "--no-privileges",
-                    PG_ENCODING_UTF8,
-                ]
-                proc = subprocess.run(cmd, check=True, capture_output=True)
-                if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
-                    return True
-            except Exception as e:
-                logger.warning(f"Docker pg_dump schema falhou: {e}. Tentando fallback...")
+                logger.warning(f"pg_dump schema falhou: {e}")
 
         return False
 
@@ -359,29 +330,7 @@ class BackupService:
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
                     return True
             except Exception as e:
-                logger.warning(f"Host pg_dump inserts falhou: {e}. Tentando fallback...")
-
-        if shutil.which("docker"):
-            try:
-                cmd = [
-                    "docker", "exec",
-                    "-e", f"PGPASSWORD={params['password']}",
-                    "spe_postgres",
-                    "pg_dump",
-                    "-U", str(params["user"]),
-                    "-d", str(params["dbname"]),
-                    "--data-only",
-                    "--inserts",
-                    "--column-inserts",
-                    "--no-owner",
-                    "--no-privileges",
-                    PG_ENCODING_UTF8,
-                ]
-                proc = subprocess.run(cmd, check=True, capture_output=True)
-                if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
-                    return True
-            except Exception as e:
-                logger.warning(f"Docker pg_dump inserts falhou: {e}. Tentando fallback...")
+                logger.warning(f"pg_dump inserts falhou: {e}. Tentando exportador Python no mesmo banco.")
 
         return self._dump_postgresql_python(output_path, params)
 

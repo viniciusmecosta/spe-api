@@ -197,26 +197,6 @@ def _run_local_pg_dump(output_path: Path, creds: dict[str, str], pg_dump: str, e
     return res.returncode == 0 and _clean_pg_dump_file(output_path)
 
 
-def _run_docker_pg_dump(output_path: Path, creds: dict[str, str], extra_flags: list[str]) -> bool:
-    if not shutil.which("docker"):
-        return False
-    cmd = [
-        "docker", "exec",
-        "-e", f"PGPASSWORD={creds.get('password', '')}",
-        "spe_postgres",
-        "pg_dump",
-        "-U", str(creds.get("user", "spe")),
-        "-d", str(creds.get("dbname", "spe_db")),
-        "--no-owner",
-        "--no-privileges",
-        "--encoding=UTF8",
-        *extra_flags,
-    ]
-    with output_path.open("wb") as output:
-        res = subprocess.run(cmd, stdout=output, stderr=subprocess.PIPE)
-    return res.returncode == 0 and _clean_pg_dump_file(output_path)
-
-
 def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
     creds = get_pg_credentials()
     pg_dump = find_pg_binary("pg_dump")
@@ -225,10 +205,6 @@ def dump_schema_ddl(output_path: Path = DEFAULT_SCHEMA_PATH) -> None:
     print(f"Extraindo DDL do banco PostgreSQL para: {output_path.name}...")
     if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
         print(f"[OK] DDL extraída com sucesso via pg_dump! ({output_path.stat().st_size:,} bytes)")
-        return
-
-    if _run_docker_pg_dump(output_path, creds, flags):
-        print(f"[OK] DDL extraída com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
         return
 
     ddl = extract_live_ddl_from_postgres(include_alembic_version=True)
@@ -250,11 +226,6 @@ def dump_data_inserts(output_path: Path = DEFAULT_DUMP_PATH) -> None:
     if pg_dump and _run_local_pg_dump(output_path, creds, pg_dump, flags):
         add_manifest(output_path, _database_counts(creds))
         print(f"[OK] Inserts extraídos com sucesso via pg_dump! ({output_path.stat().st_size:,} bytes)")
-        return
-
-    if _run_docker_pg_dump(output_path, creds, flags):
-        add_manifest(output_path, _database_counts(creds))
-        print(f"[OK] Inserts extraídos com sucesso via Docker! ({output_path.stat().st_size:,} bytes)")
         return
 
     from app.features.system.backup_service import backup_service
