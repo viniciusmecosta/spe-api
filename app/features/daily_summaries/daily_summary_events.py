@@ -111,8 +111,8 @@ def _before_commit(session: Session) -> None:
     if session.info.get("skip_daily_summary_tracking"):
         return
     session.flush()
-    days = session.info.pop("daily_summary_changed_days", set())
-    reset_days = session.info.pop("daily_summary_reset_excess_days", set())
+    days = set(session.info.get("daily_summary_changed_days", set()))
+    reset_days = set(session.info.get("daily_summary_reset_excess_days", set()))
     if not days:
         return
     from app.features.daily_summaries.daily_summary_service import daily_summary_service
