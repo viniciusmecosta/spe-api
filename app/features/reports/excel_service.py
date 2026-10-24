@@ -71,7 +71,7 @@ class ExcelService:
             query = report_service.apply_employee_filters(query, employee_ids)
             users = query.all()
             company = company_repository.get_current(session)
-        return users, company
+        return sorted(users, key=lambda user: user.id), company
 
     def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:
