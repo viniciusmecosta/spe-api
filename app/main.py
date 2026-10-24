@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
@@ -59,4 +58,6 @@ def root():
 
 
 app.include_router(api_v1_router, prefix="/api/v1")
-app.mount("/uploads", StaticFiles(directory=public_upload_dir), name="uploads")
+from app.features.companies.logo_compatibility import public_upload
+
+app.add_api_route('/uploads/{filename}', public_upload, include_in_schema=False)

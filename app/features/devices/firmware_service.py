@@ -9,6 +9,7 @@ from fastapi import Depends, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ROOT_DIR, settings
+from app.shared.storage import resolve_stored_file
 from app.database.session import get_async_db
 from app.features.devices.device_exceptions import (
     FirmwareFileNotFoundError,
@@ -138,12 +139,10 @@ class FirmwareService:
         if not firmware:
             raise FirmwareNotFoundError(version=version)
 
-        absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(
-            firmware.file_path) else firmware.file_path
-        if not os.path.exists(absolute_file_path):
+        absolute_file_path = resolve_stored_file(firmware.file_path, 'firmware')
+        if absolute_file_path is None:
             raise FirmwareFileNotFoundError(version=version)
-
-        return absolute_file_path
+        return str(absolute_file_path)
 
 
 firmware_service = FirmwareService()

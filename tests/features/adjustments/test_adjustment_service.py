@@ -79,15 +79,16 @@ async def test_get_attachment_file_path_file_not_found(async_db_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker):
+async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker, tmp_path):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     att = AdjustmentAttachment(id=1, file_path="/non_existent/path/doc.pdf")
     req_att = AdjustmentRequest(id=1, user_id=1, attachments=[att])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=req_att)
-    mocker.patch("os.path.exists", side_effect=[False, True])
+    mocker.patch('app.core.config.settings.UPLOAD_DIR', str(tmp_path))
+    (tmp_path / 'doc.pdf').write_bytes(b'synthetic')
     path, fname = await adjustment_service.get_attachment_file_path(async_db_mock, 1, emp)
-    assert path == "/non_existent/path/doc.pdf"
+    assert path == str(tmp_path / 'doc.pdf')
     assert fname == "doc.pdf"
 
 

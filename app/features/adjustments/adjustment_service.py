@@ -36,6 +36,7 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
+from app.shared.storage import resolve_stored_file
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.timezone import local_day_bounds, to_app_timezone
 
@@ -460,17 +461,10 @@ class AdjustmentService:
             raise AdjustmentAttachmentNotFoundError("Nenhum anexo associado a este ajuste")
 
         attachment = adjustment.attachments[-1]
-        filename = os.path.basename(attachment.file_path)
-        safe_file_path = os.path.join(settings.UPLOAD_DIR, filename)
+        safe_file_path = resolve_stored_file(attachment.file_path)
+        if safe_file_path is None:
+            raise AttachmentFileNotFoundError("Arquivo físico não encontrado no servidor")
+        return str(safe_file_path), safe_file_path.name
 
-        if not os.path.exists(safe_file_path):
-            if os.path.exists(attachment.file_path):
-                safe_file_path = attachment.file_path
-            else:
-                raise AttachmentFileNotFoundError(
-                    "Arquivo físico não encontrado no servidor"
-                )
-
-        return safe_file_path, filename
 
 adjustment_service = AdjustmentService()

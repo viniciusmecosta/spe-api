@@ -217,24 +217,16 @@ async def test_get_firmware_file_not_found_fs(mock_exists, mock_repo, firmware_s
 
 
 @pytest.mark.asyncio
-@patch("app.features.devices.firmware_service.async_firmware_repository")
-@patch("os.path.exists", return_value=True)
-async def test_get_firmware_file_success_rel(mock_exists, mock_repo, firmware_service, async_db_mock):
-    mock_repo.get_by_version = AsyncMock(return_value=Firmware(id=1, version="v1.0.0", file_path="rel/path"))
-    with patch("os.path.isabs", return_value=False):
-        with patch("os.path.join", return_value="/root/rel/path"):
-            result = await firmware_service.get_firmware_file(async_db_mock, "v1.0.0")
-    assert result == "/root/rel/path"
-
-
-@pytest.mark.asyncio
-@patch("app.features.devices.firmware_service.async_firmware_repository")
-@patch("os.path.exists", return_value=True)
-async def test_get_firmware_file_success_abs(mock_exists, mock_repo, firmware_service, async_db_mock):
-    mock_repo.get_by_version = AsyncMock(return_value=Firmware(id=1, version="v1.0.0", file_path="/abs/path"))
-    with patch("os.path.isabs", return_value=True):
-        result = await firmware_service.get_firmware_file(async_db_mock, "v1.0.0")
-    assert result == "/abs/path"
+@pytest.mark.parametrize('stored', ['uploads/firmware/test.bin', 'C:/old/uploads/firmware/test.bin'])
+async def test_get_firmware_file_only_resolves_inside_uploads(stored, firmware_service, async_db_mock, mocker, tmp_path):
+    mocker.patch('app.core.config.settings.UPLOAD_DIR', str(tmp_path))
+    directory = tmp_path / 'firmware'
+    directory.mkdir()
+    binary = directory / 'test.bin'
+    binary.write_bytes(b'synthetic firmware')
+    mocker.patch.object(firmware_service.repo, 'get_by_version', new_callable=AsyncMock,
+                        return_value=Firmware(id=1, version='v1.0.0', file_path=stored))
+    assert await firmware_service.get_firmware_file(async_db_mock, 'v1.0.0') == str(binary)
 
 
 def test_firmware_service_repo_property(firmware_service):
