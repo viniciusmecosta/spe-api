@@ -17,20 +17,57 @@ from app.core.config import settings
 POSTGRESQL_ASYNCPG_PREFIX = "postgresql+asyncpg://"
 POSTGRESQL_SYNC_PREFIX = "postgresql://"
 
-pool_kwargs = {"pool_pre_ping": True, "pool_size": 10, "max_overflow": 20}
+pool_kwargs = {
+    "pool_pre_ping": True,
+    "pool_size": settings.DB_POOL_SIZE,
+    "max_overflow": settings.DB_MAX_OVERFLOW,
+    "pool_timeout": settings.DB_POOL_TIMEOUT_SECONDS,
+    "pool_recycle": 1800,
+}
+
+
+def connection_settings() -> dict[str, str]:
+    return {
+        "TimeZone": settings.TIMEZONE,
+        "statement_timeout": str(settings.DB_STATEMENT_TIMEOUT_MS),
+        "lock_timeout": str(settings.DB_LOCK_TIMEOUT_MS),
+        "idle_in_transaction_session_timeout": str(settings.DB_IDLE_TRANSACTION_TIMEOUT_MS),
+    }
+
+
+def on_sync_connect(dbapi_connection, connection_record):
+    # Commit session settings outside any application transaction.
+    previous_autocommit = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            for name, value in connection_settings().items():
+                cursor.execute("SELECT set_config(%s, %s, false)", (name, value))
+    finally:
+        dbapi_connection.autocommit = previous_autocommit
 
 db_uri_sync = settings.SQLALCHEMY_DATABASE_URI
 if db_uri_sync.startswith(POSTGRESQL_ASYNCPG_PREFIX):
     db_uri_sync = db_uri_sync.replace(POSTGRESQL_ASYNCPG_PREFIX, POSTGRESQL_SYNC_PREFIX, 1)
 
-engine = create_engine(db_uri_sync, **pool_kwargs)
+sync_connect_args = (
+    {"connect_timeout": settings.DB_CONNECT_TIMEOUT_SECONDS}
+    if db_uri_sync.startswith("postgresql") else {}
+)
+engine = create_engine(db_uri_sync, connect_args=sync_connect_args, **pool_kwargs)
+if engine.dialect.name == "postgresql":
+    event.listen(engine, "connect", on_sync_connect)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 db_uri_async = settings.SQLALCHEMY_DATABASE_URI
 if db_uri_async.startswith(POSTGRESQL_SYNC_PREFIX) and not db_uri_async.startswith(POSTGRESQL_ASYNCPG_PREFIX):
     db_uri_async = db_uri_async.replace(POSTGRESQL_SYNC_PREFIX, POSTGRESQL_ASYNCPG_PREFIX, 1)
 
-async_engine = create_async_engine(db_uri_async, **pool_kwargs)
+async_connect_args = (
+    {"timeout": settings.DB_CONNECT_TIMEOUT_SECONDS, "server_settings": connection_settings()}
+    if db_uri_async.startswith("postgresql") else {}
+)
+async_engine = create_async_engine(db_uri_async, connect_args=async_connect_args, **pool_kwargs)
 
 
 class ApurationAsyncSession(AsyncSession):

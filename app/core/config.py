@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str | None = None
     POSTGRES_HOST: str | None = None
     POSTGRES_PORT: int | None = None
+    DB_POOL_SIZE: int = Field(default=5, ge=1, le=100)
+    DB_MAX_OVERFLOW: int = Field(default=5, ge=0, le=100)
+    DB_POOL_TIMEOUT_SECONDS: int = Field(default=15, ge=1, le=120)
+    DB_CONNECT_TIMEOUT_SECONDS: int = Field(default=10, ge=1, le=120)
+    DB_STATEMENT_TIMEOUT_MS: int = Field(default=120000, ge=1000, le=3600000)
+    DB_LOCK_TIMEOUT_MS: int = Field(default=10000, ge=100, le=300000)
+    DB_IDLE_TRANSACTION_TIMEOUT_MS: int = Field(default=60000, ge=1000, le=3600000)
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int

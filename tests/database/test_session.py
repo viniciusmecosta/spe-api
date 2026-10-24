@@ -217,3 +217,15 @@ def test_session_module_listen_exception(monkeypatch):
     importlib.reload(app.database.session)
 
 
+
+
+def test_sync_connections_set_timezone_and_timeouts():
+    from app.core.config import settings
+    from app.database.session import connection_settings, on_sync_connect
+    conn = MagicMock()
+    conn.autocommit = False
+    on_sync_connect(conn, None)
+    cursor = conn.cursor.return_value.__enter__.return_value
+    assert cursor.execute.call_count == len(connection_settings())
+    cursor.execute.assert_any_call("SELECT set_config(%s, %s, false)", ("TimeZone", settings.TIMEZONE))
+    assert conn.autocommit is False
