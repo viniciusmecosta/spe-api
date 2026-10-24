@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.core.redaction import redact
 
 LOG_BASE_DIR = "logs"
 
@@ -26,9 +27,10 @@ class CleanFormatter(logging.Formatter):
     def format(self, record):
         original_levelname = record.levelname
         record.levelname = self.LEVEL_MAP.get(record.levelname, record.levelname)
-        result = super().format(record)
-        record.levelname = original_levelname
-        return result
+        try:
+            return redact(super().format(record))
+        finally:
+            record.levelname = original_levelname
 
 
 class DailyRotatingFileHandler(logging.FileHandler):
