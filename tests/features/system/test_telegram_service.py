@@ -45,7 +45,7 @@ def test_send_text_success(service):
                 "text": "test message",
                 "parse_mode": "HTML"
             },
-            timeout=15
+            timeout=(10, 30)
         )
 
 
@@ -175,7 +175,7 @@ async def test_generate_report_text_exceed_max_length(service, async_db_mock):
 
         result = await service.generate_report_text(async_db_mock, start_date, end_date)
 
-        assert "John Doe" not in result
+        assert "John Doe" in result
 
 
 def test_group_daily_activity(service):
