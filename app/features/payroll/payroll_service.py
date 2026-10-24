@@ -35,8 +35,10 @@ from app.features.payroll.payroll_repository import (
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import dispatch_payroll_email, email_service
+from app.features.system.job_queue import enqueue
 from app.features.users.user_models import User
 from app.shared import deps
+from app.shared.storage import resolve_stored_file
 from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
@@ -69,6 +71,18 @@ class PayrollService:
     @property
     def repo(self) -> AsyncPayrollRepository:
         return self._repo if self._repo is not None else async_payroll_repository
+
+    async def _queue_notification(self, session, action: str, current_user, closure, month: int, year: int):
+        maintainers = list((await session.scalars(select(User).where(
+            User.role == UserRole.MAINTAINER, User.is_active.is_(True), User.email.isnot(None)
+        ))).all())
+        recipients = [maintainer.email for maintainer in maintainers if maintainer.email]
+        await enqueue(session, 'NOTIFICATION', {
+            'routine_type': 'EMAIL_PAYROLL', 'action': action, 'month': month, 'year': year,
+            'user_name': current_user.name, 'to_emails': recipients,
+            'report_path': closure.report_path if action == 'Fechamento' else None,
+            'target_date': date(year, month, 1).isoformat(),
+        }, f'EMAIL_PAYROLL:{closure.id}:{action}')
 
     def _build_history(self, month_closures: list) -> list[dict[str, Any]]:
         history = []
@@ -221,6 +235,7 @@ class PayrollService:
             )
             closure.report_path = f"reports/{filename}"
             await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
+            await self._queue_notification(session, 'Fechamento', current_user, closure, month, year)
             await session.commit()
         except IntegrityError as exc:
             await session.rollback()
@@ -236,18 +251,6 @@ class PayrollService:
             raise
         await session.refresh(closure)
 
-        stmt = select(User).where(
-            User.role == UserRole.MAINTAINER,
-            User.is_active == True,
-            User.email.isnot(None),
-        )
-        maintainers = list((await session.scalars(stmt)).all())
-        to_emails = [m.email for m in maintainers if m.email]
-
-        background_tasks.add_task(
-            dispatch_closure_email_background,
-            month, year, current_user.name, closure.report_path, to_emails
-        )
         return closure
 
     async def reopen_period(
@@ -289,18 +292,7 @@ class PayrollService:
             old_data={"is_closed": True}, new_data={"is_closed": False}
         )
 
-        stmt = select(User).where(
-            User.role == UserRole.MAINTAINER,
-            User.is_active == True,
-            User.email.isnot(None),
-        )
-        maintainers = list((await session.scalars(stmt)).all())
-        to_emails = [m.email for m in maintainers if m.email]
-
-        background_tasks.add_task(
-            dispatch_payroll_email,
-            "Reabertura", current_user.name, month, year, to_emails
-        )
+        await self._queue_notification(session, 'Reabertura', current_user, existing, month, year)
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 
     def validate_period_open(self, db: Session | None = None, target_date: date | None = None):
@@ -372,12 +364,12 @@ class PayrollService:
         if not closure or not closure.report_path:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
-        file_path = os.path.join(settings.UPLOAD_DIR, closure.report_path)
-        if not os.path.exists(file_path):
+        file_path = resolve_stored_file(closure.report_path, 'reports')
+        if file_path is None:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
         filename = os.path.basename(file_path)
-        return file_path, filename
+        return str(file_path), filename
 
 
 payroll_service = PayrollService()

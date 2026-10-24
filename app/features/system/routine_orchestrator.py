@@ -2,24 +2,22 @@ import asyncio
 import logging
 import os
 from datetime import date, datetime, timedelta
-from fastapi import BackgroundTasks, Depends
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
+
+from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import is_dev, is_prod, settings
 from app.core.logger import get_log_path
 from app.database.session import get_async_session_context
 from app.features.reports.daily_report_service import daily_report_service
 from app.features.system.backup_service import backup_service
-from app.features.system.email_service import email_service
+from app.features.system.job_queue import submit
 from app.features.system.system_exceptions import (
-    BackupGenerationFailedError,
-    EmailNotConfiguredError,
     NoMaintainersWithEmailError,
-    SMTPConnectionFailedError,
 )
 from app.features.system.system_repository import (
     AsyncRoutineLogRepository,
@@ -46,6 +44,29 @@ class RoutineOrchestrator:
     ):
         self.db = db
         self._repo = repo
+
+    async def _enqueue_routine(self, routine_type: str, scheduled: bool = False,
+                               start_date: date | None = None, end_date: date | None = None):
+        now = datetime.now(ZoneInfo(settings.TIMEZONE))
+        if scheduled:
+            if routine_type == 'TELEGRAM_DAILY_REPORT':
+                if is_dev():
+                    return None
+            elif not is_prod():
+                return None
+            if 'HOURLY' in routine_type:
+                if not settings.HOURLY_BACKUP_START_HOUR <= now.hour <= settings.HOURLY_BACKUP_END_HOUR:
+                    return None
+            elif now.hour < settings.DAILY_REPORT_HOUR:
+                return None
+        end_date = end_date or now.date() - timedelta(days=1)
+        start_date = start_date or end_date
+        target = now.strftime('%Y-%m-%dT%H') if 'HOURLY' in routine_type else end_date.isoformat()
+        key = f'{routine_type}:{target}' if scheduled else None
+        return await submit('NOTIFICATION', {
+            'routine_type': routine_type, 'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(), 'target_date': end_date.isoformat(),
+        }, key)
 
     @property
     def repo(self) -> AsyncRoutineLogRepository:
@@ -94,129 +115,10 @@ class RoutineOrchestrator:
         await asyncio.to_thread(self._cleanup_backup_files_sync, backup_path, sql_path, zip_path)
 
     async def execute_hourly_backup_telegram(self):
-        if not is_prod():
-            return
-
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-
-        if now_local.hour < settings.HOURLY_BACKUP_START_HOUR or now_local.hour > settings.HOURLY_BACKUP_END_HOUR:
-            return
-
-        try:
-            async with get_async_session_context() as db_read:
-                current_hour_start_local = now_local.replace(minute=0, second=0, microsecond=0)
-                if await self.repo.has_hourly_routine_run(db_read, "TELEGRAM_HOURLY_BACKUP", current_hour_start_local,
-                                                          status="SUCCESS"):
-                    return
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao verificar backup horário Telegram: {type(e).__name__} - {e}",
-                             exc_info=False)
-            return
-
-        backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path or not sql_path:
-            logger.error('Backup - "Telegram horário" Error')
-            return
-
-        now_str = now_local.strftime('%H:%M')
-        caption = f"[Backup Automático] - {now_str}"
-
-        try:
-            success = await asyncio.to_thread(
-                telegram_service.send_document,
-                zip_path,
-                caption,
-                filename=self._resolve_backup_filename(zip_path, backup_path),
-            )
-
-            try:
-                async with get_async_session_context() as db_write:
-                    if success:
-                        await self.repo.log_execution(
-                            db_write,
-                            routine_type="TELEGRAM_HOURLY_BACKUP",
-                            status="SUCCESS",
-                            execution_time=now_local,
-                        )
-                    else:
-                        logger.error('Backup - "Telegram horário" Error')
-            except SQLAlchemyError as e:
-                logger.exception(
-                    f'Erro de banco ao salvar log de execução do backup horário Telegram: {type(e).__name__} - {e}',
-                    exc_info=False)
-        finally:
-            await self._cleanup_backup_files(backup_path, sql_path, zip_path)
+        return await self._enqueue_routine('TELEGRAM_HOURLY_BACKUP', scheduled=True)
 
     async def send_managerial_report_telegram(self):
-        if is_dev():
-            return
-
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-        today = now_local.date()
-        yesterday = today - timedelta(days=1)
-
-        if now_local.hour < settings.DAILY_REPORT_HOUR:
-            return
-
-        try:
-            async with get_async_session_context() as db_read:
-                if await self.repo.has_routine_run_for_target_date(db_read, "TELEGRAM_DAILY_REPORT", yesterday,
-                                                                   status="SUCCESS"):
-                    return
-
-                last_success = await self.repo.get_last_successful_target_date(db_read, "TELEGRAM_DAILY_REPORT")
-                start_date = (last_success + timedelta(days=1)) if last_success else yesterday
-                start_date = min(start_date, yesterday)
-
-                report_text = await telegram_service.generate_report_text(
-                    db_read, start_date, yesterday
-                )
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao gerar report gerencial Telegram: {type(e).__name__} - {e}",
-                             exc_info=False)
-            return
-
-        text_success = await asyncio.to_thread(telegram_service.send_text, report_text)
-
-        current_log_date = start_date
-        while current_log_date <= yesterday:
-            log_path = get_log_path(current_log_date)
-            if await asyncio.to_thread(os.path.exists, log_path):
-                await asyncio.to_thread(
-                    telegram_service.send_document,
-                    log_path,
-                    f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}",
-                    filename=f"log_{current_log_date.strftime('%d%m%Y')}.log",
-                )
-            current_log_date += timedelta(days=1)
-
-        today_log_path = get_log_path(today)
-        if await asyncio.to_thread(os.path.exists, today_log_path):
-            await asyncio.to_thread(
-                telegram_service.send_document,
-                today_log_path,
-                f"Logs do sistema - {today.strftime(DATE_FORMAT)}",
-                filename=f"log_{today.strftime('%d%m%Y')}.log",
-            )
-
-        try:
-            async with get_async_session_context() as db_write:
-                await self.repo.log_execution(
-                    db_write,
-                    routine_type="TELEGRAM_DAILY_REPORT",
-                    target_date=yesterday,
-                    status="SUCCESS" if text_success else "FAILED",
-                    execution_time=now_local,
-                )
-                if not text_success:
-                    logger.error('Relatório - "Telegram diário" Error')
-        except SQLAlchemyError as e:
-            logger.exception(f'Erro de banco ao salvar log do relatório diário Telegram: {type(e).__name__} - {e}',
-                             exc_info=False)
+        return await self._enqueue_routine('TELEGRAM_DAILY_REPORT', scheduled=True)
 
     async def _generate_daily_backup_report(self, db_read, start_date, yesterday):
         full_report_html = ""
@@ -268,61 +170,7 @@ class RoutineOrchestrator:
             )
 
     async def run_daily_backup_routine_email(self):
-        if not is_prod():
-            return
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-        today = now_local.date()
-        yesterday = today - timedelta(days=1)
-
-        if now_local.hour < settings.DAILY_REPORT_HOUR:
-            return
-
-        try:
-            async with get_async_session_context() as db_read:
-                if await self.repo.has_routine_run_for_target_date(db_read, "EMAIL_DAILY_BACKUP", yesterday,
-                                                                   status="SUCCESS"):
-                    return
-
-                stmt = select(User).where(User.role == UserRole.MAINTAINER, User.is_active == True,
-                                          User.email.isnot(None))
-                res = await db_read.scalars(stmt)
-                maintainers = res.all()
-                to_emails = [m.email for m in maintainers if m.email]
-
-                if not to_emails:
-                    return
-
-                last_success = await self.repo.get_last_successful_target_date(db_read, "EMAIL_DAILY_BACKUP")
-                start_date = (last_success + timedelta(days=1)) if last_success else yesterday
-                start_date = min(start_date, yesterday)
-
-                full_report_html, attachments, period_text = await self._generate_daily_backup_report(db_read,
-                                                                                                      start_date,
-                                                                                                      yesterday)
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao checar backup diário por email: {type(e).__name__} - {e}",
-                             exc_info=False)
-            return
-
-        backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path or not sql_path:
-            logger.error('Backup - "Email diário" Error')
-            return
-
-        self._prepare_backup_attachments(attachments, zip_path)
-
-        today_log_path = get_log_path(today)
-        if await asyncio.to_thread(os.path.exists, today_log_path):
-            attachments.append((today_log_path, f"log_{today.strftime('%d%m%Y')}.log"))
-
-        try:
-            success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
-                                              period_text)
-            await self._log_daily_backup_email_execution(success, yesterday, now_local)
-        finally:
-            await self._cleanup_backup_files(backup_path, sql_path, zip_path)
+        return await self._enqueue_routine('EMAIL_DAILY_BACKUP', scheduled=True)
 
     async def clean_old_logs(self, days_to_keep: int = None):
         if is_dev():
@@ -370,85 +218,10 @@ class RoutineOrchestrator:
                 )
 
     async def execute_manual_backup_telegram(self):
-        backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path or not sql_path:
-            logger.error('Backup - "Telegram manual" Error')
-            return
-
-        tz = ZoneInfo(settings.TIMEZONE)
-        now = datetime.now(tz)
-        now_local = now.replace(tzinfo=None)
-        now_str = now_local.strftime('%d/%m/%Y %H:%M')
-        caption = f"[Backup Manual Solicitado] - {now_str}"
-
-        try:
-            success = await asyncio.to_thread(
-                telegram_service.send_document,
-                zip_path,
-                caption,
-                filename=self._resolve_backup_filename(zip_path, backup_path),
-            )
-
-            today = now_local.date()
-            yesterday = today - timedelta(days=1)
-            await self._send_system_logs_telegram(yesterday, today)
-
-            try:
-                async with get_async_session_context() as db_write:
-                    await self.repo.log_execution(
-                        db_write,
-                        routine_type="TELEGRAM_MANUAL_BACKUP",
-                        status="SUCCESS" if success else "FAILED",
-                        execution_time=now_local,
-                    )
-                    if not success:
-                        logger.error('Backup - "Telegram manual" Error')
-            except SQLAlchemyError as e:
-                logger.exception(f"Erro de banco ao salvar rotina manual: {type(e).__name__} - {e}", exc_info=False)
-        finally:
-            await self._cleanup_backup_files(backup_path, sql_path, zip_path)
+        return await self._enqueue_routine('TELEGRAM_MANUAL_BACKUP')
 
     async def send_manual_report_telegram(self, start_date, end_date):
-        tz = ZoneInfo(settings.TIMEZONE)
-        now_local = datetime.now(tz).replace(tzinfo=None)
-
-        try:
-            async with get_async_session_context() as db_read:
-                report_text = await telegram_service.generate_report_text(
-                    db_read, start_date, end_date, "Relatório Gerencial Manual -"
-                )
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao buscar report manual: {type(e).__name__} - {e}", exc_info=False)
-            return
-
-        text_success = await asyncio.to_thread(telegram_service.send_text, report_text)
-
-        current_log_date = start_date
-        while current_log_date <= end_date:
-            log_path = get_log_path(current_log_date)
-            if await asyncio.to_thread(os.path.exists, log_path):
-                await asyncio.to_thread(
-                    telegram_service.send_document,
-                    log_path,
-                    f"Logs do sistema - {current_log_date.strftime(DATE_FORMAT)}"
-                )
-            current_log_date += timedelta(days=1)
-
-        try:
-            async with get_async_session_context() as db_write:
-                await self.repo.log_execution(
-                    db_write,
-                    routine_type="TELEGRAM_MANUAL_REPORT",
-                    target_date=end_date,
-                    status="SUCCESS" if text_success else "FAILED",
-                    execution_time=now_local,
-                )
-
-                if not text_success:
-                    logger.error('Relatório - "Telegram manual" Error')
-        except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao salvar rotina de relatorio manual: {type(e).__name__} - {e}",
-                             exc_info=False)
+        return await self._enqueue_routine('TELEGRAM_MANUAL_REPORT', start_date=start_date, end_date=end_date)
 
     async def _fetch_manual_backup_report(self, session: AsyncSession) -> tuple[list[str], str, str, date, date]:
         stmt = select(User).where(User.role == UserRole.MAINTAINER, User.is_active == True, User.email.isnot(None))
@@ -481,62 +254,30 @@ class RoutineOrchestrator:
                 attachments.append((log_path, f"log_{log_date.strftime('%d%m%Y')}.log"))
         return attachments
 
-    async def send_manual_backup_email(self, db: AsyncSession | None = None) -> bool:
-        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
-            raise EmailNotConfiguredError()
-
-        session = db if db is not None else self.db
-        if session is not None:
-            to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(session)
-        else:
-            async with get_async_session_context() as bg_session:
-                to_emails, full_report_html, period_text, yesterday, today = await self._fetch_manual_backup_report(
-                    bg_session)
-
-        backup_path, sql_path, zip_path = await self._generate_backup_files_zip()
-        if not backup_path or not sql_path:
-            logger.error('Backup - "Email manual" Error')
-            raise BackupGenerationFailedError()
-
-        backup_file = zip_path
-        attachments = await self._build_email_attachments(backup_file, yesterday, today)
-
-        try:
-            success = await asyncio.to_thread(email_service.send_email, to_emails, attachments, full_report_html,
-                                              period_text)
-        finally:
-            await self._cleanup_backup_files(backup_path, sql_path, zip_path)
-
-        if not success:
-            logger.error('Backup - "Email manual" Error')
-            raise SMTPConnectionFailedError()
-
-        return True
+    async def send_manual_backup_email(self) -> int:
+        return await self._enqueue_routine('EMAIL_MANUAL_BACKUP')
 
     async def trigger_manual_backup_email(
             self,
-            background_tasks: BackgroundTasks,
             current_user: User,
             audit_svc: Any,
     ) -> dict[str, str]:
-        background_tasks.add_task(self.send_manual_backup_email)
+        job_id = await self.send_manual_backup_email()
         await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
-        return {"status": "success", "message": "Backup manual por e-mail iniciado em segundo plano."}
+        return {"status": "success", "job_id": str(job_id), "message": "Backup manual por e-mail registrado para processamento em segundo plano."}
 
     async def trigger_manual_backup_telegram(
             self,
-            background_tasks: BackgroundTasks,
             current_user: User,
             audit_svc: Any,
     ) -> dict[str, str]:
-        background_tasks.add_task(self.execute_manual_backup_telegram)
+        job_id = await self.execute_manual_backup_telegram()
         await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM",
                                   entity_id=0)
-        return {"message": "Backup manual enviado para a fila de processamento do Telegram."}
+        return {"job_id": str(job_id), "message": "Backup manual registrado para processamento no Telegram."}
 
     async def trigger_manual_report_telegram(
             self,
-            background_tasks: BackgroundTasks,
             start_date: date,
             end_date: date,
             current_user: User,
@@ -544,7 +285,7 @@ class RoutineOrchestrator:
             telegram_svc: Any,
     ) -> dict[str, str]:
         telegram_svc.validate_manual_report_dates(start_date, end_date)
-        background_tasks.add_task(self.send_manual_report_telegram, start_date, end_date)
+        job_id = await self.send_manual_report_telegram(start_date, end_date)
         await audit_svc.async_log(
             user_id=current_user.id,
             action="MANUAL_REPORT_TELEGRAM",
@@ -553,6 +294,7 @@ class RoutineOrchestrator:
             new_data={"start_date": str(start_date), "end_date": str(end_date)},
         )
         return {
+            "job_id": str(job_id),
             "message": f"Relatório do período {start_date} até {end_date} enviado para processamento em background."
         }
 

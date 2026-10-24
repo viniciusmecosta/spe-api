@@ -22,6 +22,11 @@ from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
+@pytest.fixture(autouse=True)
+def mock_payroll_queue(mocker):
+    return mocker.patch('app.features.payroll.payroll_service.enqueue', new_callable=AsyncMock)
+
+
 
 @pytest.fixture
 def mock_background_tasks():
@@ -324,9 +329,7 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     mock_audit.assert_called_once_with(
         async_db_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure
     )
-    mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, 4, 2024, mock_user_manager.name, mock_closure.report_path, ["main@test.com"]
-    )
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -411,9 +414,7 @@ async def test_reopen_period_success(mock_delete, mock_get_by_month, mock_audit,
         entity="PAYROLL_CLOSURE", entity_id=mock_closure.id,
         old_data={"is_closed": True}, new_data={"is_closed": False}
     )
-    mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, "Reabertura", mock_user_maintainer.name, 4, 2024, ["main@test.com"]
-    )
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -514,7 +515,7 @@ async def test_async_validate_period_open_success_and_closed():
 
 
 @pytest.mark.asyncio
-async def test_get_report_file_path_success(async_db_mock, mocker):
+async def test_get_report_file_path_success(async_db_mock, mocker, tmp_path):
     closure = MagicMock(spec=PayrollClosure)
     closure.id = 10
     closure.report_path = "reports/folha_ponto_10_2026.xlsx"
@@ -523,7 +524,9 @@ async def test_get_report_file_path_success(async_db_mock, mocker):
     scalars_mock.first.return_value = closure
     async_db_mock.scalars.return_value = scalars_mock
 
-    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch('app.core.config.settings.UPLOAD_DIR', str(tmp_path))
+    (tmp_path / 'reports').mkdir()
+    (tmp_path / closure.report_path).write_bytes(b'synthetic workbook')
 
     path, name = await payroll_service.get_report_file_path(async_db_mock, 10)
     assert name == "folha_ponto_10_2026.xlsx"

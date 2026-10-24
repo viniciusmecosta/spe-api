@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     DB_STATEMENT_TIMEOUT_MS: int = Field(default=120000, ge=1000, le=3600000)
     DB_LOCK_TIMEOUT_MS: int = Field(default=10000, ge=100, le=300000)
     DB_IDLE_TRANSACTION_TIMEOUT_MS: int = Field(default=60000, ge=1000, le=3600000)
+    REPROCESS_MAX_DAYS: int = Field(default=3660, ge=1, le=36600)
+    REPROCESS_MAX_ITEMS: int = Field(default=100000, ge=1, le=1000000)
+    REPROCESS_BATCH_SIZE: int = Field(default=25, ge=1, le=100)
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int

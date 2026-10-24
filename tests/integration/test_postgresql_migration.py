@@ -426,7 +426,7 @@ async def test_encrypted_backup_roundtrip_preserves_values_and_summaries(
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "004"
+            == "005"
         )
 
 
@@ -465,7 +465,7 @@ def test_alembic_connects_with_percent_encoded_password(pg_url, monkeypatch):
             timeout=30,
         )
         assert result.returncode == 0, result.stderr
-        assert "004" in result.stdout
+        assert "005" in result.stdout
     finally:
         with admin.cursor() as cursor:
             cursor.execute(

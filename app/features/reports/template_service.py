@@ -71,6 +71,7 @@ class TemplateService:
         logo = '<img src="cid:company-logo" alt="' + company + '" width="132" style="max-width:132px;max-height:64px;width:auto;height:auto;display:block;margin-bottom:22px">' if info.get('logo_available') else ''
         metadata = ' · '.join(escape(str(info[key])) for key in ('project', 'version', 'environment'))
         address = ' · '.join(escape(str(info[key])) for key in ('cnpj', 'address', 'phone') if info.get(key))
+        title = escape(str(info.get('title', 'Registros de ponto')))
         execution = escape(str(info.get('execution_id', '')))
         attempt = escape(str(info.get('attempt', 1)))
         incidents = info.get('incidents', [])
@@ -87,7 +88,7 @@ class TemplateService:
 <table role="presentation" style="width:100%;max-width:680px;border-collapse:collapse;background:#ffffff;border-top:4px solid #235a43">
 <tr><td class="email-pad" style="padding:32px 36px 20px">{logo}
 <p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;color:#637b6d">{company}</p>
-<h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:600">Registros de ponto</h1>
+<h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:600">{title}</h1>
 <p style="font-size:14px;color:#617168;margin:12px 0 0">{escape(period_text)}</p></td></tr>
 <tr><td class="email-pad" style="padding:12px 36px 32px">{report_html}{incident_html}</td></tr>
 <tr><td class="email-pad" style="padding:24px 36px;background:#f7f9f7;border-top:1px solid #e3e9e6;color:#67766d;font-size:12px">
@@ -102,44 +103,13 @@ Tentativa {attempt}{' · Execução ' + execution if execution else ''}
         color = "#e65100" if action.lower() == "reabertura" else "#1565c0"
         action_title = "Folha Reaberta" if action.lower() == "reabertura" else "Folha Fechada"
 
-        return f"""
-        <html>
-        <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; line-height: 1.6; margin: 0; padding: 0; background-color: #f9f9f9;">
-            <div style="max-width: 600px; margin: 20px auto; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
-                <div style="background-color: {color}; color: #ffffff; padding: 20px; text-align: center;">
-                    <h2 style="margin: 0; font-size: 24px; font-weight: 500;">{action_title}</h2>
-                </div>
-                <div style="padding: 30px;">
-                    <p style="font-size: 16px; margin-top: 0;">Olá,</p>
-                    <p style="font-size: 16px;">O status da folha de ponto referente a <strong>{month:02d}/{year}</strong> foi alterado.</p>
-                    
-                    <div style="background-color: #f4f6f8; border-left: 4px solid {color}; padding: 15px; margin: 20px 0; border-radius: 0 4px 4px 0;">
-                        <table style="width: 100%; border: none; font-size: 15px;">
-                            <tr>
-                                <td style="padding: 5px 0; color: #555; width: 120px;"><strong>Ação:</strong></td>
-                                <td style="padding: 5px 0; font-weight: bold; color: {color};">{escape(action)}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 0; color: #555;"><strong>Responsável:</strong></td>
-                                <td style="padding: 5px 0;">{escape(user_name)}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 5px 0; color: #555;"><strong>Data e Hora:</strong></td>
-                                <td style="padding: 5px 0;">{date_str}</td>
-                            </tr>
-                        </table>
-                    </div>
-                    
-                    <p style="font-size: 15px; color: #666; margin-bottom: 0;">{'O relatório consolidado e auditável da folha de ponto segue em anexo para seus registros.' if action.lower() == 'fechamento' else 'As marcações de ponto para este período foram desbloqueadas e já podem receber edições ou aprovações no sistema.'}</p>
-                </div>
-                <div style="background-color: #f1f1f1; padding: 20px 30px; text-align: center; border-top: 1px solid #e0e0e0;">
-                    <p style="font-size: 14px; color: #777; margin: 0;">Atenciosamente,</p>
-                    <p style="font-size: 15px; font-weight: bold; color: #555; margin: 5px 0 0 0;">SPE - Sistema de Ponto Eletrônico</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        message = ('O relatório consolidado da folha de ponto segue em anexo.' if action.lower() == 'fechamento'
+                   else 'As marcações foram desbloqueadas e podem receber edições ou aprovações no sistema.')
+        return f"""<section style="border-left:3px solid {color};padding:4px 0 4px 20px">
+<h2 style="color:{color};font-size:20px">{action_title}</h2>
+<p>Competência <strong>{month:02d}/{year}</strong></p>
+<p><strong>Ação:</strong> {escape(action)}<br><strong>Responsável:</strong> {escape(user_name)}<br>
+<strong>Data e hora:</strong> {escape(date_str)}</p><p>{message}</p></section>"""
 
 
 template_service = TemplateService()

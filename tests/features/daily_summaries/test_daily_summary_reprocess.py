@@ -13,6 +13,12 @@ from app.shared import deps
 from app.shared.enums import UserRole
 
 
+@pytest.fixture(autouse=True)
+def mock_enqueue(mocker):
+    return mocker.patch('app.features.daily_summaries.daily_summary_reprocess_service.enqueue',
+                        new_callable=AsyncMock, return_value=MagicMock(id=42))
+
+
 @pytest.mark.asyncio
 async def test_reprocess_selected_users_and_days(mocker):
     db = MagicMock()
@@ -31,13 +37,11 @@ async def test_reprocess_selected_users_and_days(mocker):
         start_date=date(2026, 12, 31), end_date=date(2027, 1, 2), user_ids=[2, 1, 2]
     )
 
-    result = await service.start(request, background, operator_id=9)
+    result = await service.start(request, operator_id=9)
 
     assert result["status"] == "success"
     assert payroll.await_count == 2
-    background.add_task.assert_called_once_with(
-        service._run, [1, 2], date(2026, 12, 31), date(2027, 1, 2)
-    )
+    background.add_task.assert_not_called()
     assert audit.await_args.kwargs["entity"] == "DAILY_SUMMARIES"
 
 
@@ -58,24 +62,22 @@ async def test_reprocess_all_users_and_invalid_requests(mocker):
 
     await service.start(
         DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)),
-        background, operator_id=9,
+        operator_id=9,
     )
-    background.add_task.assert_called_once_with(
-        service._run, [1, 3], date(2026, 8, 1), date(2026, 8, 2)
-    )
+    background.add_task.assert_not_called()
 
     invalid_date_request = DailySummaryReprocessRequest(
         start_date=date(2026, 8, 2), end_date=date(2026, 8, 1)
     )
     with pytest.raises(HTTPException) as invalid_dates:
-        await service.start(invalid_date_request, background, operator_id=9)
+        await service.start(invalid_date_request, operator_id=9)
     assert invalid_dates.value.status_code == 400
 
     missing_user_request = DailySummaryReprocessRequest(
         start_date=date(2026, 8, 1), end_date=date(2026, 8, 2), user_ids=[1, 2]
     )
     with pytest.raises(HTTPException) as missing_user:
-        await service.start(missing_user_request, background, operator_id=9)
+        await service.start(missing_user_request, operator_id=9)
     assert missing_user.value.status_code == 404
 
 
@@ -95,7 +97,7 @@ async def test_closed_period_is_rejected_before_scheduling(mocker):
         start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)
     )
     with pytest.raises(HTTPException) as closed:
-        await service.start(request, background, operator_id=9)
+        await service.start(request, operator_id=9)
     assert closed.value.status_code == 409
     payroll.assert_awaited_once()
     db.scalars.assert_not_awaited()
@@ -121,6 +123,7 @@ async def test_reprocess_runs_every_selected_user_day(mocker):
 
 
 def test_reprocess_endpoint_requires_maintainer(mocker):
+    mocker.patch('app.core.lifespan.trusted_time_service.sync_ntp_with_backoff_async', new_callable=AsyncMock, return_value=True)
     user = User(id=9, role=UserRole.MAINTAINER, is_active=True)
     app.dependency_overrides[deps.get_current_maintainer] = lambda: user
     start = mocker.patch.object(
@@ -134,12 +137,13 @@ def test_reprocess_endpoint_requires_maintainer(mocker):
                 json={"start_date": "2026-08-01", "end_date": "2026-08-02"},
             )
         assert response.status_code == 200
-        assert start.await_args.args[2] == 9
+        assert start.await_args.args[1] == 9
     finally:
         app.dependency_overrides.clear()
 
 
-def test_reprocess_endpoint_rejects_employee():
+def test_reprocess_endpoint_rejects_employee(mocker):
+    mocker.patch('app.core.lifespan.trusted_time_service.sync_ntp_with_backoff_async', new_callable=AsyncMock, return_value=True)
     user = User(id=9, role=UserRole.EMPLOYEE, is_active=True)
     app.dependency_overrides[deps.get_current_active_user] = lambda: user
     try:

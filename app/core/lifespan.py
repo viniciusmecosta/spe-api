@@ -1,11 +1,12 @@
 import asyncio
 import os
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from fastapi import FastAPI
 
 from app.core.config import is_prod, settings
 from app.features.daily_summaries.daily_summary_events import bind_dispatch_loop
@@ -44,9 +45,12 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(trusted_time_service.sync_ntp_async, trigger=trigger_hourly, id="hourly_ntp_sync",
                       max_instances=1, coalesce=True)
 
+    from app.features.system.job_queue import process_once
+    scheduler.add_job(process_once, 'interval', seconds=5, id='durable_jobs', max_instances=1, coalesce=True)
     scheduler.start()
     yield
     if not startup_ntp_task.done():
         startup_ntp_task.cancel()
+        await asyncio.gather(startup_ntp_task, return_exceptions=True)
     scheduler.shutdown()
     bind_dispatch_loop(None)

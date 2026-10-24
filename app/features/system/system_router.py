@@ -3,12 +3,12 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     Query,
 )
 
 from app.features.system.audit_service import AuditService
+from app.features.system.job_service import JobService
 from app.features.system.routine_log_service import RoutineLogService
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_schemas import (
@@ -59,13 +59,11 @@ async def read_audit_logs(
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def trigger_manual_backup(
-        background_tasks: BackgroundTasks,
         audit_svc: Annotated[AuditService, Depends()],
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_backup_email(
-        background_tasks=background_tasks,
         current_user=current_user,
         audit_svc=audit_svc,
     )
@@ -101,13 +99,11 @@ async def read_routine_logs(
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def trigger_manual_backup_telegram(
-        background_tasks: BackgroundTasks,
         audit_svc: Annotated[AuditService, Depends()],
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_backup_telegram(
-        background_tasks=background_tasks,
         current_user=current_user,
         audit_svc=audit_svc,
     )
@@ -119,7 +115,6 @@ async def trigger_manual_backup_telegram(
     responses={**BAD_REQUEST_RESPONSE},
 )
 async def trigger_manual_report_telegram(
-        background_tasks: BackgroundTasks,
         start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
         end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
         audit_svc: Annotated[AuditService, Depends()],
@@ -128,10 +123,21 @@ async def trigger_manual_report_telegram(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_report_telegram(
-        background_tasks=background_tasks,
         start_date=start_date,
         end_date=end_date,
         current_user=current_user,
         audit_svc=audit_svc,
         telegram_svc=telegram_svc,
     )
+
+
+@routine_logs_router.get('/jobs/{job_id}', dependencies=[Depends(deps.get_current_maintainer)])
+async def get_job(job_id: int, service: Annotated[JobService, Depends()]):
+    return await service.get(job_id)
+
+
+@routine_logs_router.post('/jobs/{job_id}/retry', dependencies=[Depends(deps.get_current_maintainer)])
+async def retry_job(job_id: int, service: Annotated[JobService, Depends()]):
+    return await service.retry(job_id)
+
+

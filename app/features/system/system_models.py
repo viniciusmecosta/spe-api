@@ -1,8 +1,9 @@
 from datetime import datetime
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Index, Integer, JSON, String
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import JSON, Column, Date, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
@@ -52,3 +53,22 @@ class RoutineLog(Base):
     target_date = Column(Date, nullable=True)
     status = Column(String, nullable=False)
     details = Column(String, nullable=True)
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+    __table_args__ = (Index('ix_background_jobs_claim', 'status', 'next_attempt_at'),)
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, nullable=False)
+    deduplication_key = Column(String, unique=True, nullable=True)
+    status = Column(String, nullable=False, default='PENDING')
+    payload = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=False)
+    result = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=False, default=dict)
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    lease_token = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    finished_at = Column(DateTime(timezone=True), nullable=True)

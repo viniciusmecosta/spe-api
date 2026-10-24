@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 
 from app.features.daily_summaries.daily_summary_reprocess_schemas import DailySummaryReprocessRequest
 from app.features.daily_summaries.daily_summary_reprocess_service import DailySummaryReprocessService
@@ -13,8 +13,7 @@ router = APIRouter()
 @router.post("/admin/reprocess")
 async def reprocess_daily_summaries(
     request_in: DailySummaryReprocessRequest,
-    background_tasks: BackgroundTasks,
     service: Annotated[DailySummaryReprocessService, Depends()],
     current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
-    return await service.start(request_in, background_tasks, current_user.id)
+    return await service.start(request_in, current_user.id)
