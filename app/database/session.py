@@ -100,6 +100,8 @@ def on_async_connect(dbapi_connection, connection_record):
     tz = ZoneInfo(settings.TIMEZONE)
 
     async def setup_connection(conn):
+        for name, value in connection_settings().items():
+            await conn.execute("SELECT set_config($1, $2, false)", name, value)
         await conn.set_type_codec(
             "timestamptz",
             encoder=encode_timestamptz,

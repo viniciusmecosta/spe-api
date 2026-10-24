@@ -94,6 +94,7 @@ async def test_on_async_connect_with_run_async():
     from app.database.session import on_async_connect
     fake_conn = MagicMock()
     fake_conn.set_type_codec = AsyncMock()
+    fake_conn.execute = AsyncMock()
 
     captured_coro = None
 
