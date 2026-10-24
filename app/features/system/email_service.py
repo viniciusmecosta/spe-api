@@ -1,16 +1,19 @@
 import logging
-import os
 import smtplib
+import ssl
 from datetime import datetime
 from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr, make_msgid, parseaddr
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
 from app.core.config import is_dev, settings
 from app.features.reports.template_service import template_service
+from app.features.system.delivery_result import DeliveryResult
+from app.features.system.notification_context import logo_file
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +55,10 @@ class EmailService:
                 year=year
             )
 
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(msg['From'], to_emails, msg.as_string())
-            server.quit()
+            result = self._send_message(msg, to_emails)
+            if not result.success:
+                logger.error("Falha no envio da folha: %s", result.detail)
+                return
             logger.info(f"Payroll email sent successfully for {action} {month:02d}/{year}")
         except smtplib.SMTPException as e:
             logger.exception(f"Erro de conexão/autenticação SMTP (Folha de Ponto): {type(e).__name__} - {e}",
@@ -67,34 +67,59 @@ class EmailService:
             logger.exception(f"Erro interno ao processar e-mail da Folha de Ponto: {type(e).__name__} - {e}",
                              exc_info=False)
 
-    def send_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
-                   period_text: str) -> bool:
-        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]) or not to_emails:
-            return False
-
+    def _send_message(self, msg: MIMEMultipart, to_emails: list[str]) -> DeliveryResult:
+        if not all([settings.SMTP_HOST, settings.SMTP_PORT, settings.SMTP_USER, settings.SMTP_PASSWORD]):
+            return DeliveryResult("FAILED", "SMTP não configurado")
+        server = None
+        submitted = False
         try:
-            msg = self._build_backup_message(
-                to_emails=to_emails,
-                attachments=attachments,
-                report_html=report_html,
-                period_text=period_text
-            )
-
-            if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD or not settings.SMTP_PORT:
-                return False
-
             server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
             server.ehlo()
-            server.starttls()
+            context = ssl.create_default_context()
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+            server.starttls(context=context)
             server.ehlo()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(msg['From'], to_emails, msg.as_string())
-            server.quit()
-            return True
+            submitted = True
+            refused = server.sendmail(parseaddr(msg['From'])[1], to_emails, msg.as_string())
+            if isinstance(refused, dict) and refused:
+                pending = tuple(refused)
+                transient = any(400 <= code < 500 for code, _ in refused.values())
+                status = 'PARTIAL' if len(refused) < len(to_emails) else 'RETRY' if transient else 'FAILED'
+                return DeliveryResult(status, "Destinatários recusados pelo SMTP", recipients=pending)
+            return DeliveryResult("SUCCESS")
+        except smtplib.SMTPRecipientsRefused as error:
+            transient = any(400 <= code < 500 for code, _ in error.recipients.values())
+            return DeliveryResult("RETRY" if transient else "FAILED", "Destinatários recusados",
+                                  recipients=tuple(error.recipients))
+        except smtplib.SMTPResponseException as error:
+            return DeliveryResult("RETRY" if 400 <= error.smtp_code < 500 else "FAILED",
+                                  f"SMTP {error.smtp_code}")
+        except (TimeoutError, smtplib.SMTPServerDisconnected, ConnectionError):
+            return DeliveryResult("UNCERTAIN" if submitted else "RETRY", "Conexão SMTP interrompida; entrega precisa ser conferida" if submitted else "Timeout ao conectar ao SMTP")
+        except (smtplib.SMTPException, OSError) as error:
+            return DeliveryResult("FAILED", type(error).__name__)
+        finally:
+            if server is not None:
+                try:
+                    server.quit()
+                except (smtplib.SMTPException, OSError):
+                    server.close()
 
-        except smtplib.SMTPException as e:
-            logger.exception(f"Erro de conexão/autenticação SMTP (Backup): {type(e).__name__} - {e}", exc_info=False)
-            return False
+    def deliver_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
+                      period_text: str, context: dict | None = None) -> DeliveryResult:
+        if not to_emails:
+            return DeliveryResult("FAILED", "Nenhum destinatário informado")
+        try:
+            msg = self._build_backup_message(to_emails, attachments, report_html, period_text, context)
+        except OSError:
+            return DeliveryResult("FAILED", "Um anexo não está disponível")
+        return self._send_message(msg, to_emails)
+
+    def send_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
+                   period_text: str) -> bool:
+        return self.deliver_email(to_emails, attachments, report_html, period_text).success
 
     def _get_sender_address(self) -> str:
         raw_sender = settings.EMAIL_FROM or settings.SMTP_USER
@@ -146,7 +171,8 @@ class EmailService:
             to_emails: list[str],
             attachments: list[tuple[str, str]],
             report_html: str,
-            period_text: str
+            period_text: str,
+            context: dict | None = None
     ) -> MIMEMultipart:
         msg = MIMEMultipart()
         msg['From'] = self._get_sender_address()
@@ -160,15 +186,24 @@ class EmailService:
         else:
             msg['Subject'] = f"Backup SPE e Relatórios - {current_date}"
 
-        body_html = template_service.get_backup_email_html(period_text, report_html)
+        info = dict(context or {})
+        logo = logo_file(info.get('logo_path'))
+        info['logo_available'] = logo is not None
+        body_html = template_service.get_backup_email_html(period_text, report_html, info)
+        msg['Message-ID'] = info.get('message_id') or make_msgid()
+        if logo:
+            with logo.open('rb') as image:
+                part = MIMEImage(image.read())
+            part.add_header('Content-ID', '<company-logo>')
+            part.add_header('Content-Disposition', 'inline', filename=logo.name)
+            msg.attach(part)
         msg.attach(MIMEText(body_html, 'html'))
 
         for file_path, filename in attachments:
-            if os.path.exists(file_path):
-                with open(file_path, "rb") as f:
-                    part = MIMEApplication(f.read(), Name=filename)
-                    part['Content-Disposition'] = f'attachment; filename="{filename}"'
-                    msg.attach(part)
+            with open(file_path, "rb") as stream:
+                part = MIMEApplication(stream.read(), Name=filename)
+            part.add_header('Content-Disposition', 'attachment', filename=filename)
+            msg.attach(part)
 
         return msg
 

@@ -60,7 +60,7 @@ async def test_generate_daily_report_html_with_records(mock_template_service, mo
     assert "John Doe" in args[3]
     assert args[3]["John Doe"][0] == {"time": "08:00", "type": "E"}
     assert args[3]["John Doe"][1] == {"time": "18:00", "type": "S"}
-    assert args[4] == ["<strong>Jane Smith</strong>: Missing Exit"]
+    assert args[4] == ["Jane Smith: Missing Exit"]
 
 
 @patch("app.features.reports.daily_report_service.anomaly_service")

@@ -58,7 +58,7 @@ def test_get_daily_report_html_with_records():
 
 def test_get_backup_email_html():
     result = TemplateService.get_backup_email_html("Period Text", "<p>Report HTML</p>")
-    assert "Resumo Operacional SPE" in result
+    assert "Registros de ponto" in result
     assert "Period Text" in result
     assert "<p>Report HTML</p>" in result
 

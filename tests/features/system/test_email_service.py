@@ -187,12 +187,9 @@ def test_build_backup_message_with_attachment(mock_template_service):
 
 
 def test_build_backup_message_attachment_not_exists(mock_template_service):
-    with patch("os.path.exists", return_value=False):
-        service = EmailService()
-        msg = service._build_backup_message(["a@a.com"], [("path", "file.txt")], "html", "period")
-        payloads = msg.get_payload()
-        assert len(payloads) == 1
-        assert payloads[0].get_content_type() == "text/html"
+    service = EmailService()
+    with pytest.raises(FileNotFoundError):
+        service._build_backup_message(["a@a.com"], [("missing-file", "file.txt")], "html", "period")
 
 
 def test_dispatch_payroll_email_success():

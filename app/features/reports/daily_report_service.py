@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends
@@ -12,7 +12,7 @@ from app.features.timesheets.anomaly_service import anomaly_service
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import DayOfWeek, RecordType
-from app.utils.formatters import format_short_name
+from app.shared.timezone import local_day_bounds, to_app_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +29,14 @@ class DailyReportService:
             formatted_date = target_date.strftime("%d/%m/%Y")
             day_name = DayOfWeek(target_date.weekday()).nome
 
-            start_local = datetime.combine(target_date, datetime.min.time())
-            end_local = datetime.combine(target_date, datetime.max.time())
+            start_local, end_local = local_day_bounds(target_date)
 
             stmt = (
                 select(TimeRecord, User)
                 .join(User, TimeRecord.user_id == User.id)
                 .where(TimeRecord.record_datetime >= start_local)
-                .where(TimeRecord.record_datetime <= end_local)
-                .where(TimeRecord.is_ignored == False)
+                .where(TimeRecord.record_datetime < end_local)
+                .where(TimeRecord.is_ignored.is_(False), TimeRecord.deleted_at.is_(None))
                 .order_by(User.name, TimeRecord.record_datetime)
             )
             result = await session.execute(stmt)
@@ -45,7 +44,7 @@ class DailyReportService:
 
             anomalies_list = await anomaly_service.get_anomalies(session, target_date, target_date)
 
-            anomalies_descriptions = [f"<strong>{format_short_name(a.user_name)}</strong>: {a.description}" for a
+            anomalies_descriptions = [f"{a.user_name}: {a.description}" for a
                                       in anomalies_list]
 
             if not records:
@@ -54,10 +53,10 @@ class DailyReportService:
 
             user_activity = {}
             for record, user in records:
-                short_name = format_short_name(user.name)
+                short_name = user.name
                 if short_name not in user_activity:
                     user_activity[short_name] = []
-                time_str = record.record_datetime.strftime("%H:%M")
+                time_str = to_app_timezone(record.record_datetime).strftime("%H:%M")
                 type_label = "E" if record.record_type == RecordType.ENTRY else "S"
                 user_activity[short_name].append({"time": time_str, "type": type_label})
 
