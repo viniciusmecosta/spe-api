@@ -1,5 +1,6 @@
 import os
 import sys
+import unicodedata
 from datetime import date, datetime
 from io import BytesIO
 from typing import Annotated, Any
@@ -71,7 +72,14 @@ class ExcelService:
             query = report_service.apply_employee_filters(query, employee_ids)
             users = query.all()
             company = company_repository.get_current(session)
-        return sorted(users, key=lambda user: user.id), company
+        return sorted(users, key=self._alphabetical_user_key), company
+
+    @staticmethod
+    def _alphabetical_user_key(user) -> tuple[str, str, int]:
+        name = user.name.strip().casefold()
+        normalized = ''.join(character for character in unicodedata.normalize('NFKD', name)
+                             if not unicodedata.combining(character))
+        return normalized, name, user.id
 
     def _resolve_logo_path(self, company) -> str | None:
         if company and company.logo_path:

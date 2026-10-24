@@ -893,3 +893,13 @@ def test_resolve_logo_path(excel_service, mocker):
 
     mocker.patch("os.path.exists", return_value=False)
     assert excel_service._resolve_logo_path(comp) is None
+
+
+def test_alphabetical_employee_order_is_stable_with_accents():
+    from types import SimpleNamespace
+    users = [SimpleNamespace(id=4, name='Zélia'), SimpleNamespace(id=3, name='bruno'),
+             SimpleNamespace(id=2, name='Álvaro'), SimpleNamespace(id=7, name='Ana'),
+             SimpleNamespace(id=6, name='Ana')]
+    ordered = sorted(users, key=ExcelService._alphabetical_user_key)
+    assert [(user.name, user.id) for user in ordered] == [
+        ('Álvaro', 2), ('Ana', 6), ('Ana', 7), ('bruno', 3), ('Zélia', 4)]
