@@ -258,3 +258,7 @@ htmlcov/
 *.log
 docs/
 backups/
+
+# Auditorias locais
+audits/
+.scannerwork/
