@@ -3,18 +3,24 @@ from fastapi import APIRouter
 from app.core.config import settings
 from app.features.adjustments.adjustment_router import router as adjustments_router
 from app.features.auth.auth_router import router as auth_router
-from app.features.daily_summaries.daily_summary_router import router as daily_summaries_router
 from app.features.companies.company_router import router as companies_router
+from app.features.daily_summaries.daily_summary_router import (
+    router as daily_summaries_router,
+)
 from app.features.devices.device_router import (
     biometrics_router,
     device_credentials_router,
     firmware_router,
+)
+from app.features.devices.device_router import (
     router as device_router,
 )
 from app.features.holidays.holiday_router import router as holidays_router
 from app.features.payroll.payroll_router import router as payroll_router
 from app.features.printers.printer_router import router as printers_router
-from app.features.reports.report_router import dashboard_router, router as reports_router
+from app.features.reports.report_router import dashboard_router
+from app.features.reports.report_router import router as reports_router
+from app.features.system.monitoring import router as monitoring_router
 from app.features.system.system_router import (
     audit_router,
     backup_router,
@@ -22,11 +28,13 @@ from app.features.system.system_router import (
     telegram_actions_router,
 )
 from app.features.time_records.time_record_router import router as time_records_router
-from app.features.timesheets.timesheet_router import anomalies_router, router as timesheets_router
+from app.features.timesheets.timesheet_router import anomalies_router
+from app.features.timesheets.timesheet_router import router as timesheets_router
 from app.features.users.user_router import router as users_router
 from app.features.users.work_schedule_router import router as schedules_router
 
 api_router = APIRouter()
+api_router.include_router(monitoring_router)
 
 
 @api_router.get("/health", tags=["Health"])
