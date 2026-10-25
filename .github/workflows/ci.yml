@@ -33,6 +33,9 @@ jobs:
         run: |
           uv run --no-sync python -m compileall -q app/
 
+      - name: Run Ruff
+        run: uv run --no-sync ruff check app scripts
+
       - name: Run Mypy (Type Checking)
         run: |
           uv run --no-sync mypy app/
@@ -66,22 +69,10 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml
+          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov=scripts --cov=alembic --cov-report=xml
 
   postgresql:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: spe_test
-          POSTGRES_USER: spe_test
-          POSTGRES_PASSWORD: ci-only-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U spe_test -d spe_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -92,9 +83,22 @@ jobs:
           version: '0.11.7'
       - run: uv sync --locked --no-build
       - run: cp .env.example .env
+      - name: Provision disposable PostgreSQL
+        shell: bash
+        run: |
+          DB_TEST_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$DB_TEST_PASSWORD"
+          printf 'SPE_TEST_DATABASE_URL=postgresql+asyncpg://spe_test:%s@localhost:5432/spe_test\n' "$DB_TEST_PASSWORD" >> "$GITHUB_ENV"
+          printf 'SQLALCHEMY_DATABASE_URI=postgresql+asyncpg://spe_test:%s@localhost:5432/spe_test\n' "$DB_TEST_PASSWORD" >> "$GITHUB_ENV"
+          docker run -d --name spe-ci-postgres -p 127.0.0.1:5432:5432 -e POSTGRES_DB=spe_test -e POSTGRES_USER=spe_test -e POSTGRES_PASSWORD="$DB_TEST_PASSWORD" postgres:17-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec spe-ci-postgres pg_isready -U spe_test -d spe_test; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - name: Test native PostgreSQL migrations and transactional apuration
         env:
           ENVIRONMENT: dev
-          SPE_TEST_DATABASE_URL: postgresql+asyncpg://spe_test:ci-only-password@localhost:5432/spe_test
-          SQLALCHEMY_DATABASE_URI: postgresql+asyncpg://spe_test:ci-only-password@localhost:5432/spe_test
         run: uv run --no-sync python -m pytest tests/integration/ -q --tb=short --no-cov

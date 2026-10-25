@@ -57,9 +57,8 @@ clean:
 test:
 	.venv/bin/pytest
 
-# Verifica a tipagem do projeto.
 lint:
-	mypy app
+	uv run --no-sync ruff check app scripts
 
 # Gera o backup completo do PostgreSQL.
 dump:

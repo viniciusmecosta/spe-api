@@ -1,5 +1,7 @@
-import pytest
+import secrets
+from urllib.parse import quote
 
+import pytest
 from app.database.connection import postgres_connection_params
 from app.database.errors import constraint_name
 from app.features.time_records.time_record_schemas import (
@@ -10,8 +12,9 @@ from app.features.users.user_schemas import UserUpdate
 
 
 def test_uri_is_authoritative_for_backup_target():
+    password = secrets.token_urlsafe(16) + "@"
     params = postgres_connection_params(
-        "postgresql+asyncpg://api:p%40ss@database:5432/live",
+        f"postgresql+asyncpg://api:{quote(password, safe='')}@database:5432/live",
         {
             "POSTGRES_HOST": "wrong-host",
             "POSTGRES_PORT": 55439,
@@ -22,7 +25,7 @@ def test_uri_is_authoritative_for_backup_target():
         "host": "database",
         "port": 5432,
         "user": "api",
-        "password": "p@ss",
+        "password": password,
         "dbname": "live",
     }
 
