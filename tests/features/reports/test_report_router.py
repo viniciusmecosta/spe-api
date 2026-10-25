@@ -163,7 +163,10 @@ def test_export_monthly_report_excel_generates_current_data(client: TestClient, 
 def test_export_monthly_report_excel_returns_saved_closed_file(
     client: TestClient, mocker: MagicMock, tmp_path
 ) -> None:
-    saved_file = tmp_path / "closed.xlsx"
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    saved_file = reports / "closed.xlsx"
     saved_file.write_bytes(b"official closed report")
     closure = MagicMock(is_closed=True, report_path=str(saved_file))
     mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)

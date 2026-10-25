@@ -30,6 +30,7 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import UserRole
+from app.shared.storage import resolve_stored_file
 
 
 class ExcelService:
@@ -176,13 +177,8 @@ class ExcelService:
         closure = await async_payroll_repository.get_by_month(session, month, year)
         if not closure or not getattr(closure, "is_closed", None) or not getattr(closure, "report_path", None):
             return None
-        report_path = str(closure.report_path)
-        full_path = (
-            report_path
-            if os.path.isabs(report_path)
-            else os.path.join(settings.UPLOAD_DIR, report_path)
-        )
-        if os.path.exists(full_path) and os.path.isfile(full_path):
+        full_path = resolve_stored_file(str(closure.report_path), 'reports')
+        if full_path is not None:
             filename = f"folha_ponto_{month:02d}_{year}.xlsx"
             return FileResponse(
                 path=full_path,

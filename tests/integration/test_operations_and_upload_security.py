@@ -77,3 +77,68 @@ async def test_only_registered_logo_is_public_and_private_files_require_ownershi
             assert response.content == b'synthetic attachment'
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('stored_kind', ['absolute-outside', 'traversal', 'symlink'])
+async def test_cached_excel_cannot_bypass_report_directory(pg_session_factory, tmp_path, mocker, stored_kind):
+    from io import BytesIO
+    from unittest.mock import AsyncMock
+
+    from app.features.payroll.payroll_models import PayrollClosure
+
+    factory = pg_session_factory
+    reports = tmp_path / 'reports'
+    reports.mkdir()
+    outside = tmp_path.parent / (tmp_path.name + '-outside.xlsx')
+    outside.write_bytes(b'private outside report')
+    stored = str(outside)
+    if stored_kind == 'traversal':
+        stored = 'reports/../../' + outside.name
+    elif stored_kind == 'symlink':
+        (reports / 'link.xlsx').symlink_to(outside)
+        stored = 'reports/link.xlsx'
+    async with factory() as session:
+        actor = User(username='export-admin', name='Admin', role=UserRole.MAINTAINER)
+        session.add(actor)
+        await session.commit()
+        session.add(PayrollClosure(month=6, year=2026, closed_by_user_id=actor.id, report_path=stored))
+        await session.commit()
+
+    async def database():
+        async with factory() as session:
+            yield session
+            await session.commit()
+
+    generator = mocker.patch('app.features.reports.excel_service.ExcelService.generate_excel_report',
+                             new_callable=AsyncMock, return_value=BytesIO(b'safe generated report'))
+    app.dependency_overrides[deps.get_async_db] = database
+    app.dependency_overrides[deps.get_current_active_user] = lambda: actor
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            response = await client.get('/api/v1/reports/export/excel?month=6&year=2026')
+        assert response.status_code == 200
+        assert response.content == b'safe generated report'
+        generator.assert_awaited_once()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize('stored', ['reports/closure.xlsx', 'uploads/reports/closure.xlsx',
+                                   'D:\\SPE\\uploads\\reports\\closure.xlsx'])
+async def test_cached_excel_resolves_only_existing_legacy_reports(pg_session_factory, tmp_path, stored):
+    from app.features.payroll.payroll_models import PayrollClosure
+    from app.features.reports.excel_service import ExcelService
+
+    reports = tmp_path / 'reports'
+    reports.mkdir()
+    report = reports / 'closure.xlsx'
+    report.write_bytes(b'archived report')
+    async with pg_session_factory() as session:
+        actor = User(username='legacy-export-admin', name='Admin', role=UserRole.MAINTAINER)
+        session.add(actor)
+        await session.commit()
+        session.add(PayrollClosure(month=6, year=2026, closed_by_user_id=actor.id, report_path=stored))
+        await session.commit()
+        response = await ExcelService(session)._resolve_cached_closure_file(session, 6, 2026)
+        assert response is not None
+        assert str(response.path) == str(report)
