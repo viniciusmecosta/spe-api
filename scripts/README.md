@@ -32,11 +32,15 @@ Salve o anexo com o nome `spe.zip.enc` dentro da pasta `scripts`:
 scripts/spe.zip.enc
 ```
 
-Com a preparação inicial concluída, crie a estrutura e restaure:
+Os comandos abaixo destinam-se a um backup da revisão atual `007` e a um PostgreSQL de recuperação separado. Pare a API ou mantenha `BACKGROUND_JOBS_ENABLED=false`, confira o destino e preserve os dados existentes antes de restaurar: a operação substitui os dados do banco configurado. O backup não inclui os arquivos físicos de `UPLOAD_DIR`, que devem ser recuperados separadamente, inclusive `.delivery_queue`.
+
+Com a preparação inicial concluída, crie a estrutura compatível e restaure:
 
 ```bash
 make db-init && make restore
 ```
+
+Se o backup foi produzido em uma revisão antiga, crie primeiro o schema da revisão correspondente usando o código compatível com aquele backup; restaure antes de aplicar as migrações posteriores. Não aplique `head` indiscriminadamente a esse destino: o importador valida tabelas e revisão e pode rejeitar a combinação. Não use `alembic stamp` para esconder uma incompatibilidade. Depois da restauração e da atualização para `007`, execute o backfill quando necessário e confira a fila antes de liberar as rotinas.
 
 O restore também aceita `spe.zip` ou `spe_dump.sql` antigos, mas exige confirmação especial por não terem manifesto. Para `spe.zip.enc`, ele autentica e descriptografa o pacote com a `SECRET_KEY`, valida o manifesto, preserva a estrutura e o `alembic_version`, insere os dados em transação e compara a quantidade de linhas de cada tabela. Se alguma validação falhar, desfaz a transação.
 
@@ -63,9 +67,9 @@ make db-migrate-all
 ```
 
 Com a origem sem novas gravações e o PostgreSQL de destino novo, o comando aplica `001/002`, exporta e importa o SQLite,
-aplica `003/004/005`, verifica a paridade e cria os resumos diários até a data atual. A revisão `003` remove os logins e
+aplica `003/004/005/006/007`, verifica a paridade e cria os resumos diários até a data atual. A revisão `003` remove os logins e
 reenumera os IDs de auditoria intencionalmente; `004` preserva a precisão dos resumos e permite restaurar referências
-entre batidas fora de ordem. A revisão `005` cria a fila durável de entregas e reprocessamentos. Os arquivos físicos
+entre batidas fora de ordem. A revisão `005` cria a fila durável de entregas e reprocessamentos; `006` adiciona a versão de autenticação e `007` vincula ajustes às batidas aplicadas. O resultado deve ser `007 (head)`, sem diferenças em `alembic check`. Os arquivos físicos
 devem ser migrados manualmente. Inicie a API somente após o backfill e as verificações.
 
 Para um PostgreSQL que já esteja na revisão `003`, aplique `make upgrade` e execute `.venv/bin/python -m scripts.backfill_daily_summaries --execute` antes de liberar a API. O backfill reconstrói os resumos com a precisão nova, inclusive os períodos fechados, sem alterar as batidas e os ajustes da origem. As revisões `001` e `003` continuam sem downgrade automático.
@@ -90,7 +94,7 @@ Com `spe.zip.enc` na raiz ou em `scripts/`, teste sem alterar o banco principal:
 make db-restore-test
 ```
 
-O comando cria um banco temporário, aplica o Alembic e restaura os dados. Ao terminar, apaga somente esse banco temporário. O usuário PostgreSQL precisa de permissão para criar bancos.
+Para um backup compatível com o `head` do código em uso, o comando cria um banco temporário, aplica o Alembic e restaura os dados. Backups de revisões antigas exigem o ensaio com o schema correspondente descrito acima. Ao terminar, apaga somente esse banco temporário. O usuário PostgreSQL precisa de permissão para criar bancos.
 
 ## Encerrar o PostgreSQL
 
@@ -104,7 +108,7 @@ make docker-down
 
 Antes da atualização, interrompa novas gravações, preserve o banco de origem e copie o diretório completo de uploads.
 Instale a mesma versão de Python usada nos testes (3.12 ou superior), sincronize as dependências e aplique
-`alembic upgrade head` com a API parada. A revisão atual é `005`. Configure a conexão PostgreSQL na conta que executa o
+`alembic upgrade head` com a API parada. A revisão atual é `007`. Para uma migração SQLite, importe os dados em `002` antes de avançar para `head`; os comandos desta seção de atualização não substituem essa sequência. Configure a conexão PostgreSQL na conta que executa o
 NSSM, com acesso ao diretório de uploads e aos arquivos de log. O PostgreSQL deve iniciar antes da API.
 
 Use `/api/v1/health` para verificar o processo e `/api/v1/ready` para verificar banco e revisão do schema. A área
@@ -120,7 +124,9 @@ alimenta o acompanhamento administrativo; as pendências e as tentativas ficam n
 renovada enquanto o processamento está ativo. Os anexos de tarefas inteiramente confirmadas
 são removidos; uma limpeza horária recupera sobras de interrupções sem remover arquivos de tarefas pendentes, parciais
 ou incertas. Uma entrega interrompida após o envio pode ficar como incerta e exige conferência no destino. A ação
-de nova tentativa no Admin retoma falhas confirmadas sem reenviar partes concluídas.
+de nova tentativa no Admin retoma falhas confirmadas sem reenviar partes concluídas. Esta versão não possui ação
+administrativa de confirmar recebimento ou autorizar reenvio de partes `UNCERTAIN`; confira o destino, sem alterar
+manualmente a fila.
 
 Ao restaurar um backup, pare a API ou configure `BACKGROUND_JOBS_ENABLED=false`. Confira as tarefas pendentes no
 monitoramento antes de reativar o trabalhador, pois o backup representa o estado da fila no instante da captura. A
@@ -158,3 +164,40 @@ parciais. Os arquivos Excel históricos permanecem preservados.
 
 O cabeçalho `X-Request-ID` permite correlacionar requisições, logs e tarefas admitidas pela fila. O identificador
 não contém credenciais e não substitui o identificador persistente do job.
+
+### Sequência no Windows para PostgreSQL já implantado
+
+Use Git Bash na raiz da instalação, com o serviço NSSM parado e o banco preservado. Confira o diretório de trabalho,
+a conta do serviço, um único worker sem `--reload` e a inicialização do PostgreSQL antes da API. `pg_dump.exe`
+deve estar acessível no ambiente da conta do NSSM, não apenas no terminal do administrador.
+
+```bash
+uv.exe sync --locked --no-dev --no-build --no-python-downloads --python .venv/Scripts/python.exe
+.venv/Scripts/alembic.exe current
+.venv/Scripts/alembic.exe upgrade head
+.venv/Scripts/alembic.exe current
+.venv/Scripts/alembic.exe check
+```
+
+Se o banco estava antes de `004`, reconstrua os resumos antes de iniciar a API:
+
+```bash
+.venv/Scripts/python.exe -m scripts.backfill_daily_summaries
+.venv/Scripts/python.exe -m scripts.backfill_daily_summaries --execute
+```
+
+Inicie o serviço com `BACKGROUND_JOBS_ENABLED=false`, confira `/api/v1/health`, `/api/v1/ready` e os fluxos autenticados
+pelo IP real da rede local. Preserve `BACKEND_CORS_ORIGINS` usado pelos clientes e implante o Flutter compatível com a
+renovação de sessão e os resultados parciais das exportações. Mantenha os Excel arquivados sem alteração.
+
+No Admin > Monitoramento, confira histórico e pendências antes de definir `BACKGROUND_JOBS_ENABLED=true` e reiniciar
+para carregar a configuração. A opção pausa somente o consumidor; o agendador ainda pode admitir tarefas. A cron
+verifica rotinas a cada dez minutos e o consumidor consulta a fila a cada cinco segundos. O retorno de `job_id`
+confirma admissão, não entrega concluída. Os detalhes ficam em `GET /api/v1/routine-logs/jobs/{job_id}`; a nova tentativa
+para falhas confirmadas usa `POST /api/v1/routine-logs/jobs/{job_id}/retry`, com permissão de mantenedor.
+
+Confira os destinatários nos mantenedores ativos com e-mail cadastrado, a configuração SMTP/Telegram, empresa/logo e
+`APP_VERSION` da versão implantada. `EMAIL_TO` não existe na configuração atual. Ensaie a próxima entrega autorizada e
+a retomada após reinício; uma reserva interrompida pode levar até cinco minutos para expirar. O teste no Windows de
+produção continua necessário mesmo com testes automatizados aprovados. Após novas gravações no PostgreSQL, qualquer
+retorno ao SQLite exige reconciliar os dados novos.

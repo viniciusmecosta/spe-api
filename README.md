@@ -16,8 +16,8 @@ integração com sistemas de recursos humanos, dispositivos de coleta de ponto e
 * **Persistência:** PostgreSQL 17
 * **ORM:** SQLAlchemy
 * **Versionamento de esquema:** Alembic
-* **Autenticação e Segurança:** JWT e hash de senhas com Passlib (Bcrypt)
-* **Processamento assíncrono e rotinas:** APScheduler
+* **Autenticação e Segurança:** JWT com versão de sessão e hash de senhas com Bcrypt
+* **Processamento assíncrono e rotinas:** APScheduler e fila durável no PostgreSQL
 * **Geração de relatórios:** OpenPyXL
 
 ## Configuração do Ambiente
@@ -47,8 +47,8 @@ execução, crie um arquivo `.env` na raiz do projeto, podendo utilizar o `.env.
   Codifique os caracteres reservados da senha no URI.
 
 Em produção, utilize o PostgreSQL externo já provisionado. O banco não depende do
-Docker Compose. Instale um cliente `pg_dump` compatível com o servidor na máquina ou
-container que executa a API. Consulte o [procedimento de migração e restauração](scripts/README.md)
+Docker Compose. Instale um cliente `pg_dump` compatível com o servidor na máquina da API e
+garanta que a conta do serviço NSSM consiga executá-lo. Consulte o [procedimento de migração e restauração](scripts/README.md)
 antes de inicializar a aplicação. Durante a migração, suspenda as gravações, conclua o
 backfill e migre os arquivos físicos manualmente antes de liberar o acesso.
 
@@ -74,6 +74,26 @@ backfill e migre os arquivos físicos manualmente antes de liberar o acesso.
 * **`FIRST_SUPERUSER_PASSWORD`**
   Credencial inicial do usuário administrador.
 
+### Implantação no Windows com NSSM
+
+A produção usa PostgreSQL nativo e NSSM, sem Docker. O [guia de banco e operação](scripts/README.md)
+detalha a migração, restauração, atualização e retomada das rotinas. A revisão atual do schema é `007`.
+Na migração do SQLite, importe os dados com o PostgreSQL na revisão `002` antes de avançar para `head`;
+na atualização de PostgreSQL já implantado, aplique as revisões pendentes com a API parada.
+
+Preserve o `.env`, a `SECRET_KEY`, os arquivos físicos e a configuração do NSSM. O backup do banco não inclui
+`uploads/`, inclusive os anexos pendentes em `.delivery_queue/`. Confira o PATH do `pg_dump`, as permissões da
+conta do serviço, o diretório de trabalho, um único worker sem `--reload` e a inicialização do PostgreSQL antes da API.
+Sincronize as dependências com `uv sync --locked --no-dev --no-build` usando o Python da instalação validada.
+
+Use `/api/v1/health` para verificar o processo e `/api/v1/ready` para banco e schema. O mantenedor acompanha
+rotinas, entregas e reprocessamentos em Admin > Monitoramento (`/api/v1/operations`). Durante a validação
+inicial ou recuperação, `BACKGROUND_JOBS_ENABLED=false` pausa o consumidor; o agendador ainda pode registrar tarefas.
+Confira pendências e destinatários antes de reativar o consumidor e reiniciar o NSSM para carregar a configuração.
+
+Preserve o CORS que atende à rede local. Distribua o Flutter compatível com a renovação de sessão após alteração
+de senha e os avisos de exportação parcial. Nos clientes da rede, configure o IP do servidor, não `127.0.0.1`.
+
 ### Configurações de E-mail
 
 * **`SMTP_HOST`**
@@ -91,12 +111,13 @@ backfill e migre os arquivos físicos manualmente antes de liberar o acesso.
 * **`EMAIL_FROM`**
   Endereço remetente das notificações do sistema.
 
-* **`EMAIL_TO`**
-  Destinatário principal dos relatórios operacionais e backups automatizados.
+Os relatórios e backups por e-mail são destinados aos mantenedores ativos com e-mail cadastrado.
+Não há variável `EMAIL_TO` na configuração atual. Dados e logo da empresa vêm do cadastro; versão, ambiente e
+fuso vêm de `APP_VERSION`, `ENVIRONMENT` e `TIMEZONE`.
 
 ## Desenvolvimento local com Docker Compose
 
-A aplicação está containerizada, garantindo padronização de ambiente e simplificação do processo de implantação.
+O Docker Compose é uma alternativa para desenvolvimento local. A implantação de produção usa NSSM e PostgreSQL nativo.
 
 Após configurar o arquivo `.env`, execute:
 
@@ -132,26 +153,37 @@ docker compose down
 
 O projeto adota organização em camadas, promovendo separação de responsabilidades e melhor manutenibilidade.
 
-* **`/app/api/`**
-  Camada de exposição HTTP, responsável pelo roteamento e tratamento das requisições.
+* **`/app/features/`**
+  Funcionalidades com rotas HTTP, serviços, schemas, modelos e repositórios do domínio.
 
 * **`/app/core/`**
-  Configurações globais, segurança, carregamento de ambiente e dependências transversais.
+  Configuração, segurança, inicialização, logs e tratamento de erros.
 
 * **`/app/database/`**
-  Inicialização da engine, sessão e infraestrutura de persistência.
+  Engines, sessões, conexões e unidade de trabalho transacional.
 
-* **`/app/domain/models/`**
-  Entidades ORM que representam o modelo de dados do sistema.
+* **`/app/shared/`**
+  Dependências, validações e componentes compartilhados.
 
-* **`/app/repositories/`**
-  Abstração de acesso a dados, contendo operações de persistência.
-
-* **`/app/schemas/`**
-  Modelos de validação e serialização utilizados na comunicação da API.
-
-* **`/app/services/`**
-  Implementação das regras de negócio, cálculos operacionais e fluxos do domínio.
+* **`/app/middleware/`**
+  Contexto de requisição e correlação dos logs por `X-Request-ID`.
 
 * **`/alembic/`**
-  Histórico de versionamento do esquema do banco de dados.
+  Histórico de migrações do schema PostgreSQL.
+
+* **`/scripts/`**
+  Importação SQLite, verificação de paridade, backfill e ensaio de restauração.
+
+## Rotinas e arquivos
+
+A cron verifica a necessidade das rotinas a cada dez minutos; o consumidor consulta a fila durável a cada cinco
+segundos. `routine_logs` mantém resultados e períodos já entregues, e `background_jobs` guarda pendências,
+tentativas, partes e progresso. Um `job_id` confirma registro da tarefa, não conclusão do envio.
+
+Falhas confirmadas podem ser retomadas no Admin sem reenviar partes concluídas. Uma entrega `UNCERTAIN` exige
+conferência no destino; a versão atual não oferece confirmação de recebimento ou reenvio autorizado no painel.
+Os anexos pendentes devem sobreviver a reinícios. Confira a fila após restaurar um backup antes de liberar o consumidor.
+
+Relatórios e anexos privados usam downloads autenticados; não publique `uploads/` inteiro como arquivos estáticos.
+Os novos Excel são ordenados pelo nome dos funcionários; os históricos são preservados. ZIPs de espelhos podem
+ter resultado parcial com manifesto; quando nenhum PDF é gerado, a resposta é `503`.
