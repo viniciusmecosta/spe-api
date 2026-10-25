@@ -31,3 +31,7 @@ def test_specialized_repositories_accept_the_generic_call_contract(parent, repos
     parameters = inspect.signature(method_override).parameters
     for name in kwargs:
         assert parameters[name].kind != inspect.Parameter.POSITIONAL_ONLY
+
+    parent_parameters = inspect.signature(parent_method).parameters
+    extra_parameters = set(parameters) - set(parent_parameters)
+    assert all(parameters[name].default is not inspect.Parameter.empty for name in extra_parameters)
