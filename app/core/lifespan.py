@@ -46,7 +46,10 @@ async def lifespan(app: FastAPI):
                       max_instances=1, coalesce=True)
 
     from app.features.system.job_queue import process_once
+    from app.features.system.notification_jobs import cleanup_delivered_attachments
     scheduler.add_job(process_once, 'interval', seconds=5, id='durable_jobs', max_instances=1, coalesce=True)
+    scheduler.add_job(cleanup_delivered_attachments, 'interval', hours=1, id='delivery_cleanup',
+                      max_instances=1, coalesce=True)
     scheduler.start()
     yield
     if not startup_ntp_task.done():

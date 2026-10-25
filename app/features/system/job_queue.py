@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.core.config import settings
 from app.database.session import get_async_session_context
 from app.features.system.system_models import BackgroundJob, RoutineLog
 
@@ -87,19 +88,50 @@ async def checkpoint(job: dict, status: str = 'PROCESSING', delay: int = 0) -> b
     return True
 
 
+async def keep_lease(job: dict):
+    while True:
+        await asyncio.sleep(LEASE_SECONDS / 3)
+        async with get_async_session_context() as session:
+            result = await session.execute(update(BackgroundJob).where(
+                BackgroundJob.id == job['id'], BackgroundJob.lease_token == job['token'],
+                BackgroundJob.status == 'PROCESSING',
+            ).values(lease_until=utc_now() + timedelta(seconds=LEASE_SECONDS)))
+            if result.rowcount != 1:
+                released = await session.scalar(select(BackgroundJob.id).where(
+                    BackgroundJob.id == job['id'], BackgroundJob.lease_token == job['token'],
+                    BackgroundJob.status != 'PROCESSING',
+                ))
+                if released is not None:
+                    return
+                raise RuntimeError('A reserva da tarefa não está mais ativa')
+
+
+async def _process_claimed(job: dict):
+    async with asyncio.TaskGroup() as group:
+        heartbeat = group.create_task(keep_lease(job))
+        try:
+            if job['kind'] == 'REPROCESS':
+                from app.features.daily_summaries.daily_summary_reprocess_service import (
+                    process_reprocess_job,
+                )
+                await process_reprocess_job(job)
+            else:
+                from app.features.system.notification_jobs import (
+                    process_notification_job,
+                )
+                await process_notification_job(job)
+        finally:
+            heartbeat.cancel()
+
+
 async def process_once():
+    if not settings.BACKGROUND_JOBS_ENABLED:
+        return
     job = await claim()
     if not job:
         return
     try:
-        if job['kind'] == 'REPROCESS':
-            from app.features.daily_summaries.daily_summary_reprocess_service import (
-                process_reprocess_job,
-            )
-            await process_reprocess_job(job)
-        else:
-            from app.features.system.notification_jobs import process_notification_job
-            await process_notification_job(job)
+        await _process_claimed(job)
     except asyncio.CancelledError:
         
         raise

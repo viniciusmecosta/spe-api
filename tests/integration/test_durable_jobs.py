@@ -1,10 +1,10 @@
 import asyncio
 from datetime import date, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
-import pytest
 from sqlalchemy import select, text, update
 
+import pytest
 from app.features.system import job_queue
 from app.features.system.delivery_result import DeliveryResult
 from app.features.system.system_models import BackgroundJob, RoutineLog
@@ -138,3 +138,179 @@ async def test_private_attachment_survives_original_cleanup_and_is_redacted(pg_s
     assert '123:secret' not in retained.read_text()
     assert 'password=secret' not in retained.read_text()
     assert 'public' not in retained.parts
+
+
+async def seed_notification_data(factory, tmp_path):
+    from datetime import datetime
+    from PIL import Image
+    from app.features.companies.company_models import Company
+    from app.features.time_records.time_record_models import TimeRecord
+    from app.features.users.user_models import User
+    from app.shared.enums import RecordType, UserRole
+    async with factory() as session:
+        manager = User(username='notification-admin', name='Responsável', email='responsavel@example.test',
+                       role=UserRole.MAINTAINER)
+        employee = User(username='notification-user', name='Ana <Silva>', role=UserRole.EMPLOYEE)
+        session.add_all([manager, employee, Company(name='Empresa Dinâmica', cnpj='synthetic', address='Rua Exemplo',
+                                                    logo_path='logo.png')])
+        await session.commit()
+        session.add_all([TimeRecord(user_id=employee.id, record_type=kind,
+                                    record_datetime=datetime.fromisoformat(f'2026-10-23T{hour}:00-03:00'))
+                         for kind, hour in ((RecordType.ENTRY, '07:00'), (RecordType.EXIT, '16:00'))])
+        await session.commit()
+    Image.new('RGB', (100, 30), color='green').save(tmp_path / 'logo.png')
+
+
+@pytest.mark.parametrize('routine', ['EMAIL_DAILY_BACKUP', 'TELEGRAM_DAILY_REPORT', 'TELEGRAM_MANUAL_REPORT',
+                                     'TELEGRAM_HOURLY_BACKUP', 'TELEGRAM_MANUAL_BACKUP', 'EMAIL_PAYROLL'])
+async def test_notification_preparation_preserves_files_and_real_report_content(pg_session_factory, tmp_path, mocker,
+                                                                                routine):
+    from app.features.system.email_service import email_service
+    from app.features.system.telegram_service import telegram_service
+    from app.features.system.routine_orchestrator import routine_orchestrator
+    factory = pg_session_factory
+    await seed_notification_data(factory, tmp_path)
+    log = tmp_path / 'day.log'
+    log.write_text('07:00:00 [ERROR] https://api.telegram.org/bot123:exposed/sendDocument password=hidden')
+    mocker.patch('app.features.system.notification_jobs.get_log_path', return_value=str(log))
+    mocker.patch('app.features.system.routine_orchestrator.get_log_path', return_value=str(log))
+    archive = tmp_path / 'backup.zip.enc'
+    archive.write_bytes(b'encrypted synthetic backup')
+    schema, data = tmp_path / 'schema.sql', tmp_path / 'data.sql'
+    schema.write_text('synthetic schema')
+    data.write_text('synthetic rows')
+    mocker.patch.object(routine_orchestrator, '_generate_backup_files_zip', new_callable=AsyncMock,
+                        return_value=(str(schema), str(data), str(archive)))
+    smtp = mocker.patch.object(email_service, '_send_message', return_value=DeliveryResult('SUCCESS'))
+    text_send = mocker.patch.object(telegram_service, 'deliver_text', return_value=DeliveryResult('SUCCESS'))
+    document_send = mocker.patch.object(telegram_service, 'deliver_document', return_value=DeliveryResult('SUCCESS'))
+    payload = {'routine_type': routine, 'start_date': '2026-10-23', 'end_date': '2026-10-23',
+               'target_date': '2026-10-23'}
+    if routine == 'EMAIL_PAYROLL':
+        reports = tmp_path / 'reports'
+        reports.mkdir()
+        (reports / 'payroll.xlsx').write_bytes(b'synthetic workbook')
+        payload.update(action='Fechamento', month=10, year=2026, user_name='Responsável',
+                       report_path='reports/payroll.xlsx', to_emails=['responsavel@example.test'])
+    job_id = await job_queue.submit('NOTIFICATION', payload)
+    await job_queue.process_once()
+    async with factory() as session:
+        job = await session.get(BackgroundJob, job_id)
+        assert job.status == 'SUCCESS'
+        assert job.result['context']['company'] == 'Empresa Dinâmica'
+        if routine.startswith('EMAIL'):
+            message = smtp.call_args.args[0]
+            body = next(part.get_payload(decode=True).decode('utf-8') for part in message.walk() if
+                        part.get_content_type() == 'text/html')
+            assert 'Empresa Dinâmica' in body
+            assert 'cid:company-logo' in body
+            if routine == 'EMAIL_DAILY_BACKUP':
+                assert 'Ana &lt;Silva&gt;' in body
+                assert '07:00' in body and '16:00' in body
+                assert 'Ocorrências relevantes' in body
+                assert '123:exposed' not in body
+                assert 'password=hidden' not in body
+        elif 'REPORT' in routine:
+            assert 'Ana &lt;Silva&gt;' in text_send.call_args.args[0]
+            assert 'E: 07:00' in text_send.call_args.args[0]
+        if routine == 'TELEGRAM_HOURLY_BACKUP':
+            document_send.assert_called_once()
+    if 'BACKUP' in routine:
+        assert not archive.exists()
+    for retained_log in (tmp_path / '.delivery_queue' / str(job_id)).glob('*.log'):
+        assert '123:exposed' not in retained_log.read_text()
+        assert 'password=hidden' not in retained_log.read_text()
+
+
+async def test_generation_failure_persists_retries_and_final_failure(pg_session_factory, mocker):
+    factory = pg_session_factory
+    mocker.patch('app.features.system.notification_jobs.prepare_notification', new_callable=AsyncMock,
+                 side_effect=RuntimeError('synthetic failure'))
+    job_id = await job_queue.submit('NOTIFICATION', {'routine_type': 'SYNTHETIC_FAILURE'})
+    for attempt in range(1, 5):
+        await job_queue.process_once()
+        async with factory() as session:
+            job = await session.get(BackgroundJob, job_id)
+            assert job.attempts == attempt
+            assert job.status == ('FAILED' if attempt == 4 else 'RETRY')
+        await expire(factory, job_id)
+    async with factory() as session:
+        logs = list((await session.scalars(select(RoutineLog))).all())
+        assert len(logs) == 1
+        assert logs[0].status == 'FAILED'
+
+
+async def test_long_delivery_renews_lease_without_allowing_a_second_worker(pg_session_factory, monkeypatch, mocker):
+    monkeypatch.setattr(job_queue, 'LEASE_SECONDS', 0.6)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def deliver(*args):
+        started.set()
+        await release.wait()
+        return DeliveryResult('SUCCESS')
+
+    mocker.patch('app.features.system.notification_jobs._deliver', side_effect=deliver)
+    job_id = await ready_job(pg_session_factory, [part()])
+    worker = asyncio.create_task(job_queue.process_once())
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        await asyncio.sleep(0.9)
+        assert await job_queue.claim() is None
+    finally:
+        release.set()
+        await worker
+    async with pg_session_factory() as session:
+        assert (await session.get(BackgroundJob, job_id)).status == 'SUCCESS'
+
+
+async def test_success_cleans_only_confirmed_attachments_and_scheduled_cleanup_recovers_leftovers(
+        pg_session_factory, tmp_path, mocker):
+    from app.features.system.notification_jobs import cleanup_delivered_attachments
+
+    root = tmp_path / '.delivery_queue'
+    job_id = await ready_job(pg_session_factory, [part()])
+    directory = root / str(job_id)
+    directory.mkdir(parents=True)
+    (directory / 'report.log').write_text('synthetic report')
+    mocker.patch('app.features.system.notification_jobs._deliver', return_value=DeliveryResult('SUCCESS'))
+    await job_queue.process_once()
+    assert not directory.exists()
+    directory.mkdir()
+    (directory / 'leftover.log').write_text('interrupted cleanup')
+    retained = {}
+    async with pg_session_factory() as session:
+        for status in ('PENDING', 'RETRY', 'FAILED', 'PARTIAL', 'UNCERTAIN'):
+            job = await job_queue.enqueue(session, 'NOTIFICATION', {})
+            job.status = status
+            path = root / str(job.id)
+            path.mkdir()
+            (path / 'pending.log').write_text(status)
+            retained[status] = path
+        await session.commit()
+    await cleanup_delivered_attachments()
+    assert not directory.exists()
+    assert all((path / 'pending.log').read_text() == status for status, path in retained.items())
+
+
+async def test_disabled_worker_does_not_claim_queued_work(pg_session_factory, monkeypatch):
+    from app.core.config import settings
+    job_id = await ready_job(pg_session_factory, [part()])
+    monkeypatch.setattr(settings, 'BACKGROUND_JOBS_ENABLED', False)
+    await job_queue.process_once()
+    async with pg_session_factory() as session:
+        job = await session.get(BackgroundJob, job_id)
+        assert job.status == 'PENDING'
+        assert job.attempts == 0
+
+
+async def test_lease_renewal_accepts_its_completed_job_but_rejects_another_owner(pg_session_factory, monkeypatch):
+    monkeypatch.setattr(job_queue, 'LEASE_SECONDS', 0.03)
+    job_id = await ready_job(pg_session_factory, [part()])
+    first = await job_queue.claim()
+    await expire(pg_session_factory, job_id)
+    second = await job_queue.claim()
+    with pytest.raises(RuntimeError, match='reserva'):
+        await job_queue.keep_lease(first)
+    assert await job_queue.checkpoint(second, 'SUCCESS')
+    await job_queue.keep_lease(second)

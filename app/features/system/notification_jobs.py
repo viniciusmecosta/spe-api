@@ -1,12 +1,13 @@
-from zoneinfo import ZoneInfo
 import asyncio
 import copy
 import html
-import shutil
+import logging
 import secrets
+import shutil
 import uuid
 from datetime import date, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -18,10 +19,38 @@ from app.features.system.delivery_result import DeliveryResult
 from app.features.system.email_service import email_service
 from app.features.system.job_queue import checkpoint, utc_now
 from app.features.system.notification_context import company_context
+from app.features.system.system_models import BackgroundJob
 from app.features.system.system_repository import async_routine_log_repository
 from app.features.system.telegram_service import telegram_service
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
+
+logger = logging.getLogger(__name__)
+
+
+def _remove_delivered_files(job_id: int):
+    root = Path(settings.UPLOAD_DIR).resolve()
+    directory = root / '.delivery_queue' / str(job_id)
+    if not directory.is_dir() or directory.is_symlink() or not directory.resolve().is_relative_to(root):
+        return
+    try:
+        shutil.rmtree(directory)
+    except OSError:
+        logger.exception('Não foi possível remover os anexos da tarefa concluída %s', job_id)
+
+
+async def cleanup_delivered_attachments():
+    root = Path(settings.UPLOAD_DIR) / '.delivery_queue'
+    if not root.is_dir():
+        return
+    job_ids = [int(path.name) for path in root.iterdir() if path.name.isdecimal() and len(path.name) < 19]
+    for offset in range(0, len(job_ids), 500):
+        async with get_async_session_context() as session:
+            completed = list((await session.scalars(select(BackgroundJob.id).where(
+                BackgroundJob.id.in_(job_ids[offset:offset + 500]), BackgroundJob.status == 'SUCCESS',
+            ))).all())
+        for job_id in completed:
+            await asyncio.to_thread(_remove_delivered_files, job_id)
 
 
 def _retain_file(job_id: int, source: str, filename: str) -> tuple[str, str]:
@@ -212,4 +241,7 @@ async def process_notification_job(job: dict):
         delay = max(1, int(min(part['retry_at'] for part in parts if part['status'] == 'RETRY') - utc_now().timestamp()))
         await checkpoint(job, 'RETRY', delay)
         return
-    await checkpoint(job, _batch_status(parts, counts))
+    status = _batch_status(parts, counts)
+    saved = await checkpoint(job, status)
+    if saved and status == 'SUCCESS':
+        await asyncio.to_thread(_remove_delivered_files, job['id'])
