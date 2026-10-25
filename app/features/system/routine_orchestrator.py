@@ -52,12 +52,23 @@ class RoutineOrchestrator:
             return None
         end_date = end_date or now.date() - timedelta(days=1)
         start_date = start_date or end_date
+        if scheduled and await self._already_delivered(routine_type, now, end_date):
+            return None
         target = now.strftime('%Y-%m-%dT%H') if 'HOURLY' in routine_type else end_date.isoformat()
         key = f'{routine_type}:{target}' if scheduled else None
         return await submit('NOTIFICATION', {
             'routine_type': routine_type, 'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat(), 'target_date': end_date.isoformat(),
         }, key)
+
+    async def _already_delivered(self, routine_type: str, now: datetime, target_date: date) -> bool:
+        async with get_async_session_context() as session:
+            if 'HOURLY' in routine_type:
+                start = now.replace(minute=0, second=0, microsecond=0)
+                return await self.repo.has_hourly_routine_run(session, routine_type, start, status='SUCCESS')
+            return await self.repo.has_routine_run_for_target_date(
+                session, routine_type, target_date, status='SUCCESS',
+            )
 
     @staticmethod
     def _schedule_allows_run(routine_type: str, now: datetime) -> bool:

@@ -43,6 +43,8 @@ def mock_get_db_session(db_session_mock):
 def orchestrator():
     orc = RoutineOrchestrator()
     orc._repo = AsyncMock()
+    orc._repo.has_hourly_routine_run.return_value = False
+    orc._repo.has_routine_run_for_target_date.return_value = False
     return orc
 
 
@@ -345,7 +347,7 @@ async def test_prepare_backup_attachments_branches(orchestrator, mocker):
     ('execute_manual_backup_telegram', 'TELEGRAM_MANUAL_BACKUP', False),
     ('send_manual_backup_email', 'EMAIL_MANUAL_BACKUP', False),
 ])
-async def test_routines_persist_before_sending(orchestrator, mock_datetime, mocker, method, routine, scheduled):
+async def test_routines_persist_before_sending(orchestrator, mock_get_db_session, mock_datetime, mocker, method, routine, scheduled):
     submit = mocker.patch('app.features.system.routine_orchestrator.submit', new_callable=AsyncMock, return_value=42)
     assert await getattr(orchestrator, method)() == 42
     kind, payload, key = submit.await_args.args

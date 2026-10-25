@@ -114,7 +114,10 @@ próprios; dimensione o limite de conexões PostgreSQL considerando ambos.
 
 A fila usa leases no PostgreSQL e guarda anexos em `UPLOAD_DIR/.delivery_queue`, fora da área pública. Preserve essa
 pasta junto com os relatórios, anexos e firmwares ao migrar o serviço. As tarefas confirmadas não são reenviadas durante
-a retomada normal. A reserva da tarefa é renovada enquanto o processamento está ativo. Os anexos de tarefas inteiramente confirmadas
+a retomada normal. A cron também respeita os sucessos já importados em `routine_logs`, evitando repetir a entrega
+diária ou horária na transição da versão antiga. Esse histórico continua indicando o último período entregue e
+alimenta o acompanhamento administrativo; as pendências e as tentativas ficam na fila durável. A reserva da tarefa é
+renovada enquanto o processamento está ativo. Os anexos de tarefas inteiramente confirmadas
 são removidos; uma limpeza horária recupera sobras de interrupções sem remover arquivos de tarefas pendentes, parciais
 ou incertas. Uma entrega interrompida após o envio pode ficar como incerta e exige conferência no destino. A ação
 de nova tentativa no Admin retoma falhas confirmadas sem reenviar partes concluídas.
