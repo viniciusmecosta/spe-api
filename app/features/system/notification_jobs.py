@@ -26,11 +26,12 @@ from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
+DELIVERY_DIRECTORY = '.delivery_queue'
 
 
 def _remove_delivered_files(job_id: int):
     root = Path(settings.UPLOAD_DIR).resolve()
-    directory = root / '.delivery_queue' / str(job_id)
+    directory = root / DELIVERY_DIRECTORY / str(job_id)
     if not directory.is_dir() or directory.is_symlink() or not directory.resolve().is_relative_to(root):
         return
     try:
@@ -40,7 +41,7 @@ def _remove_delivered_files(job_id: int):
 
 
 async def cleanup_delivered_attachments():
-    root = Path(settings.UPLOAD_DIR) / '.delivery_queue'
+    root = Path(settings.UPLOAD_DIR) / DELIVERY_DIRECTORY
     if not root.is_dir():
         return
     job_ids = [int(path.name) for path in root.iterdir() if path.name.isdecimal() and len(path.name) < 19]
@@ -54,7 +55,7 @@ async def cleanup_delivered_attachments():
 
 
 def _retain_file(job_id: int, source: str, filename: str) -> tuple[str, str]:
-    directory = Path(settings.UPLOAD_DIR) / '.delivery_queue' / str(job_id)
+    directory = Path(settings.UPLOAD_DIR) / DELIVERY_DIRECTORY / str(job_id)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     destination = directory / (uuid.uuid4().hex + Path(filename).suffix)
     if filename.endswith('.log'):
