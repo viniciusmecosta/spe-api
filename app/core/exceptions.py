@@ -79,6 +79,14 @@ def _get_error_title(status_code: int) -> str:
         return "Erro"
 
 
+def _request_headers(request: Request, headers=None):
+    result = dict(headers or {})
+    correlation = getattr(request.state, 'request_id', None)
+    if correlation:
+        result['X-Request-ID'] = correlation
+    return result
+
+
 def setup_exception_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -102,7 +110,7 @@ def setup_exception_handlers(app: FastAPI):
 
         return JSONResponse(
             status_code=exc.status_code,
-            headers=exc.headers,
+            headers=_request_headers(request, exc.headers),
             content={
                 "type": _get_error_type(exc.status_code),
                 "title": _get_error_title(exc.status_code),
@@ -167,7 +175,7 @@ def setup_exception_handlers(app: FastAPI):
         logger.error(f"Unexpected error em {request.url.path}: {exc!s}", exc_info=(type(exc), exc, exc.__traceback__))
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            headers={"X-Request-ID": request.state.request_id} if getattr(request.state, "request_id", None) else {},
+            headers=_request_headers(request),
             content={
                 "type": _get_error_type(status.HTTP_500_INTERNAL_SERVER_ERROR),
                 "title": _get_error_title(status.HTTP_500_INTERNAL_SERVER_ERROR),

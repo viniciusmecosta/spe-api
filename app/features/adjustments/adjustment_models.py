@@ -32,6 +32,7 @@ class AdjustmentRequest(Base):
     )
 
     USERS_ID = "users.id"
+    SET_NULL_ACTION = "SET NULL"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey(USERS_ID, ondelete="CASCADE"), nullable=False)
@@ -43,15 +44,15 @@ class AdjustmentRequest(Base):
     reason_text = Column(String, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
-    manager_id = Column(Integer, ForeignKey(USERS_ID, ondelete="SET NULL"), nullable=True)
+    manager_id = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
     manager_comment = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete="SET NULL"), nullable=True)
+    deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
     approved_amount_hours = Column(Float, nullable=True)
     applied_time_record_id = Column(Integer, ForeignKey("time_records.id", name="fk_adjustment_applied_record",
-                                                       ondelete="SET NULL", use_alter=True), nullable=True)
+                                                       ondelete=SET_NULL_ACTION, use_alter=True), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")

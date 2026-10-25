@@ -47,3 +47,23 @@ async def test_total_request_body_is_limited_even_without_content_length():
         response = await client.post('/', content=chunks())
         assert response.status_code == 413
         assert (await client.post('/', content=b'123')).json() == {'size': 3}
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_keeps_request_id_without_exposing_internal_details():
+    from app.core.exceptions import setup_exception_handlers
+
+    application = FastAPI()
+    application.add_middleware(RequestLoggingMiddleware)
+    setup_exception_handlers(application)
+
+    @application.get('/')
+    async def endpoint():
+        raise RuntimeError('private internal exception')
+
+    transport = httpx.ASGITransport(app=application, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:
+        response = await client.get('/', headers={'X-Request-ID': 'failed_request'})
+        assert response.status_code == 500
+        assert response.headers['X-Request-ID'] == 'failed_request'
+        assert 'private internal exception' not in response.text

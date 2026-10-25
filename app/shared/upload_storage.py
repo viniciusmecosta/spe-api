@@ -43,21 +43,26 @@ class StoredUpload:
     content_type: str
 
 
+JPEG_EXTENSION = '.jpeg'
+XLSX_EXTENSION = '.xlsx'
+DOCX_EXTENSION = '.docx'
+
+
 _POLICIES = {
-    UploadCategory.LOGO: UploadPolicy('public', frozenset({'.png', '.jpg', '.jpeg'}), 'UPLOAD_LOGO_MAX_BYTES'),
-    UploadCategory.ATTACHMENT: UploadPolicy('', frozenset({'.pdf', '.png', '.jpg', '.jpeg'}),
+    UploadCategory.LOGO: UploadPolicy('public', frozenset({'.png', '.jpg', JPEG_EXTENSION}), 'UPLOAD_LOGO_MAX_BYTES'),
+    UploadCategory.ATTACHMENT: UploadPolicy('', frozenset({'.pdf', '.png', '.jpg', JPEG_EXTENSION}),
                                            'UPLOAD_ATTACHMENT_MAX_BYTES'),
     UploadCategory.FIRMWARE: UploadPolicy('firmware', frozenset({'.bin'}), 'UPLOAD_FIRMWARE_MAX_BYTES'),
     UploadCategory.LEGACY_REPORT: UploadPolicy('reports/legacy',
-                                              frozenset({'.pdf', '.xls', '.xlsx', '.csv', '.doc', '.docx'}),
+                                              frozenset({'.pdf', '.xls', XLSX_EXTENSION, '.csv', '.doc', DOCX_EXTENSION}),
                                               'UPLOAD_LEGACY_REPORT_MAX_BYTES'),
 }
 _CONTENT_TYPES = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.pdf': 'application/pdf',
+    '.png': 'image/png', '.jpg': 'image/jpeg', JPEG_EXTENSION: 'image/jpeg', '.pdf': 'application/pdf',
     '.bin': 'application/octet-stream', '.csv': 'text/csv', '.xls': 'application/vnd.ms-excel',
     '.doc': 'application/msword',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    XLSX_EXTENSION: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    DOCX_EXTENSION: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 }
 _OLE_HEADER = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
 
@@ -101,7 +106,7 @@ class UploadStorage:
             raise DomainException('A imagem está inválida, corrompida ou excede as dimensões permitidas.') from exc
 
     def _validate_office_archive(self, path: Path, extension: str) -> None:
-        expected_member = 'xl/workbook.xml' if extension == '.xlsx' else 'word/document.xml'
+        expected_member = 'xl/workbook.xml' if extension == XLSX_EXTENSION else 'word/document.xml'
         try:
             with zipfile.ZipFile(path) as archive:
                 entries = archive.infolist()
@@ -128,11 +133,11 @@ class UploadStorage:
                         raise DomainException('O conteúdo do arquivo não corresponde ao formato CSV.')
                 if b'\x00' in header:
                     raise DomainException('O conteúdo do arquivo não corresponde ao formato CSV.')
-        if extension in {'.xlsx', '.docx'}:
+        if extension in {XLSX_EXTENSION, DOCX_EXTENSION}:
             self._validate_office_archive(path, extension)
 
     def _validate_content(self, path: Path, extension: str, category: UploadCategory) -> None:
-        if extension in {'.png', '.jpg', '.jpeg'}:
+        if extension in {'.png', '.jpg', JPEG_EXTENSION}:
             self._validate_image(path, extension)
         elif category != UploadCategory.FIRMWARE:
             self._validate_document(path, extension)
