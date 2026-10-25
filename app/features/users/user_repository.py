@@ -1,13 +1,20 @@
+import asyncio
 from typing import Any
 
-from sqlalchemy import asc, desc, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.exceptions import DomainException
 from app.core.security import get_password_hash
 from app.database.repository import AsyncBaseRepository, BaseRepository
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
+from app.features.users.user_pagination import (
+    user_cursor_condition,
+    user_order_column,
+    user_sort_order,
+)
 from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.shared.enums import UserRole
 
@@ -57,11 +64,8 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
             search_term = f"%{search}%"
             stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
 
-        order_column = getattr(User, order_by, User.id)
-        if order_direction.lower() == "desc":
-            stmt = stmt.order_by(desc(order_column))
-        else:
-            stmt = stmt.order_by(asc(order_column))
+        order_column = user_order_column(order_by)
+        stmt = stmt.order_by(*user_sort_order(order_column, order_direction.lower() == "desc"))
 
         stmt = stmt.offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
@@ -126,6 +130,7 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         if update_data.get("password"):
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
+            update_data["auth_version"] = User.auth_version + 1
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):
@@ -165,7 +170,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         biometrics_in = create_data.pop("biometrics", None)
 
         if create_data.get("password"):
-            create_data["password_hash"] = get_password_hash(create_data["password"])
+            create_data["password_hash"] = await asyncio.to_thread(get_password_hash, create_data["password"])
             del create_data["password"]
 
         db_obj = User(**create_data)
@@ -178,6 +183,19 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         await db.commit()
         refreshed = await self.get(db, db_obj.id)
         return refreshed if refreshed else db_obj
+
+    async def protect_last_maintainer(self, db: AsyncSession, user_id: int) -> None:
+        from sqlalchemy import text
+
+        from app.features.users.user_exceptions import InsufficientPrivilegesError
+
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(5459015, 1)"))
+        count = await db.scalar(select(func.count()).select_from(User).where(
+            User.role == UserRole.MAINTAINER, User.is_active.is_(True), User.id != user_id,
+        ))
+        if not count:
+            raise InsufficientPrivilegesError("É necessário manter ao menos um mantenedor ativo.")
 
     async def get_by_username(self, db: AsyncSession, username: str) -> User | None:
         stmt = select(User).where(User.username == username)
@@ -216,9 +234,6 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
             selectinload(User.historical_schedules),
         )
 
-        if after_id is not None:
-            stmt = stmt.where(User.id > after_id)
-
         if is_active is not None:
             stmt = stmt.where(User.is_active == is_active)
         if role is not None:
@@ -227,13 +242,14 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
             search_term = f"%{search}%"
             stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
 
-        order_column = getattr(User, order_by, User.id)
-        if order_direction.lower() == "desc":
-            stmt = stmt.order_by(desc(order_column))
-        else:
-            stmt = stmt.order_by(asc(order_column))
-
-        stmt = stmt.limit(limit)
+        order_column = user_order_column(order_by)
+        descending = order_direction.lower() == "desc"
+        if after_id:
+            cursor = (await db.execute(select(order_column).where(User.id == after_id))).one_or_none()
+            if cursor is None:
+                raise DomainException(status_code=422, detail="O cursor informado não corresponde a um usuário existente.")
+            stmt = stmt.where(user_cursor_condition(order_column, after_id, cursor[0], descending))
+        stmt = stmt.order_by(*user_sort_order(order_column, descending)).offset(skip).limit(limit)
         result = await db.scalars(stmt)
         return list(result.all())
 
@@ -302,8 +318,9 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         biometrics_in = update_data.pop("biometrics", None)
 
         if update_data.get("password"):
-            update_data["password_hash"] = get_password_hash(update_data["password"])
+            update_data["password_hash"] = await asyncio.to_thread(get_password_hash, update_data["password"])
             del update_data["password"]
+            update_data["auth_version"] = User.auth_version + 1
 
         for field, value in update_data.items():
             if hasattr(db_obj, field):

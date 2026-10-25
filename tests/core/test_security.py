@@ -21,10 +21,16 @@ def test_verify_password_invalid():
     assert not verify_password("plain", "invalid_hash")
 
 
-def test_get_client_ip_forwarded():
-    req = MagicMock(spec=Request)
-    req.headers.get.side_effect = lambda k: "203.0.113.195, 70.41.3.18" if k == "X-Forwarded-For" else None
-    assert get_client_ip(req) == "203.0.113.195"
+def test_get_client_ip_forwarded(monkeypatch):
+    from app.core.config import settings
+    req = Request({'type': 'http', 'headers': [(b'x-forwarded-for', b'203.0.113.195, 70.41.3.18')],
+                   'client': ('127.0.0.1', 123)})
+    monkeypatch.setattr(settings, 'TRUSTED_PROXY_CIDRS', [])
+    assert get_client_ip(req) == '127.0.0.1'
+    monkeypatch.setattr(settings, 'TRUSTED_PROXY_CIDRS', ['127.0.0.0/8'])
+    assert get_client_ip(req) == '70.41.3.18'
+    monkeypatch.setattr(settings, 'TRUSTED_PROXY_CIDRS', ['127.0.0.0/8', '70.41.3.18/32'])
+    assert get_client_ip(req) == '203.0.113.195'
 
 
 def test_get_client_device_name_cases():

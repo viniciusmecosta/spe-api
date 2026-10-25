@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     REPROCESS_MAX_DAYS: int = Field(default=3660, ge=1, le=36600)
     REPROCESS_MAX_ITEMS: int = Field(default=100000, ge=1, le=1000000)
     REPROCESS_BATCH_SIZE: int = Field(default=25, ge=1, le=100)
+    TRUSTED_PROXY_CIDRS: list[str] = []
+    UPLOAD_LOGO_MAX_BYTES: int = Field(default=5 * 1024 * 1024, ge=1)
+    UPLOAD_ATTACHMENT_MAX_BYTES: int = Field(default=10 * 1024 * 1024, ge=1)
+    UPLOAD_FIRMWARE_MAX_BYTES: int = Field(default=16 * 1024 * 1024, ge=1)
+    UPLOAD_LEGACY_REPORT_MAX_BYTES: int = Field(default=25 * 1024 * 1024, ge=1)
+    UPLOAD_LOGO_MAX_DIMENSION: int = Field(default=4096, ge=1)
+    UPLOAD_LOGO_MAX_PIXELS: int = Field(default=16000000, ge=1)
+    UPLOAD_REQUEST_MAX_BYTES: int = Field(default=32 * 1024 * 1024, ge=1)
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
@@ -50,6 +58,14 @@ class Settings(BaseSettings):
     DAILY_REPORT_HOUR: int
     HOURLY_BACKUP_START_HOUR: int
     HOURLY_BACKUP_END_HOUR: int
+
+    @field_validator("TRUSTED_PROXY_CIDRS")
+    @classmethod
+    def validate_proxy_networks(cls, values: list[str]) -> list[str]:
+        from ipaddress import ip_network
+        for value in values:
+            ip_network(value, strict=False)
+        return values
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod

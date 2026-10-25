@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_async_db
 from app.features.system.audit_service import audit_service, serialize_model
+from app.features.users.user_authorization import UserAuthorizationPolicy
 from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import UserNotFoundError
 from app.features.users.user_models import User
@@ -62,8 +63,10 @@ class UserService:
     async def create_user(
             self, user_in: UserCreate | dict[str, Any], current_user_id: int
     ) -> User:
-        await self._validate_unique_fields(user_in)
         data = self._extract_data(user_in)
+        actor = await self.repository.get(self.db, current_user_id)
+        UserAuthorizationPolicy.validate(actor, requested_role=data.get("role", UserRole.EMPLOYEE))
+        await self._validate_unique_fields(user_in)
 
         if data.get("name"):
             data["name"] = self._format_name(data["name"])
@@ -176,7 +179,13 @@ class UserService:
         if not user:
             raise UserNotFoundError(user_id=user_id)
 
-        self.validator.validate_manager_privilege(current_user, user)
+        data = self._extract_data(user_in)
+        UserAuthorizationPolicy.validate(current_user, user, data.get("role"))
+        removes_maintainer = user.role == UserRole.MAINTAINER and (
+            data.get("role", user.role) != UserRole.MAINTAINER or data.get("is_active") is False
+        )
+        if removes_maintainer and user.is_active:
+            await self.repository.protect_last_maintainer(self.db, user.id)
         return await self.update_user(
             user_id=user_id, user_in=user_in, current_user_id=current_user.id
         )

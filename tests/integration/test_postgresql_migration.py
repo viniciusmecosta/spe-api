@@ -10,6 +10,8 @@ from unittest.mock import patch
 import httpx
 import psycopg2
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from psycopg2 import sql
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
@@ -426,7 +428,7 @@ async def test_encrypted_backup_roundtrip_preserves_values_and_summaries(
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version"))
-            == "005"
+            == ScriptDirectory.from_config(Config("alembic.ini")).get_current_head()
         )
 
 
@@ -465,7 +467,7 @@ def test_alembic_connects_with_percent_encoded_password(pg_url, monkeypatch):
             timeout=30,
         )
         assert result.returncode == 0, result.stderr
-        assert "005" in result.stdout
+        assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() in result.stdout
     finally:
         with admin.cursor() as cursor:
             cursor.execute(

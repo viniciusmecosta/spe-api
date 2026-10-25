@@ -9,6 +9,7 @@ from pydantic import (
     EmailStr,
     Field,
     field_validator,
+    model_validator,
 )
 
 from app.features.devices.device_schemas import (
@@ -17,6 +18,7 @@ from app.features.devices.device_schemas import (
     UserBiometricUpdate,
 )
 from app.shared.enums import UserRole
+from app.shared.validation import validate_date_order
 
 DOB_FUTURE_ERROR = 'A data de nascimento não pode estar no futuro.'
 
@@ -60,7 +62,7 @@ PastDate = Annotated[date | None, AfterValidator(_validate_dob)]
 
 
 class WorkScheduleBase(BaseModel):
-    day_of_week: int
+    day_of_week: int = Field(ge=0, le=6)
     daily_hours: float
     entry_1: time | None = None
     exit_1: time | None = None
@@ -69,6 +71,11 @@ class WorkScheduleBase(BaseModel):
     valid_from: date | None = None
     valid_until: date | None = None
     is_daily_excess_enabled: bool | None = True
+
+    @model_validator(mode='after')
+    def validate_period(self) -> 'WorkScheduleBase':
+        validate_date_order(self.valid_from, self.valid_until)
+        return self
 
 
 class WorkSchedule(WorkScheduleBase):
@@ -87,6 +94,11 @@ class BulkWorkScheduleCreate(BaseModel):
     valid_from: date
     valid_until: date
     users: list[UserScheduleInput]
+
+    @model_validator(mode='after')
+    def validate_period(self) -> 'BulkWorkScheduleCreate':
+        validate_date_order(self.valid_from, self.valid_until)
+        return self
 
 
 class BulkWorkScheduleResponse(BaseModel):
@@ -113,9 +125,18 @@ class UserBase(BaseModel):
     auto_print_receipt: bool | None = None
 
 
+def validate_password_bytes(value: str) -> str:
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("A senha deve ter no máximo 72 bytes em UTF-8.")
+    return value
+
+
+PasswordInput = Annotated[str, Field(min_length=6), AfterValidator(validate_password_bytes)]
+
+
 class UserCreate(UserBase):
     username: Annotated[str, Field(min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$"), AfterValidator(_username_to_lower)]
-    password: str = Field(..., min_length=6)
+    password: PasswordInput
     role: UserRole = UserRole.EMPLOYEE
     biometrics: list[UserBiometricCreate] = []
 
@@ -123,7 +144,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     username: UsernameLowerStr = None
     name: str | None = None
-    password: str | None = None
+    password: PasswordInput | None = None
     email: EmailStr | None = None
     cpf: CpfStr = None
     pis: str | None = None
@@ -159,7 +180,7 @@ class UserUpdate(BaseModel):
 
 class UserUpdateMe(BaseModel):
     name: str | None = None
-    password: str | None = None
+    password: PasswordInput | None = None
     email: EmailStr | None = None
     endereco: str | None = None
     data_nascimento: PastDate = None

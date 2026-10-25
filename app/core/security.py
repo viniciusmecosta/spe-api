@@ -1,6 +1,7 @@
 import hashlib
 import socket
 from datetime import UTC, datetime, timedelta
+from ipaddress import ip_address, ip_network
 from typing import Any
 
 import bcrypt
@@ -13,12 +14,12 @@ ALGORITHM = settings.ALGORITHM
 
 
 def create_access_token(subject: str | Any, name: str | None = None,
-                        expires_delta: timedelta | None = None) -> str:
+                        expires_delta: timedelta | None = None, auth_version: int = 0) -> str:
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:
         expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {"exp": expire, "sub": str(subject), "ver": auth_version}
     if name:
         to_encode["name"] = name
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
@@ -43,10 +44,21 @@ def get_api_key_hash(api_key: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
+    peer = request.client.host if request.client else "127.0.0.1"
+    networks = [ip_network(value, strict=False) for value in settings.TRUSTED_PROXY_CIDRS]
+    try:
+        address = ip_address(peer)
+        if not any(address in network for network in networks):
+            return peer
+        chain = request.headers.get("X-Forwarded-For", "").split(",")
+        for value in reversed(chain):
+            candidate = ip_address(value.strip())
+            if not any(address in network for network in networks):
+                break
+            address = candidate
+        return str(address)
+    except ValueError:
+        return peer
 
 
 def _resolve_device_name_from_ip(ip: str) -> str:

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import Depends, Request
@@ -37,11 +38,11 @@ class AuthService:
 
         allow_bypass = is_dev() and user.role == UserRole.EMPLOYEE
 
-        if not allow_bypass and not security.verify_password(password, user.password_hash):
+        if not allow_bypass and not await asyncio.to_thread(security.verify_password, password, user.password_hash):
             raise InvalidCredentialsError()
 
         if not user.is_active:
             raise InactiveUserError()
 
-        access_token = security.create_access_token(subject=user.id, name=user.name)
+        access_token = security.create_access_token(subject=user.id, name=user.name, auth_version=user.auth_version or 0)
         return Token(access_token=access_token, token_type="bearer")

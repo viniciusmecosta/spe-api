@@ -74,6 +74,9 @@ async def get_current_user(
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if token_data.ver != (user.auth_version or 0):
+        raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.",
+                            headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -154,10 +157,11 @@ def parse_optional_employee_ids(
         return None
     cleaned: list[int] = []
     for item in employee_ids:
-        if not item:
-            continue
         for part in item.split(","):
             part = part.strip()
-            if part.isdigit():
-                cleaned.append(int(part))
-    return cleaned if cleaned else None
+            if not part.isascii() or not part.isdigit() or len(part) > 10 or not 0 < int(part) <= 2**31 - 1:
+                raise HTTPException(status_code=422, detail="Informe somente IDs positivos de colaboradores.")
+            employee_id = int(part)
+            if employee_id not in cleaned:
+                cleaned.append(employee_id)
+    return cleaned

@@ -194,10 +194,15 @@ async def test_verify_keys_async_and_sync():
 def test_parse_optional_employee_ids():
     assert parse_optional_employee_ids(None) is None
     assert parse_optional_employee_ids([]) is None
-    assert parse_optional_employee_ids([""]) is None
-    assert parse_optional_employee_ids(["   "]) is None
-    assert parse_optional_employee_ids(["abc", "def"]) is None
     assert parse_optional_employee_ids(["1", "2"]) == [1, 2]
     assert parse_optional_employee_ids(["1,2,3"]) == [1, 2, 3]
-    assert parse_optional_employee_ids(["1", "", "2"]) == [1, 2]
     assert parse_optional_employee_ids([" 1 , 2 "]) == [1, 2]
+    assert parse_optional_employee_ids(["1,2", "2,3"]) == [1, 2, 3]
+    assert parse_optional_employee_ids(["2147483647"]) == [2147483647]
+
+
+@pytest.mark.parametrize('values', [[""], ["   "], ["abc", "def"], ["1", "", "2"], ["1,bad"], ["0"], ["-1"], ["1.5"], ["١"]])
+def test_parse_optional_employee_ids_rejects_invalid_selection(values):
+    with pytest.raises(HTTPException) as caught:
+        parse_optional_employee_ids(values)
+    assert caught.value.status_code == 422
