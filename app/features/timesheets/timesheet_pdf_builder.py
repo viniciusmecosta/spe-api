@@ -5,10 +5,18 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -32,7 +40,7 @@ class TimesheetPdfBuilder:
     def _format_duration(self, total_seconds: float) -> str:
         if not isinstance(total_seconds, (int, float)):
             total_seconds = 0.0
-        total_minutes = int(round(total_seconds / 60))
+        total_minutes = round(total_seconds / 60)
         hours = total_minutes // 60
         minutes = total_minutes % 60
         return f"{hours:02d}:{minutes:02d}"

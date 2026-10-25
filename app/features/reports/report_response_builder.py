@@ -19,7 +19,7 @@ WEEKEND_STATUS = "Fim de semana"
 class ReportResponseBuilder:
 
     def format_duration(self, total_seconds: float) -> str:
-        total_minutes = int(round(total_seconds / 60))
+        total_minutes = round(total_seconds / 60)
         hours = total_minutes // 60
         minutes = total_minutes % 60
         return f"{hours:02d}:{minutes:02d}"
@@ -81,7 +81,6 @@ class ReportResponseBuilder:
     def _build_daily_excess_info(
             self,
             accounted_res: Any,
-            daily_excess_adj: Any,
             has_excess: bool,
             excess_status: str | None,
             daily_excess_id: int | None,
@@ -93,9 +92,9 @@ class ReportResponseBuilder:
         approved_sec = float(getattr(accounted_res, 'approved_seconds', 0.0) or 0.0)
         unapproved_sec = max(0.0, total_sec - approved_sec)
 
-        total_min = int(round(total_sec / 60))
-        approved_min = int(round(approved_sec / 60))
-        unapproved_min = int(round(unapproved_sec / 60))
+        total_min = round(total_sec / 60)
+        approved_min = round(approved_sec / 60)
+        unapproved_min = round(unapproved_sec / 60)
 
         total_hrs = round(total_sec / 3600.0, 2)
         approved_hrs = round(approved_sec / 3600.0, 2)
@@ -180,7 +179,7 @@ class ReportResponseBuilder:
         accounted_res = period_result.daily_accounted_results[current]
         accounted_time_str = self.format_duration(accounted_res.accounted_seconds)
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
-        excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
+        excess_info = self._build_daily_excess_info(accounted_res, has_excess, excess_status, daily_excess_id)
 
         day_adjustments_list = self._build_day_adjustments_list(day_adjustments, current)
         punches = self._build_history_punches(day_records, is_manager)
@@ -197,7 +196,7 @@ class ReportResponseBuilder:
             is_today=current == today_date
         )
 
-        total_minutes = int(round(worked_seconds / 60))
+        total_minutes = round(worked_seconds / 60)
         hours = total_minutes // 60
         minutes = total_minutes % 60
         worked_time_str = f"{hours:02d}:{minutes:02d}"
@@ -320,7 +319,7 @@ class ReportResponseBuilder:
 
         accounted_res = period_result.daily_accounted_results[current]
         has_excess, excess_status, daily_excess_id = self._determine_excess_info(accounted_res, daily_excess_adj, schedule)
-        excess_info = self._build_daily_excess_info(accounted_res, daily_excess_adj, has_excess, excess_status, daily_excess_id)
+        excess_info = self._build_daily_excess_info(accounted_res, has_excess, excess_status, daily_excess_id)
 
         punches = list(daily_res.punches)
         if is_waiver:
@@ -349,7 +348,7 @@ class ReportResponseBuilder:
             balance_hours=round(day_balance, 2),
             extra_hours=round(day_extra, 2),
             missing_hours=round(day_missing, 2),
-            worked_minutes=int(round(worked_seconds / 60)),
+            worked_minutes=round(worked_seconds / 60),
             worked_time=self.format_duration(worked_seconds),
             accounted_time=self.format_duration(accounted_res.accounted_seconds),
             expected_time=self.format_duration(expected_seconds),
@@ -366,10 +365,9 @@ class ReportResponseBuilder:
         if not user or not user.historical_schedules:
             return None
         for s in user.historical_schedules:
-            if s.valid_from <= current_date:
-                if s.valid_until is None or s.valid_until >= current_date:
-                    if s.day_of_week == target_day_val:
-                        return s
+            if (s.valid_from <= current_date and (s.valid_until is None or s.valid_until >= current_date)
+                    and s.day_of_week == target_day_val):
+                return s
         return None
 
     def build_history_days(self, start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments):

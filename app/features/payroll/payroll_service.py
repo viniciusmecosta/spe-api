@@ -34,12 +34,12 @@ from app.features.payroll.payroll_repository import (
 )
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
-from app.features.system.email_service import dispatch_payroll_email, email_service
+from app.features.system.email_service import email_service
 from app.features.system.job_queue import enqueue
 from app.features.users.user_models import User
 from app.shared import deps
-from app.shared.storage import resolve_stored_file
 from app.shared.enums import UserRole
+from app.shared.storage import resolve_stored_file
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def dispatch_closure_email_background(month: int, year: int, user_name: str, rep
             action="Fechamento", user_name=user_name, month=month, year=year, attachment=attachment, to_emails=to_emails
         )
     except Exception as e:
-        logger.exception(f"Error in dispatch_closure_email_background: {e}")
+        logger.exception(f'Error in dispatch_closure_email_background: {type(e).__name__}')
 
 
 class PayrollService:
@@ -227,7 +227,7 @@ class PayrollService:
             await asyncio.to_thread(_write_report)
         except Exception as e:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
-            raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
+            raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {e!s}")
 
         try:
             closure = await self.repo.create(

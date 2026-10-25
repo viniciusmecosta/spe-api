@@ -2,8 +2,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.features.daily_summaries.daily_summary_reprocess_schemas import DailySummaryReprocessRequest
-from app.features.daily_summaries.daily_summary_reprocess_service import DailySummaryReprocessService
+from app.features.daily_summaries.daily_summary_reprocess_schemas import (
+    DailySummaryReprocessRequest,
+)
+from app.features.daily_summaries.daily_summary_reprocess_service import (
+    DailySummaryReprocessService,
+)
 from app.features.users.user_models import User
 from app.shared import deps
 

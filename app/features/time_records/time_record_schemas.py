@@ -3,8 +3,8 @@ from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
-from app.shared.timezone import to_app_timezone
 from app.shared.enums import RecordType
+from app.shared.timezone import to_app_timezone
 
 
 class SuccessResponse(BaseModel):

@@ -1,12 +1,13 @@
 import inspect
-import jwt
 from collections.abc import Generator
+from typing import Annotated, Any
+
+import jwt
 from fastapi import Depends, HTTPException, Query, Request, Security, status
 from fastapi.security import APIKeyHeader, OAuth2PasswordBearer
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
-from typing import Annotated, Any
 
 from app.core.config import settings
 from app.core.security import get_api_key_hash

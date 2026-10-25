@@ -1,21 +1,26 @@
 import argparse
+import logging
 import os
 import re
 import sys
 import tempfile
 import time
 import zipfile
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from app.features.system.backup_crypto import decrypt_backup
 from app.database.connection import postgres_connection_params
+from app.features.system.backup_crypto import decrypt_backup
+from app.features.system.backup_manifest import (
+    validate_manifest,
+    validate_manifest_file,
+)
 from app.shared.sql_text import sql_lines
-from app.features.system.backup_manifest import validate_manifest, validate_manifest_file
 
 try:
     from dotenv import load_dotenv
@@ -583,6 +588,7 @@ def _apply_prepared_dump(
         connection.commit()
         return result
     except Exception as exc:
+        logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         connection.rollback()
         raise RuntimeError(f"Falha ao aplicar SQL no PostgreSQL: {exc}") from exc
     finally:
@@ -818,6 +824,7 @@ def main() -> None:
             f"{result['statements']} comandos, {len(result['insert_tables'])} tabelas com dados."
         )
     except Exception as exc:
+        logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         print(f"Erro: {exc}", file=sys.stderr)
         sys.exit(1)
 

@@ -3,7 +3,8 @@ from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import pytest
-from app.features.system.system_models import AuditLog, RoutineLog, get_local_time, get_local_time_naive, normalize_datetime
+from app.features.system.system_models import AuditLog, RoutineLog, get_local_time, get_local_time_naive, \
+    normalize_datetime
 from app.features.system.system_repository import (
     AsyncAuditRepository,
     AsyncRoutineLogRepository,
@@ -29,7 +30,7 @@ def test_audit_repository(db_session, normal_user):
 
     created = repo.create(
         db_session,
-        AuditLogCreate(
+        obj_in=AuditLogCreate(
             user_id=normal_user.id,
             action="CREATE",
             entity="User",
@@ -118,7 +119,7 @@ async def test_async_audit_repository(async_db_mock):
     async_db_mock.scalars.return_value = mock_scalars
 
     res_create = await repo.create(async_db_mock,
-                                   AuditLogCreate(user_id=1, action="CREATE", entity="User", entity_id=1))
+                                   obj_in=AuditLogCreate(user_id=1, action="CREATE", entity="User", entity_id=1))
     assert res_create.action == "CREATE"
 
     logs = await repo.get_logs(async_db_mock, action="CREATE", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31),

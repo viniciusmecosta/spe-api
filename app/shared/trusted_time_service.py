@@ -1,10 +1,14 @@
 import asyncio
-import ntplib
+import logging
 import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import ntplib
+
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class NTPException(Exception):
@@ -47,9 +51,7 @@ class TrustedTimeService:
         elapsed = (now_utc - self._last_ntp_sync).total_seconds()
         if self._ntp_offset is not None and elapsed < 3600.0:
             return False
-        if self._ntp_offset is None and elapsed < 60.0:
-            return False
-        return True
+        return not (self._ntp_offset is None and elapsed < 60.0)
 
     def _trigger_background_sync(self) -> None:
         with self._ntp_lock:
@@ -111,8 +113,7 @@ class TrustedTimeService:
                 else:
                     raise NTPException("NTP_FAILED")
         except Exception:
-            import logging
-            logging.exception("Failed to sync NTP")
+            logger.exception("Failed to sync NTP")
             with self._ntp_lock:
                 self._ntp_offset = None
                 self._last_ntp_sync = now_utc_locked
@@ -121,8 +122,8 @@ class TrustedTimeService:
         for server in ["pool.ntp.br", "pool.ntp.org", "time.google.com"]:
             try:
                 return client.request(server, version=3, timeout=2.0)
-            except Exception:
-                continue
+            except (ntplib.NTPException, OSError):
+                logger.debug("Servidor NTP indisponível", exc_info=True)
         return None
 
 

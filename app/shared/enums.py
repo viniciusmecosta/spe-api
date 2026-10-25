@@ -55,18 +55,18 @@ class DayOfWeek(int, enum.Enum):
         return cls(dt.weekday())
 
 
-class UserRole(str, enum.Enum):
+class UserRole(enum.StrEnum):
     EMPLOYEE = "EMPLOYEE"
     MANAGER = "MANAGER"
     MAINTAINER = "MAINTAINER"
 
 
-class RecordType(str, enum.Enum):
+class RecordType(enum.StrEnum):
     ENTRY = "ENTRY"
     EXIT = "EXIT"
 
 
-class AdjustmentType(str, enum.Enum):
+class AdjustmentType(enum.StrEnum):
     FORGOT_PUNCH = "FORGOT_PUNCH"
     PUNCH_NOT_COUNTED = "PUNCH_NOT_COUNTED"
     DELETE_PUNCH = "DELETE_PUNCH"
@@ -76,12 +76,12 @@ class AdjustmentType(str, enum.Enum):
     OTHER = "OTHER"
 
 
-class AdjustmentStatus(str, enum.Enum):
+class AdjustmentStatus(enum.StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
 
 
-class DeviceKeyType(str, enum.Enum):
+class DeviceKeyType(enum.StrEnum):
     DEVICE = "DEVICE"
     CONSUMER = "CONSUMER"

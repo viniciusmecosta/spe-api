@@ -100,7 +100,7 @@ class AuditService:
             old_data=old_data,
             new_data=new_data
         )
-        return audit_repository.create(session, obj_in)
+        return audit_repository.create(session, obj_in=obj_in)
 
     def _prepare_raw_data(self, model: Any | None, data: dict | None) -> dict | None:
         raw = serialize_model(model) if model is not None else {}

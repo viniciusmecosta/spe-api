@@ -1,11 +1,11 @@
 import asyncio
 import importlib
+
 from sqlalchemy import select
 
 from app.database.session import AsyncSessionLocal
 from app.features.daily_summaries.daily_summary_events import schedule_days
 from app.features.daily_summaries.daily_summary_models import DailySummary
-
 
 VALUE_FIELDS = (
     "worked_minutes",

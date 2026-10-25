@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.adjustments.adjustment_models import AdjustmentRequest
-from app.features.daily_summaries.daily_summary_exceptions import DailySummaryUnavailableError
+from app.features.daily_summaries.daily_summary_exceptions import (
+    DailySummaryUnavailableError,
+)
 from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.time_records.time_record_repository import (
     async_time_record_repository,
@@ -34,7 +36,7 @@ class AnomalyService:
         self.db = db
 
     def _format_duration(self, total_seconds: float) -> str:
-        total_minutes = int(round(total_seconds / 60))
+        total_minutes = round(total_seconds / 60)
         hours = total_minutes // 60
         minutes = total_minutes % 60
         return f"{hours}h{minutes:02d}"
@@ -121,25 +123,25 @@ class AnomalyService:
     def _evaluate_adjustment_anomaly(self, user_id: int, user_name: str, current_date: date, adj: AdjustmentRequest,
                                      expected_entry_time, viewer_role: UserRole = None) -> AnomalyResponse | None:
         if adj.adjustment_type == AdjustmentType.EXTRA_TIME and adj.status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]:
-            minutes = int(round(adj.amount_hours * 60)) if adj.amount_hours else 0
+            minutes = round(adj.amount_hours * 60) if adj.amount_hours else 0
             time_to_show = expected_entry_time or adj.time
             desc = self._build_unapproved_extra_description(adj.status, minutes, time_to_show)
             return AnomalyResponse(
                 user_id=user_id, user_name=user_name, date=current_date,
                 type="UNAPPROVED_EXTRA_TIME", description=desc
             )
-        if adj.adjustment_type == AdjustmentType.DAILY_EXCESS and adj.status == AdjustmentStatus.PENDING:
-            if viewer_role in [UserRole.MANAGER, UserRole.MAINTAINER]:
-                minutes = int(round(adj.amount_hours * 60)) if adj.amount_hours else 0
-                desc = f"Excedente de jornada automático pendente de aprovação ({minutes} min)."
-                return AnomalyResponse(
-                    user_id=user_id, user_name=user_name, date=current_date,
-                    type="UNAPPROVED_DAILY_EXCESS", description=desc
-                )
+        if (adj.adjustment_type == AdjustmentType.DAILY_EXCESS and adj.status == AdjustmentStatus.PENDING
+                and viewer_role in [UserRole.MANAGER, UserRole.MAINTAINER]):
+            minutes = round(adj.amount_hours * 60) if adj.amount_hours else 0
+            desc = f"Excedente de jornada automático pendente de aprovação ({minutes} min)."
+            return AnomalyResponse(
+                user_id=user_id, user_name=user_name, date=current_date,
+                type="UNAPPROVED_DAILY_EXCESS", description=desc
+            )
         return None
 
     def _check_day_anomalies(self, user_id: int, user_name: str, current_date: date, records: list,
-                             ignore_excessive_hours: bool = False, day_adjustments: list = None,
+                             ignore_excessive_hours: bool = False, day_adjustments: list | None = None,
                              expected_entry_time=None, viewer_role: UserRole = None, ignore_extra_time: bool = False,
                              worked_seconds: float = 0.0) -> list[AnomalyResponse]:
         if day_adjustments is None:

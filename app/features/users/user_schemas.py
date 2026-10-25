@@ -1,7 +1,15 @@
 import re
 from datetime import date, datetime, time
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 from typing import Annotated, Any
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+)
 
 from app.features.devices.device_schemas import (
     UserBiometricCreate,

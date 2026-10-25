@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import re
 import shutil
@@ -13,6 +14,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from app.features.system.backup_crypto import encrypt_backup
+from app.features.system.backup_manifest import add_manifest
+from app.shared.sql_text import remove_psql_directives, sql_lines
 from scripts.apply_sql_to_postgresql import (
     apply_sql_file,
     get_pg_credentials,
@@ -20,11 +24,9 @@ from scripts.apply_sql_to_postgresql import (
     restore_backup,
     strip_sql_comments,
 )
-from app.features.system.backup_manifest import add_manifest
-from app.features.system.backup_crypto import encrypt_backup
-from app.shared.sql_text import remove_psql_directives, sql_lines
 from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
 from scripts.verify_parity import verify_parity
+
 FILENAME_SPE_DUMP = "spe_dump.sql"
 FILENAME_SPE_DB = "spe-db.sql"
 FILENAME_SPE_ZIP = "spe.zip"
@@ -85,7 +87,7 @@ def _extract_extensions_and_types(creds: dict[str, str]) -> list[str]:
             parts.append("")
         conn.close()
     except Exception:
-        pass
+        logging.getLogger(__name__).exception("Falha ao carregar tipos do PostgreSQL", exc_info=False)
     return parts
 
 
@@ -106,7 +108,7 @@ def _extract_tables_and_indexes(engine: Any, metadata: Any, include_alembic_vers
 
 
 def extract_live_ddl_from_postgres(include_alembic_version: bool = False) -> str:
-    from sqlalchemy import create_engine, MetaData
+    from sqlalchemy import MetaData, create_engine
     from sqlalchemy.engine import URL
 
     creds = get_pg_credentials()
@@ -153,6 +155,7 @@ def get_ddl_sql(
     try:
         full_sql = extract_live_ddl_from_postgres(include_alembic_version=include_alembic_version)
     except Exception:
+        logging.getLogger(__name__).exception("Falha ao extrair estrutura; usando migrações", exc_info=False)
         full_sql = _load_fallback_migration_ddl(include_alembic_version=include_alembic_version)
 
     if include_transaction_control:
@@ -193,7 +196,7 @@ def _run_local_pg_dump(output_path: Path, creds: dict[str, str], pg_dump: str, e
         *extra_flags,
         "-f", str(output_path),
     ]
-    res = subprocess.run(cmd, env=env, capture_output=True, text=True)
+    res = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
     return res.returncode == 0 and _clean_pg_dump_file(output_path)
 
 
@@ -242,22 +245,16 @@ def _database_counts(creds: dict[str, str]) -> dict[str, int]:
     import psycopg2
     from psycopg2 import sql
 
-    with psycopg2.connect(
-        host=creds["host"], port=int(creds["port"]), user=creds["user"],
-        password=creds["password"], dbname=creds["dbname"],
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-                "AND table_name != 'alembic_version'"
-            )
-            tables = [row[0] for row in cursor.fetchall()]
-            counts = {}
-            for table in tables:
-                cursor.execute(sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table)))
-                counts[table] = cursor.fetchone()[0]
-            return counts
+    with psycopg2.connect(host=creds['host'], port=int(creds['port']), user=creds['user'], password=creds['password'],
+                          dbname=creds['dbname']) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name != 'alembic_version'")
+        tables = [row[0] for row in cursor.fetchall()]
+        counts = {}
+        for table in tables:
+            cursor.execute(sql.SQL('SELECT COUNT(*) FROM public.{}').format(sql.Identifier(table)))
+            counts[table] = cursor.fetchone()[0]
+        return counts
 
 
 def dump_database(
@@ -400,6 +397,7 @@ def main() -> None:
         if args.verify and not verify_parity(args.sqlite_db):
             sys.exit(1)
     except Exception as e:
+        logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         print(f"\n[ERRO]: {e}", file=sys.stderr)
         sys.exit(1)
 

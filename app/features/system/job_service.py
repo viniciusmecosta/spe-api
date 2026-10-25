@@ -28,6 +28,7 @@ class JobService:
     async def retry(self, job_id: int):
         from fastapi import HTTPException
         from sqlalchemy import select
+
         from app.features.system.job_queue import utc_now
         from app.features.system.system_models import BackgroundJob
         job = await self.db.scalar(select(BackgroundJob).where(BackgroundJob.id == job_id).with_for_update())

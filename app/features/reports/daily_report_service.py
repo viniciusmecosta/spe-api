@@ -63,7 +63,7 @@ class DailyReportService:
             return template_service.get_daily_report_html(day_name, formatted_date, True, user_activity,
                                                           anomalies_descriptions)
         except (ValueError, TypeError, AttributeError) as e:
-            logger.exception(f"Erro HTML Report: {e}")
+            logger.exception(f'Erro HTML Report: {type(e).__name__}')
             return f"<p><em>Erro ao gerar relatório para {target_date}.</em></p>"
 
 

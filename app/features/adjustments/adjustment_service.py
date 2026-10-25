@@ -3,10 +3,11 @@ import os
 import shutil
 import uuid
 from datetime import date, datetime
+from typing import Annotated
+
 from fastapi import Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_exceptions import (
@@ -36,8 +37,8 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
-from app.shared.storage import resolve_stored_file
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
+from app.shared.storage import resolve_stored_file
 from app.shared.timezone import local_day_bounds, to_app_timezone
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
@@ -427,11 +428,11 @@ class AdjustmentService:
                                                                       AdjustmentStatus.REJECTED]:
             await self._revert_adjustment_action(session, request, manager_id)
 
-        elif old_status in [AdjustmentStatus.PENDING,
-                            AdjustmentStatus.REJECTED] and new_status == AdjustmentStatus.APPROVED:
-            if request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME,
-                                               AdjustmentType.DAILY_EXCESS]:
-                await self._execute_adjustment_action(session, request, manager_id)
+        elif (old_status in [AdjustmentStatus.PENDING, AdjustmentStatus.REJECTED]
+              and new_status == AdjustmentStatus.APPROVED
+              and request.adjustment_type not in [AdjustmentType.WAIVER, AdjustmentType.EXTRA_TIME,
+                                                  AdjustmentType.DAILY_EXCESS]):
+            await self._execute_adjustment_action(session, request, manager_id)
 
         old_data = serialize_model(request)
         updated = await self.repo.update_status(session, request, new_status, manager_id, comment)

@@ -76,13 +76,8 @@ class ReceiptService:
             finally:
                 p.close()
         except Exception as e:
-            logger.exception(
-                "Falha ao imprimir comprovante na impressora '%s' (%s): %s",
-                printer_config.name,
-                printer_config.address,
-                e,
-                exc_info=True,
-            )
+            logger.exception("Falha ao imprimir comprovante na impressora '%s' (%s): %s", printer_config.name,
+                             printer_config.address, type(e).__name__)
 
     @staticmethod
     async def print_receipt_async(printer_config: Printer, data: dict):

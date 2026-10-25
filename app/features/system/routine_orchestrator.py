@@ -48,17 +48,8 @@ class RoutineOrchestrator:
     async def _enqueue_routine(self, routine_type: str, scheduled: bool = False,
                                start_date: date | None = None, end_date: date | None = None):
         now = datetime.now(ZoneInfo(settings.TIMEZONE))
-        if scheduled:
-            if routine_type == 'TELEGRAM_DAILY_REPORT':
-                if is_dev():
-                    return None
-            elif not is_prod():
-                return None
-            if 'HOURLY' in routine_type:
-                if not settings.HOURLY_BACKUP_START_HOUR <= now.hour <= settings.HOURLY_BACKUP_END_HOUR:
-                    return None
-            elif now.hour < settings.DAILY_REPORT_HOUR:
-                return None
+        if scheduled and not self._schedule_allows_run(routine_type, now):
+            return None
         end_date = end_date or now.date() - timedelta(days=1)
         start_date = start_date or end_date
         target = now.strftime('%Y-%m-%dT%H') if 'HOURLY' in routine_type else end_date.isoformat()
@@ -67,6 +58,16 @@ class RoutineOrchestrator:
             'routine_type': routine_type, 'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat(), 'target_date': end_date.isoformat(),
         }, key)
+
+    @staticmethod
+    def _schedule_allows_run(routine_type: str, now: datetime) -> bool:
+        if routine_type == 'TELEGRAM_DAILY_REPORT':
+            return not is_dev() and now.hour >= settings.DAILY_REPORT_HOUR
+        if not is_prod():
+            return False
+        if 'HOURLY' in routine_type:
+            return settings.HOURLY_BACKUP_START_HOUR <= now.hour <= settings.HOURLY_BACKUP_END_HOUR
+        return now.hour >= settings.DAILY_REPORT_HOUR
 
     @property
     def repo(self) -> AsyncRoutineLogRepository:
@@ -108,7 +109,7 @@ class RoutineOrchestrator:
                 try:
                     os.remove(p)
                 except OSError as e:
-                    logger.exception(f"Erro ao remover arquivo temporario {p}: {type(e).__name__} - {e}",
+                    logger.error(f"Erro ao remover arquivo temporario {p}: {type(e).__name__} - {e}",
                                      exc_info=False)
 
     async def _cleanup_backup_files(self, backup_path, sql_path, zip_path):
@@ -164,7 +165,7 @@ class RoutineOrchestrator:
                 if not success:
                     logger.error('Backup - "Email diário" Error')
         except SQLAlchemyError as e:
-            logger.exception(
+            logger.error(
                 f'Erro de banco ao salvar log de backup diário por email: {type(e).__name__} - {e}',
                 exc_info=False,
             )
@@ -172,7 +173,7 @@ class RoutineOrchestrator:
     async def run_daily_backup_routine_email(self):
         return await self._enqueue_routine('EMAIL_DAILY_BACKUP', scheduled=True)
 
-    async def clean_old_logs(self, days_to_keep: int = None):
+    async def clean_old_logs(self, days_to_keep: int | None = None):
         if is_dev():
             return
         days_to_keep = days_to_keep or settings.ROUTINE_LOG_RETENTION_DAYS
@@ -187,7 +188,7 @@ class RoutineOrchestrator:
                                                                    status="SUCCESS"):
                     return
         except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao verificar rotina de limpeza: {type(e).__name__} - {e}", exc_info=False)
+            logger.error(f"Erro de banco ao verificar rotina de limpeza: {type(e).__name__} - {e}", exc_info=False)
             return
 
         try:
@@ -204,7 +205,7 @@ class RoutineOrchestrator:
                     details=f"{deleted_count} logs apagados",
                 )
         except SQLAlchemyError as e:
-            logger.exception(f"Erro de banco ao limpar routine_logs: {type(e).__name__} - {e}", exc_info=False)
+            logger.error(f"Erro de banco ao limpar routine_logs: {type(e).__name__} - {e}", exc_info=False)
 
     async def _send_system_logs_telegram(self, yesterday: date, today: date):
         for log_date in [yesterday, today]:

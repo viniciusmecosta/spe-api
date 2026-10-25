@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -14,7 +14,7 @@ class DailySummaryRepository:
     def _upsert_statement(user_id: int, target_date: date, values: DaySummaryValues):
         table = DailySummary.__table__
         update_values = asdict(values)
-        update_values["updated_at"] = datetime.now(timezone.utc)
+        update_values["updated_at"] = datetime.now(UTC)
         return (
             insert(table)
             .values(user_id=user_id, apuration_date=target_date, **update_values)

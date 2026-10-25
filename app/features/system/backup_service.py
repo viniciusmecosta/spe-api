@@ -13,9 +13,9 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.connection import postgres_connection_params
-from app.shared.sql_text import remove_psql_directives, sql_lines
 from app.features.system.backup_crypto import encrypt_backup
 from app.features.system.backup_manifest import add_manifest
+from app.shared.sql_text import remove_psql_directives, sql_lines
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ class BackupService:
 
     def _run_snapshot_dump(self, command, environment, output_path: str) -> bool:
         with self._open_private(output_path, "wb") as output:
-            result = subprocess.run(command, env=environment, stdout=output, stderr=subprocess.PIPE)
+            result = subprocess.run(command, env=environment, stdout=output, stderr=subprocess.PIPE, check=False)
         if result.returncode == 0 and os.path.getsize(output_path) > 0:
             self._remove_pg_dump_directives(output_path)
             return True
@@ -201,8 +201,7 @@ class BackupService:
                     )
                     existing_tables = {r[0] for r in cur.fetchall()}
                     sorted_tables = [t for t in TABLE_ORDER if t in existing_tables]
-                    for t in sorted(existing_tables - set(sorted_tables)):
-                        sorted_tables.append(t)
+                    sorted_tables.extend(sorted(existing_tables - set(sorted_tables)))
 
                     for table in sorted_tables:
                         with conn.cursor(name=f"spe_backup_{uuid.uuid4().hex}") as data_cursor:
@@ -215,7 +214,7 @@ class BackupService:
             finally:
                 conn.close()
         except Exception as e:
-            logger.exception(f"Erro no dumper PostgreSQL em Python: {type(e).__name__} - {e}", exc_info=False)
+            logger.exception(f'Erro no dumper PostgreSQL em Python: {type(e).__name__}')
             return False
 
     def _find_pg_dump(self) -> str | None:
@@ -254,21 +253,15 @@ class BackupService:
         from psycopg2 import sql
 
         params = self._get_postgres_connection_params()
-        with psycopg2.connect(**params) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT table_name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' "
-                    "AND table_name != 'alembic_version'"
-                )
-                tables = [row[0] for row in cursor.fetchall()]
-                counts = {}
-                for table in tables:
-                    cursor.execute(
-                        sql.SQL("SELECT COUNT(*) FROM public.{}").format(sql.Identifier(table))
-                    )
-                    counts[table] = cursor.fetchone()[0]
-                return counts
+        with psycopg2.connect(**params) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name != 'alembic_version'")
+            tables = [row[0] for row in cursor.fetchall()]
+            counts = {}
+            for table in tables:
+                cursor.execute(sql.SQL('SELECT COUNT(*) FROM public.{}').format(sql.Identifier(table)))
+                counts[table] = cursor.fetchone()[0]
+            return counts
 
     def _dump_postgresql_schema(self, output_path: str) -> bool:
         if self._snapshot_id:
@@ -297,8 +290,8 @@ class BackupService:
                 proc = subprocess.run(cmd, env=env, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
                     return True
-            except Exception as e:
-                logger.warning(f"pg_dump schema falhou: {e}")
+            except Exception:
+                logger.exception("pg_dump schema falhou")
 
         return False
 
@@ -329,8 +322,8 @@ class BackupService:
                 proc = subprocess.run(cmd, env=env, check=True, capture_output=True)
                 if proc.stdout and self._filter_pg_dump_output(proc.stdout, output_path):
                     return True
-            except Exception as e:
-                logger.warning(f"pg_dump inserts falhou: {e}. Tentando exportador Python no mesmo banco.")
+            except Exception:
+                logger.exception("pg_dump inserts falhou; tentando exportador Python no mesmo banco")
 
         return self._dump_postgresql_python(output_path, params)
 
@@ -351,9 +344,7 @@ class BackupService:
                 return None
             except Exception as e:
                 logger.exception(
-                    f"Erro de banco PostgreSQL ao criar backup seguro: {type(e).__name__} - {e}",
-                    exc_info=False
-                )
+                    f'Erro de banco PostgreSQL ao criar backup seguro: {type(e).__name__}')
                 self._remove_file_safely(backup_filename)
                 return None
 
@@ -378,26 +369,21 @@ class BackupService:
             logger.error("Falha ao gerar dump de inserts do PostgreSQL.")
             return None
         except Exception as e:
-            logger.exception(
-                f"Erro ao gerar dump SQL de inserts: {type(e).__name__} - {e}",
-                exc_info=False
-            )
+            logger.exception(f'Erro ao gerar dump SQL de inserts: {type(e).__name__}')
             self._remove_file_safely(sql_filename)
             return None
 
     def compress_files(self, files_to_compress: dict[str, str], output_zip_path: str) -> str | None:
         try:
-            with self._open_private(output_zip_path, "wb") as output:
-                with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for file_path, arcname in files_to_compress.items():
-                        if file_path and os.path.exists(file_path):
-                            zipf.write(file_path, arcname=arcname)
+            with self._open_private(output_zip_path, 'wb') as output, zipfile.ZipFile(output, 'w',
+                                                                                      zipfile.ZIP_DEFLATED) as zipf:
+                for file_path, arcname in files_to_compress.items():
+                    if file_path and os.path.exists(file_path):
+                        zipf.write(file_path, arcname=arcname)
             return str(encrypt_backup(Path(output_zip_path), settings.SECRET_KEY))
         except Exception as e:
             logger.exception(
-                f"Erro ao compactar arquivos para {output_zip_path}: {type(e).__name__} - {e}",
-                exc_info=False
-            )
+                f'Erro ao compactar arquivos para {output_zip_path}: {type(e).__name__}')
             return None
         finally:
             Path(output_zip_path).unlink(missing_ok=True)

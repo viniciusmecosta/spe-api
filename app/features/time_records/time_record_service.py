@@ -1,8 +1,9 @@
 from datetime import datetime
-from fastapi import BackgroundTasks, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
+
+from fastapi import BackgroundTasks, Depends, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
@@ -16,7 +17,10 @@ from app.features.printers.printer_repository import (
 )
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.receipt_service import receipt_service
-from app.features.time_records.time_record_change_service import time_record_change_service
+from app.features.time_records.time_record_admin_service import TimeRecordAdminService
+from app.features.time_records.time_record_change_service import (
+    time_record_change_service,
+)
 from app.features.time_records.time_record_exceptions import (
     InvalidReceiptIdError,
     ManualPunchUnauthorizedError,
@@ -25,7 +29,6 @@ from app.features.time_records.time_record_exceptions import (
     TimeRecordNotFoundError,
     TimeRecordUserNotFoundError,
 )
-from app.features.time_records.time_record_admin_service import TimeRecordAdminService
 from app.features.time_records.time_record_models import (
     TimeRecord,
 )

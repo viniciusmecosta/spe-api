@@ -54,7 +54,7 @@ def test_daily_rotating_file_handler(tmp_path):
     handler._cleanup_old_logs()
 
     from unittest.mock import patch
-    with patch.object(handler, "_open", side_effect=Exception("open err")):
+    with patch.object(handler, "_open", side_effect=OSError("open err")):
         if handler.stream:
             handler.stream.close()
         if os.path.exists(handler.baseFilename):

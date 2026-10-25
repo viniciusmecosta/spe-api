@@ -1,7 +1,7 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, event
@@ -36,7 +36,6 @@ def connection_settings() -> dict[str, str]:
 
 
 def on_sync_connect(dbapi_connection, connection_record):
-    # Commit session settings outside any application transaction.
     previous_autocommit = dbapi_connection.autocommit
     dbapi_connection.autocommit = True
     try:
@@ -113,10 +112,7 @@ def on_async_connect(dbapi_connection, connection_record):
     dbapi_connection.run_async(setup_connection)
 
 
-try:
-    event.listen(async_engine.sync_engine, "connect", on_async_connect)
-except Exception:
-    pass
+event.listen(async_engine.sync_engine, "connect", on_async_connect)
 
 
 def get_db() -> Generator[Session, None, None]:

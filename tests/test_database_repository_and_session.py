@@ -1,8 +1,9 @@
-import pytest
-from pydantic import BaseModel
-from sqlalchemy import Column, Integer, String
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pydantic import BaseModel
+from sqlalchemy import Column, Integer, String
+
+import pytest
 from app.database.base import Base
 from app.database.repository import BaseRepository, AsyncBaseRepository
 from app.database.session import get_db, get_async_session_context
@@ -197,7 +198,8 @@ def test_session_uri_prefixes():
 
     orig_uri = settings.SQLALCHEMY_DATABASE_URI
     try:
-        with patch("sqlalchemy.create_engine"), patch("sqlalchemy.ext.asyncio.create_async_engine"):
+        with patch("sqlalchemy.create_engine"), patch("sqlalchemy.ext.asyncio.create_async_engine"), patch(
+                "sqlalchemy.event.listen"):
             with patch.object(settings, "SQLALCHEMY_DATABASE_URI", "postgresql+asyncpg://user:pass@localhost/db"):
                 importlib.reload(sess_mod)
             with patch.object(settings, "SQLALCHEMY_DATABASE_URI", "postgresql://user:pass@localhost/db"):

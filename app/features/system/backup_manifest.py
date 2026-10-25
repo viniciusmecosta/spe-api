@@ -16,12 +16,11 @@ def add_manifest(path: Path, row_counts: dict[str, int]) -> None:
         {"version": 1, "row_counts": row_counts, "sha256": digest.hexdigest()},
         separators=(",", ":"),
     ) + "\n"
-    temporary_file = tempfile.NamedTemporaryFile(
-        prefix=f".{path.name}.", suffix=".manifest.tmp", dir=path.parent, delete=False,
-    )
-    temporary = Path(temporary_file.name)
+    with tempfile.NamedTemporaryFile(prefix=f'.{path.name}.', suffix='.manifest.tmp', dir=path.parent,
+                                     delete=False) as temporary_file:
+        temporary = Path(temporary_file.name)
     try:
-        with temporary_file as output, path.open("rb") as source:
+        with temporary.open("wb") as output, path.open("rb") as source:
             output.write(header.encode("utf-8"))
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
                 output.write(chunk)

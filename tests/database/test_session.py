@@ -1,9 +1,9 @@
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-from app.database.session import get_db, get_db_session
+import pytest
 from app.core.exceptions import DailySummaryRecalculationError
+from app.database.session import get_db, get_db_session
 
 
 def test_get_db_session_exception():
@@ -213,7 +213,8 @@ def test_session_module_listen_exception(monkeypatch):
 
     monkeypatch.setattr(sqlalchemy.event, "listen", fake_listen)
     import app.database.session
-    importlib.reload(app.database.session)
+    with pytest.raises(RuntimeError, match="Listen error"):
+        importlib.reload(app.database.session)
     monkeypatch.undo()
     importlib.reload(app.database.session)
 

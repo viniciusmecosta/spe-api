@@ -17,7 +17,10 @@ from app.features.companies.company_exceptions import (
     LogoSaveError,
 )
 from app.features.companies.company_models import Company
-from app.features.companies.company_repository import AsyncCompanyRepository, async_company_repository
+from app.features.companies.company_repository import (
+    AsyncCompanyRepository,
+    async_company_repository,
+)
 from app.features.companies.company_schemas import (
     CompanyCreate,
     CompanyResponse,
@@ -108,7 +111,7 @@ class CompanyService:
 
         try:
             await asyncio.to_thread(_save_file)
-        except Exception as e:
+        except OSError as e:
             raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
 
     async def _cleanup_old_logo(self, old_logo_path: str | None) -> None:

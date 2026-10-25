@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -397,7 +398,7 @@ def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
     errors = []
     for label, actual in (("SQLite", sqlite_tables), ("PostgreSQL", postgres_tables)):
         missing = sorted(expected - actual)
-        allowed_extra = {"daily_summaries"} if label == "PostgreSQL" else set()
+        allowed_extra = {"daily_summaries", "background_jobs"} if label == "PostgreSQL" else set()
         extra = sorted(actual - expected - allowed_extra)
         if missing:
             errors.append(f"{label}: tabelas ausentes: {', '.join(missing)}")
@@ -455,6 +456,7 @@ def main() -> None:
         success = verify_parity(args.sqlite_db)
         sys.exit(0 if success else 1)
     except Exception as e:
+        logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         print(f"Erro na auditoria: {e}", file=sys.stderr)
         sys.exit(1)
 

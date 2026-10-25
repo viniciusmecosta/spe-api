@@ -1,19 +1,19 @@
-import importlib
 import asyncio
-from datetime import date, datetime, time, timedelta, timezone
-from types import SimpleNamespace
+import importlib
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal, SessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.daily_summaries.daily_summary_events import _scopes
 from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.daily_summaries.daily_summary_service import (
     daily_summary_service,
 )
-from app.features.daily_summaries.daily_summary_events import _scopes
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
@@ -26,7 +26,7 @@ def _queued(session, user_id: int, day: date) -> bool:
 
 
 def test_time_record_change_tracks_both_its_previous_and_current_days():
-    session = SimpleNamespace()
+    session = Session()
     local_timezone = ZoneInfo(settings.TIMEZONE)
     previous_day, current_day = date(2026, 10, 1), date(2026, 10, 2)
     previous = datetime.combine(previous_day, time(12), tzinfo=local_timezone)
@@ -42,11 +42,11 @@ def test_time_record_change_tracks_both_its_previous_and_current_days():
 
 
 def test_deleted_time_record_tracks_only_the_persisted_day():
-    session = SimpleNamespace()
-    persisted = datetime(2026, 10, 3, 8, tzinfo=timezone.utc)
+    session = Session()
+    persisted = datetime(2026, 10, 3, 8, tzinfo=UTC)
     record = TimeRecord(
         user_id=7, record_type=RecordType.ENTRY,
-        record_datetime=datetime(2026, 10, 4, 8, tzinfo=timezone.utc),
+        record_datetime=datetime(2026, 10, 4, 8, tzinfo=UTC),
     )
     scopes = _scopes(session, record, {"user_id": 7, "record_datetime": persisted}, True)
     assert scopes == {(7, date(2026, 10, 3), date(2026, 10, 3))}
@@ -56,7 +56,7 @@ async def _test_calculation_rollback() -> None:
     async with AsyncSessionLocal() as session:
         row = (await session.execute(
             select(TimeRecord.user_id, TimeRecord.record_datetime)
-            .where(TimeRecord.record_datetime >= datetime(2026, 10, 1, tzinfo=timezone.utc))
+            .where(TimeRecord.record_datetime >= datetime(2026, 10, 1, tzinfo=UTC))
             .order_by(TimeRecord.record_datetime)
             .limit(1)
         )).first()
@@ -81,7 +81,7 @@ def main() -> None:
         first = date(2099, 1, 5)
         session.add(TimeRecord(
             user_id=user_id, record_type=RecordType.ENTRY,
-            record_datetime=datetime(2099, 1, 5, 8, tzinfo=timezone.utc),
+            record_datetime=datetime(2099, 1, 5, 8, tzinfo=UTC),
         ))
         session.flush()
         assert _queued(session, user_id, first)
@@ -121,7 +121,7 @@ def main() -> None:
             PayrollClosure.deleted_at.is_(None),
         ).limit(1))
         if closure is not None:
-            closure.deleted_at = datetime.now(timezone.utc)
+            closure.deleted_at = datetime.now(UTC)
             session.flush()
             assert _queued(session, user_id, date(closure.year, closure.month, 1))
 

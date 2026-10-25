@@ -144,13 +144,13 @@ async def approve_adjustment(
         id: int,
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        body: Annotated[AdjustmentApproveRequest, Body()] = AdjustmentApproveRequest(),
+        body: Annotated[AdjustmentApproveRequest | None, Body()] = None,
 ) -> AdjustmentRequestResponse:
     return await service.approve_adjustment(
         request_id=id,
         manager_id=current_user.id,
-        comment=body.comment,
-        approved_amount_hours=body.approved_amount_hours,
+        comment=body.comment if body else None,
+        approved_amount_hours=body.approved_amount_hours if body else None,
     )
 
 

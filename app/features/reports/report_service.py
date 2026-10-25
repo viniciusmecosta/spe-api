@@ -2,11 +2,12 @@ import locale
 import logging
 from calendar import monthrange
 from datetime import date, datetime
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
+
 from fastapi import Depends
 from sqlalchemy import exists, extract, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -167,11 +168,11 @@ class ReportService:
             start_date, end_date, today_date, records, holidays, anomalies, period_result, is_manager, user, all_adjustments
         )
 
-        total_month_minutes = int(round(period_result.total_gross_worked_seconds / 60))
+        total_month_minutes = round(period_result.total_gross_worked_seconds / 60)
         total_month_hours = total_month_minutes // 60
         month_minutes = total_month_minutes % 60
 
-        total_acc_minutes = int(round(period_result.total_accounted_seconds / 60))
+        total_acc_minutes = round(period_result.total_accounted_seconds / 60)
         total_acc_hours = total_acc_minutes // 60
         month_acc_mins = total_acc_minutes % 60
 
@@ -274,9 +275,9 @@ class ReportService:
             total_worked_time=self.response_builder.format_duration(total_worked_seconds),
             total_expected_time=self.response_builder.format_duration(total_expected_seconds),
             total_accounted_time=self.response_builder.format_duration(period_result.total_accounted_seconds),
-            total_worked_minutes=int(round(total_worked_seconds / 60)),
-            total_expected_minutes=int(round(total_expected_seconds / 60)),
-            total_accounted_minutes=int(round(period_result.total_accounted_seconds / 60)),
+            total_worked_minutes=round(total_worked_seconds / 60),
+            total_expected_minutes=round(total_expected_seconds / 60),
+            total_accounted_minutes=round(period_result.total_accounted_seconds / 60),
             days_worked=days_worked_count,
             absences=absences_count,
             total_worked_hours=round(total_worked_seconds / 3600.0, 2),

@@ -1,6 +1,9 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -8,12 +11,11 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     Time,
 )
-from sqlalchemy import CheckConstraint, SmallInteger
 from sqlalchemy.orm import relationship
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base

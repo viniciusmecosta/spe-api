@@ -145,9 +145,9 @@ class ToleranceCronService:
 
                 db.commit()
         except SQLAlchemyError as e:
-            logger.exception(f"Erro ao processar tolerancia de entradas (banco): {e}")
+            logger.exception(f'Erro ao processar tolerancia de entradas (banco): {type(e).__name__}')
         except Exception as e:
-            logger.exception(f"Erro inesperado ao processar tolerancia de entradas: {e}")
+            logger.exception(f'Erro inesperado ao processar tolerancia de entradas: {type(e).__name__}')
 
     def reprocess_historical_entries(self, db: Session | None = None, start_date: date | None = None, end_date: date | None = None, user_ids: list[int] | None = None):
         session = db if db is not None else self.db

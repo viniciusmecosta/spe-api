@@ -5,11 +5,14 @@ from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.database.session import get_async_db
 from app.features.devices.device_models import UserBiometric
-from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
+from app.features.devices.device_repository import (
+    AsyncBiometricRepository,
+    async_biometric_repository,
+)
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
 from app.shared.trusted_time_service import trusted_time_service
@@ -117,7 +120,7 @@ class PunchService:
             return True, "Ponto Registrado", loaded_record
 
         except (SQLAlchemyError, ValueError) as e:
-            logger.exception(f"Erro ao processar punch: {e}")
+            logger.exception(f'Erro ao processar punch: {type(e).__name__}')
             return False, "Erro Interno", None
 
 

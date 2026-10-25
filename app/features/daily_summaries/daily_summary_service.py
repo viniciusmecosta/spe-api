@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -6,9 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, selectinload
 
-from app.database.payroll_lock import lock_payroll_periods
-
 from app.core.config import settings
+from app.database.payroll_lock import lock_payroll_periods
 from app.database.session import AsyncSessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.daily_summaries.daily_summary_exceptions import (
@@ -164,7 +163,7 @@ class DailySummaryService:
             )
         )).all())
         for adjustment in previous_excess:
-            adjustment.deleted_at = datetime.now(timezone.utc)
+            adjustment.deleted_at = datetime.now(UTC)
             if adjustment.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED):
                 session.add(AuditLog(
                     action="INVALIDATE_DAILY_EXCESS",
@@ -186,7 +185,7 @@ class DailySummaryService:
     @staticmethod
     def _invalidate_reviewed_excess(session, reviewed, current_minutes: int) -> None:
         for adjustment in reviewed:
-            adjustment.deleted_at = datetime.now(timezone.utc)
+            adjustment.deleted_at = datetime.now(UTC)
             session.add(AuditLog(
                 action="INVALIDATE_DAILY_EXCESS",
                 entity="ADJUSTMENT_REQUESTS",

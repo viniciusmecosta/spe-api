@@ -1,11 +1,15 @@
 import logging
+from typing import Annotated, Any
+
 from fastapi import BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any
 
 from app.core.security import get_client_ip
 from app.database.session import get_async_db
-from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
+from app.features.devices.device_repository import (
+    AsyncBiometricRepository,
+    async_biometric_repository,
+)
 from app.features.devices.device_schemas import (
     BuzzerNote,
     DeviceActions,

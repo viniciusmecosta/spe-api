@@ -20,8 +20,8 @@ def _extract_user_name(request: Request) -> str:
             token = auth[7:]
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             name = payload.get("name", "")
-    except Exception:
-        pass
+    except (jwt.PyJWTError, ValueError, TypeError):
+        name = ""
 
     if not name:
         name = getattr(request.state, "attempted_user", "")

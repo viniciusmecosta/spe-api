@@ -22,6 +22,7 @@ from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
 
+
 @pytest.fixture(autouse=True)
 def mock_payroll_queue(mocker):
     return mocker.patch('app.features.payroll.payroll_service.enqueue', new_callable=AsyncMock)
@@ -387,7 +388,7 @@ async def test_reopen_period_not_found(mock_get_by_month, async_db_mock, mock_us
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
-@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.enqueue")
 @patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)
@@ -605,7 +606,7 @@ async def test_close_period_with_period_schema(
     assert result == mock_closure
 
 
-@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.enqueue")
 @patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)

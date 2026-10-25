@@ -9,7 +9,10 @@ from app.features.system.audit_service import audit_service, serialize_model
 from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import UserNotFoundError
 from app.features.users.user_models import User
-from app.features.users.user_repository import AsyncUserRepository, async_user_repository
+from app.features.users.user_repository import (
+    AsyncUserRepository,
+    async_user_repository,
+)
 from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.features.users.user_validator import UserValidator
 from app.shared.enums import UserRole

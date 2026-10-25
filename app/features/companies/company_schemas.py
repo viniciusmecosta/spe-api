@@ -23,9 +23,7 @@ def validate_cnpj_logic(cnpj: str) -> bool:
     digit2 = 11 - (sum2 % 11)
     if digit2 >= 10:
         digit2 = 0
-    if integers[13] != digit2:
-        return False
-    return True
+    return integers[13] == digit2
 
 
 def _validate_cnpj_required(v: str) -> str:

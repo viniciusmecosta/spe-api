@@ -1,8 +1,18 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, text
-from sqlalchemy import CheckConstraint, SmallInteger
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    text,
+)
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings

@@ -74,9 +74,7 @@ class TimeRecordChangeService:
             return new_datetime is not None
         if record_id is not None and first_entry.id == record_id:
             return True
-        if new_datetime is not None and new_datetime <= first_entry.record_datetime:
-            return True
-        return False
+        return bool(new_datetime is not None and new_datetime <= first_entry.record_datetime)
 
     async def validate_period_open(self, session: Any, target_date: date) -> None:
         if hasattr(session, "sync_session"):

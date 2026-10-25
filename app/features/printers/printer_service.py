@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import get_async_db
 from app.features.printers.printer_exceptions import PrinterNotFoundError
 from app.features.printers.printer_models import Printer
-from app.features.printers.printer_repository import AsyncPrinterRepository, async_printer_repository
+from app.features.printers.printer_repository import (
+    AsyncPrinterRepository,
+    async_printer_repository,
+)
 from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
 from app.features.system.audit_service import audit_service, serialize_model
 

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     def send_payroll_email(self, action: str, user_name: str, month: int, year: int,
-                           attachment: BytesIO | None = None, to_emails: list[str] = None):
+                           attachment: BytesIO | None = None, to_emails: list[str] | None = None):
         if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD]):
             logger.warning("SMTP not configured. Skipping payroll email.")
             return
@@ -61,51 +61,72 @@ class EmailService:
                 return
             logger.info(f"Payroll email sent successfully for {action} {month:02d}/{year}")
         except smtplib.SMTPException as e:
-            logger.exception(f"Erro de conexão/autenticação SMTP (Folha de Ponto): {type(e).__name__} - {e}",
+            logger.error(f"Erro de conexão/autenticação SMTP (Folha de Ponto): {type(e).__name__} - {e}",
                              exc_info=False)
         except Exception as e:
-            logger.exception(f"Erro interno ao processar e-mail da Folha de Ponto: {type(e).__name__} - {e}",
-                             exc_info=False)
+            logger.exception(
+                f'Erro interno ao processar e-mail da Folha de Ponto: {type(e).__name__}')
+
+    @staticmethod
+    def _start_smtp():
+        context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        if settings.SMTP_PORT == 465:
+            return smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60, context=context)
+        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
+        try:
+            server.ehlo()
+            server.starttls(context=context)
+        except (smtplib.SMTPException, OSError):
+            EmailService._close_smtp(server)
+            raise
+        return server
+
+    @staticmethod
+    def _close_smtp(server):
+        if server is None:
+            return
+        try:
+            server.quit()
+        except (smtplib.SMTPException, OSError):
+            server.close()
+
+    @staticmethod
+    def _refused_result(refused, recipients):
+        if not isinstance(refused, dict) or not refused:
+            return DeliveryResult('SUCCESS')
+        status = 'FAILED'
+        if len(refused) < len(recipients):
+            status = 'PARTIAL'
+        elif any(400 <= code < 500 for code, _ in refused.values()):
+            status = 'RETRY'
+        return DeliveryResult(status, 'Destinatários recusados pelo SMTP', recipients=tuple(refused))
 
     def _send_message(self, msg: MIMEMultipart, to_emails: list[str]) -> DeliveryResult:
         if not all([settings.SMTP_HOST, settings.SMTP_PORT, settings.SMTP_USER, settings.SMTP_PASSWORD]):
-            return DeliveryResult("FAILED", "SMTP não configurado")
-        server = None
-        submitted = False
+            return DeliveryResult('FAILED', 'SMTP não configurado')
+        server, submitted = None, False
         try:
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60)
-            server.ehlo()
-            context = ssl.create_default_context()
-            context.check_hostname = True
-            context.verify_mode = ssl.CERT_REQUIRED
-            server.starttls(context=context)
+            server = self._start_smtp()
             server.ehlo()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             submitted = True
             refused = server.sendmail(parseaddr(msg['From'])[1], to_emails, msg.as_string())
-            if isinstance(refused, dict) and refused:
-                pending = tuple(refused)
-                transient = any(400 <= code < 500 for code, _ in refused.values())
-                status = 'PARTIAL' if len(refused) < len(to_emails) else 'RETRY' if transient else 'FAILED'
-                return DeliveryResult(status, "Destinatários recusados pelo SMTP", recipients=pending)
-            return DeliveryResult("SUCCESS")
+            return self._refused_result(refused, to_emails)
         except smtplib.SMTPRecipientsRefused as error:
-            transient = any(400 <= code < 500 for code, _ in error.recipients.values())
-            return DeliveryResult("RETRY" if transient else "FAILED", "Destinatários recusados",
-                                  recipients=tuple(error.recipients))
+            return self._refused_result(error.recipients, to_emails)
         except smtplib.SMTPResponseException as error:
-            return DeliveryResult("RETRY" if 400 <= error.smtp_code < 500 else "FAILED",
-                                  f"SMTP {error.smtp_code}")
+            return DeliveryResult('RETRY' if 400 <= error.smtp_code < 500 else 'FAILED', f'SMTP {error.smtp_code}')
         except (TimeoutError, smtplib.SMTPServerDisconnected, ConnectionError):
-            return DeliveryResult("UNCERTAIN" if submitted else "RETRY", "Conexão SMTP interrompida; entrega precisa ser conferida" if submitted else "Timeout ao conectar ao SMTP")
+            if submitted:
+                return DeliveryResult('UNCERTAIN', 'Conexão SMTP interrompida; entrega precisa ser conferida')
+            return DeliveryResult('RETRY', 'Timeout ao conectar ao SMTP')
         except (smtplib.SMTPException, OSError) as error:
-            return DeliveryResult("FAILED", type(error).__name__)
+            return DeliveryResult('FAILED', type(error).__name__)
         finally:
-            if server is not None:
-                try:
-                    server.quit()
-                except (smtplib.SMTPException, OSError):
-                    server.close()
+            self._close_smtp(server)
 
     def deliver_email(self, to_emails: list[str], attachments: list[tuple[str, str]], report_html: str,
                       period_text: str, context: dict | None = None) -> DeliveryResult:
@@ -180,11 +201,10 @@ class EmailService:
 
         tz = ZoneInfo(settings.TIMEZONE)
         current_date = datetime.now(tz).strftime("%d/%m/%Y")
-        if is_dev():
-            current_time = datetime.now(tz).strftime("%H:%M:%S")
-            msg['Subject'] = f"Backup SPE DEV - {current_date} {current_time}"
-        else:
-            msg['Subject'] = f"Backup SPE e Relatórios - {current_date}"
+        info = dict(context or {})
+        company_name = info.get('company') or settings.PROJECT_NAME
+        title = info.get('title', 'Registros de ponto')
+        msg['Subject'] = f"{title} · {company_name} · {current_date}"
 
         info = dict(context or {})
         logo = logo_file(info.get('logo_path'))
@@ -215,4 +235,4 @@ def dispatch_payroll_email(action: str, user_name: str, month: int, year: int, t
     try:
         email_service.send_payroll_email(action, user_name, month, year, None, to_emails)
     except Exception as e:
-        logger.exception(f"Erro crítico no despacho de e-mail: {type(e).__name__} - {e}", exc_info=False)
+        logger.exception(f'Erro crítico no despacho de e-mail: {type(e).__name__}')

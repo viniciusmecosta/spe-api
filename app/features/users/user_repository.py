@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy import asc, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_password_hash
 from app.database.repository import AsyncBaseRepository, BaseRepository

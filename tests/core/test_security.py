@@ -45,7 +45,7 @@ def test_get_client_device_name_cases():
     req_header_only.headers.get.side_effect = lambda k, d="": "HeaderDevice" if k == "X-Device-Name" else d
     assert get_client_device_name("192.168.1.50", req_header_only) == "HeaderDevice"
 
-    with patch("socket.gethostname", side_effect=Exception("err")):
+    with patch("socket.gethostname", side_effect=OSError("err")):
         assert _resolve_device_name_from_ip("127.0.0.1") == ""
 
     with patch("socket.gethostname", return_value="my-machine"):

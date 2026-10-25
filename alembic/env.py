@@ -1,7 +1,8 @@
 from logging.config import fileConfig
+
+from sqlalchemy import Enum, String, Text
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-from sqlalchemy import Enum, String, Text
 
 from alembic import context
 from app.core.config import settings
@@ -22,11 +23,9 @@ target_metadata = Base.metadata
 
 
 def compare_type(context, inspected_column, metadata_column, inspected_type, metadata_type):
-    if isinstance(inspected_type, Text) and isinstance(metadata_type, String):
-        if metadata_type.length is None or (
-            isinstance(metadata_type, Enum) and not metadata_type.native_enum
-        ):
-            return False
+    if (isinstance(inspected_type, Text) and isinstance(metadata_type, String)
+            and (metadata_type.length is None or (isinstance(metadata_type, Enum) and not metadata_type.native_enum))):
+        return False
     return None
 
 

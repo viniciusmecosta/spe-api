@@ -35,8 +35,8 @@ class DailyExcessService:
         )
         exit_time = last_exit.record_datetime.time() if last_exit else None
 
-        excess_mins_early = int(round(min(accounted.total_excess_seconds, accounted.early_return_seconds) / 60))
-        excess_mins_work = int(round(accounted.total_excess_seconds / 60)) - excess_mins_early
+        excess_mins_early = round(min(accounted.total_excess_seconds, accounted.early_return_seconds) / 60)
+        excess_mins_work = round(accounted.total_excess_seconds / 60) - excess_mins_early
         parts = []
         if excess_mins_work > 0:
             parts.append(f"{excess_mins_work}min de jornada excedente")
@@ -238,7 +238,8 @@ class DailyExcessService:
             async with get_async_session_context() as db:
                 await self._evaluate_user_day_async(db, user_id, target_date, tz)
         except Exception as e:
-            logger.exception(f"Erro ao processar excedente em background para user_id={user_id} em {target_date}: {e}")
+            logger.exception(
+                f'Erro ao processar excedente em background para user_id={user_id} em {target_date}: {type(e).__name__}')
 
     async def evaluate_user_range_bg(self, user_id: int, start_date: date, end_date: date):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -250,7 +251,8 @@ class DailyExcessService:
                     await db.commit()
                     curr += timedelta(days=1)
         except Exception as e:
-            logger.exception(f"Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {e}")
+            logger.exception(
+                f'Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {type(e).__name__}')
 
     async def reprocess_user_ranges_bg(
             self,
@@ -269,7 +271,7 @@ class DailyExcessService:
                         await db.commit()
                         curr += timedelta(days=1)
         except Exception as e:
-            logger.exception(f"Erro ao reprocessar excedente em lote: {e}")
+            logger.exception(f'Erro ao reprocessar excedente em lote: {type(e).__name__}')
 
 
 daily_excess_service = DailyExcessService()

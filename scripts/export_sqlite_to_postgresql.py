@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -24,8 +25,8 @@ try:
         JSONB_COLUMNS,
         MIGRATION_TABLES,
         TABLE_ORDER,
-        TIMESTAMPTZ_COLUMNS,
         TIME_COLUMNS,
+        TIMESTAMPTZ_COLUMNS,
         normalize_boolean,
         quote_identifier,
         sqlite_type_family,
@@ -38,8 +39,8 @@ except ModuleNotFoundError:
         JSONB_COLUMNS,
         MIGRATION_TABLES,
         TABLE_ORDER,
-        TIMESTAMPTZ_COLUMNS,
         TIME_COLUMNS,
+        TIMESTAMPTZ_COLUMNS,
         normalize_boolean,
         quote_identifier,
         sqlite_type_family,
@@ -323,6 +324,7 @@ def main() -> None:
         for table, count in stats.items():
             print(f"  - {table}: {count} linhas")
     except Exception as exc:
+        logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         print(f"Erro na exportação: {exc}", file=sys.stderr)
         sys.exit(1)
 

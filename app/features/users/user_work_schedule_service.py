@@ -1,11 +1,12 @@
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
+
 from fastapi import Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any, Dict, List
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.payroll.payroll_repository import (
@@ -86,7 +87,7 @@ class UserWorkScheduleService:
             "exit_2": str(sch.exit_2) if sch.exit_2 else None
         }
 
-    async def check_payroll_closure(self, db: Any, valid_from: date, valid_until: date = None):
+    async def check_payroll_closure(self, db: Any, valid_from: date, valid_until: date | None = None):
         session = db if db is not None else self.db
         assert session is not None
         start_year = valid_from.year
@@ -197,7 +198,7 @@ class UserWorkScheduleService:
                         await self.check_schedule_overlap(session, uid, dow, new_valid_from, new_valid_until)
                         to_create.append((user, sch_data))
                 except ScheduleOverlapError as e:
-                    errors.append(f"Usuário {user.name}: {str(e)}")
+                    errors.append(f"Usuário {user.name}: {e!s}")
         return to_update, to_create, errors
 
     @staticmethod
@@ -218,7 +219,7 @@ class UserWorkScheduleService:
             for user_id, sch_list in users_dict.items()
         ]
 
-    async def get_bulk_schedules(self, db: Any | None = None, month: int = 0, year: int = 0) -> List[Dict[str, Any]]:
+    async def get_bulk_schedules(self, db: Any | None = None, month: int = 0, year: int = 0) -> list[dict[str, Any]]:
         session = db if db is not None else self.db
         assert session is not None
         start_of_month = date(year, month, 1)
@@ -257,7 +258,8 @@ class UserWorkScheduleService:
             for (v_from, v_until), users_dict in groups.items()
         ]
 
-    async def get_bulk_schedule(self, db: Any | None = None, valid_from: date = None, valid_until: date = None) -> Dict[
+    async def get_bulk_schedule(self, db: Any | None = None, valid_from: date | None = None,
+                                valid_until: date | None = None) -> dict[
         str, Any]:
         session = db if db is not None else self.db
         assert session is not None
@@ -305,7 +307,8 @@ class UserWorkScheduleService:
             else:
                 session.delete(cfg)
 
-    async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str, old_data: dict = None, new_data: dict = None):
+    async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str,
+                                     old_data: dict | None = None, new_data: dict | None = None):
         if hasattr(session, "sync_session"):
             await session.flush()
             await audit_service.async_log_change(
@@ -375,8 +378,8 @@ class UserWorkScheduleService:
                 incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
         return incoming_map
 
-    async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
-                                    old_valid_until: date = None, bulk_data: Any = None,
+    async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date | None = None,
+                                    old_valid_until: date | None = None, bulk_data: Any = None,
                                     current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
@@ -424,7 +427,8 @@ class UserWorkScheduleService:
 
         return {"message": "Expedientes atualizados com sucesso."}
 
-    async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date = None, valid_until: date = None,
+    async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date | None = None,
+                                    valid_until: date | None = None,
                                     current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None

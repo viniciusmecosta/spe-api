@@ -27,12 +27,11 @@ def encrypt_backup(source: Path, secret: str, destination: Path | None = None) -
     destination = destination or source.with_name(source.name + ".enc")
     encryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
     encryptor.authenticate_additional_data(MAGIC)
-    temporary_file = tempfile.NamedTemporaryFile(
-        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent, delete=False,
-    )
-    temporary = Path(temporary_file.name)
+    with tempfile.NamedTemporaryFile(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent,
+                                     delete=False) as temporary_file:
+        temporary = Path(temporary_file.name)
     try:
-        with temporary_file as output, source.open("rb") as original:
+        with temporary.open("wb") as output, source.open("rb") as original:
             output.write(MAGIC + nonce)
             for chunk in iter(lambda: original.read(CHUNK_SIZE), b""):
                 output.write(encryptor.update(chunk))
@@ -62,10 +61,10 @@ def decrypt_backup(source: Path, secret: str) -> Path:
             algorithms.AES(key), modes.GCM(header[len(MAGIC):], tag)
         ).decryptor()
         decryptor.authenticate_additional_data(MAGIC)
-        temporary = tempfile.NamedTemporaryFile(prefix="spe-restore-", suffix=".zip", delete=False)
-        target = Path(temporary.name)
+        with tempfile.NamedTemporaryFile(prefix='spe-restore-', suffix='.zip', delete=False) as temporary:
+            target = Path(temporary.name)
         try:
-            with temporary:
+            with target.open("wb") as temporary:
                 while remaining:
                     chunk = encrypted.read(min(CHUNK_SIZE, remaining))
                     if not chunk:

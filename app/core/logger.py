@@ -3,6 +3,7 @@ import logging.config
 import os
 import time
 from datetime import date, datetime, timedelta
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
@@ -19,7 +20,7 @@ def get_log_path(target_date: date, base_dir: str = LOG_BASE_DIR) -> str:
 
 
 class CleanFormatter(logging.Formatter):
-    LEVEL_MAP = {
+    LEVEL_MAP: ClassVar[dict[str, str]] = {
         "WARNING": "WARN",
         "CRITICAL": "CRIT",
     }
@@ -63,8 +64,8 @@ class DailyRotatingFileHandler(logging.FileHandler):
                     self.stream.close()
                     os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
                     self.stream = self._open()
-            except Exception:
-                pass
+            except OSError:
+                self.stream = None
 
     def emit(self, record):
         current_time = time.time()

@@ -180,6 +180,4 @@ def are_type_families_compatible(sqlite_family: str, postgres_family: str) -> bo
         return True
     if sqlite_family == "text" and postgres_family == "enum":
         return True
-    if sqlite_family == "integer" and postgres_family == "real":
-        return True
-    return False
+    return sqlite_family == "integer" and postgres_family == "real"

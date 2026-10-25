@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.session import get_async_db
 from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
 from app.features.holidays.holiday_models import Holiday
-from app.features.holidays.holiday_repository import AsyncHolidayRepository, async_holiday_repository
+from app.features.holidays.holiday_repository import (
+    AsyncHolidayRepository,
+    async_holiday_repository,
+)
 from app.features.holidays.holiday_schemas import HolidayCreate
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service

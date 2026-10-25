@@ -83,7 +83,8 @@ def setup_exception_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         if exc.status_code >= 500:
-            logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}", exc_info=True)
+            logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}",
+                         exc_info=(type(exc), exc, exc.__traceback__))
 
         detail_msg = exc.detail
         if isinstance(detail_msg, dict):
@@ -134,7 +135,7 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(SQLAlchemyError)
     async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
-        logger.error(f"Database error em {request.url.path}: {exc!s}", exc_info=True)
+        logger.error(f"Database error em {request.url.path}: {exc!s}", exc_info=(type(exc), exc, exc.__traceback__))
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -162,7 +163,7 @@ def setup_exception_handlers(app: FastAPI):
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Unexpected error em {request.url.path}: {exc!s}", exc_info=True)
+        logger.error(f"Unexpected error em {request.url.path}: {exc!s}", exc_info=(type(exc), exc, exc.__traceback__))
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={

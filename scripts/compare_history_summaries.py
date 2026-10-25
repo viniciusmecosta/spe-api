@@ -13,7 +13,7 @@ from app.shared.enums import UserRole
 from app.shared.time_calculation_service import time_calculation_service
 
 
-async def legacy_period(session, user_id, first, last, records, adjustments, holidays, schedules):
+def legacy_period(session, user_id, first, last, records, adjustments, holidays, schedules):
     return time_calculation_service.calculate_period_time(
         start_date=first,
         end_date=last,

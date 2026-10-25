@@ -1,7 +1,8 @@
-import pytest
-from fastapi import UploadFile
 from unittest.mock import AsyncMock, MagicMock
 
+from fastapi import UploadFile
+
+import pytest
 from app.features.companies.company_exceptions import (
     CompanyAlreadyExistsError,
     CompanyNotFoundError,
@@ -163,7 +164,7 @@ async def test_upload_logo_exception_on_save(mocker, async_db_mock):
     file_mock = MagicMock(spec=UploadFile)
     file_mock.filename = "logo.jpg"
 
-    mocker.patch("builtins.open", side_effect=Exception("Test Exception"))
+    mocker.patch("builtins.open", side_effect=OSError("Test Exception"))
 
     with pytest.raises(LogoSaveError) as exc_info:
         await company_service.upload_logo(async_db_mock, file_mock, 1)

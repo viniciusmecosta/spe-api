@@ -4,7 +4,7 @@ import hashlib
 import importlib
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import extract, select
@@ -16,7 +16,6 @@ from app.features.reports.excel_service import excel_service
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
-
 
 OUTPUT_ROOT = Path("backups/golden")
 MODEL_MODULES = (
@@ -39,7 +38,7 @@ async def capture(output: Path) -> dict:
     if output.exists():
         raise FileExistsError(f"Snapshot already exists: {output}")
     output.mkdir(parents=True)
-    manifest: dict = {"generated_at_utc": datetime.now(timezone.utc).isoformat(), "periods": {}}
+    manifest: dict = {"generated_at_utc": datetime.now(UTC).isoformat(), "periods": {}}
 
     with SessionLocal() as session:
         record_year = extract("year", TimeRecord.record_datetime)

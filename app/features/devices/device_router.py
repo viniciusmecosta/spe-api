@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -9,7 +11,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from typing import Annotated
 
 from app.features.devices.biometric_service import BiometricService
 from app.features.devices.device_credential_service import (

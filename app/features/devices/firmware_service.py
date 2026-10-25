@@ -9,7 +9,6 @@ from fastapi import Depends, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import ROOT_DIR, settings
-from app.shared.storage import resolve_stored_file
 from app.database.session import get_async_db
 from app.features.devices.device_exceptions import (
     FirmwareFileNotFoundError,
@@ -21,8 +20,12 @@ from app.features.devices.device_exceptions import (
     NoFirmwareAvailableError,
 )
 from app.features.devices.device_models import Firmware
-from app.features.devices.device_repository import AsyncFirmwareRepository, async_firmware_repository
+from app.features.devices.device_repository import (
+    AsyncFirmwareRepository,
+    async_firmware_repository,
+)
 from app.features.system.audit_service import audit_service
+from app.shared.storage import resolve_stored_file
 
 
 class FirmwareService:

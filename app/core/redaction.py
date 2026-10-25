@@ -1,4 +1,3 @@
-"""Redact credentials in current output and historical log attachments."""
 import re
 from urllib.parse import quote
 
@@ -9,7 +8,7 @@ _CREDENTIAL = re.compile(
     r"(?i)((?:password|senha|secret|token|authorization|api[_-]?key)\s*[=:]\s*)"
     r"(?:Bearer\s+)?(?:\"[^\"]*\"|'[^']*'|[^\s,;}&]+)"
 )
-_DATABASE = re.compile(r"(\w+://[^:/\s]+:)[^@\s]+(@)")
+_DATABASE = re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]{0,30}://[^:/\s]{1,256}:)[^@\s]{1,2048}(@)")
 
 
 def redact(value: str) -> str:

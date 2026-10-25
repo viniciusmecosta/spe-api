@@ -4,8 +4,9 @@ from collections import defaultdict
 from datetime import date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi import HTTPException
+
+import pytest
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
@@ -28,6 +29,12 @@ from app.shared.time_calculation_service import (
     DailyTimeResult,
     PeriodTimeResult,
 )
+
+
+def _empty_accounted_result():
+    return DailyAccountedResult(raw_seconds=0, excess_work_seconds=0, excess_lunch_seconds=0,
+                                early_return_seconds=0, total_excess_seconds=0, approved_seconds=0,
+                                accounted_seconds=0, has_schedule=False, has_lunch_rule=False)
 
 
 @pytest.fixture
@@ -250,6 +257,8 @@ def test_build_history_day_scenarios(service):
         has_lunch_rule=False,
     )}
     period_res.daily_waivers = {curr: None}
+    period_res.daily_accounted_results = {curr: _empty_accounted_result()}
+    period_res.daily_accounted_results[curr].accounted_seconds = 28800
 
     h_day = service.response_builder._build_history_day(
         current=curr,
@@ -320,6 +329,7 @@ def test_build_history_day_with_adjustments(service):
     period_res = MagicMock()
     period_res.daily_results = {curr: _create_daily_time_result(net_worked_seconds=28800.0)}
     period_res.daily_waivers = {curr: None}
+    period_res.daily_accounted_results = {curr: _empty_accounted_result()}
 
     h_day = service.response_builder._build_history_day(
         current=curr,
@@ -790,7 +800,7 @@ def test_determine_excess_info_employee_sees_pending(service):
 
 def test_build_daily_excess_info_no_excess(service):
     acc_res = MagicMock()
-    res = service.response_builder._build_daily_excess_info(acc_res, None, False, None, None)
+    res = service.response_builder._build_daily_excess_info(acc_res, False, None, None)
     assert res is None
 
 
@@ -799,7 +809,7 @@ def test_build_daily_excess_info_pending_60m(service):
     acc_res.total_excess_seconds = 3600.0
     acc_res.approved_seconds = 0.0
 
-    res = service.response_builder._build_daily_excess_info(acc_res, None, True, "PENDING", None)
+    res = service.response_builder._build_daily_excess_info(acc_res, True, "PENDING", None)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "PENDING"
@@ -829,7 +839,7 @@ def test_build_daily_excess_info_partial_approved(service):
     adj.amount_hours = 2.0
     adj.approved_amount_hours = 1.0
 
-    res = service.response_builder._build_daily_excess_info(acc_res, adj, True, "APPROVED", 10)
+    res = service.response_builder._build_daily_excess_info(acc_res, True, "APPROVED", 10)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "APPROVED"
@@ -858,7 +868,7 @@ def test_build_daily_excess_info_rejected(service):
     adj.amount_hours = 1.0
     adj.approved_amount_hours = None
 
-    res = service.response_builder._build_daily_excess_info(acc_res, adj, True, "REJECTED", 11)
+    res = service.response_builder._build_daily_excess_info(acc_res, True, "REJECTED", 11)
     assert res is not None
     assert res.has_excess is True
     assert res.status == "REJECTED"
@@ -928,7 +938,6 @@ def test_report_service_helper_branches(service):
     mock_adj = MagicMock(amount_hours=2.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=1.0)
     info = service.response_builder._build_daily_excess_info(
         accounted_res=None,
-        daily_excess_adj=mock_adj,
         has_excess=True,
         excess_status="APPROVED",
         daily_excess_id=1,
@@ -939,7 +948,6 @@ def test_report_service_helper_branches(service):
     mock_adj_no_appr = MagicMock(amount_hours=1.0, status=AdjustmentStatus.APPROVED, approved_amount_hours=None)
     info2 = service.response_builder._build_daily_excess_info(
         accounted_res=None,
-        daily_excess_adj=mock_adj_no_appr,
         has_excess=True,
         excess_status="APPROVED",
         daily_excess_id=2,
@@ -1032,13 +1040,14 @@ async def test_report_service_async_session_branches(service):
             reviewed_at=None,
         )
         mock_fetch.return_value = ([], [], [], [adj_excess])
-        mock_daily = MagicMock()
-        mock_daily.net_worked_seconds = 0
-        mock_daily.extra_seconds = 0
-        mock_daily.missing_seconds = 0
-        mock_daily.punch_blocks = []
+        mock_daily = _create_daily_time_result(net_worked_seconds=0)
         mock_period = MagicMock()
         mock_period.daily_results = defaultdict(lambda: mock_daily)
+        mock_period.daily_accounted_results = defaultdict(_empty_accounted_result)
+        mock_period.daily_expected_seconds = defaultdict(float)
+        mock_period.daily_waivers = defaultdict(lambda: None)
+        mock_period.total_gross_worked_seconds = 0
+        mock_period.total_accounted_seconds = 0
         mock_calc.return_value = mock_period
         hist = await service.get_history_report(db_mock, 1, 8, 2026, user)
         assert hist.month == 8
@@ -1066,8 +1075,11 @@ def test_build_advanced_daily_details_with_excess_adj(service):
         reviewed_at=None,
     )
     period_res = MagicMock()
-    mock_daily = MagicMock(net_worked_seconds=0, extra_seconds=0, missing_seconds=0, punch_blocks=[])
+    mock_daily = _create_daily_time_result(net_worked_seconds=0)
     period_res.daily_results = defaultdict(lambda: mock_daily)
+    period_res.daily_accounted_results = defaultdict(_empty_accounted_result)
+    period_res.daily_expected_seconds = defaultdict(float)
+    period_res.daily_waivers = defaultdict(lambda: None)
     u = MagicMock(historical_schedules=[])
     res, w, a = service.response_builder.build_advanced_daily_details(
         date(2026, 8, 1), date(2026, 8, 2), date(2026, 8, 2),

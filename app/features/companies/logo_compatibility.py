@@ -1,15 +1,14 @@
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Depends, HTTPException
-from typing import Annotated
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.shared import deps
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.features.companies.company_models import Company
 from app.features.system.notification_context import logo_file
+from app.shared import deps
 
 
 class CompanyLogoService:

@@ -97,10 +97,10 @@ class TelegramService:
         except requests.exceptions.ConnectTimeout:
             return DeliveryResult("RETRY", "Timeout ao conectar ao Telegram")
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError):
-            
+
             return DeliveryResult("UNCERTAIN", "Conexão interrompida; entrega precisa ser conferida")
         except (requests.exceptions.RequestException, OSError) as error:
-            logger.error("Falha no envio Telegram: %s", type(error).__name__)
+            logger.exception("Falha no envio Telegram")
             return DeliveryResult("FAILED", type(error).__name__)
 
     def deliver_text(self, text: str) -> DeliveryResult:
@@ -166,8 +166,8 @@ class TelegramService:
                 text += "\n"
 
             return text.strip()
-        except (SQLAlchemyError, ValueError) as e:
-            logger.exception(f"Erro ao gerar relatório do Telegram: {type(e).__name__} - {e}", exc_info=False)
+        except (SQLAlchemyError, ValueError):
+            logger.exception("Erro ao gerar relatório do Telegram")
             return "Erro interno ao gerar relatório gerencial."
 
     def _group_daily_activity(self, records) -> dict[str, dict[str, list[str]]]:

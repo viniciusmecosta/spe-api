@@ -1,4 +1,5 @@
-from typing import Any, Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -6,12 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.database.base import Base
 
-ModelType = TypeVar("ModelType", bound=Base)
-CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel | dict[str, Any])
-UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel | dict[str, Any])
 
-
-class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class BaseRepository[
+    ModelType: Base,
+    CreateSchemaType: BaseModel | dict[str, Any],
+    UpdateSchemaType: BaseModel | dict[str, Any],
+]:
     def __init__(self, model: type[ModelType]):
         self.model = model
 
@@ -88,7 +89,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-class AsyncBaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class AsyncBaseRepository[
+    ModelType: Base,
+    CreateSchemaType: BaseModel | dict[str, Any],
+    UpdateSchemaType: BaseModel | dict[str, Any],
+]:
     def __init__(self, model: type[ModelType]):
         self.model = model
 

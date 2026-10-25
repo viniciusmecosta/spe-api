@@ -175,7 +175,7 @@ def test_build_backup_message_dev(mock_template_service):
     with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"):
         service = EmailService()
         msg = service._build_backup_message(["a@a.com"], [], "html", "period")
-        assert "Backup SPE DEV" in msg["Subject"]
+        assert "Registros de ponto" in msg["Subject"]
 
 
 def test_build_backup_message_with_attachment(mock_template_service):

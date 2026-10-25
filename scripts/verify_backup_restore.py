@@ -11,11 +11,19 @@ from sqlalchemy.engine import make_url
 
 try:
     from scripts.apply_sql_to_postgresql import (
-        ROOT_DIR, find_backup_source, get_pg_credentials, load_environment, restore_backup,
+        ROOT_DIR,
+        find_backup_source,
+        get_pg_credentials,
+        load_environment,
+        restore_backup,
     )
 except ModuleNotFoundError:
     from apply_sql_to_postgresql import (
-        ROOT_DIR, find_backup_source, get_pg_credentials, load_environment, restore_backup,
+        ROOT_DIR,
+        find_backup_source,
+        get_pg_credentials,
+        load_environment,
+        restore_backup,
     )
 
 

@@ -40,9 +40,9 @@ def test_prepare_raw_data_with_both_model_and_data(db_session_mock, mocker):
         new_data={"extra_field": "extra_val"}
     )
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].new_data["name"] == "Natal"
-    assert args[1].new_data["extra_field"] == "extra_val"
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].new_data["name"] == "Natal"
+    assert kwargs["obj_in"].new_data["extra_field"] == "extra_val"
 
 
 def test_serialize_model_dict():
@@ -161,15 +161,15 @@ def test_log(db_session_mock, mocker):
     )
     assert result == "mock_audit_log"
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
+    args, kwargs = mock_create.call_args
     assert args[0] == db_session_mock
-    assert isinstance(args[1], AuditLogCreate)
-    assert args[1].action == "UPDATE"
-    assert args[1].entity == "User"
-    assert args[1].entity_id == 1
-    assert args[1].user_id == 42
-    assert args[1].old_data == {"name": "Old"}
-    assert args[1].new_data == {"name": "New"}
+    assert isinstance(kwargs["obj_in"], AuditLogCreate)
+    assert kwargs["obj_in"].action == "UPDATE"
+    assert kwargs["obj_in"].entity == "User"
+    assert kwargs["obj_in"].entity_id == 1
+    assert kwargs["obj_in"].user_id == 42
+    assert kwargs["obj_in"].old_data == {"name": "Old"}
+    assert kwargs["obj_in"].new_data == {"name": "New"}
 
 
 def test_log_change_diff(db_session_mock, mocker):
@@ -189,13 +189,13 @@ def test_log_change_diff(db_session_mock, mocker):
 
     assert res == "created_log"
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].action == "UPDATE_USER"
-    assert args[1].entity == "USERS"
-    assert args[1].entity_id == 1
-    assert args[1].user_id == 10
-    assert args[1].old_data == {"name": "Old User", "role": "EMPLOYEE"}
-    assert args[1].new_data == {"name": "New User", "role": "MANAGER"}
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].action == "UPDATE_USER"
+    assert kwargs["obj_in"].entity == "USERS"
+    assert kwargs["obj_in"].entity_id == 1
+    assert kwargs["obj_in"].user_id == 10
+    assert kwargs["obj_in"].old_data == {"name": "Old User", "role": "EMPLOYEE"}
+    assert kwargs["obj_in"].new_data == {"name": "New User", "role": "MANAGER"}
 
 
 def test_log_change_create_only(db_session_mock, mocker):
@@ -208,13 +208,13 @@ def test_log_change_create_only(db_session_mock, mocker):
         new_model=holiday
     )
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].action == "CREATE_HOLIDAY"
-    assert args[1].entity == "HOLIDAYS"
-    assert args[1].entity_id == 5
-    assert args[1].old_data is None
-    assert args[1].new_data["name"] == "Natal"
-    assert args[1].new_data["date"] == "2026-12-25"
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].action == "CREATE_HOLIDAY"
+    assert kwargs["obj_in"].entity == "HOLIDAYS"
+    assert kwargs["obj_in"].entity_id == 5
+    assert kwargs["obj_in"].old_data is None
+    assert kwargs["obj_in"].new_data["name"] == "Natal"
+    assert kwargs["obj_in"].new_data["date"] == "2026-12-25"
 
 
 def test_log_change_delete_only(db_session_mock, mocker):
@@ -227,12 +227,12 @@ def test_log_change_delete_only(db_session_mock, mocker):
         old_model=holiday
     )
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].action == "DELETE_HOLIDAY"
-    assert args[1].entity == "HOLIDAYS"
-    assert args[1].entity_id == 5
-    assert args[1].old_data["name"] == "Natal"
-    assert args[1].new_data is None
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].action == "DELETE_HOLIDAY"
+    assert kwargs["obj_in"].entity == "HOLIDAYS"
+    assert kwargs["obj_in"].entity_id == 5
+    assert kwargs["obj_in"].old_data["name"] == "Natal"
+    assert kwargs["obj_in"].new_data is None
 
 
 def test_log_change_explicit_entity_and_id(db_session_mock, mocker):
@@ -247,10 +247,10 @@ def test_log_change_explicit_entity_and_id(db_session_mock, mocker):
         new_model=holiday
     )
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].action == "CUSTOM_ACTION"
-    assert args[1].entity == "CUSTOM_ENTITY"
-    assert args[1].entity_id == 999
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].action == "CUSTOM_ACTION"
+    assert kwargs["obj_in"].entity == "CUSTOM_ENTITY"
+    assert kwargs["obj_in"].entity_id == 999
 
 
 def test_log_change_fallbacks(db_session_mock, mocker):
@@ -263,12 +263,12 @@ def test_log_change_fallbacks(db_session_mock, mocker):
         new_data={"status": "active"}
     )
     mock_create.assert_called_once()
-    args, _ = mock_create.call_args
-    assert args[1].action == "SYSTEM_EVENT"
-    assert args[1].entity == "SYSTEM"
-    assert args[1].entity_id == 0
-    assert args[1].old_data == {"status": "inactive"}
-    assert args[1].new_data == {"status": "active"}
+    args, kwargs = mock_create.call_args
+    assert kwargs["obj_in"].action == "SYSTEM_EVENT"
+    assert kwargs["obj_in"].entity == "SYSTEM"
+    assert kwargs["obj_in"].entity_id == 0
+    assert kwargs["obj_in"].old_data == {"status": "inactive"}
+    assert kwargs["obj_in"].new_data == {"status": "active"}
 
 
 def test_compute_diffs():
@@ -325,7 +325,7 @@ def test_audit_repository_create(db_session_mock):
         old_data={"name": "Old"},
         new_data={"name": "New"}
     )
-    res = audit_repository.create(db_session_mock, obj_in)
+    res = audit_repository.create(db_session_mock, obj_in=obj_in)
     assert isinstance(res, AuditLog)
     assert res.user_id == 1
     assert res.action == "TEST_ACTION"

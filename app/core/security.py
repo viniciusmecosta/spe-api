@@ -1,6 +1,6 @@
 import hashlib
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -15,9 +15,9 @@ ALGORITHM = settings.ALGORITHM
 def create_access_token(subject: str | Any, name: str | None = None,
                         expires_delta: timedelta | None = None) -> str:
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(UTC) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": str(subject)}
     if name:
         to_encode["name"] = name
@@ -53,7 +53,7 @@ def _resolve_device_name_from_ip(ip: str) -> str:
     if ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
         try:
             return socket.gethostname()
-        except Exception:
+        except OSError:
             return ""
     return ""
 

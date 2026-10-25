@@ -37,9 +37,8 @@ class AuthService:
 
         allow_bypass = is_dev() and user.role == UserRole.EMPLOYEE
 
-        if not allow_bypass:
-            if not security.verify_password(password, user.password_hash):
-                raise InvalidCredentialsError()
+        if not allow_bypass and not security.verify_password(password, user.password_hash):
+            raise InvalidCredentialsError()
 
         if not user.is_active:
             raise InactiveUserError()

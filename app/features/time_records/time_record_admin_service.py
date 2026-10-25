@@ -1,11 +1,14 @@
 from datetime import datetime
+from typing import Annotated, Any
+
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Annotated, Any
 
 from app.core.security import get_client_device_name, get_client_ip
 from app.features.system.audit_service import audit_service, serialize_model
-from app.features.time_records.time_record_change_service import time_record_change_service
+from app.features.time_records.time_record_change_service import (
+    time_record_change_service,
+)
 from app.features.time_records.time_record_exceptions import TimeRecordNotFoundError
 from app.features.time_records.time_record_models import TimeRecord, get_local_time
 from app.features.time_records.time_record_repository import (

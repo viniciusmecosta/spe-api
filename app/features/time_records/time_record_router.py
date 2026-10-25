@@ -1,7 +1,16 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Query,
+    Request,
+    Response,
+    status,
+)
 
 from app.features.time_records.time_record_schemas import (
     ReceiptResponse,
