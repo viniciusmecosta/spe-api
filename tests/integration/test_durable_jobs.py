@@ -314,3 +314,34 @@ async def test_lease_renewal_accepts_its_completed_job_but_rejects_another_owner
         await job_queue.keep_lease(first)
     assert await job_queue.checkpoint(second, 'SUCCESS')
     await job_queue.keep_lease(second)
+
+
+async def test_heartbeat_failure_cancels_delivery_and_preserves_uncertain_state(pg_session_factory, mocker):
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    async def deliver(*args):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    async def heartbeat(*args):
+        await started.wait()
+        raise RuntimeError('synthetic lease failure')
+
+    delivery = mocker.patch('app.features.system.notification_jobs._deliver', side_effect=deliver)
+    lease = mocker.patch.object(job_queue, 'keep_lease', side_effect=heartbeat)
+    job_id = await ready_job(pg_session_factory, [part()])
+    await asyncio.wait_for(job_queue.process_once(), timeout=5)
+    assert stopped.is_set()
+    async with pg_session_factory() as session:
+        job = await session.get(BackgroundJob, job_id)
+        assert job.status == 'RETRY'
+        assert job.result['parts'][0]['status'] == 'SENDING'
+    await expire(pg_session_factory, job_id)
+    lease.side_effect = None
+    await asyncio.wait_for(job_queue.process_once(), timeout=5)
+    async with pg_session_factory() as session:
+        assert (await session.get(BackgroundJob, job_id)).status == 'UNCERTAIN'
+    delivery.assert_awaited_once()
