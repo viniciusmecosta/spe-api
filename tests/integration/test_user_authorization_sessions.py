@@ -91,3 +91,22 @@ async def test_password_boundaries_return_validation_error(authorized_client, pa
     client, actors = authorized_client
     response = await client.put('/api/v1/users/me', headers=authorization(actors[UserRole.EMPLOYEE]), json={'password': password})
     assert response.status_code == 422
+
+
+async def test_concurrent_demotions_preserve_one_active_maintainer(authorized_client, pg_session_factory):
+    client, actors = authorized_client
+    first = actors[UserRole.MAINTAINER]
+    response = await client.post('/api/v1/users/', headers=authorization(first), json={
+        'username': 'concurrent_admin', 'password': 'password123', 'role': 'MAINTAINER'})
+    assert response.status_code == 201
+    second = User(id=response.json()['id'], role=UserRole.MAINTAINER, auth_version=0)
+
+    async def demote(user):
+        return await client.put(f'/api/v1/users/{user.id}', headers=authorization(user), json={'role': 'EMPLOYEE'})
+
+    responses = await asyncio.gather(demote(first), demote(second))
+    assert sorted(response.status_code for response in responses) == [200, 403]
+    async with pg_session_factory() as session:
+        active = list((await session.scalars(select(User).where(
+            User.role == UserRole.MAINTAINER, User.is_active.is_(True)))).all())
+        assert len(active) == 1
