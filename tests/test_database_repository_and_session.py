@@ -71,6 +71,7 @@ def test_base_repository_sync():
 async def test_base_repository_async_create():
     repo = BaseRepository(DummyModel)
     db = AsyncMock()
+    db.info = {}
     db.add = MagicMock()
     res1 = await repo.async_create(db, obj_in={"name": "A"})
     assert isinstance(res1, DummyModel)
@@ -86,6 +87,7 @@ async def test_base_repository_async_create():
 async def test_async_base_repository():
     repo = AsyncBaseRepository(DummyModel)
     db = AsyncMock()
+    db.info = {}
     db.add = MagicMock()
     db_obj = DummyModel(id=1, name="test")
 
