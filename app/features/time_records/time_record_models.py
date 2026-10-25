@@ -35,6 +35,8 @@ class TimeRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey(USERS_ID, ondelete="RESTRICT"), nullable=False)
+    source_adjustment_id = Column(Integer, ForeignKey("adjustment_requests.id", ondelete="SET NULL"),
+                                  nullable=True, unique=True)
     record_type = Column(Enum(RecordType), nullable=False)
     record_datetime = Column(DateTime(timezone=True), nullable=False)
     ip_address = Column(String, nullable=True)

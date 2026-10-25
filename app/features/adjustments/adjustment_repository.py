@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes
 from app.features.adjustments.adjustment_models import (
     AdjustmentAttachment,
     AdjustmentRequest,
@@ -258,7 +259,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             reason_text=obj_in.reason_text,
         )
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         refreshed = await self.get(db, db_obj.id)
         return refreshed if refreshed else db_obj
 
@@ -270,6 +271,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
                 selectinload(AdjustmentRequest.manager),
                 selectinload(AdjustmentRequest.attachments),
             )
+            .execution_options(populate_existing=True)
             .where(
                 AdjustmentRequest.id == id,
                 AdjustmentRequest.deleted_at.is_(None),
@@ -277,6 +279,15 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         )
         result = await db.scalars(stmt)
         return result.first()
+
+    async def lock(self, db: AsyncSession, id: int) -> None:
+        await db.execute(select(AdjustmentRequest.id).where(AdjustmentRequest.id == id).with_for_update())
+
+    async def lock_waivers(self, db: AsyncSession, user_id: int, target_date: date) -> None:
+        from sqlalchemy import text
+        if db.get_bind().dialect.name == 'postgresql':
+            key = f'waiver:{user_id}:{target_date.isoformat()}'
+            await db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))'), {'scope': key})
 
     async def get_all_by_user(
             self,
@@ -428,7 +439,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         db_obj.manager_comment = comment
         db_obj.reviewed_at = get_local_time()
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         refreshed = await self.get(db, db_obj.id)
         return refreshed if refreshed else db_obj
 
@@ -441,7 +452,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             file_type=file_type,
         )
         db.add(db_attachment)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_attachment)
         return db_attachment
 
@@ -451,7 +462,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             db_obj.deleted_at = get_local_time()
             db_obj.deleted_by = user_id
             db.add(db_obj)
-            await db.commit()
+            await persist_changes(db)
 
     async def delete(self, db: AsyncSession, id: int):
         db_obj = await self.get(db, id)
@@ -459,7 +470,7 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             return
         await db.execute(delete(AdjustmentAttachment).where(AdjustmentAttachment.adjustment_request_id == id))
         await db.delete(db_obj)
-        await db.commit()
+        await persist_changes(db)
 
 
 adjustment_repository = AdjustmentRepository()

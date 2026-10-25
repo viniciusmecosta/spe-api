@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
+from app.database.unit_of_work import persist_changes
 
 
 class BaseRepository[
@@ -81,7 +82,7 @@ class BaseRepository[
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -116,7 +117,7 @@ class AsyncBaseRepository[
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -139,7 +140,7 @@ class AsyncBaseRepository[
                 setattr(db_obj, field, value)
 
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -147,7 +148,7 @@ class AsyncBaseRepository[
         obj = await db.get(self.model, id)
         if obj:
             await db.delete(obj)
-            await db.commit()
+            await persist_changes(db)
         return obj
 
     async def count(self, db: AsyncSession) -> int:

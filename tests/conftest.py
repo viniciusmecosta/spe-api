@@ -122,6 +122,9 @@ def async_db_mock():
     session.execute = AsyncMock()
     session.get = AsyncMock()
     session.delete = AsyncMock()
+    session.info = {}
+    session.flush = AsyncMock()
+    session.rollback = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
     session.add = MagicMock()

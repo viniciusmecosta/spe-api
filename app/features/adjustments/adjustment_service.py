@@ -1,15 +1,13 @@
-import asyncio
-import os
-import shutil
-import uuid
-from datetime import date, datetime
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.exceptions import DomainException
+from app.database.unit_of_work import transactional, unit_of_work
+from app.features.adjustments.adjustment_actions import adjustment_action
 from app.features.adjustments.adjustment_exceptions import (
     AdjustmentAttachmentNotFoundError,
     AdjustmentNotFoundError,
@@ -34,12 +32,12 @@ from app.features.adjustments.adjustment_schemas import (
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.time_record_models import TimeRecord
-from app.features.time_records.time_record_repository import get_local_time
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.storage import resolve_stored_file
 from app.shared.timezone import local_day_bounds, to_app_timezone
+from app.shared.upload_storage import UploadCategory, upload_storage
 
 NOT_FOUND_MSG = "Solicitação não encontrada."
 
@@ -93,8 +91,10 @@ class AdjustmentService:
 
     async def _validate_waiver_limit(self, db: AsyncSession, user_id: int, target_date: date,
                                      amount_hours: float | None):
-        if not amount_hours:
-            return
+        import math
+        if amount_hours is None or not math.isfinite(amount_hours) or amount_hours <= 0:
+            raise WaiverLimitExceededError("O abono deve informar uma quantidade positiva e finita de horas.")
+        await self.repo.lock_waivers(db, user_id, target_date)
 
         existing_waivers = await self.repo.get_waivers_by_user_and_date(db, user_id, target_date)
         existing_hours = sum(w.amount_hours for w in existing_waivers if w.amount_hours)
@@ -134,6 +134,7 @@ class AdjustmentService:
                                                             order_direction)
         return await self._enrich_adjustments_with_records(session, adjustments)
 
+    @transactional
     async def create_adjustment_request(self, db: AsyncSession | None = None, user_id: int = 0,
                                   obj_in: AdjustmentRequestCreate | None = None) -> AdjustmentRequest:
         session = db if db is not None else self.db
@@ -154,6 +155,7 @@ class AdjustmentService:
         enriched = await self._enrich_adjustments_with_records(session, [adjustment])
         return enriched[0]
 
+    @transactional
     async def create_manager_waiver(self, db: AsyncSession | None = None,
                                     waiver_in: AdjustmentWaiverCreate | None = None,
                               manager_id: int = 0) -> AdjustmentRequest:
@@ -178,10 +180,12 @@ class AdjustmentService:
         enriched = await self._enrich_adjustments_with_records(session, [adjustment])
         return enriched[0]
 
+    @transactional
     async def admin_delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, admin_id: int = 0,
                                       reason: str = "") -> None:
         session = db if db is not None else self.db
         assert session is not None
+        await self.repo.lock(session, adjustment_id)
         request = await self.repo.get(session, adjustment_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
@@ -199,10 +203,12 @@ class AdjustmentService:
             session, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
         )
 
+    @transactional
     async def delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, manager_id: int = 0,
                                 reason: str = "") -> None:
         session = db if db is not None else self.db
         assert session is not None
+        await self.repo.lock(session, adjustment_id)
         request = await self.repo.get(session, adjustment_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
@@ -225,6 +231,7 @@ class AdjustmentService:
         session = db if db is not None else self.db
         assert session is not None
         assert file is not None
+        await self.repo.lock(session, request_id)
         request = await self.repo.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError("Solicitação de abono não encontrada.")
@@ -245,48 +252,38 @@ class AdjustmentService:
                 "Formato inválido. Permitido apenas PDF, JPG ou PNG."
             )
 
-        header = file.file.read(10)
-        file.file.seek(0)
-        is_valid = False
+        try:
+            stored = await upload_storage.save(file, UploadCategory.ATTACHMENT)
+        except DomainException as exc:
+            if exc.status_code == 400:
+                raise CorruptedAttachmentError(exc.detail) from exc
+            raise
+        try:
+            async with unit_of_work(session):
+                attachment = await self.repo.create_attachment(session, request_id, stored.relative_path, stored.content_type)
+                await audit_service.async_log_change(
+                    session, user_id, "UPLOAD_ATTACHMENT", entity="ADJUSTMENT", entity_id=request_id,
+                    new_data={"file_name": stored.relative_path, "file_type": stored.content_type},
+                )
+            return attachment
+        except BaseException:
+            await session.rollback()
+            await upload_storage.remove(stored)
+            raise
 
-        if (
-                (file_ext == "pdf" and header.startswith(b"%PDF")) or
-                (file_ext == "png" and header.startswith(b"\x89PNG\r\n\x1a\n")) or
-                (file_ext in ["jpg", "jpeg"] and header.startswith(b"\xff\xd8\xff"))
-        ):
-            is_valid = True
-
-        if not is_valid:
-            raise CorruptedAttachmentError(
-                "O conteúdo do arquivo não corresponde à extensão ou está corrompido."
-            )
-
-        safe_filename = f"{uuid.uuid4()}.{file_ext}"
-        file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
-
-        def _write_file() -> None:
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-        await asyncio.to_thread(_write_file)
-
-        attachment = await self.repo.create_attachment(session, request_id, safe_filename, file.content_type or "")
-        await audit_service.async_log_change(
-            session, user_id, "UPLOAD_ATTACHMENT",
-            entity="ADJUSTMENT", entity_id=request_id,
-            new_data={"file_name": safe_filename, "file_type": file.content_type}
-        )
-        return attachment
-
+    @transactional
     async def approve_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                            comment: str | None = None, approved_amount_hours: float | None = None) -> AdjustmentRequest:
         session = db if db is not None else self.db
         assert session is not None
+        await self.repo.lock(session, request_id)
         request = await self.repo.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=request_id)
         await self._validate_period_open(session, request.target_date)
 
+        if request.status == AdjustmentStatus.APPROVED and request.adjustment_type != AdjustmentType.DAILY_EXCESS:
+            return (await self._enrich_adjustments_with_records(session, [request]))[0]
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
@@ -306,42 +303,14 @@ class AdjustmentService:
         return enriched[0]
 
     async def _execute_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
-        if not request.time:
-            return
-        target_dt = datetime.combine(request.target_date, request.time)
-        if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
-            start_dt = target_dt.replace(second=0, microsecond=0)
-            end_dt = target_dt.replace(second=59, microsecond=999999)
+        await adjustment_action(request.adjustment_type).apply(db, request, manager_id)
 
-            stmt = select(TimeRecord).where(
-                TimeRecord.user_id == request.user_id,
-                TimeRecord.record_type == request.record_type,
-                TimeRecord.record_datetime >= start_dt,
-                TimeRecord.record_datetime <= end_dt,
-                TimeRecord.is_ignored.is_(False),
-            )
-            result = await db.scalars(stmt)
-            record = result.first()
-            if record:
-                record.is_ignored = True
-                record.deleted_at = get_local_time()
-                record.deleted_by = manager_id
-                await db.commit()
-        else:
-            time_rec = TimeRecord(
-                user_id=request.user_id,
-                record_type=request.record_type,
-                record_datetime=target_dt,
-                ip_address="ADJUSTMENT_APPROVED",
-            )
-            db.add(time_rec)
-            await db.commit()
-            await db.refresh(time_rec)
-
+    @transactional
     async def reject_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                           comment: str | None = None) -> AdjustmentRequest:
         session = db if db is not None else self.db
         assert session is not None
+        await self.repo.lock(session, request_id)
         request = await self.repo.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(adjustment_id=request_id)
@@ -361,57 +330,16 @@ class AdjustmentService:
         return enriched[0]
 
     async def _revert_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
-        if request.adjustment_type in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER, AdjustmentType.DAILY_EXCESS]:
-            return
+        await adjustment_action(request.adjustment_type).revert(db, request, manager_id)
 
-        if not request.time:
-            return
-
-        target_dt = datetime.combine(request.target_date, request.time)
-        if request.adjustment_type == AdjustmentType.DELETE_PUNCH:
-            start_dt = target_dt.replace(second=0, microsecond=0)
-            end_dt = target_dt.replace(second=59, microsecond=999999)
-
-            stmt = select(TimeRecord).where(
-                TimeRecord.user_id == request.user_id,
-                TimeRecord.record_type == request.record_type,
-                TimeRecord.record_datetime >= start_dt,
-                TimeRecord.record_datetime <= end_dt,
-                TimeRecord.is_ignored.is_(True),
-            ).order_by(TimeRecord.deleted_at.desc())
-            result = await db.scalars(stmt)
-            record = result.first()
-            if record:
-                record.is_ignored = False
-                record.deleted_at = None
-                record.deleted_by = None
-                await db.commit()
-        elif request.adjustment_type in [AdjustmentType.FORGOT_PUNCH, AdjustmentType.PUNCH_NOT_COUNTED]:
-            start_dt = target_dt.replace(second=0, microsecond=0)
-            end_dt = target_dt.replace(second=59, microsecond=999999)
-
-            stmt = select(TimeRecord).where(
-                TimeRecord.user_id == request.user_id,
-                TimeRecord.record_type == request.record_type,
-                TimeRecord.record_datetime >= start_dt,
-                TimeRecord.record_datetime <= end_dt,
-                TimeRecord.is_ignored.is_(False),
-                TimeRecord.ip_address == "ADJUSTMENT_APPROVED",
-            )
-            result = await db.scalars(stmt)
-            record = result.first()
-            if record:
-                record.is_ignored = True
-                record.deleted_at = get_local_time()
-                record.deleted_by = manager_id
-                await db.commit()
-
+    @transactional
     async def revert_adjustment_status(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                                        new_status: AdjustmentStatus | None = None,
                                  comment: str = "") -> AdjustmentRequest:
         session = db if db is not None else self.db
         assert session is not None
         assert new_status is not None
+        await self.repo.lock(session, request_id)
         request = await self.repo.get(session, request_id)
         if not request:
             raise AdjustmentNotFoundError(NOT_FOUND_MSG)
