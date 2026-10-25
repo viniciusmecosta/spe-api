@@ -55,8 +55,9 @@ async def test_logo_rejects_corruption_and_content_mismatch(filename, content, t
 @pytest.mark.parametrize(('setting', 'limit'), [('UPLOAD_LOGO_MAX_DIMENSION', 3), ('UPLOAD_LOGO_MAX_PIXELS', 15)])
 async def test_image_dimension_limits(setting, limit, monkeypatch):
     monkeypatch.setattr(settings, setting, limit)
+    content = image_content()
     with pytest.raises(DomainException, match='dimensões'):
-        await upload_storage.save_bytes(image_content(), 'logo.png', UploadCategory.LOGO)
+        await upload_storage.save_bytes(content, 'logo.png', UploadCategory.LOGO)
 
 
 @pytest.mark.asyncio
@@ -102,8 +103,9 @@ async def test_office_archive_requires_matching_structure(extension, member):
     stored = await upload_storage.save_bytes(content.getvalue(), f'report{extension}', UploadCategory.LEGACY_REPORT)
     assert stored.path.read_bytes() == content.getvalue()
     wrong = '.docx' if extension == '.xlsx' else '.xlsx'
+    invalid_content = content.getvalue()
     with pytest.raises(DomainException):
-        await upload_storage.save_bytes(content.getvalue(), f'report{wrong}', UploadCategory.LEGACY_REPORT)
+        await upload_storage.save_bytes(invalid_content, f'report{wrong}', UploadCategory.LEGACY_REPORT)
 
 
 @pytest.mark.asyncio

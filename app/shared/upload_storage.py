@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from fastapi import UploadFile
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 
 from app.core.config import settings
 from app.core.exceptions import DomainException
@@ -101,7 +101,7 @@ class UploadStorage:
                     image.verify()
                 with Image.open(path) as image:
                     image.load()
-        except (UnidentifiedImageError, OSError, ValueError, SyntaxError,
+        except (OSError, ValueError, SyntaxError,
                 Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
             raise DomainException('A imagem está inválida, corrompida ou excede as dimensões permitidas.') from exc
 
@@ -117,7 +117,7 @@ class UploadStorage:
                     raise ValueError('Estrutura do documento inválida.')
                 if archive.testzip() is not None:
                     raise ValueError('Documento corrompido.')
-        except (zipfile.BadZipFile, RuntimeError, OSError, ValueError, EOFError, NotImplementedError, zlib.error) as exc:
+        except (zipfile.BadZipFile, RuntimeError, OSError, ValueError, EOFError, zlib.error) as exc:
             raise DomainException('O documento Office está inválido ou corrompido.') from exc
 
     def _validate_document(self, path: Path, extension: str) -> None:

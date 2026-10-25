@@ -48,6 +48,7 @@ async def test_user_cursor_preserves_every_order_with_duplicate_and_null_sort_va
         assert [user.id for user in filtered] == [ids[4]]
         offset = await repo.get_multi(session, skip=2, limit=2)
         assert [user.id for user in offset] == ids[2:4]
+        missing_id = max(ids) + 1
         with pytest.raises(DomainException) as caught:
-            await repo.get_multi(session, after_id=max(ids) + 1)
+            await repo.get_multi(session, after_id=missing_id)
         assert caught.value.status_code == 422

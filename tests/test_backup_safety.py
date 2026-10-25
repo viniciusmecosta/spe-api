@@ -211,5 +211,6 @@ def test_manifest_legacy_and_invalid_metadata(tmp_path):
         tables = set(metadata.get("row_counts", {}))
         with pytest.raises(ValueError, match="inválid"):
             validate_manifest(document, tables)
+    empty_tables = set()
     with pytest.raises(ValueError, match="inválido"):
-        validate_manifest("-- SPE-DUMP-MANIFEST: {\n", set())
+        validate_manifest("-- SPE-DUMP-MANIFEST: {\n", empty_tables)

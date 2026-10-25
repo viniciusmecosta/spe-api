@@ -51,8 +51,9 @@ async def test_failure_after_punch_creation_rolls_back_everything(pg_session_fac
     uid, rid = await create_adjustment(pg_session_factory)
     monkeypatch.setattr(AsyncAdjustmentRepository, 'update_status', AsyncMock(side_effect=RuntimeError('synthetic failure')))
     async with pg_session_factory() as session:
+        service = AdjustmentService(session)
         with pytest.raises(RuntimeError):
-            await AdjustmentService(session).approve_adjustment(request_id=rid, manager_id=uid)
+            await service.approve_adjustment(request_id=rid, manager_id=uid)
     async with pg_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 0
         assert (await session.get(AdjustmentRequest, rid)).status == AdjustmentStatus.PENDING

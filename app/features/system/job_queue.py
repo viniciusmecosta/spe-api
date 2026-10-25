@@ -110,20 +110,23 @@ async def keep_lease(job: dict):
                 raise RuntimeError('A reserva da tarefa não está mais ativa')
 
 
+async def _execute_job(job: dict):
+    if job['kind'] == 'REPROCESS':
+        from app.features.daily_summaries.daily_summary_reprocess_service import (
+            process_reprocess_job,
+        )
+        await process_reprocess_job(job)
+    else:
+        from app.features.system.notification_jobs import process_notification_job
+        await process_notification_job(job)
+
+
 async def _process_claimed(job: dict):
     async with asyncio.TaskGroup() as group:
         heartbeat = group.create_task(keep_lease(job))
+        delivery = group.create_task(_execute_job(job))
         try:
-            if job['kind'] == 'REPROCESS':
-                from app.features.daily_summaries.daily_summary_reprocess_service import (
-                    process_reprocess_job,
-                )
-                await process_reprocess_job(job)
-            else:
-                from app.features.system.notification_jobs import (
-                    process_notification_job,
-                )
-                await process_notification_job(job)
+            await delivery
         finally:
             heartbeat.cancel()
 

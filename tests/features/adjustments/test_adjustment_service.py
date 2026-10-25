@@ -349,8 +349,9 @@ async def test_enrich_adjustments_with_records_empty(async_db_mock):
 
 @pytest.mark.asyncio
 async def test_validate_waiver_limit_no_amount(async_db_mock):
+    target_date = date(2023, 10, 1)
     with pytest.raises(WaiverLimitExceededError):
-        await adjustment_service._validate_waiver_limit(async_db_mock, 1, date(2023, 10, 1), None)
+        await adjustment_service._validate_waiver_limit(async_db_mock, 1, target_date, None)
 
 
 @pytest.mark.asyncio

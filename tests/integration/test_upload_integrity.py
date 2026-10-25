@@ -93,9 +93,10 @@ async def test_logo_commit_failure_preserves_previous_reference_and_file(pg_sess
     (tmp_path / 'old.png').write_bytes(b'original logo')
     async with pg_session_factory() as session:
         mocker.patch.object(session, 'commit', new_callable=AsyncMock, side_effect=RuntimeError('injected failure'))
+        service = CompanyService(session)
+        file = UploadFile(filename='logo.png', file=io.BytesIO(logo_content()))
         with pytest.raises(RuntimeError, match='injected failure'):
-            await CompanyService(session).upload_logo(
-                file=UploadFile(filename='logo.png', file=io.BytesIO(logo_content())), current_user_id=owner.id)
+            await service.upload_logo(file=file, current_user_id=owner.id)
     async with pg_session_factory() as session:
         company = await session.scalar(select(Company))
         assert company.logo_path == 'old.png'
@@ -108,13 +109,16 @@ async def test_failed_commit_does_not_leave_reference_or_new_upload(pg_session_f
     owner, closure_id = await seed_upload_owner(pg_session_factory)
     async with pg_session_factory() as session:
         mocker.patch.object(session, 'commit', new_callable=AsyncMock, side_effect=RuntimeError('injected failure'))
+        if category == 'firmware':
+            action = FirmwareService(session).upload_firmware
+            arguments = {'version': 'v1.0.0', 'current_user_id': owner.id,
+                         'file': UploadFile(filename='firmware.bin', file=io.BytesIO(b'firmware'))}
+        else:
+            action = PayrollService(session).upload_legacy_report
+            arguments = {'closure_id': closure_id,
+                         'upload_file': UploadFile(filename='report.csv', file=io.BytesIO(b'name,hours\nAna,8'))}
         with pytest.raises(RuntimeError, match='injected failure'):
-            if category == 'firmware':
-                await FirmwareService(session).upload_firmware(version='v1.0.0',
-                    file=UploadFile(filename='firmware.bin', file=io.BytesIO(b'firmware')), current_user_id=owner.id)
-            else:
-                await PayrollService(session).upload_legacy_report(closure_id=closure_id,
-                    upload_file=UploadFile(filename='report.csv', file=io.BytesIO(b'name,hours\nAna,8')))
+            await action(**arguments)
     async with pg_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(Firmware)) == 0
         closure = await session.get(PayrollClosure, closure_id)

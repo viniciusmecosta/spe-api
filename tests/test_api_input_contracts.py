@@ -132,8 +132,9 @@ def test_schedule_schema_preserves_valid_overnight_shift_and_same_day_period():
     assert schedule.entry_1.hour == 22
     assert schedule.exit_1.hour == 6
     assert BulkWorkScheduleCreate(valid_from=date(2026, 10, 1), valid_until=date(2026, 10, 1), users=[])
+    invalid_start, invalid_end = date(2026, 10, 2), date(2026, 10, 1)
     with pytest.raises(ValidationError):
-        WorkScheduleBase(day_of_week=0, daily_hours=8, valid_from=date(2026, 10, 2), valid_until=date(2026, 10, 1))
+        WorkScheduleBase(day_of_week=0, daily_hours=8, valid_from=invalid_start, valid_until=invalid_end)
 
 
 @pytest.mark.asyncio
@@ -148,12 +149,13 @@ async def test_direct_schedule_service_rejects_invalid_input_before_writing(oper
         payload['users'][0]['schedules'][0]['day_of_week'] = 7
     else:
         payload['valid_from'], payload['valid_until'] = payload['valid_until'], payload['valid_from']
+    arguments = {'bulk_data': payload, 'current_user_id': 1}
+    action = service.bulk_add_schedules
+    if operation == 'update':
+        action = service.update_bulk_schedules
+        arguments.update(old_valid_from=date(2026, 10, 1), old_valid_until=date(2026, 10, 31))
     with pytest.raises(BulkScheduleValidationError):
-        if operation == 'add':
-            await service.bulk_add_schedules(bulk_data=payload, current_user_id=1)
-        else:
-            await service.update_bulk_schedules(old_valid_from=date(2026, 10, 1),
-                                               old_valid_until=date(2026, 10, 31), bulk_data=payload, current_user_id=1)
+        await action(**arguments)
     session.execute.assert_not_awaited()
     session.flush.assert_not_awaited()
 

@@ -155,8 +155,9 @@ async def test_upload_logo_exception_on_save(mocker, async_db_mock):
     existing = Company(id=1)
     mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     mocker.patch("app.features.companies.company_service.upload_storage.save", side_effect=OSError("disk failure"))
+    file = logo_file()
     with pytest.raises(LogoSaveError):
-        await company_service.upload_logo(async_db_mock, logo_file(), 1)
+        await company_service.upload_logo(async_db_mock, file, 1)
     async_db_mock.commit.assert_not_awaited()
 
 
@@ -192,8 +193,9 @@ async def test_commit_failure_keeps_old_logo_and_removes_new_file(mocker, async_
     mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     async_db_mock.commit.side_effect = RuntimeError("commit failure")
     async_db_mock.rollback = AsyncMock()
+    file = logo_file()
     with pytest.raises(RuntimeError, match="commit failure"):
-        await company_service.upload_logo(async_db_mock, logo_file(), 10)
+        await company_service.upload_logo(async_db_mock, file, 10)
     assert old.read_bytes() == b"preserve"
     assert list(directory.iterdir()) == [old]
     async_db_mock.rollback.assert_awaited_once()
@@ -204,8 +206,9 @@ async def test_logo_content_validation_rejects_text(mocker, async_db_mock, tmp_p
     from app.core.exceptions import DomainException
     mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     mocker.patch.object(company_service.repo, "get_current", return_value=Company(id=1))
+    file = UploadFile(filename="logo.png", file=io.BytesIO(b"text"))
     with pytest.raises(DomainException, match="imagem"):
-        await company_service.upload_logo(async_db_mock, UploadFile(filename="logo.png", file=io.BytesIO(b"text")), 1)
+        await company_service.upload_logo(async_db_mock, file, 1)
     async_db_mock.commit.assert_not_awaited()
 
 
