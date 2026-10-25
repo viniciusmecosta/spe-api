@@ -3,6 +3,7 @@ import inspect
 import logging
 import os
 import pathlib
+import uuid
 from datetime import date, datetime
 from io import BytesIO
 from typing import Annotated, Any
@@ -40,6 +41,7 @@ from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import UserRole
 from app.shared.storage import resolve_stored_file
+from app.shared.upload_storage import UploadCategory, upload_storage
 
 logger = logging.getLogger(__name__)
 
@@ -323,10 +325,6 @@ class PayrollService:
             file_content: bytes = b"",
             upload_file: Any = None,
     ) -> dict[str, str]:
-        if upload_file is not None:
-            original_filename = upload_file.filename or ""
-            file_content = await upload_file.read()
-
         session = db if db is not None else self.db
         assert session is not None
         stmt = select(PayrollClosure).where(PayrollClosure.id == closure_id)
@@ -334,22 +332,22 @@ class PayrollService:
         if not closure:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
-        legacy_dir = os.path.join(settings.UPLOAD_DIR, "reports", "legacy")
-        os.makedirs(legacy_dir, exist_ok=True)
-
-        ext = pathlib.Path(original_filename).suffix
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"folha_ponto_{closure.month:02d}_{closure.year}_{timestamp}{ext}"
-        file_path = os.path.join(legacy_dir, filename)
-
-        def _write_legacy():
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-
-        await asyncio.to_thread(_write_legacy)
-
-        closure.report_path = f"reports/legacy/{filename}"
-        await session.commit()
+        if upload_file is not None:
+            original_filename = upload_file.filename or ""
+        extension = pathlib.Path(original_filename).suffix.lower()
+        filename = f"folha_ponto_{closure.month:02d}_{closure.year}_{uuid.uuid4().hex}{extension}"
+        if upload_file is not None:
+            stored = await upload_storage.save(upload_file, UploadCategory.LEGACY_REPORT, filename)
+        else:
+            stored = await upload_storage.save_bytes(file_content, original_filename, UploadCategory.LEGACY_REPORT,
+                                                     filename)
+        closure.report_path = stored.relative_path
+        try:
+            await session.commit()
+        except BaseException:
+            await session.rollback()
+            await upload_storage.remove(stored)
+            raise
         return {"status": "success", "message": "Documento legado anexado com sucesso."}
 
     async def get_report_file_path(

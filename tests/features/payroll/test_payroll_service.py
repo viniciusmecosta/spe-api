@@ -419,14 +419,15 @@ async def test_reopen_period_success(mock_delete, mock_get_by_month, mock_audit,
 
 
 @pytest.mark.asyncio
-async def test_upload_legacy_report_success(async_db_mock, mock_user_maintainer):
+async def test_upload_legacy_report_success(async_db_mock, mock_user_maintainer, mocker, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     mock_closure = MagicMock(id=1, month=4, year=2024)
     mock_scalars = MagicMock()
     mock_scalars.first.return_value = mock_closure
     async_db_mock.scalars.return_value = mock_scalars
 
-    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"data")
+    await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"%PDF-1.4\nbody")
+    assert (tmp_path / mock_closure.report_path).read_bytes() == b"%PDF-1.4\nbody"
 
     async_db_mock.commit.assert_called_once()
     assert mock_closure.report_path.startswith("reports/legacy/folha_ponto_04_2024_")
@@ -637,20 +638,32 @@ async def test_reopen_period_with_period_schema(
 
 
 @pytest.mark.asyncio
-async def test_upload_legacy_report_with_upload_file(async_db_mock):
+async def test_upload_legacy_report_with_upload_file(async_db_mock, mocker, tmp_path):
+    from fastapi import UploadFile
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     mock_closure = MagicMock(id=1, month=4, year=2024)
     mock_scalars = MagicMock()
     mock_scalars.first.return_value = mock_closure
     async_db_mock.scalars.return_value = mock_scalars
 
-    mock_upload = MagicMock()
-    mock_upload.filename = "legacy_file.pdf"
-    mock_upload.read = AsyncMock(return_value=b"binary content")
-
-    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        res = await payroll_service.upload_legacy_report(
-            async_db_mock, closure_id=1, upload_file=mock_upload
-        )
+    upload = UploadFile(filename="legacy_file.pdf", file=BytesIO(b"%PDF-1.4\nbody"))
+    res = await payroll_service.upload_legacy_report(async_db_mock, closure_id=1, upload_file=upload)
+    assert (tmp_path / mock_closure.report_path).read_bytes() == b"%PDF-1.4\nbody"
 
     assert res["status"] == "success"
     assert mock_closure.report_path.endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_legacy_report_commit_failure_removes_new_file(mocker, async_db_mock, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    closure = MagicMock(id=1, month=4, year=2024, report_path="reports/old.xlsx")
+    result = MagicMock()
+    result.first.return_value = closure
+    async_db_mock.scalars.return_value = result
+    async_db_mock.commit.side_effect = RuntimeError("commit failed")
+    async_db_mock.rollback = AsyncMock()
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"%PDF-1.4\nbody")
+    assert list((tmp_path / "reports" / "legacy").iterdir()) == []
+    async_db_mock.rollback.assert_awaited_once()

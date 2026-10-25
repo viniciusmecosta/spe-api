@@ -1,4 +1,9 @@
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+import io
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi import UploadFile
+from app.core.exceptions import DomainException
+from app.core.config import settings
 
 import pytest
 from app.features.devices.device_exceptions import (
@@ -16,22 +21,12 @@ from app.features.devices.firmware_service import FirmwareService
 
 @pytest.fixture
 def firmware_service():
-    with patch("os.makedirs"):
-        return FirmwareService()
+    return FirmwareService()
 
 
 @pytest.fixture
 def mock_upload_file():
-    file_mock = MagicMock()
-    file_mock.filename = "test.bin"
-    file_mock.file = MagicMock()
-    return file_mock
-
-
-def test_init():
-    with patch("os.makedirs") as mock_makedirs:
-        service = FirmwareService()
-        mock_makedirs.assert_called_once_with(service.firmware_dir, exist_ok=True)
+    return UploadFile(filename="test.bin", file=io.BytesIO(b"synthetic firmware"))
 
 
 def test_parse_version_valid(firmware_service):
@@ -44,26 +39,20 @@ def test_parse_version_invalid(firmware_service):
 
 
 @pytest.mark.asyncio
-@patch("app.features.devices.firmware_service.async_firmware_repository")
-@patch("app.features.devices.firmware_service.audit_service")
-@patch("app.features.devices.firmware_service.time.time", return_value=1234567890)
-@patch("builtins.open", new_callable=mock_open)
-@patch("shutil.copyfileobj")
-async def test_upload_firmware_success(mock_copy, mock_file, mock_time, mock_audit, mock_repo, firmware_service,
-                                       async_db_mock, mock_upload_file):
-    mock_repo.get_latest = AsyncMock(return_value=None)
-    mock_repo.get_by_version = AsyncMock(return_value=None)
+async def test_upload_firmware_success(mocker, firmware_service, async_db_mock, mock_upload_file, tmp_path):
+    mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
+    mocker.patch.object(firmware_service.repo, "get_latest", return_value=None)
+    mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
     mock_fw = Firmware(id=1, version="v1.0.0", file_path="rel/path")
-    mock_repo.create = AsyncMock(return_value=mock_fw)
-    mock_audit.async_log_change = AsyncMock()
-
-    with patch("os.path.relpath", return_value="rel/path"):
-        result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
-
+    create = mocker.patch.object(firmware_service.repo, "create", return_value=mock_fw)
+    audit = mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
+    result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
     assert result == mock_fw
-    mock_repo.create.assert_called_once()
-    mock_audit.async_log_change.assert_called_once()
-    mock_copy.assert_called_once_with(mock_upload_file.file, mock_file())
+    assert create.call_args.kwargs["commit"] is False
+    path = tmp_path / create.call_args.kwargs["file_path"]
+    assert path.read_bytes() == b"synthetic firmware"
+    async_db_mock.commit.assert_awaited_once()
+    audit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -96,20 +85,14 @@ async def test_upload_firmware_version_not_greater(mock_repo, firmware_service, 
 
 
 @pytest.mark.asyncio
-@patch("app.features.devices.firmware_service.async_firmware_repository")
-@patch("app.features.devices.firmware_service.time.time", return_value=1234567890)
-@patch("builtins.open", new_callable=mock_open)
-@patch("shutil.copyfileobj")
-async def test_upload_firmware_latest_invalid_version(mock_copy, mock_file, mock_time, mock_repo, firmware_service,
-                                                      async_db_mock, mock_upload_file):
-    latest_fw = Firmware(id=1, version="invalid")
-    mock_repo.get_latest = AsyncMock(return_value=latest_fw)
-    mock_repo.get_by_version = AsyncMock(return_value=None)
-    mock_repo.create = AsyncMock(return_value=Firmware(id=2, version="v1.0.0", file_path="path"))
-
-    with patch("os.path.relpath", return_value="path"), patch(
-            "app.features.devices.firmware_service.audit_service.async_log_change", new_callable=AsyncMock):
-        result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
+async def test_upload_firmware_latest_invalid_version(mocker, firmware_service, async_db_mock, mock_upload_file,
+                                                       tmp_path):
+    mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
+    mocker.patch.object(firmware_service.repo, "get_latest", return_value=Firmware(id=1, version="invalid"))
+    mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
+    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=2, version="v1.0.0"))
+    mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
+    result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
     assert result.version == "v1.0.0"
 
 
@@ -145,26 +128,46 @@ async def test_update_firmware_file_not_found(mock_repo, firmware_service, async
 
 
 @pytest.mark.asyncio
-@patch("app.features.devices.firmware_service.async_firmware_repository")
-@patch("app.features.devices.firmware_service.audit_service")
-@patch("app.features.devices.firmware_service.time.time", return_value=1234567890)
-@patch("builtins.open", new_callable=mock_open)
-@patch("shutil.copyfileobj")
-async def test_update_firmware_file_success(mock_copy, mock_file, mock_time, mock_audit, mock_repo, firmware_service,
-                                            async_db_mock, mock_upload_file):
+async def test_update_firmware_file_success(mocker, firmware_service, async_db_mock, mock_upload_file, tmp_path):
+    mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
     old_fw = Firmware(id=1, version="v1.0.0", file_path="old/path")
-    mock_repo.get_by_version = AsyncMock(return_value=old_fw)
-    new_fw = Firmware(id=2, version="v1.0.0", file_path="new/path")
-    mock_repo.create = AsyncMock(return_value=new_fw)
-    mock_audit.async_log_change = AsyncMock()
-
-    with patch("os.path.relpath", return_value="new/path"):
-        result = await firmware_service.update_firmware_file(async_db_mock, "v1.0.0", mock_upload_file, 1)
-
+    mocker.patch.object(firmware_service.repo, "get_by_version", return_value=old_fw)
+    new_fw = Firmware(id=2, version="v1.0.0")
+    create = mocker.patch.object(firmware_service.repo, "create", return_value=new_fw)
+    mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
+    result = await firmware_service.update_firmware_file(async_db_mock, "v1.0.0", mock_upload_file, 1)
     assert result == new_fw
-    mock_repo.create.assert_called_once()
-    mock_audit.async_log_change.assert_called_once()
-    mock_copy.assert_called_once_with(mock_upload_file.file, mock_file())
+    assert (tmp_path / create.call_args.kwargs["file_path"]).read_bytes() == b"synthetic firmware"
+    async_db_mock.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_firmware_failed_commit_removes_new_binary(mocker, firmware_service, async_db_mock, mock_upload_file,
+                                                       tmp_path):
+    mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
+    mocker.patch.object(firmware_service.repo, "get_latest", return_value=None)
+    mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
+    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=1, version="v1.0.0"))
+    async_db_mock.commit.side_effect = RuntimeError("commit failed")
+    async_db_mock.rollback = AsyncMock()
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
+    assert list((tmp_path / "firmware").iterdir()) == []
+    async_db_mock.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_firmware_oversized_upload_never_creates_record(mocker, firmware_service, async_db_mock,
+                                                             mock_upload_file, tmp_path):
+    mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
+    mocker.patch.object(settings, "UPLOAD_FIRMWARE_MAX_BYTES", 5)
+    mocker.patch.object(firmware_service.repo, "get_latest", return_value=None)
+    mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
+    create = mocker.patch.object(firmware_service.repo, "create")
+    with pytest.raises(DomainException) as error:
+        await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
+    assert error.value.status_code == 413
+    create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

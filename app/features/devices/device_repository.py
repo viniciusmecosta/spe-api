@@ -175,14 +175,18 @@ class AsyncFirmwareRepository(AsyncBaseRepository[Firmware, Firmware, Firmware])
             obj_in: Firmware | None = None,
             version: str | None = None,
             file_path: str | None = None,
+            commit: bool = True,
     ) -> Firmware:
         if obj_in is not None:
             db_obj = obj_in
         else:
             db_obj = Firmware(version=version, file_path=file_path)
         db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        if commit:
+            await db.commit()
+            await db.refresh(db_obj)
+        else:
+            await db.flush()
         return db_obj
 
 

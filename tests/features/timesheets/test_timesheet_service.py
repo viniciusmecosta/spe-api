@@ -270,7 +270,7 @@ async def test_generate_all_timesheets_pdf_zip_success(db_session_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, mocker):
+async def test_generate_all_timesheets_pdf_zip_total_failure_is_unavailable(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = 'Test User A'
@@ -280,9 +280,11 @@ async def test_generate_all_timesheets_pdf_zip_error_continue(db_session_mock, m
     query_mock.filter.return_value.all.return_value = [mock_user]
     mock_pdf = mocker.patch.object(timesheet_service, 'generate_user_timesheet_pdf',
                             new_callable=AsyncMock)
+    from app.features.timesheets.timesheet_exceptions import TimesheetExportFailedError
     mock_pdf.side_effect = ValueError('Test error')
-    buffer = await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
-    assert isinstance(buffer, io.BytesIO)
+    with pytest.raises(TimesheetExportFailedError) as error:
+        await timesheet_service.generate_all_timesheets_pdf_zip(db_session_mock, 10, 2023, None)
+    assert error.value.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -920,3 +922,49 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
     )
     assert "Saldo de Horas" not in all_summary_text
 
+
+
+@pytest.mark.asyncio
+async def test_partial_zip_contains_success_and_failure_manifest(mocker):
+    import json
+    import zipfile
+    session = AsyncMock()
+    session.sync_session = MagicMock()
+    users = [SimpleNamespace(id=2, name="Bruno"), SimpleNamespace(id=1, name="Ana")]
+    result = MagicMock()
+    result.all.return_value = users
+    session.scalars.return_value = result
+
+    async def generate_pdf(db, user_id, month, year):
+        if user_id == 2:
+            raise RuntimeError("internal failure must not leak")
+        return io.BytesIO(b"%PDF-1.4 body")
+    mocker.patch.object(timesheet_service, "generate_user_timesheet_pdf", side_effect=generate_pdf)
+    exported = await timesheet_service.generate_all_timesheets_pdf_zip(session, 10, 2023)
+    assert exported.export_headers == {"X-Export-Status": "partial", "X-Export-Generated-Count": "1",
+                                       "X-Export-Failed-Count": "1"}
+    with zipfile.ZipFile(exported) as archive:
+        assert archive.namelist() == ["espelho_ponto_Ana_10_2023.pdf", "manifesto_exportacao.json"]
+        manifest = json.loads(archive.read("manifesto_exportacao.json"))
+        assert manifest["status"] == "partial"
+        assert manifest["month"] == 10
+        assert manifest["year"] == 2023
+        assert manifest["generated"][0]["user_id"] == 1
+        assert manifest["failed"][0]["user_id"] == 2
+        assert "internal failure" not in json.dumps(manifest)
+
+
+@pytest.mark.asyncio
+async def test_same_employee_names_generate_separate_files(mocker):
+    import zipfile
+    session = AsyncMock()
+    session.sync_session = MagicMock()
+    result = MagicMock()
+    result.all.return_value = [SimpleNamespace(id=1, name="Ana"), SimpleNamespace(id=2, name="Ana")]
+    session.scalars.return_value = result
+    mocker.patch.object(timesheet_service, "generate_user_timesheet_pdf", return_value=io.BytesIO(b"PDF"))
+    exported = await timesheet_service.generate_all_timesheets_pdf_zip(session, 10, 2023)
+    with zipfile.ZipFile(exported) as archive:
+        assert len(set(archive.namelist())) == 2
+        assert "manifesto_exportacao.json" not in archive.namelist()
+    assert exported.export_headers["X-Export-Status"] == "complete"

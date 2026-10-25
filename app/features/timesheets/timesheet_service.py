@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import zipfile
 from calendar import monthrange
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import DomainException
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_repository import (
     async_company_repository,
@@ -29,6 +31,7 @@ from app.features.time_records.time_record_repository import (
 from app.features.timesheets.timesheet_exceptions import (
     FutureTimesheetNotAllowedError,
     NoTimesheetRecordsFoundError,
+    TimesheetExportFailedError,
     TimesheetUserNotFoundError,
 )
 from app.features.timesheets.timesheet_pdf_builder import TimesheetPdfBuilder
@@ -41,6 +44,21 @@ from app.shared import deps
 from app.shared.enums import UserRole
 
 logger = logging.getLogger(__name__)
+
+
+class TimesheetZip(io.BytesIO):
+    def __init__(self):
+        super().__init__()
+        self.generated: list[dict[str, int | str]] = []
+        self.failed: list[dict[str, int | str]] = []
+
+    @property
+    def export_headers(self) -> dict[str, str]:
+        return {
+            "X-Export-Status": "partial" if self.failed else "complete",
+            "X-Export-Generated-Count": str(len(self.generated)),
+            "X-Export-Failed-Count": str(len(self.failed)),
+        }
 
 
 class TimesheetService:
@@ -128,7 +146,7 @@ class TimesheetService:
         )
 
     async def generate_all_timesheets_pdf_zip(self, db: Any | None = None, month: int = 0, year: int = 0,
-                                        employee_ids: list[int] | None = None) -> io.BytesIO:
+                                        employee_ids: list[int] | None = None) -> TimesheetZip:
         self.validate_date_not_future(month, year)
         session = db if db is not None else self.db
         assert session is not None
@@ -172,19 +190,38 @@ class TimesheetService:
         if not users:
             raise NoTimesheetRecordsFoundError()
 
-        zip_buffer = io.BytesIO()
+        zip_buffer = TimesheetZip()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for user in users:
-                try:
-                    pdf_buffer = await self.generate_user_timesheet_pdf(session, user.id, month, year)
-                    safe_name = "".join([c for c in user.name if c.isalpha() or c.isdigit() or c == ' ']).rstrip()
-                    safe_name = safe_name.replace(" ", "_")
-
-                    filename = f"espelho_ponto_{safe_name}_{month:02d}_{year}.pdf"
-                    zip_file.writestr(filename, pdf_buffer.getvalue())
-                except (ValueError, OSError, RuntimeError):
-                    logger.exception(f"Erro ao gerar espelho de ponto em lote (User {user.id})")
-                    continue
+            used_names: set[str] = set()
+            for user in sorted(users, key=lambda item: (item.name.casefold(), item.id)):
+                await self._add_timesheet_to_zip(session, user, month, year, zip_file, zip_buffer, used_names)
+            if not zip_buffer.generated:
+                raise TimesheetExportFailedError()
+            if zip_buffer.failed:
+                manifest = {
+                    "status": "partial", "month": month, "year": year,
+                    "generated": zip_buffer.generated, "failed": zip_buffer.failed,
+                }
+                zip_file.writestr('manifesto_exportacao.json', json.dumps(manifest, ensure_ascii=False, indent=2))
 
         zip_buffer.seek(0)
         return zip_buffer
+
+    async def _add_timesheet_to_zip(self, session, user, month: int, year: int, zip_file: zipfile.ZipFile,
+                                    result: TimesheetZip, used_names: set[str]) -> None:
+        try:
+            pdf_buffer = await self.generate_user_timesheet_pdf(session, user.id, month, year)
+            content = pdf_buffer.getvalue()
+            if not content:
+                raise ValueError('Espelho de ponto vazio.')
+            safe_name = "".join(c for c in user.name if c.isalnum() or c == ' ').rstrip().replace(" ", "_")
+            filename = f"espelho_ponto_{safe_name}_{month:02d}_{year}.pdf"
+            if filename in used_names:
+                filename = f"espelho_ponto_{safe_name}_{user.id}_{month:02d}_{year}.pdf"
+            zip_file.writestr(filename, content)
+            used_names.add(filename)
+            result.generated.append({"user_id": user.id, "user_name": user.name, "filename": filename})
+        except (ValueError, OSError, RuntimeError, DomainException):
+            logger.exception("Erro ao gerar espelho de ponto em lote (User %s)", user.id)
+            result.failed.append({"user_id": user.id, "user_name": user.name,
+                                  "detail": "Não foi possível gerar o espelho deste funcionário."})

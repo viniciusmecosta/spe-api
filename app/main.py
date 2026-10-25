@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
@@ -34,6 +35,7 @@ app = FastAPI(
     },
 )
 
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=settings.UPLOAD_REQUEST_MAX_BYTES)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.add_middleware(
@@ -42,6 +44,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Export-Status", "X-Export-Generated-Count", "X-Export-Failed-Count"],
 )
 
 setup_exception_handlers(app)

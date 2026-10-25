@@ -1,6 +1,4 @@
-import asyncio
 import os
-import shutil
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -27,6 +25,8 @@ from app.features.companies.company_schemas import (
     CompanyUpdate,
 )
 from app.features.system.audit_service import audit_service, serialize_model
+from app.shared.storage import resolve_stored_file
+from app.shared.upload_storage import UploadCategory, upload_storage
 
 
 class CompanyService:
@@ -100,41 +100,19 @@ class CompanyService:
             raise InvalidLogoFormatError()
         return ext
 
-    async def _save_uploaded_logo(self, file: UploadFile, filename: str) -> None:
-        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
-        Path(public_dir).mkdir(parents=True, exist_ok=True)
-        full_file_path = os.path.join(public_dir, filename)
-
-        def _save_file() -> None:
-            with open(full_file_path, "wb") as f:
-                shutil.copyfileobj(file.file, f)
-
-        try:
-            await asyncio.to_thread(_save_file)
-        except OSError as e:
-            raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
-
     async def _cleanup_old_logo(self, old_logo_path: str | None) -> None:
         if not old_logo_path:
             return
-
-        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
-        old_full_path = os.path.join(public_dir, old_logo_path)
-        legacy_full_path = os.path.join(settings.UPLOAD_DIR, old_logo_path)
-
-        def _delete_old_file() -> None:
-            if os.path.exists(old_full_path):
-                try:
-                    os.remove(old_full_path)
-                except OSError:
-                    pass
-            elif os.path.exists(legacy_full_path):
-                try:
-                    os.remove(legacy_full_path)
-                except OSError:
-                    pass
-
-        await asyncio.to_thread(_delete_old_file)
+        old_file = resolve_stored_file(old_logo_path, 'public')
+        if old_file is None:
+            raw = Path(old_logo_path.replace('\\', '/'))
+            if raw.name != str(raw) or raw.suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
+                return
+            old_file = resolve_stored_file(old_logo_path)
+            if old_file is not None and old_file.parent != Path(settings.UPLOAD_DIR).resolve():
+                return
+        if old_file is not None:
+            await upload_storage.remove_path(old_file)
 
     async def upload_logo(self, db: AsyncSession | None = None, file: UploadFile | None = None,
                           current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
@@ -148,14 +126,21 @@ class CompanyService:
         ext = self._validate_logo_extension(file.filename)
         filename = f"logo_{uuid.uuid4().hex}{ext}"
 
-        await self._save_uploaded_logo(file, filename)
-        await self._cleanup_old_logo(existing.logo_path)
-
+        try:
+            stored = await upload_storage.save(file, UploadCategory.LOGO, filename)
+        except OSError as exc:
+            raise LogoSaveError("Não foi possível salvar o logotipo.") from exc
         old_logo = existing.logo_path
         existing.logo_path = filename
         session.add(existing)
-        await session.commit()
+        try:
+            await session.commit()
+        except BaseException:
+            await session.rollback()
+            await upload_storage.remove(stored)
+            raise
         await session.refresh(existing)
+        await self._cleanup_old_logo(old_logo)
 
         await audit_service.async_log_change(
             session, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,

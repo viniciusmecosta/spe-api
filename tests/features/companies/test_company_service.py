@@ -1,3 +1,6 @@
+import io
+
+from PIL import Image
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import UploadFile
@@ -126,143 +129,95 @@ async def test_upload_logo_invalid_ext(mocker, async_db_mock):
     assert exc_info.value.detail == "Formato de arquivo inválido. Apenas PNG, JPG ou JPEG são aceitos."
 
 
+def logo_file(name="logo.png"):
+    content = io.BytesIO()
+    Image.new("RGB", (4, 4), "blue").save(content, format="JPEG" if name.endswith((".jpg", ".jpeg")) else "PNG")
+    content.seek(0)
+    return UploadFile(filename=name, file=content)
+
+
 @pytest.mark.asyncio
-async def test_upload_logo_success_no_old_logo(mocker, async_db_mock):
+async def test_upload_logo_success_no_old_logo(mocker, async_db_mock, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     existing = Company(id=1, logo_path=None)
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new_logo.png"
-    file_mock.file = MagicMock()
-
-    mocker.patch("uuid.uuid4", return_value=MagicMock(hex="123456"))
-    mock_open = mocker.patch("builtins.open", mocker.mock_open())
-    mock_copy = mocker.patch("shutil.copyfileobj")
+    mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     mock_audit = mocker.patch("app.features.system.audit_service.audit_service.async_log_change",
                               new_callable=AsyncMock)
-
-    result = await company_service.upload_logo(async_db_mock, file_mock, 50)
-
-    assert result.logo_path == "logo_123456.png"
-    mock_open.assert_called_once()
-    mock_copy.assert_called_once()
-    async_db_mock.add.assert_called_once_with(existing)
-    async_db_mock.commit.assert_called_once()
-    async_db_mock.refresh.assert_called_once_with(existing)
-    mock_audit.assert_called_once_with(
-        async_db_mock, 50, "UPDATE_LOGO", entity="COMPANY", entity_id=1,
-        old_data={"logo_path": None}, new_data={"logo_path": "logo_123456.png"}
-    )
+    result = await company_service.upload_logo(async_db_mock, logo_file(), 50)
+    assert (tmp_path / "public" / result.logo_path).is_file()
+    async_db_mock.commit.assert_awaited_once()
+    async_db_mock.refresh.assert_awaited_once_with(existing)
+    mock_audit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_upload_logo_exception_on_save(mocker, async_db_mock):
     existing = Company(id=1)
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "logo.jpg"
-
-    mocker.patch("builtins.open", side_effect=OSError("Test Exception"))
-
-    with pytest.raises(LogoSaveError) as exc_info:
-        await company_service.upload_logo(async_db_mock, file_mock, 1)
-
-    assert exc_info.value.status_code == 400
-    assert "Erro ao salvar o arquivo: Test Exception" in exc_info.value.detail
+    mocker.patch.object(company_service.repo, "get_current", return_value=existing)
+    mocker.patch("app.features.companies.company_service.upload_storage.save", side_effect=OSError("disk failure"))
+    with pytest.raises(LogoSaveError):
+        await company_service.upload_logo(async_db_mock, logo_file(), 1)
+    async_db_mock.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_success_old_logo_exists_and_removed(mocker, async_db_mock):
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_old_logo_removed_only_after_successful_commit(mocker, async_db_mock, tmp_path, legacy):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    directory = tmp_path if legacy else tmp_path / "public"
+    directory.mkdir(exist_ok=True)
+    old = directory / "old.jpg"
+    old.write_bytes(b"old logo")
     existing = Company(id=1, logo_path="old.jpg")
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new.jpeg"
-    file_mock.file = MagicMock()
-
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("shutil.copyfileobj")
+    mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
-    mocker.patch("uuid.uuid4", return_value=MagicMock(hex="654321"))
 
-    mock_exists = mocker.patch("os.path.exists", return_value=True)
-    mock_remove = mocker.patch("os.remove")
-
-    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
-
-    assert result.logo_path == "logo_654321.jpeg"
-    mock_exists.assert_called_once()
-    mock_remove.assert_called_once()
+    async def commit():
+        assert old.exists()
+        assert (tmp_path / "public" / existing.logo_path).exists()
+    async_db_mock.commit.side_effect = commit
+    result = await company_service.upload_logo(async_db_mock, logo_file(), 10)
+    assert not old.exists()
+    assert (tmp_path / "public" / result.logo_path).exists()
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_success_old_logo_remove_oserror(mocker, async_db_mock):
+async def test_commit_failure_keeps_old_logo_and_removes_new_file(mocker, async_db_mock, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    directory = tmp_path / "public"
+    directory.mkdir()
+    old = directory / "old.jpg"
+    old.write_bytes(b"preserve")
     existing = Company(id=1, logo_path="old.jpg")
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new.png"
-    file_mock.file = MagicMock()
-
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("shutil.copyfileobj")
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
-
-    mocker.patch("os.path.exists", return_value=True)
-    mock_remove = mocker.patch("os.remove", side_effect=OSError("Cannot remove"))
-
-    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
-
-    assert result.logo_path.endswith(".png")
-    mock_remove.assert_called_once()
+    mocker.patch.object(company_service.repo, "get_current", return_value=existing)
+    async_db_mock.commit.side_effect = RuntimeError("commit failure")
+    async_db_mock.rollback = AsyncMock()
+    with pytest.raises(RuntimeError, match="commit failure"):
+        await company_service.upload_logo(async_db_mock, logo_file(), 10)
+    assert old.read_bytes() == b"preserve"
+    assert list(directory.iterdir()) == [old]
+    async_db_mock.rollback.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_success_old_logo_in_legacy_path(mocker, async_db_mock):
-    existing = Company(id=1, logo_path="old.jpg")
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new.png"
-    file_mock.file = MagicMock()
-
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("shutil.copyfileobj")
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
-
-    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
-    mock_remove = mocker.patch("os.remove")
-
-    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
-    assert result.logo_path.endswith(".png")
-    mock_remove.assert_called_once()
+async def test_logo_content_validation_rejects_text(mocker, async_db_mock, tmp_path):
+    from app.core.exceptions import DomainException
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    mocker.patch.object(company_service.repo, "get_current", return_value=Company(id=1))
+    with pytest.raises(DomainException, match="imagem"):
+        await company_service.upload_logo(async_db_mock, UploadFile(filename="logo.png", file=io.BytesIO(b"text")), 1)
+    async_db_mock.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_upload_logo_success_old_logo_in_legacy_path_oserror(mocker, async_db_mock):
-    existing = Company(id=1, logo_path="old.jpg")
-    mocker.patch("app.features.companies.company_repository.async_company_repository.get_current",
-                 new_callable=AsyncMock, return_value=existing)
-
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new.png"
-    file_mock.file = MagicMock()
-
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("shutil.copyfileobj")
-    mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
-
-    mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
-    mock_remove = mocker.patch("os.remove", side_effect=OSError("Cannot remove legacy"))
-
-    result = await company_service.upload_logo(async_db_mock, file_mock, 10)
-    assert result.logo_path.endswith(".png")
-    mock_remove.assert_called_once()
+async def test_logo_cleanup_does_not_remove_private_report(mocker, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    directory = tmp_path / "reports"
+    directory.mkdir()
+    report = directory / "report.jpg"
+    report.write_bytes(b"preserve")
+    await company_service._cleanup_old_logo("reports/report.jpg")
+    assert report.exists()
 
 
 def test_company_service_repo_property(monkeypatch):
@@ -272,7 +227,8 @@ def test_company_service_repo_property(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_company_service_with_base_url(mocker, async_db_mock):
+async def test_company_service_with_base_url(mocker, async_db_mock, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     existing = Company(id=1, name="Company", cnpj="11222333000181", address="Rua Teste, 123", logo_path="logo.png")
     mocker.patch.object(company_service.repo, "get_current", new_callable=AsyncMock,
                         side_effect=[existing, None, existing, existing])
@@ -293,11 +249,5 @@ async def test_company_service_with_base_url(mocker, async_db_mock):
                                                       base_url="https://api.test.com")
     assert res_update.logo_path == "https://api.test.com/uploads/logo.png"
 
-    file_mock = MagicMock(spec=UploadFile)
-    file_mock.filename = "new.png"
-    file_mock.file = MagicMock()
-    mocker.patch("builtins.open", mocker.mock_open())
-    mocker.patch("shutil.copyfileobj")
-    mocker.patch("os.path.exists", return_value=False)
-    res_upload = await company_service.upload_logo(async_db_mock, file_mock, 10, base_url="https://api.test.com")
+    res_upload = await company_service.upload_logo(async_db_mock, logo_file(), 10, base_url="https://api.test.com")
     assert "https://api.test.com/uploads/" in res_upload.logo_path

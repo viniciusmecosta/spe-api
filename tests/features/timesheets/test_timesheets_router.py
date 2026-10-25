@@ -66,3 +66,26 @@ def test_get_official_timesheet_all_pdf_success(client: TestClient, mocker: Magi
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
     assert "espelhos_ponto_lote_01_2024.zip" in response.headers["content-disposition"]
+
+
+def test_partial_timesheet_export_exposes_result_headers(client, mocker):
+    from app.features.timesheets.timesheet_service import TimesheetZip
+    export = TimesheetZip()
+    export.write(b"ZIP")
+    export.seek(0)
+    export.generated = [{"user_id": 1}]
+    export.failed = [{"user_id": 2}]
+    mocker.patch.object(TimesheetService, "generate_all_timesheets_pdf_zip", return_value=export)
+    response = client.get("/api/v1/timesheets/all/pdf?month=1&year=2024")
+    assert response.status_code == 200
+    assert response.headers["X-Export-Status"] == "partial"
+    assert response.headers["X-Export-Generated-Count"] == "1"
+    assert response.headers["X-Export-Failed-Count"] == "1"
+
+
+def test_failed_timesheet_export_returns_503(client, mocker):
+    from app.features.timesheets.timesheet_exceptions import TimesheetExportFailedError
+    mocker.patch.object(TimesheetService, "generate_all_timesheets_pdf_zip", side_effect=TimesheetExportFailedError())
+    response = client.get("/api/v1/timesheets/all/pdf?month=1&year=2024")
+    assert response.status_code == 503
+    assert "Tente novamente" in response.json()["detail"]
