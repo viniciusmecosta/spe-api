@@ -9,6 +9,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
+from app.core.request_context import request_context, request_id
 from app.database.session import get_async_session_context
 from app.features.system.system_models import BackgroundJob, RoutineLog
 
@@ -26,6 +27,9 @@ async def enqueue(session, kind: str, payload: dict, key: str | None = None) -> 
         existing = await session.scalar(select(BackgroundJob).where(BackgroundJob.deduplication_key == key))
         if existing:
             return existing
+    payload = dict(payload)
+    if request_id.get():
+        payload['request_id'] = request_id.get()
     job = BackgroundJob(kind=kind, payload=payload, result={}, deduplication_key=key)
     try:
         async with session.begin_nested():
@@ -131,7 +135,8 @@ async def process_once():
     if not job:
         return
     try:
-        await _process_claimed(job)
+        with request_context(job["payload"].get("request_id")):
+            await _process_claimed(job)
     except asyncio.CancelledError:
         
         raise

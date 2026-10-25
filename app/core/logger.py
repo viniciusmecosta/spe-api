@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.redaction import redact
+from app.core.request_context import request_id
 
 LOG_BASE_DIR = "logs"
 
@@ -29,7 +30,11 @@ class CleanFormatter(logging.Formatter):
         original_levelname = record.levelname
         record.levelname = self.LEVEL_MAP.get(record.levelname, record.levelname)
         try:
-            return redact(super().format(record))
+            formatted = super().format(record)
+            correlation = request_id.get()
+            if correlation:
+                formatted += f" [request_id={correlation}]"
+            return redact(formatted)
         finally:
             record.levelname = original_levelname
 
