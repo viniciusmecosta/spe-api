@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 
 from app.features.reports.dashboard_service import DashboardService
@@ -23,6 +23,7 @@ from app.shared.openapi_responses import (
     FORBIDDEN_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
+from app.shared.validation import Month, Year
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 dashboard_router = APIRouter(responses={**AUTH_RESPONSES})
@@ -51,8 +52,8 @@ async def get_my_dashboard(
 async def get_my_history(
         report_service: Annotated[ReportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
 ) -> HistoryResponse:
     return await report_service.get_history_report(user_id=current_user.id, month=month, year=year,
                                                    current_user=current_user)
@@ -66,8 +67,8 @@ async def get_user_history(
         user_id: int,
         report_service: Annotated[ReportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
 ) -> HistoryResponse:
     return await report_service.get_history_report(user_id=user_id, month=month, year=year, current_user=current_user)
 
@@ -79,8 +80,8 @@ async def get_user_history(
 async def get_team_hours(
         dashboard_service: Annotated[DashboardService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
 ) -> TeamHoursResponse:
     return await dashboard_service.get_team_worked_hours(month=month, year=year, current_user=current_user)
 
@@ -92,8 +93,8 @@ async def get_team_hours(
 async def export_monthly_report_excel(
         excel_service: Annotated[ExcelService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
         employee_ids: Annotated[list[int] | None, Depends(deps.parse_optional_employee_ids)] = None,
 ) -> Response:
     return await excel_service.export_monthly_report(
@@ -112,8 +113,8 @@ async def get_user_detailed_report(
         user_id: int,
         report_service: Annotated[ReportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
 ) -> AdvancedUserReportResponse:
     return await report_service.get_advanced_user_report_or_404(
         user_id=user_id, month=month, year=year, current_user=current_user

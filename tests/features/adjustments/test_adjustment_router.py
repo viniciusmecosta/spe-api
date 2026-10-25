@@ -105,6 +105,7 @@ def test_waive_absence_admin(client: TestClient, mocker: MagicMock) -> None:
 def test_upload_adjustment_attachment(client: TestClient, mocker: MagicMock) -> None:
     expected = AdjustmentAttachmentResponse(
         id=1,
+        adjustment_request_id=1,
         file_path="uploads/at_1.pdf",
         file_type="application/pdf",
         uploaded_at=datetime(2026, 8, 14, 10, 0, 0),

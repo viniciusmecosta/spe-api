@@ -23,6 +23,7 @@ from app.features.users.user_exceptions import (
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared import deps
 from app.shared.enums import DayOfWeek
+from app.shared.validation import validate_date_order
 
 
 class UserWorkScheduleService:
@@ -88,6 +89,7 @@ class UserWorkScheduleService:
         }
 
     async def check_payroll_closure(self, db: Any, valid_from: date, valid_until: date | None = None):
+        self._validate_period_order(valid_from, valid_until)
         session = db if db is not None else self.db
         assert session is not None
         start_year = valid_from.year
@@ -336,6 +338,9 @@ class UserWorkScheduleService:
         if not valid_from or not valid_until:
             raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
+        self._validate_period_order(valid_from, valid_until)
+        self._validate_schedule_days(bulk_data.get('users', []))
+
         if (valid_until - valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
@@ -391,6 +396,9 @@ class UserWorkScheduleService:
         if not new_valid_from or not new_valid_until:
             raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
 
+        self._validate_period_order(new_valid_from, new_valid_until)
+        self._validate_schedule_days(bulk_data.get('users', []))
+
         if (new_valid_until - new_valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
@@ -426,6 +434,21 @@ class UserWorkScheduleService:
         )
 
         return {"message": "Expedientes atualizados com sucesso."}
+
+    @staticmethod
+    def _validate_period_order(valid_from: date | None, valid_until: date | None) -> None:
+        try:
+            validate_date_order(valid_from, valid_until)
+        except ValueError as error:
+            raise BulkScheduleValidationError(str(error)) from error
+
+    @staticmethod
+    def _validate_schedule_days(users_input: list[dict]) -> None:
+        for user_input in users_input:
+            for schedule in user_input.get('schedules', []):
+                day = schedule.get('day_of_week')
+                if not isinstance(day, int) or not 0 <= day <= 6:
+                    raise BulkScheduleValidationError('O dia da semana deve estar entre 0 e 6.')
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date | None = None,
                                     valid_until: date | None = None,

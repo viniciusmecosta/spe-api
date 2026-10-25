@@ -18,6 +18,7 @@ from app.shared.openapi_responses import (
     CRUD_RESPONSES,
     NOT_FOUND_RESPONSE,
 )
+from app.shared.validation import Year
 
 router = APIRouter(responses={**AUTH_RESPONSES})
 
@@ -27,7 +28,7 @@ router = APIRouter(responses={**AUTH_RESPONSES})
     dependencies=[Depends(deps.get_current_manager)],
 )
 async def list_payroll_periods(
-        year: int,
+        year: Year,
         service: Annotated[PayrollService, Depends()],
 ) -> list[PayrollClosureResponse]:
     return await service.list_periods(year=year)

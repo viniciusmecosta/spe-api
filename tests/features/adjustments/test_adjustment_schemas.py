@@ -48,11 +48,13 @@ def test_adjustment_attachment_response_windows_path():
     now_dt = datetime.now()
     att = AdjustmentAttachmentResponse(
         id=1,
+        adjustment_request_id=12,
         file_path="uploads\\subfolder\\doc.pdf",
         file_type="pdf",
         uploaded_at=now_dt,
     )
-    assert att.url == "/static/doc.pdf"
+    assert att.url == "/api/v1/adjustments/12/download"
+    assert 'adjustment_request_id' not in att.model_dump()
 
 
 def test_adjustment_request_response_metadata_extra_time():

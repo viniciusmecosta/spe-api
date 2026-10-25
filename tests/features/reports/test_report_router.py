@@ -240,10 +240,8 @@ def test_export_monthly_report_excel_empty_employee_ids_param(client: TestClient
     )
 
     response1 = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids=")
-    assert response1.status_code == 200
-    assert response1.content == b"excel with empty param"
+    assert response1.status_code == 422
 
     response2 = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids")
-    assert response2.status_code == 200
-    assert response2.content == b"excel with empty param"
+    assert response2.status_code == 422
 

@@ -18,6 +18,8 @@ class AdjustmentRequestBase(BaseModel):
 
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
+    amount_hours: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
     @model_validator(mode='after')
     def validate_rules(self) -> 'AdjustmentRequestCreate':
         if self.adjustment_type == AdjustmentType.WAIVER:
@@ -34,27 +36,25 @@ class AdjustmentRequestCreate(AdjustmentRequestBase):
 class AdjustmentWaiverCreate(BaseModel):
     user_id: int
     target_date: date
-    amount_hours: float
+    amount_hours: float = Field(gt=0, le=10, allow_inf_nan=False)
     reason_text: str
 
 
 class AdjustmentApproveRequest(BaseModel):
     comment: str | None = None
-    approved_amount_hours: float | None = Field(default=None, ge=0)
+    approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
+    adjustment_request_id: int = Field(exclude=True)
     file_path: str
     file_type: str
     uploaded_at: datetime
 
     @computed_field
     def url(self) -> str:
-        filename = self.file_path.split("/")[-1]
-        if "\\" in filename:
-            filename = filename.split("\\")[-1]
-        return f"/static/{filename}"
+        return f"/api/v1/adjustments/{self.adjustment_request_id}/download"
 
     model_config = ConfigDict(from_attributes=True)
 

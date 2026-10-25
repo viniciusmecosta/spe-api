@@ -128,7 +128,7 @@ def test_reprocess_endpoint_requires_maintainer(mocker):
     app.dependency_overrides[deps.get_current_maintainer] = lambda: user
     start = mocker.patch.object(
         DailySummaryReprocessService, "start", new_callable=AsyncMock,
-        return_value={"status": "success", "message": "iniciado"},
+        return_value={"status": "success", "message": "iniciado", "job_id": "1"},
     )
     try:
         with TestClient(app) as client:

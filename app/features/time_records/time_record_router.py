@@ -32,6 +32,7 @@ from app.shared.openapi_responses import (
     UNAUTHORIZED_RESPONSE,
 )
 from app.shared.tolerance_cron_service import tolerance_cron_service
+from app.shared.validation import PageLimit, PageOffset
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -86,8 +87,8 @@ async def toggle_record_type(
 async def read_my_records(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        skip: int = 0,
-        limit: int = 100,
+        skip: PageOffset = 0,
+        limit: PageLimit = 100,
 ) -> list[TimeRecordResponse]:
     return await service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
 

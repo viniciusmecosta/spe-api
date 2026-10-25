@@ -29,6 +29,7 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
+from app.shared.validation import Month, Year
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -99,8 +100,8 @@ async def read_my_adjustments(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
         status: Annotated[
             str | None,
             Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
@@ -122,8 +123,8 @@ async def read_all_adjustments(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
         status: Annotated[
             str | None,
             Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),

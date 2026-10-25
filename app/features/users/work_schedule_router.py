@@ -20,6 +20,7 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
+from app.shared.validation import validate_schedule_period
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -41,7 +42,7 @@ async def get_bulk_schedules(
 
 @router.get(
     "/bulk/{valid_from}/{valid_until}",
-    dependencies=[Depends(deps.get_current_manager)],
+    dependencies=[Depends(deps.get_current_manager), Depends(validate_schedule_period)],
     responses={**FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 async def get_bulk_schedule_by_dates(
@@ -76,6 +77,7 @@ async def add_bulk_schedules(
 
 @router.put(
     "/bulk/{valid_from}/{valid_until}",
+    dependencies=[Depends(validate_schedule_period)],
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 async def update_bulk_schedules(
@@ -98,6 +100,7 @@ async def update_bulk_schedules(
 
 @router.delete(
     "/bulk/{valid_from}/{valid_until}",
+    dependencies=[Depends(validate_schedule_period)],
     responses={**FORBIDDEN_RESPONSE},
 )
 async def delete_bulk_schedules(
