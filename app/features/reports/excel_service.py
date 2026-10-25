@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import unicodedata
@@ -243,7 +244,7 @@ class ExcelService:
             session, users, month, year, current_user, all_records_batch, all_adjustments_batch, holidays_batch
         )
 
-        return self.workbook_builder.build(
+        return await asyncio.to_thread(self.workbook_builder.build,
             month, year, user_reports, company, logo_path, start_date, end_date
         )
 

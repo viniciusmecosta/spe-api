@@ -126,3 +126,35 @@ Ao restaurar um backup, pare a API ou configure `BACKGROUND_JOBS_ENABLED=false`.
 monitoramento antes de reativar o trabalhador, pois o backup representa o estado da fila no instante da captura. A
 restauração e a troca do PostgreSQL precisam ser ensaiadas em um banco separado. Os testes locais não substituem a
 validação de inicialização, permissões, parada e reinício do NSSM no Windows de produção.
+
+### Integridade de ajustes e sessões
+
+A revisão 006 adiciona a versão de autenticação do usuário. Tokens existentes continuam válidos enquanto a
+senha não mudar; alterações ou resets de senha encerram as sessões anteriores. O Flutter renova a sessão do
+próprio usuário com a senha recém-definida, respeitando a preferência de lembrar acesso. Não há limitador de
+frequência no login.
+
+A revisão 007 vincula ajustes às batidas aplicadas. Aprovação, reversão, apuração e auditoria compartilham uma
+transação. Aprovações concorrentes de uma solicitação não criam batidas duplicadas. O limite já existente de
+10 horas de abono por dia é validado também sob concorrência. Valores negativos, não finitos e períodos
+invertidos são rejeitados antes da gravação. Os builders de relatórios e os valores bruto/contabilizado foram
+preservados; a renderização Excel é executada fora do event loop.
+
+### Uploads, proxy e exportações
+
+Configure `UPLOAD_REQUEST_MAX_BYTES` para o total da requisição e os limites por categoria no `.env.example`.
+Os padrões são 32 MiB por requisição, 5 MiB para logo, 10 MiB para anexo, 16 MiB para firmware e 25 MiB para
+folha legada. Imagens têm limite de 4.096 pixels por dimensão e 16 milhões de pixels. A validação confere o
+conteúdo; arquivos rejeitados ou transações desfeitas não deixam a referência nova registrada.
+
+`TRUSTED_PROXY_CIDRS` deve conter somente as redes dos proxies que realmente encaminham conexões para a API.
+Sem essa configuração, o IP utilizado é o remetente da conexão. Isso impede que um cliente escolha o IP
+registrado enviando diretamente `X-Forwarded-For`.
+
+A exportação ZIP mantém HTTP 200 para sucesso completo ou parcial. Os cabeçalhos `X-Export-Status`,
+`X-Export-Generated-Count` e `X-Export-Failed-Count` informam o resultado; falhas parciais incluem
+`manifesto_exportacao.json`. Se nenhum PDF puder ser gerado, a API retorna 503. O Flutter informa os casos
+parciais. Os arquivos Excel históricos permanecem preservados.
+
+O cabeçalho `X-Request-ID` permite correlacionar requisições, logs e tarefas admitidas pela fila. O identificador
+não contém credenciais e não substitui o identificador persistente do job.
