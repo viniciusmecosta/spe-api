@@ -68,7 +68,10 @@ class UserWorkScheduleService:
         sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
         sch.valid_from = valid_from
         sch.valid_until = valid_until
-        sch.is_daily_excess_enabled = sch_data.get('is_daily_excess_enabled', True)
+        sch.is_daily_excess_enabled = sch_data.get(
+            'is_daily_excess_enabled',
+            sch.is_daily_excess_enabled if sch.is_daily_excess_enabled is not None else True,
+        )
 
         total_seconds = (
                 self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
@@ -80,6 +83,7 @@ class UserWorkScheduleService:
         return {
             "day_of_week": sch.day_of_week,
             "daily_hours": sch.daily_hours,
+            "is_daily_excess_enabled": sch.is_daily_excess_enabled,
             "valid_from": str(sch.valid_from) if sch.valid_from else None,
             "valid_until": str(sch.valid_until) if sch.valid_until else None,
             "entry_1": str(sch.entry_1) if sch.entry_1 else None,
@@ -208,6 +212,7 @@ class UserWorkScheduleService:
         return {
             "day_of_week": cfg.day_of_week,
             "daily_hours": cfg.daily_hours,
+            "is_daily_excess_enabled": cfg.is_daily_excess_enabled,
             "entry_1": cfg.entry_1,
             "exit_1": cfg.exit_1,
             "entry_2": cfg.entry_2,
