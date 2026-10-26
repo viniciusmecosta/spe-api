@@ -13,6 +13,7 @@ from app.features.system.system_repository import (
 )
 from app.features.system.system_schemas import AuditLogCreate
 from app.shared import deps
+from app.shared.audit_data import SENSITIVE_AUDIT_FIELDS, sanitize_audit_data
 
 
 def _serialize_value(val: Any) -> Any:
@@ -31,14 +32,14 @@ def _serialize_dict(data: dict) -> dict[str, Any]:
     return {
         k: _serialize_value(v)
         for k, v in data.items()
-        if k != "password_hash"
+        if k.casefold() not in SENSITIVE_AUDIT_FIELDS
     }
 
 
 def _serialize_sqlalchemy_model(model: Any) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for column in model.__table__.columns:
-        if column.name == "password_hash":
+        if column.name.casefold() in SENSITIVE_AUDIT_FIELDS:
             continue
         val = getattr(model, column.name, None)
         result[column.name] = _serialize_value(val)
@@ -48,7 +49,7 @@ def _serialize_sqlalchemy_model(model: Any) -> dict[str, Any]:
 def _serialize_regular_model(model: Any) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for k, v in model.__dict__.items():
-        if k.startswith("_") or k == "password_hash":
+        if k.startswith("_") or k.casefold() in SENSITIVE_AUDIT_FIELDS:
             continue
         result[k] = _serialize_value(v)
     return result
@@ -58,11 +59,11 @@ def serialize_model(model: Any) -> dict[str, Any]:
     if model is None:
         return {}
     if isinstance(model, dict):
-        return _serialize_dict(model)
+        return sanitize_audit_data(_serialize_dict(model))
     if hasattr(model, "__table__"):
-        return _serialize_sqlalchemy_model(model)
+        return sanitize_audit_data(_serialize_sqlalchemy_model(model))
     if hasattr(model, "__dict__"):
-        return _serialize_regular_model(model)
+        return sanitize_audit_data(_serialize_regular_model(model))
     return {}
 
 

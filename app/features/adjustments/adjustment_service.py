@@ -200,7 +200,8 @@ class AdjustmentService:
         old_data = serialize_model(request)
         await self.repo.soft_delete(session, adjustment_id, admin_id)
         await audit_service.async_log_change(
-            session, admin_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
+            session, admin_id, "DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
+            old_model=old_data, new_data={"reason": reason}
         )
 
     @transactional
@@ -223,7 +224,8 @@ class AdjustmentService:
         old_data = serialize_model(request)
         await self.repo.soft_delete(session, adjustment_id, manager_id)
         await audit_service.async_log_change(
-            session, manager_id, "DELETE_ADJUSTMENT", old_model=old_data, new_data={"reason": reason}
+            session, manager_id, "DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
+            old_model=old_data, new_data={"reason": reason}
         )
 
     async def upload_attachment(self, db: AsyncSession | None = None, request_id: int = 0,

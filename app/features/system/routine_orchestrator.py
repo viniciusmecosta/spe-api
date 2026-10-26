@@ -15,7 +15,7 @@ from app.core.logger import get_log_path
 from app.database.session import get_async_session_context
 from app.features.reports.daily_report_service import daily_report_service
 from app.features.system.backup_service import backup_service
-from app.features.system.job_queue import submit
+from app.features.system.job_queue import enqueue, submit
 from app.features.system.system_exceptions import (
     NoMaintainersWithEmailError,
 )
@@ -269,13 +269,33 @@ class RoutineOrchestrator:
     async def send_manual_backup_email(self) -> int:
         return await self._enqueue_routine('EMAIL_MANUAL_BACKUP')
 
+    async def _record_manual_job(self, routine_type, action, current_user, audit_svc,
+                                 start_date=None, end_date=None):
+        target = datetime.now(ZoneInfo(settings.TIMEZONE)).date() - timedelta(days=1)
+        end_date = end_date or target
+        start_date = start_date or end_date
+        payload = {
+            'routine_type': routine_type, 'operator_id': current_user.id,
+            'start_date': start_date.isoformat(), 'end_date': end_date.isoformat(),
+            'target_date': end_date.isoformat(),
+        }
+        async with get_async_session_context() as session:
+            job = await enqueue(session, 'NOTIFICATION', payload)
+            await audit_svc.async_log(
+                db=session, user_id=current_user.id, action=action, entity='SYSTEM', entity_id=job.id,
+                new_data={'job_id': job.id, 'routine_type': routine_type,
+                          'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()},
+            )
+            return job.id
+
     async def trigger_manual_backup_email(
             self,
             current_user: User,
             audit_svc: Any,
     ) -> dict[str, str]:
-        job_id = await self.send_manual_backup_email()
-        await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_EMAIL", entity="SYSTEM", entity_id=0)
+        job_id = await self._record_manual_job(
+            'EMAIL_MANUAL_BACKUP', 'MANUAL_BACKUP_EMAIL', current_user, audit_svc,
+        )
         return {"status": "success", "job_id": str(job_id), "message": "Backup manual por e-mail registrado para processamento em segundo plano."}
 
     async def trigger_manual_backup_telegram(
@@ -283,9 +303,9 @@ class RoutineOrchestrator:
             current_user: User,
             audit_svc: Any,
     ) -> dict[str, str]:
-        job_id = await self.execute_manual_backup_telegram()
-        await audit_svc.async_log(user_id=current_user.id, action="MANUAL_BACKUP_TELEGRAM", entity="SYSTEM",
-                                  entity_id=0)
+        job_id = await self._record_manual_job(
+            'TELEGRAM_MANUAL_BACKUP', 'MANUAL_BACKUP_TELEGRAM', current_user, audit_svc,
+        )
         return {"job_id": str(job_id), "message": "Backup manual registrado para processamento no Telegram."}
 
     async def trigger_manual_report_telegram(
@@ -297,13 +317,9 @@ class RoutineOrchestrator:
             telegram_svc: Any,
     ) -> dict[str, str]:
         telegram_svc.validate_manual_report_dates(start_date, end_date)
-        job_id = await self.send_manual_report_telegram(start_date, end_date)
-        await audit_svc.async_log(
-            user_id=current_user.id,
-            action="MANUAL_REPORT_TELEGRAM",
-            entity="SYSTEM",
-            entity_id=0,
-            new_data={"start_date": str(start_date), "end_date": str(end_date)},
+        job_id = await self._record_manual_job(
+            'TELEGRAM_MANUAL_REPORT', 'MANUAL_REPORT_TELEGRAM', current_user, audit_svc,
+            start_date, end_date,
         )
         return {
             "job_id": str(job_id),

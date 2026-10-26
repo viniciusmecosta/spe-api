@@ -426,3 +426,15 @@ async def test_audit_service_get_logs_async(mocker):
     res = await audit_service.get_logs(async_sess, action="LOGIN")
     assert res == []
 
+
+
+def test_audit_excludes_nested_credentials_on_creation_and_legacy_response():
+    from app.features.system.system_schemas import AuditLogResponse
+    source = {'name': 'Dispositivo', 'api_key_hash': 'synthetic',
+              'nested': [{'password_hash': 'synthetic', 'job_id': 8}]}
+    created = AuditLogCreate(action='CREATE', entity='DEVICE_CREDENTIALS', new_data=source)
+    response = AuditLogResponse(id=1, timestamp=datetime(2026, 10, 26),
+                               action='CREATE', entity='DEVICE_CREDENTIALS', new_data=source)
+    expected = {'name': 'Dispositivo', 'nested': [{'job_id': 8}]}
+    assert created.new_data == response.new_data == expected
+    assert source['api_key_hash'] == 'synthetic'
