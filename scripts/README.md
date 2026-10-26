@@ -162,7 +162,7 @@ A exportação ZIP mantém HTTP 200 para sucesso completo ou parcial. Os cabeça
 `manifesto_exportacao.json`. Se nenhum PDF puder ser gerado, a API retorna 503. O Flutter informa os casos
 parciais. Os arquivos Excel históricos permanecem preservados.
 
-O cabeçalho `X-Request-ID` permite correlacionar requisições, logs e tarefas admitidas pela fila. O identificador
+O cabeçalho `X-Request-ID` identifica requisições e pode acompanhar tarefas admitidas pela fila. O log comum não exibe esse identificador; seus horários usam `TIMEZONE=America/Fortaleza`, sem depender do fuso do sistema ou container. O identificador
 não contém credenciais e não substitui o identificador persistente do job.
 
 ### Sequência no Windows para PostgreSQL já implantado

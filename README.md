@@ -166,7 +166,7 @@ O projeto adota organização em camadas, promovendo separação de responsabili
   Dependências, validações e componentes compartilhados.
 
 * **`/app/middleware/`**
-  Contexto de requisição e correlação dos logs por `X-Request-ID`.
+  Logs de requisição e contexto de identificação disponível em `X-Request-ID`.
 
 * **`/alembic/`**
   Histórico de migrações do schema PostgreSQL.
@@ -187,3 +187,5 @@ Os anexos pendentes devem sobreviver a reinícios. Confira a fila após restaura
 Relatórios e anexos privados usam downloads autenticados; não publique `uploads/` inteiro como arquivos estáticos.
 Os novos Excel são ordenados pelo nome dos funcionários; os históricos são preservados. ZIPs de espelhos podem
 ter resultado parcial com manifesto; quando nenhum PDF é gerado, a resposta é `503`.
+
+Os horários dos logs são formatados no fuso `TIMEZONE=America/Fortaleza`, independentemente do fuso do sistema ou container. O log comum não exibe `request_id`; o cabeçalho HTTP continua disponível para identificação da requisição.

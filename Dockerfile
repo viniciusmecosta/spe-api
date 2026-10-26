@@ -17,13 +17,14 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    TZ=America/Fortaleza
 
 WORKDIR /app
 
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser -s /bin/bash appuser && \
-    apt-get update && apt-get install -y --no-install-recommends postgresql-client && \
+    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv

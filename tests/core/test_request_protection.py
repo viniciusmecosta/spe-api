@@ -24,7 +24,7 @@ async def test_request_id_is_propagated_sanitized_and_cleared():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url='http://test') as client:
         response = await client.get('/', headers={'X-Request-ID': 'review_123'})
         assert response.headers['X-Request-ID'] == response.json()['id'] == 'review_123'
-        assert '[request_id=review_123]' in response.json()['log']
+        assert 'request_id=' not in response.json()['log']
         response = await client.get('/', headers={'X-Request-ID': '<invalid>'})
         assert response.headers['X-Request-ID'] != '<invalid>'
     assert request_id.get() is None

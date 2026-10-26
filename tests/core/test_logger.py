@@ -75,3 +75,28 @@ def test_daily_rotating_file_handler(tmp_path):
 
 def test_setup_logging():
     setup_logging()
+
+
+def test_formatter_uses_fortaleza_independently_of_system_timezone(monkeypatch):
+    from datetime import UTC
+    from app.core.request_context import request_context
+
+    original = os.environ.get('TZ')
+    monkeypatch.setattr(settings, 'TIMEZONE', 'America/Fortaleza')
+    record = logging.LogRecord('test', logging.INFO, '', 0, 'mensagem', (), None)
+    record.created = datetime(2026, 10, 26, 2, 30, tzinfo=UTC).timestamp()
+    formatter = CleanFormatter('%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
+    try:
+        for timezone in ('UTC', 'Asia/Tokyo', 'America/Fortaleza'):
+            monkeypatch.setenv('TZ', timezone)
+            if hasattr(time, 'tzset'):
+                time.tzset()
+            with request_context('synthetic'):
+                assert formatter.format(record) == '25/10/2026 23:30:00 mensagem'
+    finally:
+        if original is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = original
+        if hasattr(time, 'tzset'):
+            time.tzset()

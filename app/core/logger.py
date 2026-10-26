@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.redaction import redact
-from app.core.request_context import request_id
 
 LOG_BASE_DIR = "logs"
 
@@ -26,14 +25,17 @@ class CleanFormatter(logging.Formatter):
         "CRITICAL": "CRIT",
     }
 
+    def formatTime(self, record, datefmt=None):
+        timestamp = datetime.fromtimestamp(record.created, ZoneInfo(settings.TIMEZONE))
+        if datefmt:
+            return timestamp.strftime(datefmt)
+        return f'{timestamp:%Y-%m-%d %H:%M:%S},{int(record.msecs):03d}'
+
     def format(self, record):
         original_levelname = record.levelname
         record.levelname = self.LEVEL_MAP.get(record.levelname, record.levelname)
         try:
             formatted = super().format(record)
-            correlation = request_id.get()
-            if correlation:
-                formatted += f" [request_id={correlation}]"
             return redact(formatted)
         finally:
             record.levelname = original_levelname
