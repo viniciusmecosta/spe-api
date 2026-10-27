@@ -1,34 +1,36 @@
 from html import escape
 
 from app.features.system.notification_context import base_context
+from app.utils.formatters import format_short_name
 
 
 class TemplateService:
     @classmethod
     def _generate_punches_html(cls, user_activity: dict[str, list[dict[str, str]]]) -> str:
         html = """
-            <table class="punch-table" style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif; font-size: 14px; color: #333; margin-bottom: 25px;">
+            <table class="punch-table" style="width: 100%; border-collapse: collapse; table-layout: fixed; font-family: Arial, sans-serif; font-size: 13px; color: #333; margin-bottom: 20px;">
                 <thead>
                     <tr style="background-color: #f4f4f4; text-align: left; border-bottom: 2px solid #ddd;">
-                        <th style="padding: 12px 8px; width: 40%;">Colaborador</th>
-                        <th style="padding: 12px 8px;">Registros de Ponto</th>
+                        <th style="padding: 8px 6px; width: 36%;">Colaborador</th>
+                        <th style="padding: 8px 6px; width: 64%;">Registros de Ponto</th>
                     </tr>
                 </thead>
                 <tbody>
         """
         for name, punches in user_activity.items():
+            short_display = format_short_name(name)
             is_problem = len(punches) % 2 != 0
             bg_color = "#fffbf0" if is_problem else "#ffffff"
 
             punches_html = ""
             for p in punches:
                 color = "#2E7D32" if p['type'] == 'E' else "#EF6C00"
-                punches_html += f"""<span style="display: inline-block; background-color: {color}; color: #fff; padding: 4px 10px; border-radius: 14px; font-size: 13px; font-weight: bold; margin-right: 6px; margin-bottom: 4px;">{p['type']} · {escape(p['time'])}</span>"""
+                punches_html += f"""<span style="display: inline-block; white-space: nowrap; background-color: {color}; color: #fff; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: bold; margin: 2px 4px 2px 0; line-height: 1.4;">{p['type']} · {escape(p['time'])}</span>"""
 
             html += f"""
             <tr style="background-color: {bg_color}; border-bottom: 1px solid #eee;">
-                <td style="padding: 10px 8px;"><strong>{escape(name)}</strong></td>
-                <td style="padding: 10px 8px;">{punches_html}</td>
+                <td style="padding: 8px 6px; vertical-align: middle; word-break: break-word; line-height: 1.3;"><strong>{escape(short_display)}</strong></td>
+                <td style="padding: 6px; vertical-align: middle; line-height: 1.4;">{punches_html}</td>
             </tr>
             """
 
@@ -77,21 +79,21 @@ class TemplateService:
         incidents = info.get('incidents', [])
         incident_html = ''
         if incidents:
-            items = ''.join('<li style="margin:8px 0">' + escape(str(item)) + '</li>' for item in incidents)
-            incident_html = '<section style="border-top:1px solid #e3e9e6;padding-top:20px"><h2 style="font-size:18px">Ocorrências relevantes</h2><ul style="padding-left:20px;font-size:14px">' + items + '</ul></section>'
+            items = ''.join('<li style="margin:6px 0;word-break:break-word;overflow-wrap:anywhere">' + escape(str(item)) + '</li>' for item in incidents)
+            incident_html = '<section style="border-top:1px solid #e3e9e6;padding-top:16px"><h2 style="font-size:16px;margin:0 0 8px">Ocorrências relevantes</h2><ul style="padding-left:18px;font-size:12px;line-height:1.45;margin:0">' + items + '</ul></section>'
         return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>@media(max-width:600px){{.email-pad{{padding:24px 16px!important}}.punch-table td{{display:block!important;width:auto!important;padding:8px 0!important}}}}</style></head>
-<body style="margin:0;background:#eef2ef;color:#263b33;font-family:Arial,Helvetica,sans-serif;line-height:1.6">
+<style>@media(max-width:600px){{.email-pad{{padding:16px 12px!important}}.punch-table{{font-size:12px!important}}.punch-table th,.punch-table td{{padding:6px 4px!important}}}}</style></head>
+<body style="margin:0;background:#eef2ef;color:#263b33;font-family:Arial,Helvetica,sans-serif;line-height:1.5">
 <div style="display:none;max-height:0;overflow:hidden">Batidas de ponto e ocorrências do período.</div>
-<table role="presentation" style="width:100%;border-collapse:collapse"><tr><td align="center" style="padding:24px 8px">
+<table role="presentation" style="width:100%;border-collapse:collapse"><tr><td align="center" style="padding:16px 6px">
 <table role="presentation" style="width:100%;max-width:680px;border-collapse:collapse;background:#ffffff;border-top:4px solid #235a43">
-<tr><td class="email-pad" style="padding:32px 36px 20px">{logo}
-<p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;color:#637b6d">{company}</p>
-<h1 style="margin:0;font-size:26px;line-height:1.25;font-weight:600">{title}</h1>
-<p style="font-size:14px;color:#617168;margin:12px 0 0">{escape(period_text)}</p></td></tr>
-<tr><td class="email-pad" style="padding:12px 36px 32px">{report_html}{incident_html}</td></tr>
-<tr><td class="email-pad" style="padding:24px 36px;background:#f7f9f7;border-top:1px solid #e3e9e6;color:#67766d;font-size:12px">
+<tr><td class="email-pad" style="padding:24px 28px 14px">{logo}
+<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.6px;color:#637b6d">{company}</p>
+<h1 style="margin:0;font-size:22px;line-height:1.25;font-weight:600">{title}</h1>
+<p style="font-size:13px;color:#617168;margin:8px 0 0">{escape(period_text)}</p></td></tr>
+<tr><td class="email-pad" style="padding:8px 28px 24px">{report_html}{incident_html}</td></tr>
+<tr><td class="email-pad" style="padding:18px 28px;background:#f7f9f7;border-top:1px solid #e3e9e6;color:#67766d;font-size:11px;word-break:break-word">
 <strong style="color:#344b3e">{company}</strong><br>{address}<br>{metadata}<br>
 Gerado em {escape(str(info['generated_at']))} · {escape(str(info['timezone']))}<br>
 Tentativa {attempt}{' · Execução ' + execution if execution else ''}

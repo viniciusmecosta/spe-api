@@ -13,6 +13,7 @@ from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import DayOfWeek, RecordType
 from app.shared.timezone import local_day_bounds, to_app_timezone
+from app.utils.formatters import format_short_name
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class DailyReportService:
 
             anomalies_list = await anomaly_service.get_anomalies(session, target_date, target_date)
 
-            anomalies_descriptions = [f"{a.user_name}: {a.description}" for a
+            anomalies_descriptions = [f"{format_short_name(a.user_name)}: {a.description}" for a
                                       in anomalies_list]
 
             if not records:
@@ -53,7 +54,7 @@ class DailyReportService:
 
             user_activity = {}
             for record, user in records:
-                short_name = user.name
+                short_name = format_short_name(user.name)
                 if short_name not in user_activity:
                     user_activity[short_name] = []
                 time_str = to_app_timezone(record.record_datetime).strftime("%H:%M")
