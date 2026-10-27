@@ -333,7 +333,6 @@ async def test_toggle_record_type_success(db_session_mock, mock_time_record_repo
     assert record.is_ignored is True
     assert result.original_record_id == 1
     assert result.edit_justification == "Inversão de marcação efetuada"
-    assert result.is_verified is True
     db_session_mock.add.assert_any_call(result)
     db_session_mock.add.assert_any_call(record)
     assert db_session_mock.flush.called
@@ -353,7 +352,6 @@ async def test_toggle_record_type_success_employee(db_session_mock, mock_time_re
     assert result.record_type == RecordType.ENTRY
     assert record.is_ignored is True
     assert result.original_record_id == 5
-    assert result.is_verified is False
 
 
 @pytest.mark.asyncio
@@ -369,7 +367,6 @@ async def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_
     assert result == record
     assert result.edited_by == 2
     assert result.edit_justification == "Forgot"
-    assert result.is_verified is True
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
                                                          record_datetime=dt, ip_address="127.0.0.1", device_name="Dev")
     db_session_mock.add.assert_called_once_with(record)
@@ -426,7 +423,6 @@ async def test_update_admin_record_with_changes(db_session_mock, mock_time_recor
     assert record.is_ignored is True
     assert result.original_record_id == 5
     assert result.edit_justification == "Fixed"
-    assert result.is_verified is True
     assert result.ip_address == "1.1.1.1"
     assert result.device_name == "Dev"
     mock_payroll_service.validate_period_open.assert_any_call(db_session_mock, dt.date())
@@ -882,7 +878,7 @@ async def test_time_record_service_async_session_crud(mocker):
     async_sess.add = MagicMock()
 
     mock_scalars = MagicMock()
-    mock_scalars.all.return_value = [AdjustmentRequest(id=1), TimeRecord(id=1, is_verified=True)]
+    mock_scalars.all.return_value = [AdjustmentRequest(id=1), TimeRecord(id=1)]
     mock_scalars.first.return_value = TimeRecord(id=1, record_type=RecordType.ENTRY,
                                                  record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
     async_sess.scalars.return_value = mock_scalars

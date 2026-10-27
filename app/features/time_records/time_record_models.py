@@ -49,7 +49,6 @@ class TimeRecord(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
     is_ignored = Column(Boolean, default=False, nullable=False)
-    is_verified = Column(Boolean, default=False, nullable=False)
     original_record_id = Column(Integer, ForeignKey("time_records.id", name="fk_time_records_original_record_id",
                                                     ondelete=SET_NULL_ACTION, deferrable=True, initially="DEFERRED"),
                                 nullable=True)

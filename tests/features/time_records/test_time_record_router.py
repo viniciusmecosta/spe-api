@@ -245,11 +245,3 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
     response = client.get("/api/v1/time-records/1/timeline")
     assert response.status_code == 200
     assert len(response.json()) == 1
-
-
-def test_trigger_tolerance_cron(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.time_records.time_record_router.tolerance_cron_service.process_unverified_entries")
-
-    response = client.post("/api/v1/time-records/admin/tolerance/process")
-    assert response.status_code == 200
-    assert response.json()["status"] == "success"

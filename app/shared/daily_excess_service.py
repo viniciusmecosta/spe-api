@@ -124,8 +124,6 @@ class DailyExcessService:
             for adj in existing_adjustments
         )
         if has_reviewed and not overwrite_reviewed:
-            for r in day_records:
-                r.is_verified = True
             return
 
         for adj in existing_adjustments:
@@ -141,9 +139,6 @@ class DailyExcessService:
             new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
             if new_adj:
                 db.add(new_adj)
-
-        for r in day_records:
-            r.is_verified = True
 
     def _evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date, tz: ZoneInfo, overwrite_reviewed: bool = False):
         payroll_closed = db.query(PayrollClosure).filter(
@@ -203,8 +198,6 @@ class DailyExcessService:
             for adj in existing_adjustments
         )
         if has_reviewed and not overwrite_reviewed:
-            for r in day_records:
-                r.is_verified = True
             return
 
         for adj in existing_adjustments:
@@ -220,9 +213,6 @@ class DailyExcessService:
             new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
             if new_adj:
                 db.add(new_adj)
-
-        for r in day_records:
-            r.is_verified = True
 
     async def evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, overwrite_reviewed: bool = False):
         tz = ZoneInfo(settings.TIMEZONE)

@@ -173,8 +173,7 @@ class TimeRecordService:
             )
 
 
-    def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User,
-                               is_manager: bool) -> TimeRecord:
+    def _create_toggled_record(self, record: TimeRecord, new_type: RecordType, current_user: User) -> TimeRecord:
         original_id = record.original_record_id if record.original_record_id else record.id
         return TimeRecord(
             user_id=record.user_id,
@@ -187,7 +186,6 @@ class TimeRecordService:
             edit_justification="Inversão de marcação efetuada",
             original_record_id=original_id,
             created_at=record.created_at,
-            is_verified=bool(is_manager)
         )
 
     async def toggle_record_type(self, db: Any | None = None, record_id: int = 0,
@@ -214,7 +212,7 @@ class TimeRecordService:
 
         old_data = serialize_model(record)
         record.is_ignored = True
-        new_record = self._create_toggled_record(record, new_type, current_user, is_manager)
+        new_record = self._create_toggled_record(record, new_type, current_user)
 
         session.add(new_record)
         await self._commit_and_audit_toggle_record(session, current_user.id, old_data, new_record, record)

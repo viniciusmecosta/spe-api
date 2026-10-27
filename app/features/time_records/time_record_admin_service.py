@@ -106,7 +106,6 @@ class TimeRecordAdminService:
             edit_justification=obj_in.edit_justification,
             original_record_id=record.original_record_id if record.original_record_id else record.id,
             created_at=get_local_time(),
-            is_verified=True,
         )
 
     async def _commit_and_audit_admin_update(self, session: Any, manager_id: int, old_data: dict,
@@ -209,7 +208,6 @@ class TimeRecordAdminService:
                                                    device_name=device_name if device_name else "")
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
-        record.is_verified = True
         session.add(record)
         await self._commit_and_audit_admin_create(session, manager_id, record)
         return record

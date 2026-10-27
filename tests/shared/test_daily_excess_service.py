@@ -21,8 +21,8 @@ async def test_evaluate_user_day_async_with_excess(excess_service):
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
     dt2 = datetime(2026, 8, 1, 18, 0, tzinfo=tz)
-    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
-    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT, is_verified=False)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY)
+    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT)
 
     schedule = UserWorkScheduleConfig(
         id=1,
@@ -69,8 +69,6 @@ async def test_evaluate_user_day_async_with_excess(excess_service):
     assert added_adj.adjustment_type == AdjustmentType.DAILY_EXCESS
     assert added_adj.status == AdjustmentStatus.PENDING
     assert added_adj.amount_hours == 2.0
-    assert r1.is_verified is True
-    assert r2.is_verified is True
 
 
 @pytest.mark.asyncio
@@ -89,8 +87,8 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
     dt2 = datetime(2026, 8, 1, 19, 0, tzinfo=tz)
-    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
-    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT, is_verified=False)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY)
+    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT)
 
     schedule = UserWorkScheduleConfig(
         id=1,
@@ -178,8 +176,6 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
     assert "120min de jornada excedente" in new_adj.reason_text
     assert "30min de almoço adiantado" in new_adj.reason_text
     assert new_adj.time == dt2.time()
-    assert r1.is_verified is True
-    assert r2.is_verified is True
 
 
 @pytest.mark.asyncio
@@ -218,7 +214,7 @@ async def test_evaluate_user_range_bg_exception_handled(excess_service):
 async def test_evaluate_user_day_async_preserves_reviewed_adjustment_when_overwrite_false(excess_service):
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
-    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY)
     approved_adj = AdjustmentRequest(
         id=99,
         user_id=10,
@@ -241,7 +237,6 @@ async def test_evaluate_user_day_async_preserves_reviewed_adjustment_when_overwr
 
     db_mock.delete.assert_not_called()
     db_mock.add.assert_not_called()
-    assert r1.is_verified is True
 
 
 @pytest.mark.asyncio
@@ -249,8 +244,8 @@ async def test_evaluate_user_day_async_overwrites_reviewed_adjustment_when_overw
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
     dt2 = datetime(2026, 8, 1, 18, 0, tzinfo=tz)
-    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
-    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT, is_verified=False)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY)
+    r2 = TimeRecord(id=2, user_id=10, record_datetime=dt2, record_type=RecordType.EXIT)
     approved_adj = AdjustmentRequest(
         id=99,
         user_id=10,
@@ -295,8 +290,6 @@ async def test_evaluate_user_day_async_overwrites_reviewed_adjustment_when_overw
 
     db_mock.delete.assert_called_once_with(approved_adj)
     db_mock.add.assert_called_once()
-    assert r1.is_verified is True
-    assert r2.is_verified is True
 
 
 @pytest.mark.asyncio
@@ -330,7 +323,7 @@ def test_evaluate_user_day_sync_legacy_extra_time_ignored(excess_service):
 def test_evaluate_user_day_sync_reviewed_preserved(excess_service):
     tz = ZoneInfo("America/Sao_Paulo")
     dt1 = datetime(2026, 8, 1, 8, 0, tzinfo=tz)
-    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY, is_verified=False)
+    r1 = TimeRecord(id=1, user_id=10, record_datetime=dt1, record_type=RecordType.ENTRY)
     approved_adj = AdjustmentRequest(
         id=99,
         user_id=10,
@@ -346,7 +339,6 @@ def test_evaluate_user_day_sync_reviewed_preserved(excess_service):
     mock_filter.all.return_value = [approved_adj]
 
     excess_service.evaluate_user_day_sync(sync_db_mock, 10, date(2026, 8, 1), overwrite_reviewed=False)
-    assert r1.is_verified is True
     sync_db_mock.delete.assert_not_called()
 
 
@@ -368,3 +360,18 @@ def test_evaluate_user_day_sync_payroll_closed(excess_service):
     mock_filter.first.return_value = MagicMock()
     excess_service.evaluate_user_day_sync(sync_db_mock, 10, date(2026, 8, 1))
     assert mock_filter.first.call_count == 1
+
+
+def test_create_daily_excess_adjustment_returns_none_when_no_excess(excess_service):
+    accounted = DailyAccountedResult(
+        raw_seconds=28800.0,
+        excess_work_seconds=0.0,
+        excess_lunch_seconds=0.0,
+        early_return_seconds=0.0,
+        total_excess_seconds=0.0,
+        approved_seconds=0.0,
+        accounted_seconds=28800.0,
+        has_schedule=True,
+        has_lunch_rule=False,
+    )
+    assert excess_service._create_daily_excess_adjustment(10, date(2026, 8, 1), [], accounted) is None

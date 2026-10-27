@@ -31,7 +31,6 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
-from app.shared.tolerance_cron_service import tolerance_cron_service
 from app.shared.validation import PageLimit, PageOffset
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
@@ -171,18 +170,6 @@ async def get_time_record_timeline(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> list[TimeRecordTimelineResponse]:
     return await service.get_record_timeline(record_id=id)
-
-
-@router.post(
-    "/admin/tolerance/process",
-    dependencies=[Depends(deps.get_current_maintainer)],
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def trigger_tolerance_cron() -> SuccessResponse:
-    tolerance_cron_service.process_unverified_entries()
-    return SuccessResponse(
-        status="success", message="Rotina de tolerância acionada e concluída com sucesso."
-    )
 
 
 @router.get(
