@@ -107,7 +107,6 @@ class PunchService:
                 timestamp=server_time,
                 ip_address=ip_address if ip_address else "0.0.0.0",
                 biometric_id=biometric.id,
-                platform="IOT",
                 device_name=device_name,
             )
             if hasattr(new_record, "__await__"):

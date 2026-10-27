@@ -41,7 +41,6 @@ class TimeRecord(Base):
     record_datetime = Column(DateTime(timezone=True), nullable=False)
     ip_address = Column(String, nullable=True)
     device_name = Column(String, nullable=True)
-    platform = Column(String, nullable=True)
     biometric_id = Column(Integer, ForeignKey("user_biometrics.id", ondelete=SET_NULL_ACTION), nullable=True)
 
     edited_by = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)

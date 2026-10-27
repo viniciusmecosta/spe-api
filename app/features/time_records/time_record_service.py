@@ -99,7 +99,6 @@ class TimeRecordService:
         current_time, used_ntp = trusted_time_service.get_trusted_time()
         ip_address = get_client_ip(request)
         device_name = get_client_device_name(ip_address, request)
-        platform = request.headers.get("X-Platform", "desktop").lower()
 
         await time_record_change_service.validate_period_open(session, current_time.date())
 
@@ -107,13 +106,13 @@ class TimeRecordService:
             record = await self.repo.create(
                 session, user_id=user_id, record_type=record_type,
                 record_datetime=current_time, ip_address=ip_address,
-                device_name=device_name, platform=platform,
+                device_name=device_name,
             )
         else:
             record = time_record_repository.create(
                 session, user_id=user_id, record_type=record_type,
                 record_datetime=current_time, ip_address=ip_address,
-                device_name=device_name, platform=platform,
+                device_name=device_name,
             )
 
         if not used_ntp:
@@ -183,7 +182,6 @@ class TimeRecordService:
             record_datetime=record.record_datetime,
             ip_address=record.ip_address,
             device_name=record.device_name,
-            platform=record.platform,
             biometric_id=record.biometric_id,
             edited_by=current_user.id,
             edit_justification="Inversão de marcação efetuada",
@@ -242,20 +240,20 @@ class TimeRecordService:
     async def create_admin_record(
         self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
         manager_id: int = 0, ip_address: str = "", device_name: str | None = None,
-        platform: str = "WEB_ADMIN", request: Request | None = None,
+        request: Request | None = None,
     ) -> TimeRecord:
         return await self.admin_service.create_admin_record(
-            db, obj_in, manager_id, ip_address, device_name, platform, request
+            db, obj_in, manager_id, ip_address, device_name, request
         )
 
     async def update_admin_record(
         self, db: Any | None = None, record_id: int = 0,
         obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
         ip_address: str | None = None, device_name: str | None = None,
-        platform: str | None = None, request: Request | None = None,
+        request: Request | None = None,
     ) -> TimeRecord:
         return await self.admin_service.update_admin_record(
-            db, record_id, obj_in, manager_id, ip_address, device_name, platform, request
+            db, record_id, obj_in, manager_id, ip_address, device_name, request
         )
 
     async def delete_admin_record(
@@ -293,7 +291,7 @@ class TimeRecordService:
 
     async def create_punch(self, db: Any | None = None, user_id: int = 0, timestamp: datetime | None = None,
                            ip_address: str = "",
-                     biometric_id: int | None = None, platform: str = "desktop",
+                     biometric_id: int | None = None,
                      device_name: str | None = None) -> TimeRecord:
         session = db if db is not None else self.db
         assert session is not None
@@ -309,7 +307,6 @@ class TimeRecordService:
                 record_datetime=timestamp,
                 ip_address=ip_address,
                 device_name=device_name,
-                platform=platform,
                 biometric_id=biometric_id,
             )
         return time_record_repository.create(
@@ -319,7 +316,6 @@ class TimeRecordService:
             record_datetime=timestamp,
             ip_address=ip_address,
             device_name=device_name,
-            platform=platform,
             biometric_id=biometric_id,
         )
 

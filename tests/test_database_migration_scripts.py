@@ -264,3 +264,28 @@ def test_target_schema_requires_matching_backup_alembic_revision():
     ]
     with pytest.raises(RuntimeError, match="não corresponde"):
         _validate_target_schema(cursor, {"users"}, {"999"})
+
+
+def test_migration_008_drops_and_restores_time_records_platform(monkeypatch):
+    import importlib.util
+
+    migration_path = Path(__file__).resolve().parent.parent / "alembic" / "versions" / "008_drop_time_records_platform.py"
+    spec = importlib.util.spec_from_file_location("migration_008", migration_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "008"
+    assert module.down_revision == "007"
+
+    mock_op = MagicMock()
+    monkeypatch.setattr(module, "op", mock_op)
+
+    module.upgrade()
+    mock_op.drop_column.assert_called_once_with("time_records", "platform")
+
+    module.downgrade()
+    assert mock_op.add_column.call_count == 1
+    table_arg, column_arg = mock_op.add_column.call_args.args
+    assert table_arg == "time_records"
+    assert column_arg.name == "platform"
+    assert column_arg.nullable is True

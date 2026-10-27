@@ -31,7 +31,6 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
             record_datetime: datetime | None = None,
         ip_address: str | None = None,
         device_name: str | None = None,
-        platform: str | None = None,
         biometric_id: int | None = None,
     ) -> TimeRecord:
         if obj_in is not None:
@@ -42,7 +41,6 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
             record_datetime=record_datetime,
             ip_address=ip_address,
             device_name=device_name,
-            platform=platform,
             biometric_id=biometric_id,
         )
         db.add(db_record)
@@ -224,7 +222,6 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
             record_datetime: datetime | None = None,
             ip_address: str | None = None,
             device_name: str | None = None,
-            platform: str | None = None,
             biometric_id: int | None = None,
     ) -> TimeRecord:
         if obj_in is not None:
@@ -235,7 +232,6 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
             record_datetime=record_datetime,
             ip_address=ip_address,
             device_name=device_name,
-            platform=platform,
             biometric_id=biometric_id,
         )
         db.add(db_record)

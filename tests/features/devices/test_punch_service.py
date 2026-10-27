@@ -207,7 +207,6 @@ async def test_process_biometric_punch_propagates_device_name_from_state(async_d
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Catraca-Principal",
     )
 
@@ -246,7 +245,6 @@ async def test_process_biometric_punch_propagates_device_name_from_header_when_n
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Header-Device",
     )
 
@@ -285,7 +283,6 @@ async def test_process_biometric_punch_header_overrides_state(async_db_mock, moc
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Header-Custom-Device",
     )
 

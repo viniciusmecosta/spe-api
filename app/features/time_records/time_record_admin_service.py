@@ -56,15 +56,12 @@ class TimeRecordAdminService:
             request: Request | None,
             ip_address: str | None,
             device_name: str | None,
-            platform: str | None,
-    ) -> tuple[str | None, str | None, str | None]:
+    ) -> tuple[str | None, str | None]:
         if request is None:
-            return ip_address, device_name, platform
+            return ip_address, device_name
         resolved_ip = ip_address or get_client_ip(request)
         resolved_device = device_name or get_client_device_name(resolved_ip, request)
-        header_plat = request.headers.get("X-Platform", "").lower()
-        resolved_platform = header_plat if header_plat else platform
-        return resolved_ip, resolved_device, resolved_platform
+        return resolved_ip, resolved_device
 
     async def _get_record_by_id(self, session: Any, record_id: int) -> TimeRecord:
         if hasattr(session, "sync_session"):
@@ -95,7 +92,6 @@ class TimeRecordAdminService:
             manager_id: int,
             ip_address: str | None,
             device_name: str | None,
-            platform: str | None,
             new_record_type: RecordType,
             new_record_datetime: datetime,
     ) -> TimeRecord:
@@ -105,7 +101,6 @@ class TimeRecordAdminService:
             record_datetime=new_record_datetime,
             ip_address=ip_address,
             device_name=device_name if device_name else "",
-            platform=platform,
             biometric_id=None,
             edited_by=manager_id,
             edit_justification=obj_in.edit_justification,
@@ -187,12 +182,10 @@ class TimeRecordAdminService:
 
     async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
                                   manager_id: int = 0, ip_address: str = "",
-                                  device_name: str | None = None, platform: str = "WEB_ADMIN",
+                                  device_name: str | None = None,
                                   request: Request | None = None) -> TimeRecord:
-        resolved_ip, device_name, resolved_platform = self._resolve_admin_metadata(request, ip_address, device_name,
-                                                                                   platform)
+        resolved_ip, device_name = self._resolve_admin_metadata(request, ip_address, device_name)
         ip_address = resolved_ip if resolved_ip else ""
-        platform = resolved_platform if resolved_platform else platform
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -209,11 +202,11 @@ class TimeRecordAdminService:
         if hasattr(session, "sync_session"):
             record = await self.repo.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
                                             record_datetime=obj_in.record_datetime, ip_address=ip_address,
-                                            device_name=device_name if device_name else "", platform=platform)
+                                            device_name=device_name if device_name else "")
         else:
             record = time_record_repository.create(session, user_id=obj_in.user_id, record_type=obj_in.record_type,
                                                    record_datetime=obj_in.record_datetime, ip_address=ip_address,
-                                                   device_name=device_name if device_name else "", platform=platform)
+                                                   device_name=device_name if device_name else "")
         record.edited_by = manager_id
         record.edit_justification = obj_in.edit_justification
         record.is_verified = True
@@ -224,9 +217,8 @@ class TimeRecordAdminService:
     async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
                                   ip_address: str | None = None, device_name: str | None = None,
-                                  platform: str | None = None,
                                   request: Request | None = None) -> TimeRecord:
-        ip_address, device_name, platform = self._resolve_admin_metadata(request, ip_address, device_name, platform)
+        ip_address, device_name = self._resolve_admin_metadata(request, ip_address, device_name)
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -247,7 +239,7 @@ class TimeRecordAdminService:
         old_data = serialize_model(record)
         record.is_ignored = True
         new_record = self._build_updated_admin_record(
-            record, obj_in, manager_id, ip_address, device_name, platform, new_record_type, new_record_datetime
+            record, obj_in, manager_id, ip_address, device_name, new_record_type, new_record_datetime
         )
         session.add(new_record)
         session.add(record)

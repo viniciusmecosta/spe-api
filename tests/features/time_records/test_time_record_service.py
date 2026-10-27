@@ -222,7 +222,6 @@ async def test_register_entry_success(mock_get_trusted_time, mock_validate, db_s
         record_datetime=current_time,
         ip_address="127.0.0.1",
         device_name="TestDevice",
-        platform="desktop",
     )
 
 
@@ -274,7 +273,6 @@ async def test_register_exit_success(mock_get_trusted_time, mock_validate, db_se
         record_datetime=current_time,
         ip_address="127.0.0.1",
         device_name="TestDevice",
-        platform="desktop",
     )
 
 
@@ -373,8 +371,7 @@ async def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_
     assert result.edit_justification == "Forgot"
     assert result.is_verified is True
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
-                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="Dev",
-                                                         platform="WEB_ADMIN")
+                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="Dev")
     db_session_mock.add.assert_called_once_with(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(record)
@@ -391,8 +388,7 @@ async def test_create_admin_record_no_device(db_session_mock, mock_time_record_r
     await time_record_service.create_admin_record(db_session_mock, obj_in, manager_id=2, ip_address="127.0.0.1",
                                             device_name=None)
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
-                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="",
-                                                         platform="WEB_ADMIN")
+                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="")
 
 
 @pytest.mark.asyncio
@@ -424,7 +420,7 @@ async def test_update_admin_record_with_changes(db_session_mock, mock_time_recor
                         original_record_id=5)
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordUpdate(record_type=RecordType.EXIT, record_datetime=dt_new, edit_justification="Fixed")
-    result = await time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2, "1.1.1.1", "Dev", "Plat")
+    result = await time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2, "1.1.1.1", "Dev")
     assert result.record_type == RecordType.EXIT
     assert result.record_datetime == dt_new
     assert record.is_ignored is True
@@ -433,7 +429,6 @@ async def test_update_admin_record_with_changes(db_session_mock, mock_time_recor
     assert result.is_verified is True
     assert result.ip_address == "1.1.1.1"
     assert result.device_name == "Dev"
-    assert result.platform == "Plat"
     mock_payroll_service.validate_period_open.assert_any_call(db_session_mock, dt.date())
     mock_payroll_service.validate_period_open.assert_any_call(db_session_mock, dt_new.date())
     db_session_mock.add.assert_any_call(result)
@@ -502,7 +497,7 @@ async def test_create_punch_first_record(mock_get_device, db_session_mock, mock_
     assert result == record
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
                                                          record_datetime=dt, ip_address="1.1.1.1", device_name="Dev",
-                                                         platform="desktop", biometric_id=None)
+                                                         biometric_id=None)
 
 
 @pytest.mark.asyncio
@@ -517,7 +512,7 @@ async def test_create_punch_same_day_exit(mock_get_device, db_session_mock, mock
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1", biometric_id=123)
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.EXIT,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name="Dev", platform="desktop", biometric_id=123)
+                                                         device_name="Dev", biometric_id=123)
 
 
 @pytest.mark.asyncio
@@ -531,7 +526,7 @@ async def test_create_punch_different_day(mock_get_device, db_session_mock, mock
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1")
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name=mock_get_device.return_value, platform="desktop",
+                                                         device_name=mock_get_device.return_value,
                                                          biometric_id=None)
 
 
@@ -546,7 +541,7 @@ async def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mo
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1")
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.EXIT,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name=mock_get_device.return_value, platform="desktop",
+                                                         device_name=mock_get_device.return_value,
                                                          biometric_id=None)
 
 
@@ -570,7 +565,6 @@ async def test_create_punch_with_explicit_device_name(mock_get_device, db_sessio
         record_datetime=dt,
         ip_address="192.168.1.43",
         device_name="Relogio-Portaria",
-        platform="desktop",
         biometric_id=None,
     )
 
@@ -1091,8 +1085,7 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
 
     req = MagicMock()
     req.client.host = "10.0.0.1"
-    req.headers.get.side_effect = lambda k, default=None: "custom-device" if k == "X-Device-Name" else (
-        "ios" if k == "X-Platform" else default)
+    req.headers.get.side_effect = lambda k, default=None: "custom-device" if k == "X-Device-Name" else default
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.create", return_value=mock_rec)
     mocker.patch.object(time_record_service.admin_service, "_commit_and_audit_admin_create", new_callable=AsyncMock)
     create_in = TimeRecordCreateAdmin(user_id=2, record_type=RecordType.ENTRY,
@@ -1108,7 +1101,7 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
                                  edit_justification="Update")
     res5 = await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_in, manager_id=1,
                                                          request=req)
-    assert res5.platform == "ios"
+    assert res5.device_name == "custom-device"
 
     with pytest.raises(HTTPException) as exc_info:
         await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,

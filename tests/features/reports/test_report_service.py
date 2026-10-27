@@ -186,7 +186,6 @@ def test_build_history_punches_manager_and_employee(service):
         record_type=RecordType.ENTRY,
         ip_address="192.168.1.50",
         device_name="Relogio 1",
-        platform="WEB",
         biometric_id=1,
         editor=editor_user,
         edit_justification="Correcao",
@@ -197,7 +196,6 @@ def test_build_history_punches_manager_and_employee(service):
         record_type=RecordType.EXIT,
         ip_address="192.168.1.50",
         device_name="Relogio 1",
-        platform="WEB",
     )
 
     punches_emp = service.response_builder._build_history_punches([rec1, rec2], is_manager=False)
@@ -212,7 +210,6 @@ def test_build_history_punches_manager_and_employee(service):
     assert punches_mgr[0].id == 10
     assert punches_mgr[0].ip_address == "192.168.1.50"
     assert punches_mgr[0].device_name == "Relogio 1"
-    assert punches_mgr[0].platform == "WEB"
     assert punches_mgr[0].edited_by == "Admin"
     assert punches_mgr[0].edit_justification == "Correcao"
     assert punches_mgr[1].edit_justification is None
@@ -357,7 +354,6 @@ def test_build_detailed_punches(service):
         record_type=RecordType.ENTRY,
         ip_address="10.0.0.1",
         device_name="Catraca",
-        platform="DESKTOP",
         biometric_id=5,
         editor=editor_user,
         edit_justification="Esquecimento",
@@ -369,7 +365,6 @@ def test_build_detailed_punches(service):
     assert res_maintainer[0].time == "08:00:15"
     assert res_maintainer[0].ip_address == "10.0.0.1"
     assert res_maintainer[0].device_name == "Catraca"
-    assert res_maintainer[0].platform == "DESKTOP"
     assert res_maintainer[0].biometric_id == 5
     assert res_maintainer[0].edited_by == "Supervisor"
     assert res_maintainer[0].edit_justification == "Esquecimento"
