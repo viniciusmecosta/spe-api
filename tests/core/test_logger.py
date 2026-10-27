@@ -100,3 +100,9 @@ def test_formatter_uses_fortaleza_independently_of_system_timezone(monkeypatch):
             os.environ['TZ'] = original
         if hasattr(time, 'tzset'):
             time.tzset()
+
+
+def test_clean_formatter_format_time_without_datefmt():
+    formatter = CleanFormatter()
+    record = logging.LogRecord("test", logging.INFO, "path", 1, "msg", (), None)
+    assert "," in formatter.formatTime(record, datefmt=None)

@@ -252,3 +252,46 @@ def test_sync_user_repository(db_session, normal_user):
 
     active = user_repository.get_active_employees(db_session)
     assert isinstance(active, list)
+
+
+def test_user_pagination_cursor_conditions():
+    from app.features.users.user_pagination import user_cursor_condition
+
+    cond_null_desc = user_cursor_condition(User.name, 5, None, descending=True)
+    cond_null_asc = user_cursor_condition(User.name, 5, None, descending=False)
+    cond_val_desc = user_cursor_condition(User.name, 5, "Alice", descending=True)
+    cond_val_asc = user_cursor_condition(User.name, 5, "Alice", descending=False)
+    assert cond_null_desc is not None
+    assert cond_null_asc is not None
+    assert cond_val_desc is not None
+    assert cond_val_asc is not None
+
+
+@pytest.mark.asyncio
+async def test_protect_last_maintainer_and_cursor_pagination(async_db_session, async_normal_user):
+    from unittest.mock import AsyncMock, MagicMock
+    from app.core.exceptions import DomainException
+    from app.features.users.user_exceptions import InsufficientPrivilegesError
+
+    repo = AsyncUserRepository()
+
+    users_after = await repo.get_multi(async_db_session, after_id=async_normal_user.id, order_by="name", order_direction="asc")
+    assert isinstance(users_after, list)
+
+    with pytest.raises(DomainException) as exc_info:
+        await repo.get_multi(async_db_session, after_id=999999)
+    assert exc_info.value.status_code == 422
+
+    mock_db = MagicMock()
+    mock_bind = MagicMock()
+    mock_bind.dialect.name = "postgresql"
+    mock_db.get_bind.return_value = mock_bind
+    mock_db.execute = AsyncMock()
+    mock_db.scalar = AsyncMock(return_value=0)
+
+    with pytest.raises(InsufficientPrivilegesError):
+        await repo.protect_last_maintainer(mock_db, 1)
+    mock_db.execute.assert_awaited_once()
+
+    mock_db.scalar = AsyncMock(return_value=2)
+    await repo.protect_last_maintainer(mock_db, 1)

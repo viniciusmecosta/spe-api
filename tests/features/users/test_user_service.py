@@ -318,3 +318,28 @@ def test_format_name(user_service):
 def test_extract_data_dict(user_service):
     res = user_service._extract_data({"key": "val"})
     assert res == {"key": "val"}
+
+
+def test_authorization_policy_and_validator_privileges(user_validator):
+    from app.features.users.user_authorization import UserAuthorizationPolicy
+
+    with pytest.raises(InsufficientPrivilegesError):
+        UserAuthorizationPolicy.validate(None)
+
+    mgr = User(id=1, role=UserRole.MANAGER, is_active=True)
+    maint = User(id=2, role=UserRole.MAINTAINER, is_active=True)
+    with pytest.raises(InsufficientPrivilegesError):
+        user_validator.validate_manager_privilege(mgr, maint)
+
+
+@pytest.mark.asyncio
+async def test_update_user_by_admin_protects_last_maintainer(user_service, mocker):
+    maint_user = User(id=2, role=UserRole.MAINTAINER, is_active=True)
+    actor_maint = User(id=1, role=UserRole.MAINTAINER, is_active=True)
+    user_service.repository.get = AsyncMock(return_value=maint_user)
+    user_service.repository.protect_last_maintainer = AsyncMock()
+    mocker.patch.object(user_service, "update_user", new_callable=AsyncMock, return_value=maint_user)
+
+    up = UserUpdate(is_active=False)
+    await user_service.update_user_by_admin(2, up, actor_maint)
+    user_service.repository.protect_last_maintainer.assert_awaited_once_with(user_service.db, 2)

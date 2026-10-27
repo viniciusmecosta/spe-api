@@ -206,3 +206,18 @@ def test_parse_optional_employee_ids_rejects_invalid_selection(values):
     with pytest.raises(HTTPException) as caught:
         parse_optional_employee_ids(values)
     assert caught.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_auth_version_mismatch():
+    db = MagicMock()
+    user = MagicMock()
+    user.auth_version = 2
+    scalars_res = MagicMock()
+    scalars_res.first.return_value = user
+    db.scalars.return_value = scalars_res
+
+    with patch("app.shared.deps.jwt.decode", return_value={"sub": "1", "ver": 1}):
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_user(db=db, token="tok")
+        assert exc_info.value.status_code == 401

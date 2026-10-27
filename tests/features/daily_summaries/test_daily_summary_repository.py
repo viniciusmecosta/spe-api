@@ -53,6 +53,7 @@ async def test_upsert_supports_async_and_sync_sessions():
 
     await repository.upsert(async_session, 3, date(2026, 10, 5), values)
     await repository.upsert(sync_session, 3, date(2026, 10, 5), values)
+    repository.upsert_sync(sync_session, 3, date(2026, 10, 5), values)
 
     async_session.execute.assert_awaited_once()
-    sync_session.execute.assert_called_once()
+    assert sync_session.execute.call_count == 2

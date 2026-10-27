@@ -42,3 +42,7 @@ def test_environment_helpers(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
     assert not is_dev()
     assert not is_prod()
+
+
+def test_validate_proxy_networks():
+    assert Settings.validate_proxy_networks(["10.0.0.0/8", "192.168.1.1/32"]) == ["10.0.0.0/8", "192.168.1.1/32"]

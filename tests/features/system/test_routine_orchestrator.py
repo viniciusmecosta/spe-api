@@ -369,3 +369,72 @@ async def test_job_database_failure_does_not_report_success(orchestrator, mocker
     mocker.patch('app.features.system.routine_orchestrator.submit', new_callable=AsyncMock, side_effect=SQLAlchemyError('unavailable'))
     with pytest.raises(SQLAlchemyError):
         await orchestrator.execute_manual_backup_telegram()
+
+
+async def test_routine_orchestrator_remaining_branches(orchestrator, mock_get_db_session, db_session_mock, mocker, tmp_path):
+    from datetime import date
+
+    assert EmailNotConfiguredError().status_code == 400
+    assert NoMaintainersWithEmailError().status_code == 400
+    assert BackupGenerationFailedError().status_code == 400
+    assert SMTPConnectionFailedError().status_code == 400
+
+    orchestrator._repo.has_hourly_routine_run.return_value = True
+    assert await orchestrator.execute_hourly_backup_telegram() is None
+
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.consistent_snapshot")
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_safe_backup", return_value="b.sql")
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.create_sql_dump", return_value="d.sql")
+    mocker.patch("app.features.system.routine_orchestrator.backup_service.compress_files", return_value="b.zip")
+    assert orchestrator._generate_backup_files_zip_sync() == (None, None, None)
+
+    mocker.patch.object(orchestrator, "_generate_backup_files_zip_sync", return_value=("b", "s", "z.enc"))
+    assert await orchestrator._generate_backup_files_zip() == ("b", "s", "z.enc")
+
+    f_tmp = tmp_path / "temp.sql"
+    f_tmp.write_text("sql")
+    orchestrator._cleanup_backup_files_sync(str(f_tmp), None, None)
+    assert not f_tmp.exists()
+
+    f_err = tmp_path / "err.sql"
+    f_err.write_text("sql")
+    mocker.patch("app.features.system.routine_orchestrator.os.remove", side_effect=OSError("perm"))
+    orchestrator._cleanup_backup_files_sync(str(f_err), None, None)
+    await orchestrator._cleanup_backup_files(str(f_err), None, None)
+
+    await orchestrator._log_daily_backup_email_execution(True, date(2026, 1, 1), datetime(2026, 1, 2, 1, 0))
+    await orchestrator._log_daily_backup_email_execution(False, date(2026, 1, 1), datetime(2026, 1, 2, 1, 0))
+    orchestrator._repo.log_execution.side_effect = SQLAlchemyError("err")
+    await orchestrator._log_daily_backup_email_execution(True, date(2026, 1, 1), datetime(2026, 1, 2, 1, 0))
+
+    mocker.patch("app.features.system.routine_orchestrator.os.path.exists", return_value=True)
+    mock_send_doc = mocker.patch("app.features.system.routine_orchestrator.telegram_service.send_document")
+    await orchestrator._send_system_logs_telegram(date(2026, 1, 1), date(2026, 1, 2))
+    assert mock_send_doc.call_count == 2
+
+    mock_scalars_empty = MagicMock()
+    mock_scalars_empty.all.return_value = []
+    db_session_mock.scalars = AsyncMock(return_value=mock_scalars_empty)
+    with pytest.raises(NoMaintainersWithEmailError):
+        await orchestrator._fetch_manual_backup_report(db_session_mock)
+
+    maint = User(id=1, role=UserRole.MAINTAINER, is_active=True, email="m@m.com")
+    mock_scalars_maint = MagicMock()
+    mock_scalars_maint.all.return_value = [maint]
+    db_session_mock.scalars = AsyncMock(return_value=mock_scalars_maint)
+    mocker.patch(
+        "app.features.system.routine_orchestrator.daily_report_service.generate_daily_report_html",
+        new_callable=AsyncMock,
+        return_value="<p>html</p>",
+    )
+    emails, html, period_text, _, _ = await orchestrator._fetch_manual_backup_report(db_session_mock)
+    assert emails == ["m@m.com"]
+    assert html == "<p>html</p>"
+    assert "relatório" in period_text
+
+    mock_job = MagicMock(id=77)
+    mocker.patch("app.features.system.routine_orchestrator.enqueue", new_callable=AsyncMock, return_value=mock_job)
+    audit_svc = MagicMock()
+    audit_svc.async_log = AsyncMock()
+    res = await orchestrator.trigger_manual_backup_email(maint, audit_svc)
+    assert res["job_id"] == "77"

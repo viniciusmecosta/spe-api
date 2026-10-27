@@ -155,3 +155,74 @@ def test_reprocess_endpoint_rejects_employee(mocker):
         assert response.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_reprocess_limits_run_failures_and_process_job(mocker, monkeypatch):
+    from app.core.config import settings
+    from app.features.daily_summaries.daily_summary_reprocess_service import process_reprocess_job
+
+    db = MagicMock()
+    db.scalars = AsyncMock(return_value=MagicMock(all=lambda: [1, 2, 3]))
+    service = DailySummaryReprocessService(db)
+    mocker.patch(
+        "app.features.daily_summaries.daily_summary_reprocess_service.payroll_service.async_validate_period_open",
+        new_callable=AsyncMock,
+    )
+
+    monkeypatch.setattr(settings, "REPROCESS_MAX_DAYS", 2)
+    with pytest.raises(HTTPException) as exc_days:
+        await service.start(DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 5)), 1)
+    assert exc_days.value.status_code == 422
+
+    monkeypatch.setattr(settings, "REPROCESS_MAX_DAYS", 366)
+    monkeypatch.setattr(settings, "REPROCESS_MAX_ITEMS", 2)
+    with pytest.raises(HTTPException) as exc_items:
+        await service.start(DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)), 1)
+    assert exc_items.value.status_code == 422
+
+    mocker.patch(
+        "app.features.daily_summaries.daily_summary_reprocess_service.recalculate_changed_days",
+        new_callable=AsyncMock,
+        return_value=False,
+    )
+    await service._run([1], date(2026, 8, 1), date(2026, 8, 1))
+
+    cp = mocker.patch(
+        "app.features.daily_summaries.daily_summary_reprocess_service.checkpoint",
+        new_callable=AsyncMock,
+        return_value=True,
+    )
+    recalc = mocker.patch(
+        "app.features.daily_summaries.daily_summary_reprocess_service.recalculate_changed_days",
+        new_callable=AsyncMock,
+        side_effect=[True, False],
+    )
+    job = {
+        "payload": {"start_date": "2026-08-01", "end_date": "2026-08-02", "user_ids": [1]},
+        "result": {},
+    }
+    await process_reprocess_job(job)
+    assert recalc.await_count == 2
+    assert cp.await_args_list[-1].args[1] == "PARTIAL"
+
+    recalc.side_effect = [False]
+    job_retry = {
+        "payload": {
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-01",
+            "user_ids": [1],
+            "retry_items": [{"user_id": 1, "date": "2026-08-01"}],
+        },
+        "result": {},
+    }
+    await process_reprocess_job(job_retry)
+    assert cp.await_args_list[-1].args[1] == "FAILED"
+
+    cp.return_value = False
+    recalc.side_effect = [True]
+    job_abort = {
+        "payload": {"start_date": "2026-08-01", "end_date": "2026-08-01", "user_ids": [1]},
+        "result": {},
+    }
+    await process_reprocess_job(job_abort)

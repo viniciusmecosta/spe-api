@@ -194,3 +194,12 @@ def test_group_daily_activity(service):
     assert "Jane Smith" in result["01/01/2023"]
     assert result["01/01/2023"]["John Doe"] == ["E: 09:00", "S: 18:00"]
     assert result["01/01/2023"]["Jane Smith"] == ["E: 10:00"]
+
+
+def test_telegram_429_invalid_retry_after_defaults_to_30(service, mocker):
+    response = MagicMock(status_code=429)
+    response.json.side_effect = ValueError("not json")
+    mocker.patch("requests.post", return_value=response)
+    result = service.deliver_text("msg")
+    assert result.status == "RETRY"
+    assert result.retry_after == 30

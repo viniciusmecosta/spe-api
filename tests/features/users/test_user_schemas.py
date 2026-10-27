@@ -81,3 +81,10 @@ def test_user_update_me_future_dob():
     future_date = date.today() + timedelta(days=1)
     with pytest.raises(ValidationError):
         UserUpdateMe(data_nascimento=future_date)
+
+
+def test_validate_password_bytes_too_long():
+    from app.features.users.user_schemas import validate_password_bytes
+
+    with pytest.raises(ValueError, match="72 bytes"):
+        validate_password_bytes("a" * 73)

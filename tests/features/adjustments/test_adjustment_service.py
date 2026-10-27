@@ -739,3 +739,69 @@ async def test_validate_period_open_sync_fallback(mocker, async_db_mock):
     finally:
         if orig_async is not None:
             PayrollService.async_validate_period_open = orig_async
+
+
+@pytest.mark.asyncio
+async def test_adjustment_actions_and_upload_edge_cases(async_db_mock, mocker):
+    from app.core.exceptions import DomainException
+    from app.features.adjustments.adjustment_actions import (
+        AddPunchAction,
+        DeletePunchAction,
+        NoPunchAction,
+        _matching_record,
+    )
+
+    no_punch = NoPunchAction()
+    assert await no_punch.apply(async_db_mock, MagicMock(), 1) is None
+
+    rec = TimeRecord(id=77, is_ignored=True)
+    scalars_mock = MagicMock()
+    scalars_mock.first.return_value = rec
+    async_db_mock.scalars = AsyncMock(return_value=scalars_mock)
+    async_db_mock.scalar = AsyncMock(return_value=rec)
+
+    adj_with_applied = AdjustmentRequest(id=5, user_id=1, target_date=date(2026, 8, 1), time=time(8, 0), applied_time_record_id=77)
+    matched = await _matching_record(async_db_mock, adj_with_applied, False)
+    assert matched is rec
+
+    add_action = AddPunchAction()
+    await add_action.apply(async_db_mock, adj_with_applied, 99)
+    assert rec.is_ignored is False
+    assert adj_with_applied.applied_time_record_id == 77
+
+    del_action = DeletePunchAction()
+    adj_no_time = AdjustmentRequest(id=6, user_id=1, target_date=date(2026, 8, 1), time=None)
+    await del_action.apply(async_db_mock, adj_no_time, 99)
+    await del_action.revert(async_db_mock, adj_no_time, 99)
+
+    req_obj = AdjustmentRequest(id=1, user_id=1, target_date=date(2026, 8, 1), status=AdjustmentStatus.PENDING, adjustment_type=AdjustmentType.WAIVER)
+    mocker.patch.object(adjustment_service.repo, "lock", new_callable=AsyncMock)
+    mocker.patch.object(adjustment_service.repo, "get", new_callable=AsyncMock, return_value=req_obj)
+    mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
+    file = MagicMock()
+    file.filename = "doc.pdf"
+
+    mocker.patch("app.features.adjustments.adjustment_service.upload_storage.save", new_callable=AsyncMock,
+                 side_effect=DomainException("Too large", status_code=413))
+    with pytest.raises(DomainException) as exc_413:
+        await adjustment_service.upload_attachment(async_db_mock, 1, file, 1)
+    assert exc_413.value.status_code == 413
+
+    stored = MagicMock(relative_path="attachments/doc.pdf", content_type="application/pdf")
+    mocker.patch("app.features.adjustments.adjustment_service.upload_storage.save", new_callable=AsyncMock, return_value=stored)
+    remove_mock = mocker.patch("app.features.adjustments.adjustment_service.upload_storage.remove", new_callable=AsyncMock)
+    mocker.patch.object(adjustment_service.repo, "create_attachment", new_callable=AsyncMock, side_effect=RuntimeError("db fail"))
+    with pytest.raises(RuntimeError, match="db fail"):
+        await adjustment_service.upload_attachment(async_db_mock, 1, file, 1)
+    remove_mock.assert_awaited_once_with(stored)
+
+    already_approved = AdjustmentRequest(
+        id=2, user_id=1, target_date=date(2026, 8, 1),
+        status=AdjustmentStatus.APPROVED, adjustment_type=AdjustmentType.WAIVER,
+    )
+    mocker.patch.object(adjustment_service.repo, "lock", new_callable=AsyncMock)
+    mocker.patch.object(adjustment_service.repo, "get", new_callable=AsyncMock, return_value=already_approved)
+    mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
+    mocker.patch.object(adjustment_service, "_enrich_adjustments_with_records", new_callable=AsyncMock, return_value=[already_approved])
+    res_approved = await adjustment_service.approve_adjustment(async_db_mock, 2, 99)
+    assert res_approved is already_approved

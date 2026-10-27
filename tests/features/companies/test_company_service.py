@@ -254,3 +254,15 @@ async def test_company_service_with_base_url(mocker, async_db_mock, tmp_path):
 
     res_upload = await company_service.upload_logo(async_db_mock, logo_file(), 10, base_url="https://api.test.com")
     assert "https://api.test.com/uploads/" in res_upload.logo_path
+
+
+@pytest.mark.asyncio
+async def test_cleanup_old_logo_nested_parent_not_removed(mocker, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    nested = tmp_path / "sub" / "old.png"
+    nested.parent.mkdir(parents=True, exist_ok=True)
+    nested.write_bytes(b"data")
+    mocker.patch("app.features.companies.company_service.resolve_stored_file", side_effect=[None, nested])
+    remove_mock = mocker.patch("app.features.companies.company_service.upload_storage.remove_path", new_callable=AsyncMock)
+    await company_service._cleanup_old_logo("old.png")
+    remove_mock.assert_not_awaited()

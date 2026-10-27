@@ -34,3 +34,11 @@ def test_real_psql_commands_are_rejected():
         prepare_data_statements(
             "\\connect another_database\nINSERT INTO users(id) VALUES (1);"
         )
+
+
+def test_sql_line_scanner_escaped_quote_and_double_quotes():
+    from app.shared.sql_text import SqlLineScanner
+
+    scanner = SqlLineScanner()
+    scanner.consume(r"""SELECT E'abc\'def', "col_name" FROM t;""")
+    assert scanner.state == "normal"

@@ -77,6 +77,10 @@ async def test_async_device_repositories(async_db_mock):
     fw_obj = await fw_repo.create(async_db_mock, obj_in=fw)
     assert fw_obj.version == "1.0.0"
 
+    fw_no_commit = await fw_repo.create(async_db_mock, version="1.0.1", file_path="/tmp/fw2.bin", commit=False)
+    assert fw_no_commit.version == "1.0.1"
+    async_db_mock.flush.assert_awaited()
+
     assert await fw_repo.get_by_version(async_db_mock, "1.0.0") == created
     assert await fw_repo.get_latest(async_db_mock) == created
     assert len(await fw_repo.get_all(async_db_mock)) == 1

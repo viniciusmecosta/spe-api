@@ -84,5 +84,9 @@ async def test_async_payroll_repository_create_closure_variants(async_db_mock):
     c3 = await repo.create(async_db_mock, obj_in=CustomClosure())
     assert c3.month == 3
 
+    c4 = await repo.create(async_db_mock, month=4, year=2026, user_id=1, commit=False)
+    assert c4.month == 4
+    async_db_mock.flush.assert_awaited()
+
     async_db_mock.scalars.return_value = object()
     assert await repo.get_by_month(async_db_mock, 99, 2026) is None

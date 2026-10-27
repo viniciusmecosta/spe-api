@@ -903,3 +903,13 @@ def test_alphabetical_employee_order_is_stable_with_accents():
     ordered = sorted(users, key=ExcelService._alphabetical_user_key)
     assert [(user.name, user.id) for user in ordered] == [
         ('Álvaro', 2), ('Ana', 6), ('Ana', 7), ('bruno', 3), ('Zélia', 4)]
+
+
+@pytest.mark.asyncio
+async def test_resolve_cached_closure_file_returns_none_when_no_closure(excel_service, async_db_mock):
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        assert await excel_service._resolve_cached_closure_file(async_db_mock, 5, 2026) is None

@@ -968,3 +968,20 @@ async def test_same_employee_names_generate_separate_files(mocker):
         assert len(set(archive.namelist())) == 2
         assert "manifesto_exportacao.json" not in archive.namelist()
     assert exported.export_headers["X-Export-Status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_add_timesheet_to_zip_empty_pdf_marks_failed(mocker):
+    import zipfile
+    from app.features.timesheets.timesheet_service import TimesheetZip
+
+    session = AsyncMock()
+    user = SimpleNamespace(id=1, name="Ana")
+    zip_buffer = TimesheetZip()
+    mocker.patch.object(timesheet_service, "generate_user_timesheet_pdf", return_value=io.BytesIO(b""))
+
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        await timesheet_service._add_timesheet_to_zip(session, user, 10, 2023, zf, zip_buffer, set())
+
+    assert len(zip_buffer.failed) == 1
+    assert zip_buffer.failed[0]["user_id"] == 1

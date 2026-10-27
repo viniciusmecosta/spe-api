@@ -203,3 +203,16 @@ async def test_sync_ntp_with_backoff_async_cancelled(mocker):
     with pytest.raises(asyncio.CancelledError):
         await trusted_time_service.sync_ntp_with_backoff_async(initial_delay=0.1)
 
+
+def test_request_ntp_from_servers_all_fail_and_execute_none(mocker):
+    import ntplib
+    from datetime import UTC
+
+    client = mocker.MagicMock(spec=ntplib.NTPClient)
+    client.request.side_effect = OSError("unreachable")
+    assert trusted_time_service._request_ntp_from_servers(client) is None
+
+    mocker.patch.object(trusted_time_service, "_request_ntp_from_servers", return_value=None)
+    trusted_time_service._execute_ntp_request(datetime.now(UTC))
+    assert trusted_time_service._ntp_offset is None
+

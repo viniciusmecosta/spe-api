@@ -57,3 +57,46 @@ def test_constraint_name_follows_asyncpg_cause():
     adapter = RuntimeError("driver adapter")
     adapter.__cause__ = cause
     assert constraint_name(adapter) == "uq_payroll_closures_active_period"
+    assert constraint_name(RuntimeError("plain")) is None
+
+
+def test_postgres_connection_params_invalid_backend_and_fallback():
+    with pytest.raises(ValueError, match="PostgreSQL"):
+        postgres_connection_params("sqlite:///local.db", {})
+
+    fallback = postgres_connection_params("", {"POSTGRES_HOST": "pg-host", "POSTGRES_PORT": "5433"})
+    assert fallback["host"] == "pg-host"
+    assert fallback["port"] == 5433
+
+
+def test_lock_payroll_periods_postgresql():
+    from unittest.mock import MagicMock
+    from sqlalchemy import create_engine
+    from app.database.payroll_lock import lock_payroll_periods
+
+    engine = create_engine("sqlite:///:memory:")
+    engine.dialect.name = "postgresql"
+    session = MagicMock()
+    session.get_bind.return_value = engine
+
+    assert lock_payroll_periods(session, [(2026, 8), (2026, 7)], exclusive=False) is True
+    assert lock_payroll_periods(session, [(2026, 8)], exclusive=True) is True
+    assert session.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_unit_of_work_nested_and_persist_changes():
+    from unittest.mock import AsyncMock
+    from app.database.unit_of_work import persist_changes, unit_of_work
+
+    session = AsyncMock()
+    session.info = {}
+
+    async with unit_of_work(session):
+        await persist_changes(session)
+        session.flush.assert_awaited_once()
+        async with unit_of_work(session):
+            assert session.info["unit_of_work_depth"] == 2
+        assert session.info["unit_of_work_depth"] == 1
+    assert "unit_of_work_depth" not in session.info
+    session.commit.assert_awaited_once()

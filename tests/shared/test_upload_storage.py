@@ -142,3 +142,62 @@ async def test_removal_preserves_files_outside_upload_root(tmp_path):
     await upload_storage.remove_path(external)
     assert external.read_bytes() == b'preserve'
     external.unlink()
+
+
+@pytest.mark.asyncio
+async def test_upload_storage_validation_and_cancellation_branches(tmp_path):
+    import asyncio
+    from unittest.mock import MagicMock, patch
+    from app.shared.upload_storage import StoredUpload
+
+    with pytest.raises(DomainException, match="Formato de arquivo"):
+        upload_storage._extension("evil.exe", UploadCategory.LOGO)
+
+    huge_zip = tmp_path / "huge.xlsx"
+    with zipfile.ZipFile(huge_zip, "w") as zf:
+        zf.writestr("[Content_Types].xml", "ok")
+        zf.writestr("xl/workbook.xml", "ok")
+    fake_info = MagicMock()
+    fake_info.file_size = 101 * 1024 * 1024
+    with patch("zipfile.ZipFile.infolist", return_value=[fake_info]):
+        with pytest.raises(DomainException, match="inválido ou corrompido"):
+            upload_storage._validate_office_archive(huge_zip, ".xlsx")
+
+    with patch("zipfile.ZipFile.testzip", return_value="xl/workbook.xml"):
+        with pytest.raises(DomainException, match="inválido ou corrompido"):
+            upload_storage._validate_office_archive(huge_zip, ".xlsx")
+
+    bad_csv = tmp_path / "bad.csv"
+    bad_csv.write_bytes(b"a,b,c,d,e,f,g,h\n" + b"x" * 20 + b"\x00")
+    with pytest.raises(DomainException, match="formato CSV"):
+        upload_storage._validate_document(bad_csv, ".csv")
+
+    stored_file = tmp_path / "public" / "test.png"
+    stored_file.parent.mkdir(parents=True, exist_ok=True)
+    stored_file.write_bytes(b"data")
+    stored_upload = StoredUpload(stored_file, "public/test.png", 4, "image/png")
+
+    async def fake_to_thread_success(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return stored_upload
+
+    with patch("app.shared.upload_storage.asyncio.to_thread", side_effect=fake_to_thread_success):
+        task = asyncio.create_task(upload_storage._store(io.BytesIO(b"data"), "test.png", UploadCategory.LOGO, "test.png"))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async def fake_to_thread_error(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        raise RuntimeError("save failed")
+
+    with patch("app.shared.upload_storage.asyncio.to_thread", side_effect=fake_to_thread_error):
+        task2 = asyncio.create_task(upload_storage._store(io.BytesIO(b"data"), "test.png", UploadCategory.LOGO, "test.png"))
+        await asyncio.sleep(0.01)
+        task2.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task2
+
+    with patch("app.shared.upload_storage.asyncio.to_thread", side_effect=OSError("unlink error")):
+        await upload_storage.remove_path(stored_file)

@@ -487,3 +487,53 @@ async def test_recalculate_changed_days_retries_and_returns_failure_after_three_
     assert await recalculate_changed_days({(1, date(2026, 4, 1))}) is False
     assert recalculate.await_count == 3
     assert sleep.await_count == 3
+
+
+def test_daily_summary_events_remaining_branches(mocker):
+    from app.features.daily_summaries.daily_summary_events import (
+        _before_commit,
+        _collect_changes,
+        enqueue_changed_days,
+    )
+    from app.features.payroll.payroll_exceptions import PayrollPeriodClosedError
+    from app.features.payroll.payroll_models import PayrollClosure
+    from app.features.time_records.time_record_models import TimeRecord
+
+    skip_session = MagicMock()
+    skip_session.info = {"skip_daily_summary_tracking": True}
+    _before_commit(skip_session)
+    skip_session.flush.assert_not_called()
+
+    dirty_record = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 5, 1, 8, 0))
+    fake_state = MagicMock()
+    fake_attr = MagicMock()
+    fake_attr.history.has_changes.return_value = False
+    fake_state.attrs = {field: fake_attr for field in ("user_id", "record_datetime", "record_type", "deleted_at", "is_ignored")}
+    s_dirty = MagicMock()
+    s_dirty.dirty = [dirty_record]
+    with patch("app.features.daily_summaries.daily_summary_events.inspect", return_value=fake_state):
+        changes, sched = _collect_changes(s_dirty, [dirty_record])
+        assert changes == set()
+        assert sched == set()
+
+    closure = PayrollClosure(year=2026, month=5, is_closed=True)
+    s_closure = MagicMock()
+    s_closure.info = {}
+    s_closure.get_bind.return_value.dialect.name = "postgresql"
+    s_closure.new = [closure]
+    s_closure.dirty = []
+    s_closure.deleted = []
+    lock_mock = mocker.patch("app.features.daily_summaries.daily_summary_events.lock_payroll_periods", return_value=True)
+    enqueue_changed_days(s_closure, None, None)
+    lock_mock.assert_called_once_with(s_closure, {(2026, 5)}, exclusive=True)
+
+    rec_new = TimeRecord(id=2, user_id=1, record_datetime=datetime(2026, 5, 10, 8, 0))
+    s_closed = MagicMock()
+    s_closed.info = {}
+    s_closed.get_bind.return_value.dialect.name = "postgresql"
+    s_closed.new = [closure, rec_new]
+    s_closed.dirty = []
+    s_closed.deleted = []
+    s_closed.connection.return_value.execute.return_value.all.return_value = [(2026, 5)]
+    with pytest.raises(PayrollPeriodClosedError):
+        enqueue_changed_days(s_closed, None, None)

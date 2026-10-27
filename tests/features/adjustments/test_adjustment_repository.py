@@ -152,3 +152,14 @@ async def test_async_delete_returns_when_adjustment_does_not_exist(mocker, async
     async_db_mock.execute.assert_not_awaited()
     async_db_mock.delete.assert_not_awaited()
     async_db_mock.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lock_waivers_postgresql_branch(async_db_mock):
+    repo = AsyncAdjustmentRepository()
+    bind = MagicMock()
+    bind.dialect.name = "postgresql"
+    async_db_mock.get_bind = MagicMock(return_value=bind)
+
+    await repo.lock_waivers(async_db_mock, 10, date(2026, 8, 1))
+    async_db_mock.execute.assert_awaited_once()

@@ -658,3 +658,24 @@ async def test_schedule_change_preserves_reviewed_excess_in_history():
     assert audit.entity_id == 42
     assert audit.old_data["status"] == AdjustmentStatus.APPROVED.value
     assert audit.new_data["reason"] == "SCHEDULE_CHANGED"
+
+
+@pytest.mark.asyncio
+async def test_calculate_day_opens_session_and_runs_sync(mocker):
+    fake_session = MagicMock()
+    fake_session.sync_session.info = {}
+    fake_begin = AsyncMock()
+    fake_session.begin.return_value = fake_begin
+
+    async def run_sync_impl(fn):
+        fn("sync_db")
+
+    fake_session.run_sync = AsyncMock(side_effect=run_sync_impl)
+    cm = AsyncMock()
+    cm.__aenter__.return_value = fake_session
+    mocker.patch("app.features.daily_summaries.daily_summary_service.AsyncSessionLocal", return_value=cm)
+    calc_in_sess = mocker.patch.object(daily_summary_service, "calculate_in_session")
+
+    await daily_summary_service.calculate_day(1, date(2026, 5, 10), refresh_excess=True, allow_closed=False)
+    assert fake_session.sync_session.info["skip_daily_summary_tracking"] is True
+    calc_in_sess.assert_called_once_with("sync_db", 1, date(2026, 5, 10), True, False, False)
