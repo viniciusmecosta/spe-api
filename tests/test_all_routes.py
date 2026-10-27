@@ -34,7 +34,7 @@ def setup_test_data(db):
                 password_hash=get_password_hash("password123"),
                 role=data["role"],
                 is_active=True,
-                email=f"{data['username']}@test.com"
+                email=None
             )
             db.add(user)
 

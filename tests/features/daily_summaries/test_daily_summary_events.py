@@ -504,6 +504,10 @@ def test_daily_summary_events_remaining_branches(mocker):
     _before_commit(skip_session)
     skip_session.flush.assert_not_called()
 
+    changes_non_source, sched_non_source = _collect_changes(MagicMock(), [object()])
+    assert changes_non_source == set()
+    assert sched_non_source == set()
+
     dirty_record = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 5, 1, 8, 0))
     fake_state = MagicMock()
     fake_attr = MagicMock()

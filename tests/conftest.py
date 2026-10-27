@@ -39,13 +39,36 @@ def cleanup_app_database():
 
 
 @pytest.fixture(autouse=True)
-def prevent_real_email_sending(monkeypatch):
+def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_mock):
     mock_smtp_class = MagicMock(name="PreventRealSMTP")
     mock_smtp_instance = mock_smtp_class.return_value
     mock_smtp_instance.__enter__.return_value = mock_smtp_instance
     mock_smtp_instance.__exit__.return_value = None
     monkeypatch.setattr("smtplib.SMTP", mock_smtp_class)
     monkeypatch.setattr("smtplib.SMTP_SSL", mock_smtp_class)
+    monkeypatch.setattr(settings, "SMTP_HOST", None)
+    monkeypatch.setattr(settings, "SMTP_USER", None)
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", None)
+    monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "")
+    monkeypatch.setattr(settings, "BACKGROUND_JOBS_ENABLED", False)
+
+    if "integration" not in request.node.nodeid:
+        import app.database.session as db_session_mod
+
+        mock_async_cm = MagicMock()
+        mock_async_cm.__aenter__ = AsyncMock(return_value=async_db_mock)
+        mock_async_cm.__aexit__ = AsyncMock(return_value=False)
+        monkeypatch.setattr(
+            db_session_mod,
+            "AsyncSessionLocal",
+            MagicMock(return_value=mock_async_cm),
+        )
+        monkeypatch.setattr(
+            db_session_mod,
+            "SessionLocal",
+            MagicMock(return_value=db_session_mock),
+        )
     return mock_smtp_class
 
 

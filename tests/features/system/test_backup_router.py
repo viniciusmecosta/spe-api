@@ -30,19 +30,20 @@ def client(mock_maintainer_user: User, db_session_mock: MagicMock) -> TestClient
 
 
 def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) -> None:
-    mock_send = mocker.patch.object(
+    mock_record = mocker.patch.object(
         RoutineOrchestrator,
-        "send_manual_backup_email",
-        return_value=True,
+        "_record_manual_job",
+        new_callable=AsyncMock,
+        return_value=42,
     )
-    mock_audit = mocker.patch.object(AuditService, "async_log", new_callable=AsyncMock)
 
     response = client.post("/api/v1/backup/trigger")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
+    assert data["job_id"] == "42"
     assert "segundo plano" in data["message"]
-    mock_audit.assert_awaited_once()
+    mock_record.assert_awaited_once()
 
 
 def test_trigger_manual_backup_forbidden_for_employee(db_session_mock: MagicMock) -> None:

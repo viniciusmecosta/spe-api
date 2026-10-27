@@ -171,14 +171,16 @@ async def test_reprocess_limits_run_failures_and_process_job(mocker, monkeypatch
     )
 
     monkeypatch.setattr(settings, "REPROCESS_MAX_DAYS", 2)
+    req_days = DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 5))
     with pytest.raises(HTTPException) as exc_days:
-        await service.start(DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 5)), 1)
+        await service.start(req_days, 1)
     assert exc_days.value.status_code == 422
 
     monkeypatch.setattr(settings, "REPROCESS_MAX_DAYS", 366)
     monkeypatch.setattr(settings, "REPROCESS_MAX_ITEMS", 2)
+    req_items = DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 2))
     with pytest.raises(HTTPException) as exc_items:
-        await service.start(DailySummaryReprocessRequest(start_date=date(2026, 8, 1), end_date=date(2026, 8, 2)), 1)
+        await service.start(req_items, 1)
     assert exc_items.value.status_code == 422
 
     mocker.patch(
