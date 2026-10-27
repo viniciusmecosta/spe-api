@@ -24,7 +24,11 @@ WORKDIR /app
 
 RUN groupadd -g 1000 appuser && \
     useradd -m -u 1000 -g appuser -s /bin/bash appuser && \
-    apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-client tzdata && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        --no-install-recommends \
+        postgresql-client \
+        tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
