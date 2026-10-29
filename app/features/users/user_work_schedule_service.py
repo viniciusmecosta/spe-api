@@ -96,29 +96,15 @@ class UserWorkScheduleService:
         self._validate_period_order(valid_from, valid_until)
         session = db if db is not None else self.db
         assert session is not None
-        start_year = valid_from.year
-        start_month = valid_from.month
-
         end_date = valid_until if valid_until else datetime.now(ZoneInfo(settings.TIMEZONE)).date()
-        end_year = end_date.year
-        end_month = end_date.month
-
-        current_year = start_year
-        current_month = start_month
-
-        while (current_year < end_year) or (current_year == end_year and current_month <= end_month):
-            if hasattr(session, "sync_session"):
-                closure = await async_payroll_repository.get_by_month(session, current_month, current_year)
-            else:
-                closure = payroll_repository.get_by_month(session, current_month, current_year)
-            if closure and closure.is_closed:
-                raise SchedulePayrollClosedError(
-                    f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
-                )
-            current_month += 1
-            if current_month > 12:
-                current_month = 1
-                current_year += 1
+        if hasattr(session, "sync_session"):
+            closure = await async_payroll_repository.get_first_closed_in_range(session, valid_from, end_date)
+        else:
+            closure = payroll_repository.get_first_closed_in_range(session, valid_from, end_date)
+        if closure:
+            raise SchedulePayrollClosedError(
+                f"Não é permitido alterar configurações de expediente. A folha de ponto de {closure.month:02d}/{closure.year} já está fechada."
+            )
 
     async def check_schedule_overlap(
             self,
