@@ -5,6 +5,11 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_client_device_name, get_client_ip
+from app.database.unit_of_work import (
+    persist_changes,
+    persist_sync_changes,
+    transactional,
+)
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.time_record_change_service import (
     time_record_change_service,
@@ -19,6 +24,7 @@ from app.features.time_records.time_record_repository import (
 from app.features.time_records.time_record_schemas import (
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordResponse,
     TimeRecordUpdate,
 )
 from app.shared import deps
@@ -42,12 +48,12 @@ class TimeRecordAdminService:
     async def _commit_and_audit_admin_create(self, session: Any, manager_id: int, record: TimeRecord):
         if hasattr(session, "sync_session"):
             await session.flush()
-            await session.commit()
+            await persist_changes(session)
             await session.refresh(record)
             await audit_service.async_log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
         else:
             session.flush()
-            session.commit()
+            persist_sync_changes(session)
             session.refresh(record)
             audit_service.log_change(session, manager_id, "CREATE_RECORD_ADMIN", new_model=record)
 
@@ -112,13 +118,13 @@ class TimeRecordAdminService:
                                              new_record: TimeRecord):
         if hasattr(session, "sync_session"):
             await session.flush()
-            await session.commit()
+            await persist_changes(session)
             await session.refresh(new_record)
             await audit_service.async_log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
                                                  new_model=new_record)
         else:
             session.flush()
-            session.commit()
+            persist_sync_changes(session)
             session.refresh(new_record)
             audit_service.log_change(session, manager_id, "UPDATE_RECORD_ADMIN", old_model=old_data,
                                      new_model=new_record)
@@ -128,13 +134,13 @@ class TimeRecordAdminService:
         if hasattr(session, "sync_session"):
             await self.repo.delete(session, old_data.get("id"), manager_id)
             await session.flush()
-            await session.commit()
+            await persist_changes(session)
             await audit_service.async_log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                                  new_data={"justification": justification})
         else:
             time_record_repository.delete(session, old_data.get("id"), manager_id)
             session.flush()
-            session.commit()
+            persist_sync_changes(session)
             audit_service.log_change(session, manager_id, "DELETE_RECORD_ADMIN", old_model=old_data,
                                      new_data={"justification": justification})
 
@@ -179,6 +185,7 @@ class TimeRecordAdminService:
                 session, record.user_id, record.record_datetime.date()
             )
 
+    @transactional(response_model=TimeRecordResponse)
     async def create_admin_record(self, db: Any | None = None, obj_in: TimeRecordCreateAdmin | None = None,
                                   manager_id: int = 0, ip_address: str = "",
                                   device_name: str | None = None,
@@ -210,8 +217,11 @@ class TimeRecordAdminService:
         record.edit_justification = obj_in.edit_justification
         session.add(record)
         await self._commit_and_audit_admin_create(session, manager_id, record)
+        if isinstance(session, AsyncSession):
+            await session.refresh(record, ["editor"])
         return record
 
+    @transactional(response_model=TimeRecordResponse)
     async def update_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordUpdate | None = None, manager_id: int = 0,
                                   ip_address: str | None = None, device_name: str | None = None,
@@ -242,8 +252,11 @@ class TimeRecordAdminService:
         session.add(new_record)
         session.add(record)
         await self._commit_and_audit_admin_update(session, manager_id, old_data, new_record)
+        if isinstance(session, AsyncSession):
+            await session.refresh(new_record, ["editor"])
         return new_record
 
+    @transactional
     async def delete_admin_record(self, db: Any | None = None, record_id: int = 0,
                                   obj_in: TimeRecordDeleteAdmin | None = None, manager_id: int = 0,
                                   justification: str | None = None,

@@ -7,6 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import get_client_device_name, get_client_ip
+from app.database.unit_of_work import (
+    persist_changes,
+    persist_sync_changes,
+    transactional,
+)
 from app.features.companies.company_repository import (
     async_company_repository,
     company_repository,
@@ -42,6 +47,7 @@ from app.features.time_records.time_record_schemas import (
     ReceiptTimelineItem,
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordResponse,
     TimeRecordUpdate,
 )
 from app.features.users.user_models import User
@@ -120,18 +126,19 @@ class TimeRecordService:
             record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
             session.add(record)
             if hasattr(session, "sync_session"):
-                await session.commit()
+                await persist_changes(session)
                 await session.refresh(record)
                 await audit_service.async_log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD",
                                                      entity_id=record.id,
                                                      new_data={"justification": record.edit_justification})
             else:
-                session.commit()
+                persist_sync_changes(session)
                 session.refresh(record)
                 audit_service.log_change(session, user_id, "NTP_FALLBACK", entity="TIME_RECORD", entity_id=record.id,
                                          new_data={"justification": record.edit_justification})
         return record
 
+    @transactional(response_model=TimeRecordResponse)
     async def register_entry(self, db: Any | None = None, user_id: int = 0,
                              request: Request | None = None,
                              background_tasks: BackgroundTasks | None = None) -> TimeRecord:
@@ -143,6 +150,7 @@ class TimeRecordService:
             await self.trigger_auto_print(record=record, background_tasks=background_tasks)
         return record
 
+    @transactional(response_model=TimeRecordResponse)
     async def register_exit(self, db: Any | None = None, user_id: int = 0,
                             request: Request | None = None,
                             background_tasks: BackgroundTasks | None = None) -> TimeRecord:
@@ -188,6 +196,7 @@ class TimeRecordService:
             created_at=record.created_at,
         )
 
+    @transactional(response_model=TimeRecordResponse)
     async def toggle_record_type(self, db: Any | None = None, record_id: int = 0,
                                  current_user: User | None = None) -> TimeRecord:
         session = db if db is not None else self.db
@@ -216,20 +225,22 @@ class TimeRecordService:
 
         session.add(new_record)
         await self._commit_and_audit_toggle_record(session, current_user.id, old_data, new_record, record)
+        if isinstance(session, AsyncSession):
+            await session.refresh(new_record, ["editor"])
         return new_record
 
     async def _commit_and_audit_toggle_record(self, session: Any, user_id: int, old_data: dict, new_record: TimeRecord, record: TimeRecord):
         if hasattr(session, "sync_session"):
             await session.flush()
             session.add(record)
-            await session.commit()
+            await persist_changes(session)
             await session.refresh(new_record)
             await audit_service.async_log_change(session, user_id, "TOGGLE_RECORD", old_model=old_data,
                                                  new_model=new_record)
         else:
             session.flush()
             session.add(record)
-            session.commit()
+            persist_sync_changes(session)
             session.refresh(new_record)
             audit_service.log_change(session, user_id, "TOGGLE_RECORD", old_model=old_data,
                                      new_model=new_record)

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_client_ip
 from app.database.session import get_async_db
+from app.database.unit_of_work import unit_of_work
 from app.features.devices.device_repository import (
     AsyncBiometricRepository,
     async_biometric_repository,
@@ -132,15 +133,19 @@ class DeviceService:
         assert session is not None
         sensor_index, ip_address = self._resolve_punch_input(payload, sensor_index, ip_address, request)
         try:
-            success, message, record = await punch_service.process_biometric_punch(
-                session, sensor_index, ip_address, request=request
-            )
+            async with unit_of_work(session):
+                success, message, record = await punch_service.process_biometric_punch(
+                    session, sensor_index, ip_address, request=request
+                )
 
-            if success and record:
-                await self._handle_punch_side_effects(session, record, background_tasks, request)
-                return self._build_success_feedback(record)
+                if success and record:
+                    await self._handle_punch_side_effects(session, record, background_tasks, request)
+                    feedback = self._build_success_feedback(record)
+                else:
+                    feedback = self._build_error_feedback(message)
 
-            return self._build_error_feedback(message)
+                feedback.model_dump(mode="json")
+                return feedback
         except Exception:
             logger.exception("Erro interno ao processar ponto no dispositivo")
             return self._build_internal_error_feedback()

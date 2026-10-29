@@ -25,7 +25,9 @@ def mock_user() -> User:
 @pytest.fixture
 def client(mock_user: User, db_session_mock: MagicMock) -> TestClient:
     async def override_get_async_db():
-        yield AsyncMock()
+        session = AsyncMock()
+        session.info = {}
+        yield session
 
     app.dependency_overrides[deps.get_current_active_user] = lambda: mock_user
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_user

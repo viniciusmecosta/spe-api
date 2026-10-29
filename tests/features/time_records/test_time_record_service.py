@@ -19,11 +19,21 @@ from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import (
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordResponse,
     TimeRecordUpdate,
 )
 from app.features.time_records.time_record_service import time_record_service
 from app.features.users.user_models import User
 from app.shared.enums import RecordType, UserRole
+
+
+@pytest.fixture(autouse=True)
+def isolate_response_serialization(mocker):
+    def preserve_mock_record(record):
+        record.model_dump = lambda **kwargs: {}
+        return record
+
+    mocker.patch.object(TimeRecordResponse, "model_validate", side_effect=preserve_mock_record)
 
 
 @pytest.fixture
@@ -874,6 +884,7 @@ def test_time_record_service_custom_repo():
 async def test_time_record_service_async_session_crud(mocker):
     from unittest.mock import AsyncMock
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
     async_sess.add = MagicMock()
 
@@ -961,6 +972,7 @@ async def test_time_record_service_async_session_crud(mocker):
 async def test_time_record_service_async_session_receipts_and_print(mocker):
     from unittest.mock import AsyncMock
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
 
     mock_company = MagicMock()
@@ -1005,6 +1017,7 @@ async def test_time_record_service_async_session_receipts_and_print(mocker):
 @pytest.mark.asyncio
 async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
@@ -1038,7 +1051,8 @@ async def test_time_record_service_admin_update_date_change_branches(mocker):
 
         MagicMock(), rec, obj_in, date(2026, 8, 1), date(2026, 8, 2), RecordType.EXIT
     )
-    sync_session = MagicMock(spec=["flush", "commit", "refresh"])
+    sync_session = MagicMock(spec=["flush", "commit", "refresh", "info"])
+    sync_session.info = {}
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
     await time_record_service.admin_service._commit_and_audit_admin_update(
         sync_session, 99, {}, rec

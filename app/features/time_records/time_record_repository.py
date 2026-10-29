@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes, persist_sync_changes
 from app.features.time_records.time_record_models import (
     TimeRecord,
     get_local_time,
@@ -44,7 +45,7 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
             biometric_id=biometric_id,
         )
         db.add(db_record)
-        db.commit()
+        persist_sync_changes(db)
         db.refresh(db_record)
         return db_record
 
@@ -181,7 +182,7 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
             record.deleted_at = get_local_time()
             record.deleted_by = manager_id
             record.is_ignored = True
-            db.commit()
+            persist_sync_changes(db)
 
     def get_timeline(self, db: Session, record_id: int) -> list[TimeRecord]:
         stmt = select(TimeRecord).where(TimeRecord.id == record_id)
@@ -235,7 +236,7 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
             biometric_id=biometric_id,
         )
         db.add(db_record)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_record)
         return db_record
 
@@ -380,7 +381,7 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
             record.deleted_at = get_local_time()
             record.deleted_by = manager_id
             record.is_ignored = True
-            await db.commit()
+            await persist_changes(db)
 
     async def get_timeline(self, db: AsyncSession, record_id: int) -> list[TimeRecord]:
         stmt = select(TimeRecord).where(TimeRecord.id == record_id)
