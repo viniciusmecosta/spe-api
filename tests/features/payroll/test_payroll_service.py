@@ -310,7 +310,7 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     mock_datetime.now.return_value = mock_now
 
     mock_get_by_month.return_value = None
-    mock_closure = MagicMock(id=99)
+    mock_closure = PayrollClosure(id=99, month=4, year=2024, is_closed=True)
     mock_create.return_value = mock_closure
 
     mock_excel.generate_excel_report.return_value = BytesIO(b"data")
@@ -324,7 +324,7 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
         result = await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
 
-    assert result == mock_closure
+    assert result.id == mock_closure.id
     mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id, commit=False)
     assert async_db_mock.commit.call_count == 1
     mock_audit.assert_called_once_with(
@@ -587,7 +587,7 @@ async def test_close_period_with_period_schema(
 ):
     mock_get_by_month.return_value = None
     mock_excel.return_value = BytesIO(b"data")
-    mock_closure = MagicMock(id=1, month=4, year=2024, report_path="reports/test.xlsx")
+    mock_closure = PayrollClosure(id=1, month=4, year=2024, is_closed=True, report_path="reports/test.xlsx")
     mock_create.return_value = mock_closure
 
     maintainer = MagicMock(spec=User)
@@ -604,7 +604,7 @@ async def test_close_period_with_period_schema(
         result = await payroll_service.close_period(
             async_db_mock, current_user=mock_user_manager, background_tasks=mock_background_tasks, period=period_schema
         )
-    assert result == mock_closure
+    assert result.id == mock_closure.id
 
 
 @patch("app.features.payroll.payroll_service.enqueue")
@@ -715,7 +715,7 @@ async def test_close_and_reopen_period_with_async_session_runs_sync_lock(
     scalars_mock.all.return_value = []
     session.scalars = AsyncMock(return_value=scalars_mock)
 
-    mock_closure = MagicMock(id=55, month=4, year=2024)
+    mock_closure = PayrollClosure(id=55, month=4, year=2024, is_closed=True)
     mocker.patch(
         "app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
         new_callable=AsyncMock, side_effect=[None, mock_closure],

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.database.errors import constraint_name
 from app.database.payroll_lock import lock_payroll_periods
+from app.database.unit_of_work import transactional, unit_of_work
 from app.features.payroll.payroll_exceptions import (
     PayrollAlreadyClosedError,
     PayrollClosureNotFoundError,
@@ -33,6 +34,7 @@ from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
 )
+from app.features.payroll.payroll_schemas import PayrollClosureResponse
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import email_service
@@ -232,29 +234,28 @@ class PayrollService:
             raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {e!s}")
 
         try:
-            closure = await self.repo.create(
-                session, month=month, year=year, user_id=current_user.id, commit=False
-            )
-            closure.report_path = f"reports/{filename}"
-            await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
-            await self._queue_notification(session, 'Fechamento', current_user, closure, month, year)
-            await session.commit()
+            async with unit_of_work(session):
+                closure = await self.repo.create(
+                    session, month=month, year=year, user_id=current_user.id, commit=False
+                )
+                closure.report_path = f"reports/{filename}"
+                await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
+                await self._queue_notification(session, 'Fechamento', current_user, closure, month, year)
+                response = PayrollClosureResponse.model_validate(closure)
+                response.model_dump(mode="json")
         except IntegrityError as exc:
-            await session.rollback()
             await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
             if constraint_name(exc) != "uq_payroll_closures_active_period":
                 raise
             raise PayrollAlreadyClosedError(
                 f"A folha de ponto referente a {month:02d}/{year} já está fechada."
             ) from exc
-        except Exception:
-            await session.rollback()
+        except BaseException:
             await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
             raise
-        await session.refresh(closure)
+        return response
 
-        return closure
-
+    @transactional
     async def reopen_period(
             self,
             db: AsyncSession | None = None,

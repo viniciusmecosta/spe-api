@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes
 from app.features.payroll.payroll_models import PayrollClosure
 
 
@@ -109,7 +110,7 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
         db.add(db_obj)
         if commit:
-            await db.commit()
+            await persist_changes(db)
             await db.refresh(db_obj)
         else:
             await db.flush()
@@ -156,7 +157,7 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             record.deleted_at = datetime.now()
             record.deleted_by = user_id
             record.reopen_observation = observation
-            await db.commit()
+            await persist_changes(db)
 
 
 payroll_repository = PayrollRepository()
