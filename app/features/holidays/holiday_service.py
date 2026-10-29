@@ -4,13 +4,14 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_async_db
+from app.database.unit_of_work import transactional
 from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
 from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_repository import (
     AsyncHolidayRepository,
     async_holiday_repository,
 )
-from app.features.holidays.holiday_schemas import HolidayCreate
+from app.features.holidays.holiday_schemas import HolidayCreate, HolidayResponse
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service
 
@@ -32,6 +33,7 @@ class HolidayService:
     def repo(self, value: AsyncHolidayRepository) -> None:
         self._repo = value
 
+    @transactional(response_model=HolidayResponse)
     async def create_holiday(
             self,
             db: AsyncSession | None = None,
@@ -54,6 +56,7 @@ class HolidayService:
         assert session is not None
         return await self.repo.get_all(session)
 
+    @transactional
     async def delete_holiday(
             self,
             db: AsyncSession | None = None,

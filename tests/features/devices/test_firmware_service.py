@@ -1,11 +1,12 @@
 import io
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import UploadFile
-from app.core.exceptions import DomainException
-from app.core.config import settings
-
 import pytest
+from fastapi import UploadFile
+
+from app.core.config import settings
+from app.core.exceptions import DomainException
 from app.features.devices.device_exceptions import (
     FirmwareFileNotFoundError,
     FirmwareNotFoundError,
@@ -43,11 +44,12 @@ async def test_upload_firmware_success(mocker, firmware_service, async_db_mock, 
     mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
     mocker.patch.object(firmware_service.repo, "get_latest", return_value=None)
     mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
-    mock_fw = Firmware(id=1, version="v1.0.0", file_path="rel/path")
+    mock_fw = Firmware(id=1, version="v1.0.0", file_path="rel/path", created_at=datetime.now(UTC))
     create = mocker.patch.object(firmware_service.repo, "create", return_value=mock_fw)
     audit = mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
     result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
-    assert result == mock_fw
+    assert result.version == mock_fw.version
+    assert result.file_path == mock_fw.file_path
     assert create.call_args.kwargs["commit"] is False
     path = tmp_path / create.call_args.kwargs["file_path"]
     assert path.read_bytes() == b"synthetic firmware"
@@ -90,7 +92,7 @@ async def test_upload_firmware_latest_invalid_version(mocker, firmware_service, 
     mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
     mocker.patch.object(firmware_service.repo, "get_latest", return_value=Firmware(id=1, version="invalid"))
     mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
-    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=2, version="v1.0.0"))
+    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=2, version="v1.0.0", created_at=datetime.now(UTC)))
     mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
     result = await firmware_service.upload_firmware(async_db_mock, "v1.0.0", mock_upload_file, 1)
     assert result.version == "v1.0.0"
@@ -132,11 +134,11 @@ async def test_update_firmware_file_success(mocker, firmware_service, async_db_m
     mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
     old_fw = Firmware(id=1, version="v1.0.0", file_path="old/path")
     mocker.patch.object(firmware_service.repo, "get_by_version", return_value=old_fw)
-    new_fw = Firmware(id=2, version="v1.0.0")
+    new_fw = Firmware(id=2, version="v1.0.0", created_at=datetime.now(UTC))
     create = mocker.patch.object(firmware_service.repo, "create", return_value=new_fw)
     mocker.patch("app.features.devices.firmware_service.audit_service.async_log_change")
     result = await firmware_service.update_firmware_file(async_db_mock, "v1.0.0", mock_upload_file, 1)
-    assert result == new_fw
+    assert result.version == new_fw.version
     assert (tmp_path / create.call_args.kwargs["file_path"]).read_bytes() == b"synthetic firmware"
     async_db_mock.commit.assert_awaited_once()
 
@@ -147,7 +149,7 @@ async def test_firmware_failed_commit_removes_new_binary(mocker, firmware_servic
     mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))
     mocker.patch.object(firmware_service.repo, "get_latest", return_value=None)
     mocker.patch.object(firmware_service.repo, "get_by_version", return_value=None)
-    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=1, version="v1.0.0"))
+    mocker.patch.object(firmware_service.repo, "create", return_value=Firmware(id=1, version="v1.0.0", created_at=datetime.now(UTC)))
     async_db_mock.commit.side_effect = RuntimeError("commit failed")
     async_db_mock.rollback = AsyncMock()
     with pytest.raises(RuntimeError, match="commit failed"):

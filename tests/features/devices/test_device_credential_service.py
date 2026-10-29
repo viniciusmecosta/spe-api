@@ -1,10 +1,15 @@
-import pytest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.features.devices.device_credential_service import device_credential_service
 from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
-from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate
+from app.features.devices.device_schemas import (
+    DeviceCredentialCreate,
+    DeviceCredentialUpdate,
+)
 from app.shared.enums import DeviceKeyType
 
 
@@ -16,6 +21,8 @@ async def test_create_device_credential(async_db_mock: AsyncMock, mocker: MagicM
         key_type=DeviceKeyType.DEVICE,
         api_key_hash="hash",
         is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     mocker.patch(
         "app.features.devices.device_credential_service.async_device_credential_repository.create",
@@ -52,7 +59,8 @@ async def test_get_all_device_credentials(async_db_mock: AsyncMock, mocker: Magi
 @pytest.mark.asyncio
 async def test_update_device_credential_success(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     device = DeviceCredential(id=1, name="Old Name", is_active=True)
-    updated_device = DeviceCredential(id=1, name="New Name", is_active=True)
+    updated_device = DeviceCredential(id=1, name="New Name", is_active=True, key_type=DeviceKeyType.DEVICE,
+                                      created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
     mocker.patch(
         "app.features.devices.device_credential_service.async_device_credential_repository.get",
         new_callable=AsyncMock,

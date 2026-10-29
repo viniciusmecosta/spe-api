@@ -4,6 +4,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_async_db
+from app.database.unit_of_work import transactional
 from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
 from app.features.devices.device_repository import (
@@ -12,6 +13,7 @@ from app.features.devices.device_repository import (
 )
 from app.features.devices.device_schemas import (
     DeviceCredentialCreate,
+    DeviceCredentialResponse,
     DeviceCredentialUpdate,
 )
 from app.features.system.audit_service import audit_service, serialize_model
@@ -34,6 +36,7 @@ class DeviceCredentialService:
     def repo(self, value: AsyncDeviceCredentialRepository) -> None:
         self._repo = value
 
+    @transactional(response_model=DeviceCredentialResponse)
     async def create(
             self,
             db: AsyncSession | None = None,
@@ -52,6 +55,7 @@ class DeviceCredentialService:
         assert session is not None
         return await self.repo.get_all(session)
 
+    @transactional(response_model=DeviceCredentialResponse)
     async def update(
             self,
             db: AsyncSession | None = None,
@@ -72,6 +76,7 @@ class DeviceCredentialService:
                                              new_model=updated_device)
         return updated_device
 
+    @transactional
     async def delete(
             self,
             db: AsyncSession | None = None,

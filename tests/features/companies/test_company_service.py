@@ -1,11 +1,10 @@
 import io
-
-from PIL import Image
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import UploadFile
-
 import pytest
+from fastapi import UploadFile
+from PIL import Image
+
 from app.features.companies.company_exceptions import (
     CompanyAlreadyExistsError,
     CompanyNotFoundError,
@@ -60,7 +59,8 @@ async def test_create_company_success(mocker, async_db_mock):
                               new_callable=AsyncMock)
 
     result = await company_service.create_company(async_db_mock, obj_in, 99)
-    assert result == created_company
+    assert result.id == created_company.id
+    assert result.name == created_company.name
     mock_audit.assert_called_once_with(
         async_db_mock, 99, "CREATE", new_model=created_company
     )
@@ -95,7 +95,8 @@ async def test_update_company_success(mocker, async_db_mock):
     result = await company_service.update_company(async_db_mock, obj_in, 100)
 
     from unittest import mock
-    assert result == updated
+    assert result.id == updated.id
+    assert result.name == updated.name
     mock_audit.assert_called_once_with(
         async_db_mock, 100, "UPDATE", old_model=mock.ANY, new_model=updated
     )
@@ -139,7 +140,7 @@ def logo_file(name="logo.png"):
 @pytest.mark.asyncio
 async def test_upload_logo_success_no_old_logo(mocker, async_db_mock, tmp_path):
     mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
-    existing = Company(id=1, logo_path=None)
+    existing = Company(id=1, name="Empresa", cnpj="11222333000181", address="Rua Teste", logo_path=None)
     mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     mock_audit = mocker.patch("app.features.system.audit_service.audit_service.async_log_change",
                               new_callable=AsyncMock)
@@ -169,7 +170,7 @@ async def test_old_logo_removed_only_after_successful_commit(mocker, async_db_mo
     directory.mkdir(exist_ok=True)
     old = directory / "old.jpg"
     old.write_bytes(b"old logo")
-    existing = Company(id=1, logo_path="old.jpg")
+    existing = Company(id=1, name="Empresa", cnpj="11222333000181", address="Rua Teste", logo_path="old.jpg")
     mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
 
@@ -189,7 +190,7 @@ async def test_commit_failure_keeps_old_logo_and_removes_new_file(mocker, async_
     directory.mkdir()
     old = directory / "old.jpg"
     old.write_bytes(b"preserve")
-    existing = Company(id=1, logo_path="old.jpg")
+    existing = Company(id=1, name="Empresa", cnpj="11222333000181", address="Rua Teste", logo_path="old.jpg")
     mocker.patch.object(company_service.repo, "get_current", return_value=existing)
     async_db_mock.commit.side_effect = RuntimeError("commit failure")
     async_db_mock.rollback = AsyncMock()

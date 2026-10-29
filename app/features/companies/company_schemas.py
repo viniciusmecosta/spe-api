@@ -1,7 +1,7 @@
 import re
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, field_validator
 
 NON_DIGIT_REGEX = r'\D'
 
@@ -68,6 +68,14 @@ class CompanyUpdate(BaseModel):
     logo_path: str | None = None
     auto_print_receipt: bool | None = None
     default_printer_id: int | None = None
+
+
+    @field_validator("name", "cnpj", "address", "auto_print_receipt", mode="before")
+    @classmethod
+    def reject_null_required_fields(cls, value):
+        if value is None:
+            raise ValueError("Este campo obrigatório não pode ser nulo.")
+        return value
 
 
 class CompanyResponse(CompanyBase):

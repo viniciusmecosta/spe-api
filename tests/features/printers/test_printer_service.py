@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.features.printers.printer_exceptions import PrinterNotFoundError
 from app.features.printers.printer_models import Printer
@@ -30,7 +31,7 @@ async def test_printer_service_get_by_id_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_printer_service_get_all(async_db_mock, mocker):
-    mock_printers = [Printer(id=1, name="P1", address="192.168.1.10", company_id=1)]
+    mock_printers = [Printer(id=1, name="P1", address="192.168.1.10", company_id=1, status=False, paper_width=80)]
     mocker.patch("app.features.printers.printer_service.async_printer_repository.get_all", new_callable=AsyncMock,
                  return_value=mock_printers)
 
@@ -41,19 +42,20 @@ async def test_printer_service_get_all(async_db_mock, mocker):
 @pytest.mark.asyncio
 async def test_printer_service_create(async_db_mock, mocker):
     printer_in = PrinterCreate(name="P1", address="192.168.1.10", company_id=1)
-    mock_printer = Printer(id=1, name="P1", address="192.168.1.10", company_id=1)
+    mock_printer = Printer(id=1, name="P1", address="192.168.1.10", company_id=1, status=False, paper_width=80)
     mocker.patch("app.features.printers.printer_service.async_printer_repository.create", new_callable=AsyncMock,
                  return_value=mock_printer)
     mocker.patch("app.features.printers.printer_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     result = await printer_service.create(async_db_mock, printer_in, current_user_id=1)
-    assert result == mock_printer
+    assert result.id == mock_printer.id
+    assert result.name == mock_printer.name
 
 
 @pytest.mark.asyncio
 async def test_printer_service_update(async_db_mock, mocker):
     printer_update = PrinterUpdate(name="Updated P1")
-    mock_printer = Printer(id=1, name="Updated P1", address="192.168.1.10", company_id=1)
+    mock_printer = Printer(id=1, name="Updated P1", address="192.168.1.10", company_id=1, status=False, paper_width=80)
     mocker.patch("app.features.printers.printer_service.async_printer_repository.get_by_id", new_callable=AsyncMock,
                  return_value=mock_printer)
     mocker.patch("app.features.printers.printer_service.async_printer_repository.update", new_callable=AsyncMock,
@@ -62,12 +64,13 @@ async def test_printer_service_update(async_db_mock, mocker):
     mocker.patch("app.features.printers.printer_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     result = await printer_service.update(async_db_mock, 1, printer_update, current_user_id=1)
-    assert result == mock_printer
+    assert result.id == mock_printer.id
+    assert result.name == mock_printer.name
 
 
 @pytest.mark.asyncio
 async def test_printer_service_delete(async_db_mock, mocker):
-    mock_printer = Printer(id=1, name="P1", address="192.168.1.10", company_id=1)
+    mock_printer = Printer(id=1, name="P1", address="192.168.1.10", company_id=1, status=False, paper_width=80)
     mocker.patch("app.features.printers.printer_service.async_printer_repository.get_by_id", new_callable=AsyncMock,
                  return_value=mock_printer)
     mock_delete = mocker.patch("app.features.printers.printer_service.async_printer_repository.delete",

@@ -3,14 +3,21 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import DomainException
 from app.database.session import get_async_db
+from app.database.unit_of_work import transactional
+from app.features.companies.company_models import Company
 from app.features.printers.printer_exceptions import PrinterNotFoundError
 from app.features.printers.printer_models import Printer
 from app.features.printers.printer_repository import (
     AsyncPrinterRepository,
     async_printer_repository,
 )
-from app.features.printers.printer_schemas import PrinterCreate, PrinterUpdate
+from app.features.printers.printer_schemas import (
+    PrinterCreate,
+    PrinterResponse,
+    PrinterUpdate,
+)
 from app.features.system.audit_service import audit_service, serialize_model
 
 PRINTER_NOT_FOUND_MSG = "Impressora não encontrada."
@@ -46,33 +53,44 @@ class PrinterService:
         assert session is not None
         return await self.repo.get_all(session, skip=skip, limit=limit)
 
+    @transactional(response_model=PrinterResponse)
     async def create(self, db: AsyncSession | None = None, obj_in: PrinterCreate | None = None,
                      current_user_id: int = 0) -> Printer:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
+        await self._validate_company(session, obj_in.company_id)
         printer = await self.repo.create(session, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "CREATE", new_model=printer)
         return printer
 
+    @transactional(response_model=PrinterResponse)
     async def update(self, db: AsyncSession | None = None, printer_id: int = 0, obj_in: PrinterUpdate | None = None,
                      current_user_id: int = 0) -> Printer:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
         printer = await self.get_by_id(session, printer_id=printer_id)
+        await self._validate_company(session, obj_in.company_id)
         old_data = serialize_model(printer)
         updated_printer = await self.repo.update(session, db_obj=printer, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "UPDATE", old_model=old_data,
                                              new_model=updated_printer)
         return updated_printer
 
+    @transactional
     async def delete(self, db: AsyncSession | None = None, printer_id: int = 0, current_user_id: int = 0) -> None:
         session = db if db is not None else self.db
         assert session is not None
         printer = await self.get_by_id(session, printer_id=printer_id)
         await audit_service.async_log_change(session, current_user_id, "DELETE", old_model=printer)
         await self.repo.delete(session, printer_id=printer_id)
+
+
+    @staticmethod
+    async def _validate_company(session: AsyncSession, company_id: int | None) -> None:
+        if company_id is not None and await session.get(Company, company_id) is None:
+            raise DomainException("A empresa informada não existe.", 422)
 
 
 printer_service = PrinterService()
