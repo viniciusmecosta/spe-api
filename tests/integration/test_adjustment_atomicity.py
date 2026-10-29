@@ -18,7 +18,7 @@ pytestmark = pytest.mark.asyncio
 
 async def create_adjustment(factory):
     async with factory() as session:
-        user = User(username='atomic', role=UserRole.MAINTAINER)
+        user = User(username='atomic', name='Colaborador Alfa', role=UserRole.MAINTAINER)
         session.add(user)
         await session.flush()
         request = AdjustmentRequest(user_id=user.id, adjustment_type=AdjustmentType.FORGOT_PUNCH,

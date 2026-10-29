@@ -59,7 +59,7 @@ class AdjustmentRequest(Base):
 
     @property
     def user_name(self):
-        return self.user.name if self.user else "Desconhecido"
+        return self.user.name if self.user and self.user.name else "Desconhecido"
 
 
 class AdjustmentAttachment(Base):

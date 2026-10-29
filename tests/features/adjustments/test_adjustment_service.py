@@ -27,9 +27,23 @@ from app.features.users.user_models import User
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType, UserRole
 
 
+def make_adjustment(**values):
+    defaults = {
+        "id": 1,
+        "user_id": 1,
+        "adjustment_type": AdjustmentType.FORGOT_PUNCH,
+        "target_date": date(2026, 10, 27),
+        "status": AdjustmentStatus.PENDING,
+        "created_at": datetime(2026, 10, 27, 8, tzinfo=timezone.utc),
+        "attachments": [],
+    }
+    defaults.update(values)
+    return AdjustmentRequest(**defaults)
+
+
 @pytest.mark.asyncio
 async def test_execute_and_revert_action_no_time(async_db_mock):
-    req = AdjustmentRequest(user_id=1, target_date=date(2026, 1, 1), time=None)
+    req = make_adjustment(user_id=1, target_date=date(2026, 1, 1), time=None)
     await adjustment_service._execute_adjustment_action(async_db_mock, req, 1)
     await adjustment_service._revert_adjustment_action(async_db_mock, req, 1)
 
@@ -47,7 +61,7 @@ async def test_get_attachment_file_path_not_found(async_db_mock, mocker):
 @pytest.mark.asyncio
 async def test_get_attachment_file_path_forbidden(async_db_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
-    req = AdjustmentRequest(id=1, user_id=2, attachments=[])
+    req = make_adjustment(id=1, user_id=2, attachments=[])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=req)
     with pytest.raises(AdjustmentPermissionError) as exc2:
@@ -58,7 +72,7 @@ async def test_get_attachment_file_path_forbidden(async_db_mock, mocker):
 @pytest.mark.asyncio
 async def test_get_attachment_file_path_no_attachments(async_db_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
-    req_own = AdjustmentRequest(id=1, user_id=1, attachments=[])
+    req_own = make_adjustment(id=1, user_id=1, attachments=[])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=req_own)
     with pytest.raises(AdjustmentAttachmentNotFoundError) as exc3:
@@ -70,7 +84,7 @@ async def test_get_attachment_file_path_no_attachments(async_db_mock, mocker):
 async def test_get_attachment_file_path_file_not_found(async_db_mock, mocker):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     att = AdjustmentAttachment(id=1, file_path="/non_existent/path/doc.pdf")
-    req_att = AdjustmentRequest(id=1, user_id=1, attachments=[att])
+    req_att = make_adjustment(id=1, user_id=1, attachments=[att])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=req_att)
     with pytest.raises(AttachmentFileNotFoundError) as exc4:
@@ -82,7 +96,7 @@ async def test_get_attachment_file_path_file_not_found(async_db_mock, mocker):
 async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker, tmp_path):
     emp = User(id=1, role=UserRole.EMPLOYEE)
     att = AdjustmentAttachment(id=1, file_path="/non_existent/path/doc.pdf")
-    req_att = AdjustmentRequest(id=1, user_id=1, attachments=[att])
+    req_att = make_adjustment(id=1, user_id=1, attachments=[att])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=req_att)
     mocker.patch('app.core.config.settings.UPLOAD_DIR', str(tmp_path))
@@ -94,8 +108,8 @@ async def test_get_attachment_file_path_fallback_success(async_db_mock, mocker, 
 
 @pytest.mark.asyncio
 async def test_enrich_adjustments_with_records(async_db_mock):
-    adj1 = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
-    adj2 = AdjustmentRequest(id=2, user_id=1, target_date=date(2023, 10, 2))
+    adj1 = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1))
+    adj2 = make_adjustment(id=2, user_id=1, target_date=date(2023, 10, 2))
 
     tr1 = TimeRecord(user_id=1, record_datetime=datetime(2023, 10, 1, 8, 0))
     mock_scalars = MagicMock()
@@ -111,7 +125,7 @@ async def test_enrich_adjustments_with_records(async_db_mock):
 @pytest.mark.asyncio
 async def test_enrich_adjustments_matches_local_day_for_utc_record(async_db_mock):
     target_date = date(2023, 10, 1)
-    adjustment = AdjustmentRequest(id=1, user_id=1, target_date=target_date)
+    adjustment = make_adjustment(id=1, user_id=1, target_date=target_date)
     record = TimeRecord(
         user_id=1,
         record_datetime=datetime(2023, 10, 2, 1, 0, tzinfo=timezone.utc),
@@ -138,7 +152,7 @@ async def test_enrich_adjustments_matches_local_day_for_utc_record(async_db_mock
 async def test_validate_waiver_limit_ok(async_db_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get_waivers_by_user_and_date",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(amount_hours=2.0)])
+                 return_value=[make_adjustment(amount_hours=2.0)])
     await adjustment_service._validate_waiver_limit(async_db_mock, 1, date(2023, 10, 1), 5.0)
 
 
@@ -146,7 +160,7 @@ async def test_validate_waiver_limit_ok(async_db_mock, mocker):
 async def test_validate_waiver_limit_exceeded(async_db_mock, mocker):
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get_waivers_by_user_and_date",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(amount_hours=8.0)])
+                 return_value=[make_adjustment(amount_hours=8.0)])
     target_date = date(2023, 10, 1)
     with pytest.raises(WaiverLimitExceededError) as exc:
         await adjustment_service._validate_waiver_limit(async_db_mock, 1, target_date, 5.0)
@@ -161,10 +175,10 @@ async def test_create_adjustment_request(async_db_mock, mocker):
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.create",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1)))
+                 return_value=make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1)))
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1)])
+                 return_value=[make_adjustment(id=1)])
 
     obj_in = AdjustmentRequestCreate(adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1),
                                      amount_hours=2.0, reason_text="teste")
@@ -182,10 +196,10 @@ async def test_create_manager_waiver(async_db_mock, mocker):
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1)))
+                 return_value=make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1)))
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1)])
+                 return_value=[make_adjustment(id=1)])
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     obj_in = AdjustmentWaiverCreate(user_id=1, target_date=date(2023, 10, 1), amount_hours=8.0, reason_text="teste")
@@ -195,7 +209,7 @@ async def test_create_manager_waiver(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_admin_delete_adjustment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -221,7 +235,7 @@ async def test_delete_adjustment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_adjustment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
+    request = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.FORGOT_PUNCH,
                                 status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -231,11 +245,11 @@ async def test_approve_adjustment(async_db_mock, mocker):
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
+                 return_value=make_adjustment(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
+                 return_value=[make_adjustment(id=1, status=AdjustmentStatus.APPROVED)])
 
     res = await adjustment_service.approve_adjustment(async_db_mock, 1, 99)
     assert res.status == AdjustmentStatus.APPROVED
@@ -243,7 +257,7 @@ async def test_approve_adjustment(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_adjustment_waiver_no_attachment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.WAIVER,
+    request = make_adjustment(id=1, target_date=date(2023, 10, 1), adjustment_type=AdjustmentType.WAIVER,
                                 attachments=[])
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -256,23 +270,23 @@ async def test_approve_adjustment_waiver_no_attachment(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_reject_adjustment(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
+    request = make_adjustment(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.REJECTED))
+                 return_value=make_adjustment(id=1, status=AdjustmentStatus.REJECTED))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.REJECTED)])
+                 return_value=[make_adjustment(id=1, status=AdjustmentStatus.REJECTED)])
 
     res = await adjustment_service.reject_adjustment(async_db_mock, 1, 99, "comentario")
     assert res.status == AdjustmentStatus.REJECTED
 
-    request_approved = AdjustmentRequest(id=2, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
+    request_approved = make_adjustment(id=2, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
                                          adjustment_type=AdjustmentType.WAIVER)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get",
                  new_callable=AsyncMock,
@@ -285,7 +299,8 @@ async def test_reject_adjustment(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_execute_adjustment_action_create(async_db_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+    async_db_mock.scalar.return_value = None
+    request = make_adjustment(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
                                 adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
     await adjustment_service._execute_adjustment_action(async_db_mock, request, 99)
     async_db_mock.add.assert_called_once()
@@ -293,7 +308,7 @@ async def test_execute_adjustment_action_create(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_execute_adjustment_action_delete(async_db_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+    request = make_adjustment(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
                                 adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     mock_scalars = MagicMock()
@@ -307,7 +322,7 @@ async def test_execute_adjustment_action_delete(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_action(async_db_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+    request = make_adjustment(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
                                 adjustment_type=AdjustmentType.FORGOT_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     mock_scalars = MagicMock()
@@ -321,7 +336,7 @@ async def test_revert_adjustment_action(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_status(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
+    request = make_adjustment(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.APPROVED,
                                 adjustment_type=AdjustmentType.FORGOT_PUNCH)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -331,11 +346,11 @@ async def test_revert_adjustment_status(async_db_mock, mocker):
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.PENDING))
+                 return_value=make_adjustment(id=1, status=AdjustmentStatus.PENDING))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.PENDING)])
+                 return_value=[make_adjustment(id=1, status=AdjustmentStatus.PENDING)])
 
     res = await adjustment_service.revert_adjustment_status(async_db_mock, 1, 99, AdjustmentStatus.PENDING, "motivo")
     assert res.status == AdjustmentStatus.PENDING
@@ -386,7 +401,7 @@ async def test_admin_delete_adjustment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_delete_adjustment_success(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -403,7 +418,7 @@ async def test_delete_adjustment_success(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_delete_extra_time_adjustment_success(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.EXTRA_TIME, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -424,7 +439,7 @@ async def test_delete_extra_time_adjustment_success(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_delete_waiver_adjustment_success(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.WAIVER, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -445,7 +460,7 @@ async def test_delete_waiver_adjustment_success(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_delete_adjustment_wrong_type_blocked(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.PUNCH_NOT_COUNTED, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.PUNCH_NOT_COUNTED, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -463,7 +478,7 @@ async def test_delete_adjustment_wrong_type_blocked(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_admin_delete_adjustment_wrong_type_blocked(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.FORGOT_PUNCH, target_date=date(2023, 10, 1),
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.FORGOT_PUNCH, target_date=date(2023, 10, 1),
                                 status=AdjustmentStatus.APPROVED)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -491,7 +506,7 @@ async def test_upload_attachment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_upload_attachment_forbidden(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=2)
+    request = make_adjustment(id=1, user_id=2)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     upload_file = UploadFile(filename="test.png", file=BytesIO(b""))
@@ -502,7 +517,7 @@ async def test_upload_attachment_forbidden(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_upload_attachment_invalid_name(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
+    request = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
@@ -515,7 +530,7 @@ async def test_upload_attachment_invalid_name(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_upload_attachment_invalid_ext(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
+    request = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
@@ -528,7 +543,7 @@ async def test_upload_attachment_invalid_ext(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_upload_attachment_invalid_content(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
+    request = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
@@ -541,7 +556,7 @@ async def test_upload_attachment_invalid_content(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_upload_attachment_success(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, user_id=1, target_date=date(2023, 10, 1))
+    request = make_adjustment(id=1, user_id=1, target_date=date(2023, 10, 1))
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
@@ -581,13 +596,13 @@ async def test_reject_adjustment_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_action_waiver(async_db_mock):
-    request = AdjustmentRequest(id=1, adjustment_type=AdjustmentType.WAIVER)
+    request = make_adjustment(id=1, adjustment_type=AdjustmentType.WAIVER)
     await adjustment_service._revert_adjustment_action(async_db_mock, request, 99)
 
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_action_delete_punch(async_db_mock, mocker):
-    request = AdjustmentRequest(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
+    request = make_adjustment(user_id=1, target_date=date(2023, 10, 1), time=time(8, 0),
                                 adjustment_type=AdjustmentType.DELETE_PUNCH, record_type=RecordType.ENTRY)
     record = TimeRecord(id=1)
     mock_scalars = MagicMock()
@@ -610,7 +625,7 @@ async def test_revert_adjustment_status_not_found(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_status_same(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
+    request = make_adjustment(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
@@ -625,7 +640,7 @@ async def test_revert_adjustment_status_same(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_status_approve(async_db_mock, mocker):
-    request = AdjustmentRequest(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING,
+    request = make_adjustment(id=1, target_date=date(2023, 10, 1), status=AdjustmentStatus.PENDING,
                                 adjustment_type=AdjustmentType.FORGOT_PUNCH)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.get", new_callable=AsyncMock,
                  return_value=request)
@@ -635,11 +650,11 @@ async def test_revert_adjustment_status_approve(async_db_mock, mocker):
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.async_adjustment_repository.update_status",
                  new_callable=AsyncMock,
-                 return_value=AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED))
+                 return_value=make_adjustment(id=1, status=AdjustmentStatus.APPROVED))
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._enrich_adjustments_with_records",
                  new_callable=AsyncMock,
-                 return_value=[AdjustmentRequest(id=1, status=AdjustmentStatus.APPROVED)])
+                 return_value=[make_adjustment(id=1, status=AdjustmentStatus.APPROVED)])
 
     res = await adjustment_service.revert_adjustment_status(async_db_mock, 1, 99, AdjustmentStatus.APPROVED, "motivo")
     assert res.status == AdjustmentStatus.APPROVED
@@ -663,7 +678,7 @@ async def test_create_adjustment_extra_time_blocked(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
-    request = AdjustmentRequest(
+    request = make_adjustment(
         id=10,
         user_id=1,
         target_date=date(2026, 8, 1),
@@ -693,7 +708,7 @@ async def test_approve_daily_excess_partial_hours(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_revert_adjustment_status_approve_daily_excess(async_db_mock, mocker):
-    request = AdjustmentRequest(
+    request = make_adjustment(
         id=24,
         user_id=4,
         target_date=date(2026, 9, 1),
@@ -760,7 +775,7 @@ async def test_adjustment_actions_and_upload_edge_cases(async_db_mock, mocker):
     async_db_mock.scalars = AsyncMock(return_value=scalars_mock)
     async_db_mock.scalar = AsyncMock(return_value=rec)
 
-    adj_with_applied = AdjustmentRequest(id=5, user_id=1, target_date=date(2026, 8, 1), time=time(8, 0), applied_time_record_id=77)
+    adj_with_applied = make_adjustment(id=5, user_id=1, target_date=date(2026, 8, 1), time=time(8, 0), applied_time_record_id=77)
     matched = await _matching_record(async_db_mock, adj_with_applied, False)
     assert matched is rec
 
@@ -770,11 +785,11 @@ async def test_adjustment_actions_and_upload_edge_cases(async_db_mock, mocker):
     assert adj_with_applied.applied_time_record_id == 77
 
     del_action = DeletePunchAction()
-    adj_no_time = AdjustmentRequest(id=6, user_id=1, target_date=date(2026, 8, 1), time=None)
+    adj_no_time = make_adjustment(id=6, user_id=1, target_date=date(2026, 8, 1), time=None)
     await del_action.apply(async_db_mock, adj_no_time, 99)
     await del_action.revert(async_db_mock, adj_no_time, 99)
 
-    req_obj = AdjustmentRequest(id=1, user_id=1, target_date=date(2026, 8, 1), status=AdjustmentStatus.PENDING, adjustment_type=AdjustmentType.WAIVER)
+    req_obj = make_adjustment(id=1, user_id=1, target_date=date(2026, 8, 1), status=AdjustmentStatus.PENDING, adjustment_type=AdjustmentType.WAIVER)
     mocker.patch.object(adjustment_service.repo, "lock", new_callable=AsyncMock)
     mocker.patch.object(adjustment_service.repo, "get", new_callable=AsyncMock, return_value=req_obj)
     mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
@@ -795,7 +810,7 @@ async def test_adjustment_actions_and_upload_edge_cases(async_db_mock, mocker):
         await adjustment_service.upload_attachment(async_db_mock, 1, file, 1)
     remove_mock.assert_awaited_once_with(stored)
 
-    already_approved = AdjustmentRequest(
+    already_approved = make_adjustment(
         id=2, user_id=1, target_date=date(2026, 8, 1),
         status=AdjustmentStatus.APPROVED, adjustment_type=AdjustmentType.WAIVER,
     )
@@ -804,4 +819,5 @@ async def test_adjustment_actions_and_upload_edge_cases(async_db_mock, mocker):
     mocker.patch.object(adjustment_service, "_validate_period_open", new_callable=AsyncMock)
     mocker.patch.object(adjustment_service, "_enrich_adjustments_with_records", new_callable=AsyncMock, return_value=[already_approved])
     res_approved = await adjustment_service.approve_adjustment(async_db_mock, 2, 99)
-    assert res_approved is already_approved
+    assert res_approved.id == already_approved.id
+    assert res_approved.status == already_approved.status

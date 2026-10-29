@@ -27,6 +27,7 @@ from app.features.adjustments.adjustment_repository import (
 )
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
+    AdjustmentRequestResponse,
     AdjustmentWaiverCreate,
 )
 from app.features.payroll.payroll_service import payroll_service
@@ -105,6 +106,12 @@ class AdjustmentService:
                 f"Limite máximo de 10 horas de abono por dia excedido. Horas disponíveis para esta data: {remaining}h."
             )
 
+    async def _build_response(self, session: AsyncSession, adjustment: AdjustmentRequest) -> AdjustmentRequestResponse:
+        enriched = await self._enrich_adjustments_with_records(session, [adjustment])
+        response = AdjustmentRequestResponse.model_validate(enriched[0])
+        response.model_dump(mode="json")
+        return response
+
     async def _validate_period_open(self, session: AsyncSession, target_date: date) -> None:
         if hasattr(payroll_service, "async_validate_period_open"):
             await payroll_service.async_validate_period_open(session, target_date)
@@ -136,7 +143,7 @@ class AdjustmentService:
 
     @transactional
     async def create_adjustment_request(self, db: AsyncSession | None = None, user_id: int = 0,
-                                  obj_in: AdjustmentRequestCreate | None = None) -> AdjustmentRequest:
+                                  obj_in: AdjustmentRequestCreate | None = None) -> AdjustmentRequestResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert obj_in is not None
@@ -152,13 +159,12 @@ class AdjustmentService:
             await self._validate_waiver_limit(session, user_id, obj_in.target_date, obj_in.amount_hours)
 
         adjustment = await self.repo.create(session, user_id=user_id, obj_in=obj_in)
-        enriched = await self._enrich_adjustments_with_records(session, [adjustment])
-        return enriched[0]
+        return await self._build_response(session, adjustment)
 
     @transactional
     async def create_manager_waiver(self, db: AsyncSession | None = None,
                                     waiver_in: AdjustmentWaiverCreate | None = None,
-                              manager_id: int = 0) -> AdjustmentRequest:
+                              manager_id: int = 0) -> AdjustmentRequestResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert waiver_in is not None
@@ -177,8 +183,7 @@ class AdjustmentService:
             session, adjustment, AdjustmentStatus.APPROVED, manager_id, "Abonado manualmente pelo gestor"
         )
         await audit_service.async_log_change(session, manager_id, "CREATE_WAIVER", new_model=adjustment)
-        enriched = await self._enrich_adjustments_with_records(session, [adjustment])
-        return enriched[0]
+        return await self._build_response(session, adjustment)
 
     @transactional
     async def admin_delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, admin_id: int = 0,
@@ -275,7 +280,7 @@ class AdjustmentService:
 
     @transactional
     async def approve_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
-                           comment: str | None = None, approved_amount_hours: float | None = None) -> AdjustmentRequest:
+                           comment: str | None = None, approved_amount_hours: float | None = None) -> AdjustmentRequestResponse:
         session = db if db is not None else self.db
         assert session is not None
         await self.repo.lock(session, request_id)
@@ -285,7 +290,7 @@ class AdjustmentService:
         await self._validate_period_open(session, request.target_date)
 
         if request.status == AdjustmentStatus.APPROVED and request.adjustment_type != AdjustmentType.DAILY_EXCESS:
-            return (await self._enrich_adjustments_with_records(session, [request]))[0]
+            return await self._build_response(session, request)
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
@@ -301,15 +306,14 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment, "approved_amount_hours": approved_amount_hours} if (comment or approved_amount_hours is not None) else None
         )
-        enriched = await self._enrich_adjustments_with_records(session, [updated])
-        return enriched[0]
+        return await self._build_response(session, updated)
 
     async def _execute_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
         await adjustment_action(request.adjustment_type).apply(db, request, manager_id)
 
     @transactional
     async def reject_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
-                          comment: str | None = None) -> AdjustmentRequest:
+                          comment: str | None = None) -> AdjustmentRequestResponse:
         session = db if db is not None else self.db
         assert session is not None
         await self.repo.lock(session, request_id)
@@ -328,8 +332,7 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        enriched = await self._enrich_adjustments_with_records(session, [updated])
-        return enriched[0]
+        return await self._build_response(session, updated)
 
     async def _revert_adjustment_action(self, db: AsyncSession, request: AdjustmentRequest, manager_id: int):
         await adjustment_action(request.adjustment_type).revert(db, request, manager_id)
@@ -337,7 +340,7 @@ class AdjustmentService:
     @transactional
     async def revert_adjustment_status(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                                        new_status: AdjustmentStatus | None = None,
-                                 comment: str = "") -> AdjustmentRequest:
+                                 comment: str = "") -> AdjustmentRequestResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert new_status is not None
@@ -351,8 +354,7 @@ class AdjustmentService:
         old_status = request.status
 
         if old_status == new_status:
-            enriched = await self._enrich_adjustments_with_records(session, [request])
-            return enriched[0]
+            return await self._build_response(session, request)
 
         if old_status == AdjustmentStatus.APPROVED and new_status in [AdjustmentStatus.PENDING,
                                                                       AdjustmentStatus.REJECTED]:
@@ -371,8 +373,7 @@ class AdjustmentService:
             old_model=old_data, new_model=updated,
             new_data={"comment": comment} if comment else None
         )
-        enriched = await self._enrich_adjustments_with_records(session, [updated])
-        return enriched[0]
+        return await self._build_response(session, updated)
 
     async def get_attachment_file_path(
             self, db: AsyncSession | None = None, adjustment_id: int = 0, current_user: User | None = None
