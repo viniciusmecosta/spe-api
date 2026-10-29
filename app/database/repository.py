@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
-from app.database.unit_of_work import persist_changes
+from app.database.unit_of_work import persist_changes, persist_sync_changes
 
 
 class BaseRepository[
@@ -35,7 +35,7 @@ class BaseRepository[
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        db.commit()
+        persist_sync_changes(db)
         db.refresh(db_obj)
         return db_obj
 
@@ -58,7 +58,7 @@ class BaseRepository[
                 setattr(db_obj, field, value)
 
         db.add(db_obj)
-        db.commit()
+        persist_sync_changes(db)
         db.refresh(db_obj)
         return db_obj
 
@@ -66,7 +66,7 @@ class BaseRepository[
         obj = db.get(self.model, id)
         if obj:
             db.delete(obj)
-            db.commit()
+            persist_sync_changes(db)
         return obj
 
     def count(self, db: Session) -> int:

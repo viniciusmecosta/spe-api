@@ -76,6 +76,7 @@ def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_m
 @pytest.fixture
 def db_session_mock():
     session = MagicMock(spec=Session)
+    session.info = {}
 
     class QueryMock:
         def __init__(self, items=None):
