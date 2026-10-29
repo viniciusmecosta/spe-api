@@ -144,8 +144,11 @@ frequência no login.
 A revisão 007 vincula ajustes às batidas aplicadas. Aprovação, reversão, apuração e auditoria compartilham uma
 transação. Aprovações concorrentes de uma solicitação não criam batidas duplicadas. O limite já existente de
 10 horas de abono por dia é validado também sob concorrência. Valores negativos, não finitos e períodos
-invertidos são rejeitados antes da gravação. Os builders de relatórios e os valores bruto/contabilizado foram
-preservados; a renderização Excel é executada fora do event loop.
+invertidos são rejeitados antes da gravação. Os relatórios distinguem horas brutas, que incluem abonos
+aprovados, das horas contabilizadas após as regras. Na comparação com a API antiga, alguns campos de horas
+trabalhadas diferiram porque antes exibiam o valor contabilizado; confira os dois totais na homologação antes
+de liberar a migração. Os Excel antigos arquivados são preservados, e os novos são ordenados alfabeticamente.
+A renderização Excel é executada fora do event loop.
 
 ### Uploads, proxy e exportações
 
