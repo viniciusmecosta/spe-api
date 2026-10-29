@@ -54,6 +54,30 @@ except ModuleNotFoundError:
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
+SUPPORTED_REVISIONS = {f"{revision:03}" for revision in range(1, 9)}
+
+
+def get_target_revision(pg_cur: Any) -> str:
+    pg_cur.execute("SELECT version_num FROM alembic_version")
+    revisions = [row[0] for row in pg_cur.fetchall()]
+    if len(revisions) != 1 or revisions[0] not in SUPPORTED_REVISIONS:
+        raise ValueError("Revisão PostgreSQL desconhecida; confira alembic current antes da paridade.")
+    return revisions[0]
+
+
+def schema_column_changes(table: str, revision: str) -> tuple[set[str], set[str]]:
+    added = set()
+    removed = set()
+    if revision >= "006" and table == "users":
+        added.add("auth_version")
+    if revision >= "007":
+        added.update({
+            "time_records": {"source_adjustment_id"},
+            "adjustment_requests": {"applied_time_record_id"},
+        }.get(table, set()))
+    if revision >= "008" and table == "time_records":
+        removed.update({"platform", "is_verified"})
+    return added, removed
 
 def load_environment() -> None:
     env_path = ROOT_DIR / ".env"
@@ -221,6 +245,7 @@ def get_table_schema(
     table: str,
     sq_cur: Any,
     pg_cur: Any,
+    revision: str = "008",
 ) -> tuple[list[str], list[str], list[str]]:
     sq_cur.execute(f"PRAGMA table_info({quote_identifier(table)})")
     sq_info = [(str(row[1]), str(row[2] or "")) for row in sq_cur.fetchall()]
@@ -239,9 +264,12 @@ def get_table_schema(
     pg_cols = [column for column, _, _ in pg_info]
     schema_errors: list[str] = []
 
-    schema_errors = _column_set_errors(sq_cols, pg_cols)
+    added, removed = schema_column_changes(table, revision)
+    schema_errors = _column_set_errors(sorted((set(sq_cols) | added) - removed), pg_cols)
     if schema_errors:
         return sq_cols, pg_cols, schema_errors
+
+    sq_cols = [column for column in sq_cols if column not in removed]
 
     sq_types = {column: sqlite_type_family(declared) for column, declared in sq_info}
     pg_types = {
@@ -319,14 +347,17 @@ def verify_single_table(
     sq_cur: Any,
     pg_cur: Any,
     target_tz: ZoneInfo,
+    revision: str = "008",
 ) -> tuple[bool, int, int, int]:
-    sq_cols, pg_cols, schema_errors = get_table_schema(table, sq_cur, pg_cur)
+    sq_cols, pg_cols, schema_errors = get_table_schema(table, sq_cur, pg_cur, revision)
 
     if not sq_cols or not pg_cols or schema_errors:
         _print_schema_failure(table, schema_errors)
         return False, 0, 0, max(1, len(schema_errors))
 
-    matched, sq_count, pg_count, diffs = verify_table_data(table, sq_cur, pg_cur, sq_cols, target_tz)
+    matched, sq_count, pg_count, diffs = verify_table_data(
+        table, sq_cur, pg_cur, sq_cols, target_tz,
+    )
     status_str = "[OK]" if matched else f"[{diffs} ERROS]"
     print(f"{table:28} | {sq_count:>7} | {pg_count:>8} | {diffs:>12} | {status_str:^12}")
 
@@ -339,12 +370,12 @@ def _print_schema_failure(table: str, errors: list[str]) -> None:
         print(f"  [SCHEMA] {error}")
 
 
-def _verify_tables(sq_cur, pg_cur, target_tz: ZoneInfo) -> tuple[bool, int, int, int]:
+def _verify_tables(sq_cur, pg_cur, target_tz: ZoneInfo, revision: str) -> tuple[bool, int, int, int]:
     all_matched = True
     total_sq_rows = total_pg_rows = total_diffs = 0
     for table in TABLE_ORDER:
         matched, sqlite_count, postgres_count, differences = verify_single_table(
-            table, sq_cur, pg_cur, target_tz
+            table, sq_cur, pg_cur, target_tz, revision
         )
         total_sq_rows += sqlite_count
         total_pg_rows += postgres_count
@@ -370,19 +401,23 @@ def _print_table_set_errors(errors: list[str]) -> None:
 
 
 def _run_parity_checks(sq_cur: Any, pg_cur: Any, target_tz: ZoneInfo) -> bool:
-    table_errors = validate_table_sets(sq_cur, pg_cur)
+    revision = get_target_revision(pg_cur)
+    print(f"Revisão PostgreSQL: {revision}; comparação dos dados preservados pelas migrações.")
+    if revision >= "008":
+        print("Remoções previstas: time_records.platform e time_records.is_verified.")
+    table_errors = validate_table_sets(sq_cur, pg_cur, revision)
     if table_errors:
         _print_table_set_errors(table_errors)
         return False
 
     all_matched, sqlite_rows, postgres_rows, differences = _verify_tables(
-        sq_cur, pg_cur, target_tz
+        sq_cur, pg_cur, target_tz, revision
     )
     _print_audit_totals(all_matched, sqlite_rows, postgres_rows, differences)
     return all_matched
 
 
-def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
+def validate_table_sets(sq_cur: Any, pg_cur: Any, revision: str = "008") -> list[str]:
     sq_cur.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
     )
@@ -395,11 +430,17 @@ def validate_table_sets(sq_cur: Any, pg_cur: Any) -> list[str]:
     )
     postgres_tables = {row[0] for row in pg_cur.fetchall()}
     expected = set(MIGRATION_TABLES)
+    postgres_expected = expected.copy()
+    if revision >= "003":
+        postgres_expected.add("daily_summaries")
+    if revision >= "005":
+        postgres_expected.add("background_jobs")
     errors = []
-    for label, actual in (("SQLite", sqlite_tables), ("PostgreSQL", postgres_tables)):
-        missing = sorted(expected - actual)
-        allowed_extra = {"daily_summaries", "background_jobs"} if label == "PostgreSQL" else set()
-        extra = sorted(actual - expected - allowed_extra)
+    for label, actual, required in (
+        ("SQLite", sqlite_tables, expected), ("PostgreSQL", postgres_tables, postgres_expected),
+    ):
+        missing = sorted(required - actual)
+        extra = sorted(actual - required)
         if missing:
             errors.append(f"{label}: tabelas ausentes: {', '.join(missing)}")
         if extra:
@@ -415,7 +456,7 @@ def verify_parity(sqlite_path: Path = DEFAULT_SQLITE_PATH) -> bool:
     tz_name = get_timezone()
     target_tz = ZoneInfo(tz_name)
 
-    sq_conn = sqlite3.connect(sqlite_path)
+    sq_conn = sqlite3.connect(sqlite_path.resolve().as_uri() + "?mode=ro", uri=True)
     sq_cur = sq_conn.cursor()
     sq_cur.execute("BEGIN")
 
