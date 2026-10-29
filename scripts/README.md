@@ -150,6 +150,10 @@ trabalhadas diferiram porque antes exibiam o valor contabilizado; confira os doi
 de liberar a migração. Os Excel antigos arquivados são preservados, e os novos são ordenados alfabeticamente.
 A renderização Excel é executada fora do event loop.
 
+No resumo de horas da equipe, `team_total_hours` representa o total contabilizado em horas decimais e
+`team_formatted_time` inclui os minutos quando necessário. Por exemplo, 50 minutos são retornados como
+`0.8333333333333334` e `0h 50min`. As barras individuais continuam exibindo horas inteiras.
+
 ### Uploads, proxy e exportações
 
 Configure `UPLOAD_REQUEST_MAX_BYTES` para o total da requisição e os limites por categoria no `.env.example`.
