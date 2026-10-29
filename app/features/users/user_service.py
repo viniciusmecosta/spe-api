@@ -64,7 +64,7 @@ class UserService:
     @transactional(response_model=UserResponse)
     async def create_user(
             self, user_in: UserCreate | dict[str, Any], current_user_id: int
-    ) -> User:
+    ) -> UserResponse:
         data = self._extract_data(user_in)
         actor = await self.repository.get(self.db, current_user_id)
         UserAuthorizationPolicy.validate(actor, requested_role=data.get("role", UserRole.EMPLOYEE))
@@ -84,7 +84,7 @@ class UserService:
         user_id: int,
         user_in: UserUpdate | dict[str, Any],
         current_user_id: int,
-    ) -> User:
+    ) -> UserResponse:
         user = await self.repository.get(self.db, user_id)
         if not user:
             raise UserNotFoundError(user_id=user_id)
@@ -118,7 +118,7 @@ class UserService:
             self,
             current_user: User,
             user_in: Any,
-    ) -> User:
+    ) -> UserResponse:
         update_data = self._extract_data(user_in)
         return await self.update_user(
             user_id=current_user.id,
@@ -177,7 +177,7 @@ class UserService:
         user_id: int,
         user_in: UserUpdate | dict[str, Any],
         current_user: User,
-    ) -> User:
+    ) -> UserResponse:
         user = await self.repository.get(self.db, user_id=user_id)
         if not user:
             raise UserNotFoundError(user_id=user_id)
