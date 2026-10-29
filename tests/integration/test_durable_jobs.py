@@ -5,11 +5,17 @@ from unittest.mock import AsyncMock
 from sqlalchemy import select, text, update
 
 import pytest
+from app.core.config import settings
 from app.features.system import job_queue
 from app.features.system.delivery_result import DeliveryResult
 from app.features.system.system_models import BackgroundJob, RoutineLog
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def enable_test_worker(monkeypatch, prevent_real_email_sending):
+    monkeypatch.setattr(settings, 'BACKGROUND_JOBS_ENABLED', True)
 
 
 async def expire(factory, job_id):
@@ -150,7 +156,7 @@ async def seed_notification_data(factory, tmp_path):
     async with factory() as session:
         manager = User(username='notification-admin', name='Responsável', email='responsavel@example.test',
                        role=UserRole.MAINTAINER)
-        employee = User(username='notification-user', name='Ana <Silva>', role=UserRole.EMPLOYEE)
+        employee = User(username='notification-user', name='Ana <Nevoa>', role=UserRole.EMPLOYEE)
         session.add_all([manager, employee, Company(name='Empresa Dinâmica', cnpj='synthetic', address='Rua Exemplo',
                                                     logo_path='logo.png')])
         await session.commit()
@@ -205,13 +211,13 @@ async def test_notification_preparation_preserves_files_and_real_report_content(
             assert 'Empresa Dinâmica' in body
             assert 'cid:company-logo' in body
             if routine == 'EMAIL_DAILY_BACKUP':
-                assert 'Ana &lt;Silva&gt;' in body
+                assert 'Ana &lt;Nevoa&gt;' in body
                 assert '07:00' in body and '16:00' in body
                 assert 'Ocorrências relevantes' in body
                 assert '123:exposed' not in body
                 assert 'password=hidden' not in body
         elif 'REPORT' in routine:
-            assert 'Ana &lt;Silva&gt;' in text_send.call_args.args[0]
+            assert 'Ana &lt;Nevoa&gt;' in text_send.call_args.args[0]
             assert 'E: 07:00' in text_send.call_args.args[0]
         if routine == 'TELEGRAM_HOURLY_BACKUP':
             document_send.assert_called_once()

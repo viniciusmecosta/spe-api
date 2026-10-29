@@ -306,9 +306,9 @@ async def test_update_user_ok(user_service, mocker):
 
 
 def test_format_name(user_service):
-    assert user_service._format_name("vinicius da costa") == "Vinicius da Costa"
+    assert user_service._format_name("lume da nilo") == "Lume da Nilo"
     assert user_service._format_name("ze do carmo") == "Ze do Carmo"
-    assert user_service._format_name("MARIA DAS GRACAS") == "Maria das Gracas"
+    assert user_service._format_name("JARDIM DAS GRACAS") == "Jardim das Gracas"
     assert user_service._format_name("ana de almeida") == "Ana de Almeida"
     assert user_service._format_name("") == ""
     assert user_service._format_name("   ") == "   "

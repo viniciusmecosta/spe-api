@@ -12,7 +12,7 @@ from app.shared.enums import RecordType, UserRole
 @pytest.mark.asyncio
 async def test_process_punch_success_entry(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     mock_record = MagicMock()
-    mock_record.user.name = "Vinicius Costa"
+    mock_record.user.name = "Lume Nilo"
     mock_record.record_datetime = datetime(2026, 8, 14, 8, 30, 0)
     mock_record.record_type = RecordType.ENTRY
 
@@ -39,11 +39,11 @@ async def test_process_punch_success_entry(async_db_mock: AsyncMock, mocker: Mag
 
     assert isinstance(result, FeedbackPayload)
     assert result.led == "green"
-    assert "Vinicius" in result.line1
+    assert "Lume" in result.line1
     assert result.line2 == "08:30"
     assert result.line3 == "Entrada"
     assert len(result.actions.buzzer_melody) == 3
-    assert request.state.attempted_user == "Vinicius Costa"
+    assert request.state.attempted_user == "Lume Nilo"
 
 
 @pytest.mark.asyncio

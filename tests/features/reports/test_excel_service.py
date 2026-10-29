@@ -463,7 +463,7 @@ async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_
     mock_report_service.apply_employee_filters.return_value = query_mock
     mock_report_service.get_month_range.return_value = (datetime(2023, 10, 1).date(), datetime(2023, 10, 31).date())
     mock_report = MagicMock()
-    mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Silva', total_worked_time='10:00',
+    mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Nevoa', total_worked_time='10:00',
                                              total_expected_time='08:00', total_worked_minutes=600,
                                              total_expected_minutes=480, days_worked=2, absences=1,
                                              total_worked_hours=10.0, total_expected_hours=8.0, total_extra_hours=2.0,

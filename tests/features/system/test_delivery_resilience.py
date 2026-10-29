@@ -40,11 +40,11 @@ def test_telegram_statuses_and_retry_after(mocker, code, expected):
 
 def test_long_telegram_text_preserves_all_content_and_escapes_html():
     from html import unescape
-    text = '<b>Período</b>\n' + ('Pessoa &amp; Silva · E: 08:00 | S: 17:00\n' * 250)
+    text = '<b>Período</b>\n' + ('Pessoa &amp; Nevoa · E: 08:00 | S: 17:00\n' * 250)
     chunks = TelegramService.split_text(text)
     assert len(chunks) > 1
     assert all(len(chunk) <= 3500 for chunk in chunks)
-    assert ''.join(unescape(chunk) for chunk in chunks) == 'Período\n' + ('Pessoa & Silva · E: 08:00 | S: 17:00\n' * 250)
+    assert ''.join(unescape(chunk) for chunk in chunks) == 'Período\n' + ('Pessoa & Nevoa · E: 08:00 | S: 17:00\n' * 250)
 
 
 def test_smtp_timeout_before_submission_retries_and_closes(mocker):
@@ -81,13 +81,13 @@ def test_missing_attachment_prevents_successful_email(mocker):
 def test_email_context_is_dynamic_and_contains_no_journey_summary():
     from app.features.reports.template_service import TemplateService
     body = TemplateService.get_daily_report_html('Sexta-feira', '23/10/2026', True,
-                                                 {'Ana <Silva>': [{'type': 'E', 'time': '07:00'}, {'type': 'S', 'time': '16:00'}]}, [])
+                                                 {'Ana <Nevoa>': [{'type': 'E', 'time': '07:00'}, {'type': 'S', 'time': '16:00'}]}, [])
     result = TemplateService.get_backup_email_html('Registros de ontem', body, {
         'company': 'Empresa Exemplo', 'version': '9.8.7', 'environment': 'homologação',
         'incidents': ['Falha temporária no envio'], 'logo_available': True,
     })
     for expected in ('Empresa Exemplo', '9.8.7', 'homologação', 'cid:company-logo', '07:00', '16:00',
-                     'Ocorrências relevantes', '23/10/2026', '@media', 'Ana &lt;Silva&gt;'):
+                     'Ocorrências relevantes', '23/10/2026', '@media', 'Ana &lt;Nevoa&gt;'):
         assert expected in result
     for forbidden in ('Resumo de jornada', 'Último teste de restauração', 'Apuração diária', 'Não incluir tokens'):
         assert forbidden not in result

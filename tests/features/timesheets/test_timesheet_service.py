@@ -477,7 +477,7 @@ from reportlab.platypus import Paragraph, Table
 async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
-    mock_user.name = 'Teste Funcionario Silva'
+    mock_user.name = 'Teste Funcionario Nevoa'
     mock_user.cpf = '12345678901'
     mock_user.pis = '12345678901'
     mock_user.role = UserRole.EMPLOYEE
