@@ -1,14 +1,14 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from test_mutation_atomicity import snapshot
+from test_mutation_atomicity import mutation_api, snapshot
 
 from app.features.devices.device_service import DeviceService
 from app.features.system.audit_service import audit_service
 from app.shared.trusted_time_service import trusted_time_service
 
 pytestmark = pytest.mark.asyncio
-pytest_plugins = ["test_mutation_atomicity"]
+__all__ = ["mutation_api"]
 
 
 async def test_manual_punch_rolls_back_when_ntp_audit_fails(mutation_api, pg_session_factory, monkeypatch):

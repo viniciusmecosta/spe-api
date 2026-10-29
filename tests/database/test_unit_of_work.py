@@ -55,7 +55,8 @@ async def test_invalid_response_rolls_back_before_commit():
             return SimpleNamespace(name=None)
 
     method = transactional(Service.mutate, response_model=PreparedResponse)
+    service = Service()
     with pytest.raises(ValidationError):
-        await method(Service())
+        await method(service)
     session.commit.assert_not_awaited()
     session.rollback.assert_awaited_once()
