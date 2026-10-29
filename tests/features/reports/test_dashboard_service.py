@@ -3,9 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
+
 from app.core.config import settings
 from app.features.reports.dashboard_service import dashboard_service
-from app.features.reports.report_schemas import DashboardMetricsResponse, TeamHoursResponse
+from app.features.reports.report_schemas import (
+    DashboardMetricsResponse,
+    TeamHoursResponse,
+)
 from app.features.users.user_models import User
 from app.shared.enums import RecordType, UserRole
 
@@ -209,6 +213,27 @@ async def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_truste
     assert response.next_punch_type == "EXIT"
 
 
+@pytest.mark.parametrize(("minutes", "expected_hours", "employee_count"), [([30, 30], 1, 0), ([90, 30], 2, 1)])
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
+async def test_team_total_includes_employees_with_less_than_one_hour(
+    mock_get_report, db_session_mock, mock_db_query, minutes, expected_hours, employee_count
+):
+    current_user = User(id=1, name="Gestora Fictícia", role=UserRole.MANAGER)
+    users = [User(id=2, name="Funcionário Alfa"), User(id=3, name="Funcionário Beta")]
+    mock_db_query["filter"].all.return_value = users
+    reports = [MagicMock(), MagicMock()]
+    for report, accounted_minutes in zip(reports, minutes, strict=True):
+        report.summary.total_accounted_minutes = accounted_minutes
+    mock_get_report.side_effect = reports
+
+    response = await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
+
+    assert response.team_total_hours == float(expected_hours)
+    assert response.team_formatted_time == f"{expected_hours}h"
+    assert len(response.employees) == employee_count
+
+
 @pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
 async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
@@ -238,8 +263,8 @@ async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_q
 
     assert response.month == 7
     assert response.year == 2026
-    assert response.team_total_hours == 2.0
-    assert response.team_formatted_time == "2h"
+    assert response.team_total_hours == 3.0
+    assert response.team_formatted_time == "3h"
     assert len(response.employees) == 1
     assert response.employees[0].user_id == 2
     assert response.employees[0].short_name == "User 1"
@@ -421,10 +446,11 @@ async def test_dashboard_permissions(db_session_mock, mock_db_query):
     with pytest.raises(ReportGlobalPermissionError):
         await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user=unauthorized_user)
 
-    with patch.object(dashboard_service, "get_dashboard_metrics", wraps=dashboard_service.get_dashboard_metrics):
-        with patch("app.features.reports.dashboard_service.adjustment_repository.count_pending", return_value=1), \
-                patch("app.features.reports.dashboard_service.time_record_repository.count_unique_users_in_range",
-                      return_value=4):
-            mock_db_query["filter"].count.return_value = 5
-            metrics = await dashboard_service.get_dashboard_metrics(db_session_mock, current_user=authorized_user)
-            assert metrics.total_active_employees == 5
+    with (
+        patch.object(dashboard_service, "get_dashboard_metrics", wraps=dashboard_service.get_dashboard_metrics),
+        patch("app.features.reports.dashboard_service.adjustment_repository.count_pending", return_value=1),
+        patch("app.features.reports.dashboard_service.time_record_repository.count_unique_users_in_range", return_value=4),
+    ):
+        mock_db_query["filter"].count.return_value = 5
+        metrics = await dashboard_service.get_dashboard_metrics(db_session_mock, current_user=authorized_user)
+        assert metrics.total_active_employees == 5
