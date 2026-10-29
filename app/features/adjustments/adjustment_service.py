@@ -33,7 +33,9 @@ from app.features.adjustments.adjustment_schemas import (
 from app.features.payroll.payroll_service import payroll_service
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.time_records.time_record_models import TimeRecord
+from app.features.users.user_exceptions import UserNotFoundError
 from app.features.users.user_models import User
+from app.features.users.user_repository import async_user_repository
 from app.shared import deps
 from app.shared.enums import AdjustmentStatus, AdjustmentType, UserRole
 from app.shared.storage import resolve_stored_file
@@ -168,6 +170,8 @@ class AdjustmentService:
         session = db if db is not None else self.db
         assert session is not None
         assert waiver_in is not None
+        if await async_user_repository.get(session, waiver_in.user_id) is None:
+            raise UserNotFoundError(user_id=waiver_in.user_id)
         await self._validate_period_open(session, waiver_in.target_date)
         await self._validate_waiver_limit(session, waiver_in.user_id, waiver_in.target_date, waiver_in.amount_hours)
 

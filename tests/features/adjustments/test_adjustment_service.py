@@ -188,6 +188,8 @@ async def test_create_adjustment_request(async_db_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_create_manager_waiver(async_db_mock, mocker):
+    mocker.patch("app.features.adjustments.adjustment_service.async_user_repository.get",
+                 new_callable=AsyncMock, return_value=object())
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
                  new_callable=AsyncMock)
     mocker.patch("app.features.adjustments.adjustment_service.AdjustmentService._validate_waiver_limit",
