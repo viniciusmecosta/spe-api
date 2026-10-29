@@ -18,7 +18,7 @@ from app.features.devices.device_schemas import (
     UserBiometricUpdate,
 )
 from app.shared.enums import UserRole
-from app.shared.validation import validate_date_order
+from app.shared.validation import BusinessDate, validate_date_order
 
 DOB_FUTURE_ERROR = 'A data de nascimento não pode estar no futuro.'
 
@@ -91,8 +91,8 @@ class UserScheduleInput(BaseModel):
 
 
 class BulkWorkScheduleCreate(BaseModel):
-    valid_from: date
-    valid_until: date
+    valid_from: BusinessDate
+    valid_until: BusinessDate
     users: list[UserScheduleInput]
 
     @model_validator(mode='after')

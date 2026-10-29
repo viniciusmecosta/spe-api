@@ -7,6 +7,16 @@ from app.shared.enums import RecordType
 from app.shared.timezone import to_app_timezone
 
 
+def normalize_input_datetime(value: datetime) -> datetime:
+    try:
+        normalized = to_app_timezone(value)
+    except OverflowError as error:
+        raise ValueError('Data e horário fora do intervalo permitido.') from error
+    if normalized.year > 9998:
+        raise ValueError('Data e horário fora do intervalo permitido.')
+    return normalized
+
+
 class SuccessResponse(BaseModel):
     status: str = "success"
     message: str
@@ -33,7 +43,7 @@ class TimeRecordCreateAdmin(BaseModel):
     @field_validator("record_datetime")
     @classmethod
     def normalize_record_timezone(cls, value: datetime) -> datetime:
-        return to_app_timezone(value)
+        return normalize_input_datetime(value)
 
 
 class TimeRecordUpdate(BaseModel):
@@ -44,7 +54,7 @@ class TimeRecordUpdate(BaseModel):
     @field_validator("record_datetime")
     @classmethod
     def normalize_record_timezone(cls, value: datetime | None) -> datetime | None:
-        return to_app_timezone(value) if value is not None else None
+        return normalize_input_datetime(value) if value is not None else None
 
 
 class TimeRecordDeleteAdmin(BaseModel):

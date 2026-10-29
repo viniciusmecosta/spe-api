@@ -6,6 +6,7 @@ from pydantic import Field
 
 Month = Annotated[int, Field(ge=1, le=12)]
 Year = Annotated[int, Field(ge=2000, le=9998)]
+BusinessDate = Annotated[date, Field(le=date(9998, 12, 31))]
 PageOffset = Annotated[int, Query(ge=0, le=2**63 - 1)]
 PageLimit = Annotated[int, Query(ge=1, le=1000)]
 

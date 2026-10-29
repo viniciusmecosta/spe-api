@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 from app.features.time_records.time_record_schemas import TimeRecordSimple
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 from app.shared.timezone import to_app_timezone
+from app.shared.validation import BusinessDate
 
 
 class AdjustmentRequestBase(BaseModel):
@@ -18,6 +19,7 @@ class AdjustmentRequestBase(BaseModel):
 
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
+    target_date: BusinessDate
     amount_hours: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
     @model_validator(mode='after')
@@ -35,7 +37,7 @@ class AdjustmentRequestCreate(AdjustmentRequestBase):
 
 class AdjustmentWaiverCreate(BaseModel):
     user_id: int
-    target_date: date
+    target_date: BusinessDate
     amount_hours: float = Field(gt=0, le=10, allow_inf_nan=False)
     reason_text: str
 
