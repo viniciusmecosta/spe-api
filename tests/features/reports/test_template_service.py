@@ -3,14 +3,13 @@ from app.features.reports.template_service import TemplateService, template_serv
 
 def test_generate_punches_html_even_punches(db_session_mock):
     user_activity = {
-        "Darlane de Sousa Santos": [
+        "Pietro de Lira Flora": [
             {"time": "08:00", "type": "E"},
             {"time": "12:00", "type": "S"}
         ]
     }
     result = TemplateService._generate_punches_html(user_activity)
-    assert "Darlane Sousa" in result
-    assert "Santos" not in result
+    assert "Pietro de Lira Flora" in result
     assert "#ffffff" in result
     assert "#2E7D32" in result
     assert "#EF6C00" in result

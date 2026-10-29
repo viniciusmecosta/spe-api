@@ -22,7 +22,7 @@ async def test_generate_daily_report_html_with_records(mock_template_service, mo
                                                        db_session_mock):
     target_date = date(2026, 7, 24)
 
-    user = User(id=1, name="Darlane de Sousa Santos")
+    user = User(id=1, name="Pietro de Lira Flora")
     record1 = TimeRecord(
         id=1,
         user_id=1,
@@ -44,6 +44,7 @@ async def test_generate_daily_report_html_with_records(mock_template_service, mo
 
     class AnomalyMock:
         def __init__(self, user_name, description):
+            self.user_id = 2
             self.user_name = user_name
             self.description = description
 
@@ -58,9 +59,9 @@ async def test_generate_daily_report_html_with_records(mock_template_service, mo
     assert args[0] == "Sexta-feira"
     assert args[1] == "24/07/2026"
     assert args[2] is True
-    assert "Darlane Sousa" in args[3]
-    assert args[3]["Darlane Sousa"][0] == {"time": "08:00", "type": "E"}
-    assert args[3]["Darlane Sousa"][1] == {"time": "18:00", "type": "S"}
+    assert "Pietro Lira" in args[3]
+    assert args[3]["Pietro Lira"][0] == {"time": "08:00", "type": "E"}
+    assert args[3]["Pietro Lira"][1] == {"time": "18:00", "type": "S"}
     assert args[4] == ["Jane Smith: Missing Exit"]
 
 

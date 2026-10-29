@@ -1,7 +1,6 @@
 from html import escape
 
 from app.features.system.notification_context import base_context
-from app.utils.formatters import format_short_name
 
 
 class TemplateService:
@@ -18,7 +17,6 @@ class TemplateService:
                 <tbody>
         """
         for name, punches in user_activity.items():
-            short_display = format_short_name(name)
             is_problem = len(punches) % 2 != 0
             bg_color = "#fffbf0" if is_problem else "#ffffff"
 
@@ -29,7 +27,7 @@ class TemplateService:
 
             html += f"""
             <tr style="background-color: {bg_color}; border-bottom: 1px solid #eee;">
-                <td style="padding: 8px 6px; vertical-align: middle; word-break: break-word; line-height: 1.3;"><strong>{escape(short_display)}</strong></td>
+                <td style="padding: 8px 6px; vertical-align: middle; word-break: break-word; line-height: 1.3;"><strong>{escape(name)}</strong></td>
                 <td style="padding: 6px; vertical-align: middle; line-height: 1.4;">{punches_html}</td>
             </tr>
             """

@@ -23,7 +23,7 @@ from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import RecordType
 from app.shared.timezone import local_day_bounds, to_app_timezone
-from app.utils.formatters import format_short_name
+from app.utils.formatters import build_report_names
 
 logger = logging.getLogger(__name__)
 
@@ -173,12 +173,13 @@ class TelegramService:
 
     def _group_daily_activity(self, records) -> dict[str, dict[str, list[str]]]:
         daily_activity: dict[str, dict[str, list[str]]] = {}
+        report_names = build_report_names({user.id: user.name for _, user in records})
         for record, user in records:
             date_str = to_app_timezone(record.record_datetime).strftime(DATE_FORMAT)
             time_str = to_app_timezone(record.record_datetime).strftime("%H:%M")
             marker = "E:" if record.record_type == RecordType.ENTRY else "S:"
 
-            fmt_name = html.escape(format_short_name(user.name))
+            fmt_name = html.escape(report_names[user.id])
 
             if date_str not in daily_activity:
                 daily_activity[date_str] = {}
