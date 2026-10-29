@@ -236,6 +236,29 @@ async def test_team_total_includes_employees_with_less_than_one_hour(
 
 @pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
+@pytest.mark.parametrize(("minutes", "hours", "formatted"), [
+    (0, 0.0, "0h"),
+    (50, 50 / 60, "0h 50min"),
+    (60, 1.0, "1h"),
+    (90, 1.5, "1h 30min"),
+])
+async def test_team_total_preserves_minutes(
+    mock_get_report, db_session_mock, mock_db_query, minutes, hours, formatted
+):
+    current_user = User(id=1, name="Gestora Fictícia", role=UserRole.MANAGER)
+    mock_db_query["filter"].all.return_value = [User(id=2, name="Funcionário Alfa")]
+    report = MagicMock()
+    report.summary.total_accounted_minutes = minutes
+    mock_get_report.return_value = report
+
+    response = await dashboard_service.get_team_worked_hours(db_session_mock, 7, 2026, current_user)
+
+    assert response.team_total_hours == pytest.approx(hours)
+    assert response.team_formatted_time == formatted
+
+
+@pytest.mark.asyncio
+@patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
 async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_query):
     current_user = User(id=1, name="Admin", role=UserRole.MANAGER)
 

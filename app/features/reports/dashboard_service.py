@@ -196,13 +196,16 @@ class DashboardService:
                         formatted_time=f"{user_hours_rounded}h"
                     ))
 
-        t_hours = team_total_minutes // 60
+        t_hours, t_minutes = divmod(team_total_minutes, 60)
+        formatted_time = f"{t_hours}h"
+        if t_minutes:
+            formatted_time = f"{formatted_time} {t_minutes:02d}min"
 
         return TeamHoursResponse(
             month=month_val,
             year=year_val,
-            team_total_hours=float(t_hours),
-            team_formatted_time=f"{t_hours}h",
+            team_total_hours=team_total_minutes / 60,
+            team_formatted_time=formatted_time,
             employees=employees_data
         )
 
