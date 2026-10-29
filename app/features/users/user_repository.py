@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.exceptions import DomainException
 from app.core.security import get_password_hash
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes
 from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_pagination import (
@@ -180,7 +181,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         if biometrics_in is not None:
             await self._update_biometrics(db, db_obj, biometrics_in)
 
-        await db.commit()
+        await persist_changes(db)
         refreshed = await self.get(db, db_obj.id)
         return refreshed if refreshed else db_obj
 
@@ -330,7 +331,7 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
             await self._update_biometrics(db, db_obj, biometrics_in)
 
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         refreshed = await self.get(db, db_obj.id)
         return refreshed if refreshed else db_obj
 

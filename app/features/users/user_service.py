@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_async_db
+from app.database.unit_of_work import transactional
 from app.features.system.audit_service import audit_service, serialize_model
 from app.features.users.user_authorization import UserAuthorizationPolicy
 from app.features.users.user_biometric_service import UserBiometricService
@@ -14,7 +15,7 @@ from app.features.users.user_repository import (
     AsyncUserRepository,
     async_user_repository,
 )
-from app.features.users.user_schemas import UserCreate, UserUpdate
+from app.features.users.user_schemas import UserCreate, UserResponse, UserUpdate
 from app.features.users.user_validator import UserValidator
 from app.shared.enums import UserRole
 from app.utils.formatters import format_name
@@ -60,6 +61,7 @@ class UserService:
             return data_in.model_dump(exclude_unset=True)
         return vars(data_in)
 
+    @transactional(response_model=UserResponse)
     async def create_user(
             self, user_in: UserCreate | dict[str, Any], current_user_id: int
     ) -> User:
@@ -76,6 +78,7 @@ class UserService:
         await audit_service.async_log_change(self.db, current_user_id, "CREATE", new_model=db_user)
         return db_user
 
+    @transactional(response_model=UserResponse)
     async def update_user(
         self,
         user_id: int,

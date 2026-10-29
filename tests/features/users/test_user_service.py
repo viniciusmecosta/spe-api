@@ -238,7 +238,7 @@ async def test_validate_unique_fields_dup_cpf(user_validator, async_db_mock):
 async def test_create_user(user_service, mocker):
     mocker.patch.object(user_service.validator, "validate_unique_fields", new_callable=AsyncMock)
     user_service.repository.get = AsyncMock(return_value=User(id=99, role=UserRole.MAINTAINER))
-    user_service.repository.create = AsyncMock(return_value=User(name="Test", password_hash="hash"))
+    user_service.repository.create = AsyncMock(return_value=User(id=1, name="Test", password_hash="hash"))
     mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     class DummyCreate:
@@ -262,7 +262,7 @@ async def test_create_user(user_service, mocker):
 
     user = await user_service.create_user(user_in, 99)
     assert user.name == "Test"
-    assert user.password_hash == "hash"
+    assert "password_hash" not in user.model_dump()
 
 
 @pytest.mark.asyncio
@@ -300,7 +300,7 @@ async def test_update_user_ok(user_service, mocker):
 
     res = await user_service.update_user(1, user_in, 99)
     assert res.name == "New"
-    assert res.password_hash == "hash"
+    assert "password_hash" not in res.model_dump()
     mock_log.assert_called_once()
     assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
 
