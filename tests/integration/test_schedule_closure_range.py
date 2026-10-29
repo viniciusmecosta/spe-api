@@ -43,6 +43,7 @@ async def test_schedule_period_blocks_first_closed_month_and_ignores_deleted(pg_
         ])
         await session.commit()
         service = UserWorkScheduleService(session)
+        first, last = date(2020, 1, 1), date(2025, 12, 31)
         with pytest.raises(SchedulePayrollClosedError, match='06/2024'):
-            await service.check_payroll_closure(session, date(2020, 1, 1), date(2025, 12, 31))
+            await service.check_payroll_closure(session, first, last)
         await service.check_payroll_closure(session, date(2024, 3, 1), date(2024, 3, 31))
