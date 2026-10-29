@@ -77,7 +77,7 @@ backfill e migre os arquivos físicos manualmente antes de liberar o acesso.
 ### Implantação no Windows com NSSM
 
 A produção usa PostgreSQL nativo e NSSM, sem Docker. O [guia de banco e operação](scripts/README.md)
-detalha a migração, restauração, atualização e retomada das rotinas. A revisão atual do schema é `007`.
+detalha a migração, restauração, atualização e retomada das rotinas. A revisão atual do schema é `008`.
 Na migração do SQLite, importe os dados com o PostgreSQL na revisão `002` antes de avançar para `head`;
 na atualização de PostgreSQL já implantado, aplique as revisões pendentes com a API parada.
 

@@ -32,7 +32,7 @@ Salve o anexo com o nome `spe.zip.enc` dentro da pasta `scripts`:
 scripts/spe.zip.enc
 ```
 
-Os comandos abaixo destinam-se a um backup da revisão atual `007` e a um PostgreSQL de recuperação separado. Pare a API ou mantenha `BACKGROUND_JOBS_ENABLED=false`, confira o destino e preserve os dados existentes antes de restaurar: a operação substitui os dados do banco configurado. O backup não inclui os arquivos físicos de `UPLOAD_DIR`, que devem ser recuperados separadamente, inclusive `.delivery_queue`.
+Os comandos abaixo destinam-se a um backup da revisão atual `008` e a um PostgreSQL de recuperação separado. Pare a API ou mantenha `BACKGROUND_JOBS_ENABLED=false`, confira o destino e preserve os dados existentes antes de restaurar: a operação substitui os dados do banco configurado. O backup não inclui os arquivos físicos de `UPLOAD_DIR`, que devem ser recuperados separadamente, inclusive `.delivery_queue`.
 
 Com a preparação inicial concluída, crie a estrutura compatível e restaure:
 
@@ -40,7 +40,7 @@ Com a preparação inicial concluída, crie a estrutura compatível e restaure:
 make db-init && make restore
 ```
 
-Se o backup foi produzido em uma revisão antiga, crie primeiro o schema da revisão correspondente usando o código compatível com aquele backup; restaure antes de aplicar as migrações posteriores. Não aplique `head` indiscriminadamente a esse destino: o importador valida tabelas e revisão e pode rejeitar a combinação. Não use `alembic stamp` para esconder uma incompatibilidade. Depois da restauração e da atualização para `007`, execute o backfill quando necessário e confira a fila antes de liberar as rotinas.
+Se o backup foi produzido em uma revisão antiga, crie primeiro o schema da revisão correspondente usando o código compatível com aquele backup; restaure antes de aplicar as migrações posteriores. Não aplique `head` indiscriminadamente a esse destino: o importador valida tabelas e revisão e pode rejeitar a combinação. Não use `alembic stamp` para esconder uma incompatibilidade. Depois da restauração e da atualização para `008`, execute o backfill quando necessário e confira a fila antes de liberar as rotinas.
 
 O restore também aceita `spe.zip` ou `spe_dump.sql` antigos, mas exige confirmação especial por não terem manifesto. Para `spe.zip.enc`, ele autentica e descriptografa o pacote com a `SECRET_KEY`, valida o manifesto, preserva a estrutura e o `alembic_version`, insere os dados em transação e compara a quantidade de linhas de cada tabela. Se alguma validação falhar, desfaz a transação.
 
@@ -67,10 +67,11 @@ make db-migrate-all
 ```
 
 Com a origem sem novas gravações e o PostgreSQL de destino novo, o comando aplica `001/002`, exporta e importa o SQLite,
-aplica `003/004/005/006/007`, verifica a paridade e cria os resumos diários até a data atual. A revisão `003` remove os logins e
-reenumera os IDs de auditoria intencionalmente; `004` preserva a precisão dos resumos e permite restaurar referências
-entre batidas fora de ordem. A revisão `005` cria a fila durável de entregas e reprocessamentos; `006` adiciona a versão de autenticação e `007` vincula ajustes às batidas aplicadas. O resultado deve ser `007 (head)`, sem diferenças em `alembic check`. Os arquivos físicos
+aplica `003/004/005/006/007/008`, verifica a paridade e cria os resumos diários até a data atual. O exportador já remove os logins e reenumera os IDs de auditoria intencionalmente; `003` assegura essa limpeza e cria os resumos; `004` preserva a precisão dos resumos e permite restaurar referências
+entre batidas fora de ordem. A revisão `005` cria a fila durável de entregas e reprocessamentos; `006` adiciona a versão de autenticação, `007` vincula ajustes às batidas aplicadas e `008` remove `platform`/`is_verified` das batidas. O resultado deve ser `008 (head)`, sem diferenças em `alembic check`. Os arquivos físicos
 devem ser migrados manualmente. Inicie a API somente após o backfill e as verificações.
+
+Na produção com NSSM, siga os comandos do [guia Windows](../docs/implantacao_postgresql_windows10.md), com paridade em `002` e `005` antes de aplicar separadamente `006`, `007` e `008`. Depois execute o backfill e repita a paridade. O código atual exige as colunas de `006/007` para o backfill. O exportador mantém as duas colunas legadas no SQL inicial; a revisão `008` efetua sua remoção. O verificador aceita essas diferenças previstas, mas rejeita demais divergências. O downgrade de `008` não restaura os valores originais dessas colunas.
 
 Para um PostgreSQL que já esteja na revisão `003`, aplique `make upgrade` e execute `.venv/bin/python -m scripts.backfill_daily_summaries --execute` antes de liberar a API. O backfill reconstrói os resumos com a precisão nova, inclusive os períodos fechados, sem alterar as batidas e os ajustes da origem. As revisões `001` e `003` continuam sem downgrade automático.
 
@@ -108,7 +109,7 @@ make docker-down
 
 Antes da atualização, interrompa novas gravações, preserve o banco de origem e copie o diretório completo de uploads.
 Instale a mesma versão de Python usada nos testes (3.12 ou superior), sincronize as dependências e aplique
-`alembic upgrade head` com a API parada. A revisão atual é `007`. Para uma migração SQLite, importe os dados em `002` antes de avançar para `head`; os comandos desta seção de atualização não substituem essa sequência. Configure a conexão PostgreSQL na conta que executa o
+`alembic upgrade head` com a API parada. A revisão atual é `008`. Para uma migração SQLite, importe os dados em `002` antes de avançar para `head`; os comandos desta seção de atualização não substituem essa sequência. Configure a conexão PostgreSQL na conta que executa o
 NSSM, com acesso ao diretório de uploads e aos arquivos de log. O PostgreSQL deve iniciar antes da API.
 
 Use `/api/v1/health` para verificar o processo e `/api/v1/ready` para verificar banco e revisão do schema. A área
