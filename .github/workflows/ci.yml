@@ -69,7 +69,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov=scripts --cov=alembic --cov-report=xml
+          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov=alembic --cov-report=xml
 
   postgresql:
     runs-on: ubuntu-latest

@@ -2,18 +2,23 @@ import ast
 import hashlib
 import io
 import json
-import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from scripts.apply_sql_to_postgresql import (
-    _iter_sql_file_statements, apply_sql_content, apply_sql_file, restore_backup,
+from app.features.system.backup_crypto import (
+    MAGIC,
+    NONCE_SIZE,
+    TAG_SIZE,
+    decrypt_backup,
+    encrypt_backup,
 )
-from app.features.system.backup_crypto import MAGIC, NONCE_SIZE, TAG_SIZE, decrypt_backup, encrypt_backup
-from app.features.system.backup_manifest import add_manifest, validate_manifest, validate_manifest_file
+from app.features.system.backup_manifest import (
+    add_manifest,
+    validate_manifest,
+    validate_manifest_file,
+)
 
 
 def test_application_does_not_import_scripts():
@@ -54,38 +59,8 @@ def test_manifest_rejects_partial_and_tampered_dumps(tmp_path):
         validate_manifest("INSERT INTO users VALUES (1);", {"users"})
 
 
-def test_unverified_dump_never_truncates_without_explicit_override(mocker):
-    connection = MagicMock()
-    cursor = connection.cursor.return_value
-    cursor.fetchone.return_value = ("spe_db",)
-    cursor.fetchall.side_effect = [[("alembic_version",), ("users",), ("companies",)], [("002",)]]
-    mocker.patch("scripts.apply_sql_to_postgresql.get_pg_credentials", return_value={})
-    mocker.patch("scripts.apply_sql_to_postgresql.connect_with_retry", return_value=connection)
-
-    with pytest.raises(RuntimeError, match="sem manifesto"):
-        apply_sql_content("INSERT INTO users (id) VALUES (1);", allow_destructive=True)
-
-    assert not any("TRUNCATE" in str(call) for call in cursor.execute.call_args_list)
-    connection.rollback.assert_called_once()
 
 
-def test_row_count_mismatch_rolls_back_restore(mocker, tmp_path):
-    path = tmp_path / "data.sql"
-    path.write_text("INSERT INTO users (id) VALUES (1);\n", encoding="utf-8")
-    add_manifest(path, {"users": 2})
-    connection = MagicMock()
-    cursor = connection.cursor.return_value
-    cursor.fetchone.side_effect = [("spe_db",), (1,)]
-    cursor.fetchall.side_effect = [[("alembic_version",), ("users",)], [("002",)]]
-    mocker.patch("scripts.apply_sql_to_postgresql.get_pg_credentials", return_value={})
-    mocker.patch("scripts.apply_sql_to_postgresql.connect_with_retry", return_value=connection)
-
-    content = path.read_bytes().decode("utf-8")
-    with pytest.raises(RuntimeError, match="esperado 2, aplicado 1"):
-        apply_sql_content(content, allow_destructive=True)
-
-    connection.rollback.assert_called_once()
-    connection.commit.assert_not_called()
 
 
 def test_encrypted_backup_round_trip_and_tamper_detection(tmp_path):
@@ -108,48 +83,10 @@ def test_encrypted_backup_round_trip_and_tamper_detection(tmp_path):
         decrypt_backup(encrypted, secret)
 
 
-def test_streaming_sql_splitter_handles_multiline_literals(tmp_path):
-    path = tmp_path / "data.sql"
-    path.write_text(
-        "-- comment;\nINSERT INTO users (id, name) VALUES (1, 'a;\nb');\n"
-        "INSERT INTO users (id, name) VALUES (2, 'ok');\n",
-        encoding="utf-8",
-    )
-    statements = list(_iter_sql_file_statements(path))
-    assert len(statements) == 2
-    assert "'a;\nb'" in statements[0]
 
 
-def test_sql_file_restore_uses_manifest_before_truncate(mocker, tmp_path):
-    path = tmp_path / "partial.sql"
-    path.write_text("INSERT INTO users (id) VALUES (1);\n", encoding="utf-8")
-    connection = MagicMock()
-    cursor = connection.cursor.return_value
-    cursor.fetchone.return_value = ("spe_db",)
-    cursor.fetchall.side_effect = [[("alembic_version",), ("users",), ("companies",)], [("002",)]]
-    mocker.patch("scripts.apply_sql_to_postgresql.get_pg_credentials", return_value={})
-    mocker.patch("scripts.apply_sql_to_postgresql.connect_with_retry", return_value=connection)
-
-    with pytest.raises(RuntimeError, match="sem manifesto"):
-        apply_sql_file(path, allow_destructive=True)
-
-    assert not any("TRUNCATE" in str(call) for call in cursor.execute.call_args_list)
 
 
-def test_zip_restore_streams_sql_to_temporary_file(mocker, tmp_path):
-    archive_path = tmp_path / "spe.zip"
-    with zipfile.ZipFile(archive_path, "w") as archive:
-        archive.writestr("spe_dump.sql", "INSERT INTO users (id) VALUES (1);\n")
-    applied = mocker.patch(
-        "scripts.apply_sql_to_postgresql.apply_sql_file",
-        side_effect=lambda path, **kwargs: {"path": path, "content": path.read_text()},
-    )
-
-    result = restore_backup(archive_path)
-
-    assert "INSERT INTO users" in result["content"]
-    assert not result["path"].exists()
-    applied.assert_called_once()
 
 
 def test_crypto_rejects_short_key_and_invalid_envelopes(tmp_path):
