@@ -1,9 +1,9 @@
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
-from typing import Annotated, Any, Dict, List
+from datetime import date, datetime, timedelta
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
-from fastapi import BackgroundTasks, Depends
+from fastapi import Depends
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,8 +22,9 @@ from app.features.users.user_exceptions import (
 )
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared import deps
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import DayOfWeek
+from app.shared.validation import validate_date_order
+from app.shared.work_schedule_time import schedule_expected_seconds
 
 
 class UserWorkScheduleService:
@@ -33,33 +34,6 @@ class UserWorkScheduleService:
     ):
         self.db = db
 
-    @staticmethod
-    def _parse_schedule_time(t_obj):
-        if not t_obj:
-            return None
-        if isinstance(t_obj, time):
-            return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), t_obj)
-        if isinstance(t_obj, str):
-            try:
-                parts = t_obj.split(':')
-                if len(parts) >= 2:
-                    sec = int(parts[2]) if len(parts) > 2 else 0
-                    return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), time(int(parts[0]), int(parts[1]), sec))
-            except (ValueError, IndexError):
-                return None
-        return None
-
-    @classmethod
-    def _calculate_shift_seconds(cls, entry_time, exit_time) -> float:
-        dt_entry = cls._parse_schedule_time(entry_time)
-        dt_exit = cls._parse_schedule_time(exit_time)
-        if not dt_entry or not dt_exit:
-            return 0.0
-        diff = (dt_exit - dt_entry).total_seconds()
-        if diff < 0:
-            diff += 24 * 3600
-        return diff
-
     def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
         sch.entry_1 = sch_data.get('entry_1', sch.entry_1)
@@ -68,18 +42,19 @@ class UserWorkScheduleService:
         sch.exit_2 = sch_data.get('exit_2', sch.exit_2)
         sch.valid_from = valid_from
         sch.valid_until = valid_until
-        sch.is_daily_excess_enabled = sch_data.get('is_daily_excess_enabled', True)
-
-        total_seconds = (
-                self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
-                self._calculate_shift_seconds(sch.entry_2, sch.exit_2)
+        sch.is_daily_excess_enabled = sch_data.get(
+            'is_daily_excess_enabled',
+            sch.is_daily_excess_enabled if sch.is_daily_excess_enabled is not None else True,
         )
-        sch.daily_hours = round(total_seconds / 3600, 2)
+
+        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
+        sch.daily_hours = schedule_expected_seconds(sch) / 3600
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
         return {
             "day_of_week": sch.day_of_week,
             "daily_hours": sch.daily_hours,
+            "is_daily_excess_enabled": sch.is_daily_excess_enabled,
             "valid_from": str(sch.valid_from) if sch.valid_from else None,
             "valid_until": str(sch.valid_until) if sch.valid_until else None,
             "entry_1": str(sch.entry_1) if sch.entry_1 else None,
@@ -88,32 +63,19 @@ class UserWorkScheduleService:
             "exit_2": str(sch.exit_2) if sch.exit_2 else None
         }
 
-    async def check_payroll_closure(self, db: Any, valid_from: date, valid_until: date = None):
+    async def check_payroll_closure(self, db: Any, valid_from: date, valid_until: date | None = None):
+        self._validate_period_order(valid_from, valid_until)
         session = db if db is not None else self.db
         assert session is not None
-        start_year = valid_from.year
-        start_month = valid_from.month
-
         end_date = valid_until if valid_until else datetime.now(ZoneInfo(settings.TIMEZONE)).date()
-        end_year = end_date.year
-        end_month = end_date.month
-
-        current_year = start_year
-        current_month = start_month
-
-        while (current_year < end_year) or (current_year == end_year and current_month <= end_month):
-            if hasattr(session, "sync_session"):
-                closure = await async_payroll_repository.get_by_month(session, current_month, current_year)
-            else:
-                closure = payroll_repository.get_by_month(session, current_month, current_year)
-            if closure and closure.is_closed:
-                raise SchedulePayrollClosedError(
-                    f"Não é permitido alterar configurações de expediente. A folha de ponto de {current_month:02d}/{current_year} já está fechada."
-                )
-            current_month += 1
-            if current_month > 12:
-                current_month = 1
-                current_year += 1
+        if hasattr(session, "sync_session"):
+            closure = await async_payroll_repository.get_first_closed_in_range(session, valid_from, end_date)
+        else:
+            closure = payroll_repository.get_first_closed_in_range(session, valid_from, end_date)
+        if closure:
+            raise SchedulePayrollClosedError(
+                f"Não é permitido alterar configurações de expediente. A folha de ponto de {closure.month:02d}/{closure.year} já está fechada."
+            )
 
     async def check_schedule_overlap(
             self,
@@ -199,7 +161,7 @@ class UserWorkScheduleService:
                         await self.check_schedule_overlap(session, uid, dow, new_valid_from, new_valid_until)
                         to_create.append((user, sch_data))
                 except ScheduleOverlapError as e:
-                    errors.append(f"Usuário {user.name}: {str(e)}")
+                    errors.append(f"Usuário {user.name}: {e!s}")
         return to_update, to_create, errors
 
     @staticmethod
@@ -207,6 +169,7 @@ class UserWorkScheduleService:
         return {
             "day_of_week": cfg.day_of_week,
             "daily_hours": cfg.daily_hours,
+            "is_daily_excess_enabled": cfg.is_daily_excess_enabled,
             "entry_1": cfg.entry_1,
             "exit_1": cfg.exit_1,
             "entry_2": cfg.entry_2,
@@ -220,7 +183,7 @@ class UserWorkScheduleService:
             for user_id, sch_list in users_dict.items()
         ]
 
-    async def get_bulk_schedules(self, db: Any | None = None, month: int = 0, year: int = 0) -> List[Dict[str, Any]]:
+    async def get_bulk_schedules(self, db: Any | None = None, month: int = 0, year: int = 0) -> list[dict[str, Any]]:
         session = db if db is not None else self.db
         assert session is not None
         start_of_month = date(year, month, 1)
@@ -259,7 +222,8 @@ class UserWorkScheduleService:
             for (v_from, v_until), users_dict in groups.items()
         ]
 
-    async def get_bulk_schedule(self, db: Any | None = None, valid_from: date = None, valid_until: date = None) -> Dict[
+    async def get_bulk_schedule(self, db: Any | None = None, valid_from: date | None = None,
+                                valid_until: date | None = None) -> dict[
         str, Any]:
         session = db if db is not None else self.db
         assert session is not None
@@ -307,7 +271,8 @@ class UserWorkScheduleService:
             else:
                 session.delete(cfg)
 
-    async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str, old_data: dict = None, new_data: dict = None):
+    async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str,
+                                     old_data: dict | None = None, new_data: dict | None = None):
         if hasattr(session, "sync_session"):
             await session.flush()
             await audit_service.async_log_change(
@@ -323,16 +288,8 @@ class UserWorkScheduleService:
                 old_data=old_data, new_data=new_data
             )
 
-    def _dispatch_user_ranges_bg(self, background_tasks: BackgroundTasks | None, user_ids: list[int], start_eval: date, end_eval: date):
-        if not background_tasks or start_eval > end_eval:
-            return
-        valid_uids = [u for u in user_ids if u]
-        if valid_uids:
-            background_tasks.add_task(daily_excess_service.reprocess_user_ranges_bg, valid_uids, start_eval, end_eval)
-
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
-                                  current_user_id: int = 0,
-                                  background_tasks: BackgroundTasks | None = None):
+                                  current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(bulk_data, "model_dump"):
@@ -342,6 +299,9 @@ class UserWorkScheduleService:
 
         if not valid_from or not valid_until:
             raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+
+        self._validate_period_order(valid_from, valid_until)
+        self._validate_schedule_days(bulk_data.get('users', []))
 
         if (valid_until - valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
@@ -374,7 +334,6 @@ class UserWorkScheduleService:
             new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, [u.get('user_id') for u in users_input], valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
 
     @staticmethod
@@ -386,10 +345,9 @@ class UserWorkScheduleService:
                 incoming_map[(uid, sch_data_dict.get('day_of_week'))] = sch_data_dict
         return incoming_map
 
-    async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date = None,
-                                    old_valid_until: date = None, bulk_data: Any = None,
-                                    current_user_id: int = 0,
-                                    background_tasks: BackgroundTasks | None = None):
+    async def update_bulk_schedules(self, db: Any | None = None, old_valid_from: date | None = None,
+                                    old_valid_until: date | None = None, bulk_data: Any = None,
+                                    current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         if hasattr(bulk_data, "model_dump"):
@@ -399,6 +357,9 @@ class UserWorkScheduleService:
 
         if not new_valid_from or not new_valid_until:
             raise BulkScheduleValidationError("Data de início (valid_from) e fim (valid_until) são obrigatórias.")
+
+        self._validate_period_order(new_valid_from, new_valid_until)
+        self._validate_schedule_days(bulk_data.get('users', []))
 
         if (new_valid_until - new_valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
@@ -434,17 +395,26 @@ class UserWorkScheduleService:
             new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
         )
 
-        all_uids = list({u[0] for u in existing_map.keys()} | {u.get('user_id') for u in users_input if u.get('user_id')})
-        self._dispatch_user_ranges_bg(
-            background_tasks, all_uids,
-            min(old_valid_from, new_valid_from),
-            min(max(old_valid_until, new_valid_until), datetime.now(ZoneInfo(settings.TIMEZONE)).date())
-        )
         return {"message": "Expedientes atualizados com sucesso."}
 
-    async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date = None, valid_until: date = None,
-                                    current_user_id: int = 0,
-                                    background_tasks: BackgroundTasks | None = None):
+    @staticmethod
+    def _validate_period_order(valid_from: date | None, valid_until: date | None) -> None:
+        try:
+            validate_date_order(valid_from, valid_until)
+        except ValueError as error:
+            raise BulkScheduleValidationError(str(error)) from error
+
+    @staticmethod
+    def _validate_schedule_days(users_input: list[dict]) -> None:
+        for user_input in users_input:
+            for schedule in user_input.get('schedules', []):
+                day = schedule.get('day_of_week')
+                if not isinstance(day, int) or not 0 <= day <= 6:
+                    raise BulkScheduleValidationError('O dia da semana deve estar entre 0 e 6.')
+
+    async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date | None = None,
+                                    valid_until: date | None = None,
+                                    current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
         await self.check_payroll_closure(session, valid_from, valid_until)
@@ -454,7 +424,6 @@ class UserWorkScheduleService:
             raise BulkScheduleNotFoundError(valid_from=valid_from, valid_until=valid_until)
 
         count = len(configs)
-        all_uids = list({cfg.user_id for cfg in configs})
 
         await self._delete_schedule_configs(session, configs)
 
@@ -463,7 +432,6 @@ class UserWorkScheduleService:
             old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
         )
 
-        self._dispatch_user_ranges_bg(background_tasks, all_uids, valid_from, min(valid_until, datetime.now(ZoneInfo(settings.TIMEZONE)).date()))
         return {"message": f"{count} registros removidos com sucesso."}
 
 

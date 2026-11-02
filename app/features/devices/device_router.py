@@ -31,7 +31,6 @@ from app.features.devices.device_schemas import (
 )
 from app.features.devices.device_service import DeviceService
 from app.features.devices.firmware_service import FirmwareService
-from app.features.devices.sync_service import SyncService
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
@@ -46,7 +45,6 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 device_credentials_router = APIRouter(responses={**AUTH_RESPONSES})
 firmware_router = APIRouter()
 biometrics_router = APIRouter(responses={**AUTH_RESPONSES})
-sync_router = APIRouter()
 
 
 @router.post("/punch", dependencies=[Depends(deps.verify_device_api_key)])
@@ -204,16 +202,3 @@ async def get_available_sensor_indices(
         biometric_service: Annotated[BiometricService, Depends()],
 ) -> list[int]:
     return await biometric_service.get_available_sensor_indices()
-
-
-@sync_router.post(
-    "/database",
-    dependencies=[Depends(deps.verify_consumer_api_key)],
-    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE},
-)
-async def sync_database(
-        file: Annotated[UploadFile, File(...)],
-        sync_service: Annotated[SyncService, Depends()],
-) -> dict[str, str]:
-    sync_service.receive_database(file)
-    return {"status": "success"}

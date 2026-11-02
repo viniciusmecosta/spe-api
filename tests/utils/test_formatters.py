@@ -2,15 +2,15 @@ from app.utils.formatters import format_name, format_short_name, mask_cnpj, mask
 
 
 def test_format_short_name_no_preposition():
-    assert format_short_name("Vinicius Costa") == "Vinicius Costa"
+    assert format_short_name("Lume Nilo") == "Lume Nilo"
 
 
 def test_format_short_name_with_preposition_de():
-    assert format_short_name("Andressa de Sousa") == "Andressa Sousa"
+    assert format_short_name("Clara de Lira") == "Clara Lira"
 
 
 def test_format_short_name_with_preposition_da():
-    assert format_short_name("Maria Valeria da Agostinho") == "Maria Valeria"
+    assert format_short_name("Jardim Sol da Agostinho") == "Jardim Sol"
 
 
 def test_format_short_name_with_preposition_do():
@@ -18,7 +18,7 @@ def test_format_short_name_with_preposition_do():
 
 
 def test_format_short_name_with_preposition_dos():
-    assert format_short_name("Carlos dos Santos Silva") == "Carlos Santos"
+    assert format_short_name("Carlos dos Flora Nevoa") == "Carlos Flora"
 
 
 def test_format_short_name_with_preposition_das():
@@ -26,7 +26,7 @@ def test_format_short_name_with_preposition_das():
 
 
 def test_format_short_name_single_name():
-    assert format_short_name("Vinicius") == "Vinicius"
+    assert format_short_name("Lume") == "Lume"
 
 
 def test_format_short_name_empty():
@@ -49,9 +49,9 @@ def test_mask_cpf():
 
 
 def test_format_name():
-    assert format_name("vinicius da costa") == "Vinicius da Costa"
+    assert format_name("lume da nilo") == "Lume da Nilo"
     assert format_name("ze do carmo") == "Ze do Carmo"
-    assert format_name("MARIA DAS GRACAS") == "Maria das Gracas"
+    assert format_name("JARDIM DAS GRACAS") == "Jardim das Gracas"
     assert format_name("ana de almeida") == "Ana de Almeida"
     assert format_name("") == ""
     assert format_name("   ") == "   "

@@ -1,27 +1,32 @@
-from fastapi import FastAPI
+from unittest.mock import AsyncMock
 import pytest
-from app.core.config import settings
+from fastapi import FastAPI
+
 from app.core.lifespan import lifespan, scheduler
 
 
 @pytest.mark.asyncio
-async def test_lifespan_default():
+async def test_lifespan_default(mocker):
+    mock_sync = mocker.patch("app.core.lifespan.trusted_time_service.sync_ntp_with_backoff_async", new_callable=AsyncMock)
+    mocker.patch("app.core.lifespan.settings.ENVIRONMENT", "prod")
     app = FastAPI()
     async with lifespan(app):
         job_ids = [job.id for job in scheduler.get_jobs()]
         assert "daily_excess_check" not in job_ids
         assert "tolerance_entries_check" not in job_ids
         assert "hourly_ntp_sync" in job_ids
+        assert "daily_backup_email" in job_ids
+        assert "hourly_backup_telegram" in job_ids
+    mock_sync.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_lifespan_exportador(monkeypatch):
-    monkeypatch.setattr(settings, "OPERATION_MODE", "EXPORTADOR")
+async def test_lifespan_dev_does_not_schedule_backups(mocker):
+    mocker.patch("app.core.lifespan.trusted_time_service.sync_ntp_with_backoff_async", new_callable=AsyncMock)
+    mocker.patch("app.core.lifespan.settings.ENVIRONMENT", "dev")
     app = FastAPI()
     async with lifespan(app):
         job_ids = [job.id for job in scheduler.get_jobs()]
-        assert "daily_excess_check" not in job_ids
-        assert "tolerance_entries_check" not in job_ids
-        assert "hourly_sync_db" in job_ids
+        assert "daily_backup_email" not in job_ids
+        assert "hourly_backup_telegram" not in job_ids
         assert "hourly_ntp_sync" in job_ids
-

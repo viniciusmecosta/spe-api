@@ -1,17 +1,19 @@
-from typing import Any, Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database.base import Base
-
-ModelType = TypeVar("ModelType", bound=Base)
-CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel | dict[str, Any])
-UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel | dict[str, Any])
+from app.database.unit_of_work import persist_changes, persist_sync_changes
 
 
-class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class BaseRepository[
+    ModelType: Base,
+    CreateSchemaType: BaseModel | dict[str, Any],
+    UpdateSchemaType: BaseModel | dict[str, Any],
+]:
     def __init__(self, model: type[ModelType]):
         self.model = model
 
@@ -33,7 +35,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        db.commit()
+        persist_sync_changes(db)
         db.refresh(db_obj)
         return db_obj
 
@@ -56,7 +58,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 setattr(db_obj, field, value)
 
         db.add(db_obj)
-        db.commit()
+        persist_sync_changes(db)
         db.refresh(db_obj)
         return db_obj
 
@@ -64,7 +66,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj = db.get(self.model, id)
         if obj:
             db.delete(obj)
-            db.commit()
+            persist_sync_changes(db)
         return obj
 
     def count(self, db: Session) -> int:
@@ -80,7 +82,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -88,7 +90,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-class AsyncBaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class AsyncBaseRepository[
+    ModelType: Base,
+    CreateSchemaType: BaseModel | dict[str, Any],
+    UpdateSchemaType: BaseModel | dict[str, Any],
+]:
     def __init__(self, model: type[ModelType]):
         self.model = model
 
@@ -111,7 +117,7 @@ class AsyncBaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]
             create_data = vars(obj_in)
         db_obj = self.model(**create_data)
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -134,7 +140,7 @@ class AsyncBaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]
                 setattr(db_obj, field, value)
 
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -142,7 +148,7 @@ class AsyncBaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]
         obj = await db.get(self.model, id)
         if obj:
             await db.delete(obj)
-            await db.commit()
+            await persist_changes(db)
         return obj
 
     async def count(self, db: AsyncSession) -> int:

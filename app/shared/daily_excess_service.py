@@ -2,13 +2,14 @@ import logging
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import get_async_session_context
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
@@ -18,7 +19,12 @@ from app.shared.enums import (
     DayOfWeek,
     RecordType,
 )
-from app.shared.time_calculation_service import time_calculation_service
+from app.shared.time_calculation_service import (
+    approved_waivers,
+    time_calculation_service,
+    waiver_for_calculation,
+)
+from app.shared.work_schedule_time import schedule_expected_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +41,8 @@ class DailyExcessService:
         )
         exit_time = last_exit.record_datetime.time() if last_exit else None
 
-        excess_mins_early = int(round(min(accounted.total_excess_seconds, accounted.early_return_seconds) / 60))
-        excess_mins_work = int(round(accounted.total_excess_seconds / 60)) - excess_mins_early
+        excess_mins_early = round(min(accounted.total_excess_seconds, accounted.early_return_seconds) / 60)
+        excess_mins_work = round(accounted.total_excess_seconds / 60) - excess_mins_early
         parts = []
         if excess_mins_work > 0:
             parts.append(f"{excess_mins_work}min de jornada excedente")
@@ -59,7 +65,7 @@ class DailyExcessService:
         return bool(
             schedule and
             getattr(schedule, 'is_daily_excess_enabled', False) and
-            getattr(schedule, 'daily_hours', 0) > 0 and
+            schedule_expected_seconds(schedule) > 0 and
             day_records
         )
 
@@ -102,6 +108,7 @@ class DailyExcessService:
             UserWorkScheduleConfig.day_of_week == target_day.value,
             UserWorkScheduleConfig.valid_from <= target_date,
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= target_date)),
+            ~exists(select(Holiday.id).where(Holiday.date == target_date)),
         ).order_by(UserWorkScheduleConfig.valid_from.desc())
         schedule = await db.scalar(sched_stmt)
 
@@ -114,18 +121,12 @@ class DailyExcessService:
         existing_adjustments = [
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
-        waiver_adj = next(
-            (adj for adj in day_adjustments if
-             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
-            None
-        )
+        waiver_adj = waiver_for_calculation(approved_waivers(day_adjustments, target_date))
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments
         )
         if has_reviewed and not overwrite_reviewed:
-            for r in day_records:
-                r.is_verified = True
             return
 
         for adj in existing_adjustments:
@@ -141,9 +142,6 @@ class DailyExcessService:
             new_adj = self._create_daily_excess_adjustment(user_id, target_date, day_records, accounted)
             if new_adj:
                 db.add(new_adj)
-
-        for r in day_records:
-            r.is_verified = True
 
     def _evaluate_user_day_sync(self, db: Session, user_id: int, target_date: date, tz: ZoneInfo, overwrite_reviewed: bool = False):
         payroll_closed = db.query(PayrollClosure).filter(
@@ -183,6 +181,7 @@ class DailyExcessService:
             UserWorkScheduleConfig.day_of_week == target_day.value,
             UserWorkScheduleConfig.valid_from <= target_date,
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= target_date)),
+            ~exists(select(Holiday.id).where(Holiday.date == target_date)),
         ).order_by(UserWorkScheduleConfig.valid_from.desc()).first()
 
         day_adjustments = db.query(AdjustmentRequest).filter(
@@ -193,18 +192,12 @@ class DailyExcessService:
         existing_adjustments = [
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
-        waiver_adj = next(
-            (adj for adj in day_adjustments if
-             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
-            None
-        )
+        waiver_adj = waiver_for_calculation(approved_waivers(day_adjustments, target_date))
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments
         )
         if has_reviewed and not overwrite_reviewed:
-            for r in day_records:
-                r.is_verified = True
             return
 
         for adj in existing_adjustments:
@@ -221,9 +214,6 @@ class DailyExcessService:
             if new_adj:
                 db.add(new_adj)
 
-        for r in day_records:
-            r.is_verified = True
-
     async def evaluate_user_day_async(self, db: AsyncSession, user_id: int, target_date: date, overwrite_reviewed: bool = False):
         tz = ZoneInfo(settings.TIMEZONE)
         await self._evaluate_user_day_async(db, user_id, target_date, tz, overwrite_reviewed=overwrite_reviewed)
@@ -238,7 +228,8 @@ class DailyExcessService:
             async with get_async_session_context() as db:
                 await self._evaluate_user_day_async(db, user_id, target_date, tz)
         except Exception as e:
-            logger.exception(f"Erro ao processar excedente em background para user_id={user_id} em {target_date}: {e}")
+            logger.exception(
+                f'Erro ao processar excedente em background para user_id={user_id} em {target_date}: {type(e).__name__}')
 
     async def evaluate_user_range_bg(self, user_id: int, start_date: date, end_date: date):
         tz = ZoneInfo(settings.TIMEZONE)
@@ -250,7 +241,8 @@ class DailyExcessService:
                     await db.commit()
                     curr += timedelta(days=1)
         except Exception as e:
-            logger.exception(f"Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {e}")
+            logger.exception(
+                f'Erro ao reprocessar intervalo {start_date} a {end_date} para user_id={user_id}: {type(e).__name__}')
 
     async def reprocess_user_ranges_bg(
             self,
@@ -269,7 +261,7 @@ class DailyExcessService:
                         await db.commit()
                         curr += timedelta(days=1)
         except Exception as e:
-            logger.exception(f"Erro ao reprocessar excedente em lote: {e}")
+            logger.exception(f'Erro ao reprocessar excedente em lote: {type(e).__name__}')
 
 
 daily_excess_service = DailyExcessService()

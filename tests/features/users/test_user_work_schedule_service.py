@@ -2,6 +2,7 @@ from datetime import date, time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from app.features.users.user_exceptions import (
     BulkScheduleNotFoundError,
     BulkScheduleValidationError,
@@ -14,7 +15,7 @@ from app.features.users.user_work_schedule_service import user_work_schedule_ser
 
 @pytest.mark.asyncio
 async def test_check_payroll_closure_ok(db_session_mock, mocker):
-    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_first_closed_in_range", return_value=None)
     await user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 9, 1), date(2026, 9, 30))
 
 
@@ -22,7 +23,9 @@ async def test_check_payroll_closure_ok(db_session_mock, mocker):
 async def test_check_payroll_closure_closed(db_session_mock, mocker):
     closure = MagicMock()
     closure.is_closed = True
-    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=closure)
+    closure.month = 9
+    closure.year = 2026
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_first_closed_in_range", return_value=closure)
     start_d = date(2026, 9, 1)
     end_d = date(2026, 9, 30)
     with pytest.raises(SchedulePayrollClosedError) as exc:
@@ -32,7 +35,7 @@ async def test_check_payroll_closure_closed(db_session_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_check_payroll_closure_year_span(db_session_mock, mocker):
-    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_by_month", return_value=None)
+    mocker.patch("app.features.payroll.payroll_repository.payroll_repository.get_first_closed_in_range", return_value=None)
     await user_work_schedule_service.check_payroll_closure(db_session_mock, date(2026, 11, 1), date(2027, 2, 1))
 
 
@@ -114,10 +117,6 @@ async def test_check_schedule_overlap_conflict_raises(db_session_mock):
 
 @pytest.mark.asyncio
 async def test_check_schedule_overlap_ignore_id(db_session_mock):
-    existing = UserWorkScheduleConfig(
-        id=5, user_id=1, day_of_week=1,
-        valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
-    )
     scalars_mock = MagicMock()
     scalars_mock.first.return_value = None
     db_session_mock.scalars.return_value = scalars_mock
@@ -436,7 +435,7 @@ async def test_delete_bulk_schedules_not_found(db_session_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, mocker):
+async def test_bulk_schedule_operations(db_session_mock, mocker):
     mocker.patch.object(user_work_schedule_service, "check_payroll_closure", new_callable=AsyncMock)
     mocker.patch.object(user_work_schedule_service, "check_schedule_overlap", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
@@ -446,7 +445,6 @@ async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, 
     mock_res.scalars.return_value.all.return_value = [user_mock]
     db_session_mock.execute.return_value = mock_res
 
-    bg_mock = MagicMock()
     valid_from = date(2026, 8, 1)
     valid_until = date(2026, 8, 15)
 
@@ -457,11 +455,9 @@ async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, 
     }
 
     await user_work_schedule_service.bulk_add_schedules(
-        db_session_mock, bulk_data=bulk_data, current_user_id=99, background_tasks=bg_mock,
+        db_session_mock, bulk_data=bulk_data, current_user_id=99,
     )
-    bg_mock.add_task.assert_called_once()
 
-    bg_mock.reset_mock()
     old_cfg = UserWorkScheduleConfig(
         id=10, user_id=1, day_of_week=0, valid_from=valid_from, valid_until=valid_until,
     )
@@ -471,16 +467,13 @@ async def test_bulk_operations_enqueue_background_reprocessing(db_session_mock, 
 
     await user_work_schedule_service.update_bulk_schedules(
         db_session_mock, old_valid_from=valid_from, old_valid_until=valid_until,
-        bulk_data=bulk_data, current_user_id=99, background_tasks=bg_mock,
+        bulk_data=bulk_data, current_user_id=99,
     )
-    bg_mock.add_task.assert_called_once()
 
-    bg_mock.reset_mock()
     await user_work_schedule_service.delete_bulk_schedules(
         db_session_mock, valid_from=valid_from, valid_until=valid_until,
-        current_user_id=99, background_tasks=bg_mock,
+        current_user_id=99,
     )
-    bg_mock.add_task.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -489,7 +482,7 @@ async def test_user_work_schedule_service_async_session_branches(mocker):
     async_sess.sync_session = MagicMock()
 
     mocker.patch(
-        "app.features.users.user_work_schedule_service.async_payroll_repository.get_by_month",
+        "app.features.users.user_work_schedule_service.async_payroll_repository.get_first_closed_in_range",
         new_callable=AsyncMock, return_value=None,
     )
     await user_work_schedule_service.check_payroll_closure(async_sess, date(2026, 1, 1), date(2026, 1, 31))

@@ -23,3 +23,11 @@ class TimesheetUserNotFoundError(DomainException):
 class NoTimesheetRecordsFoundError(DomainException):
     def __init__(self, detail: str = "Nenhum registro de ponto encontrado para gerar os espelhos neste mês."):
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
+
+
+class TimesheetExportFailedError(DomainException):
+    def __init__(self):
+        super().__init__(
+            detail="Não foi possível gerar os espelhos de ponto. Tente novamente.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )

@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.shared.audit_data import sanitize_audit_data
 
 
 class UserSnapshot(BaseModel):
@@ -20,6 +22,11 @@ class AuditLogBase(BaseModel):
     entity_id: int | None = None
     old_data: Any | None = None
     new_data: Any | None = None
+
+    @field_validator('old_data', 'new_data', mode='before')
+    @classmethod
+    def sanitize_payload(cls, value):
+        return sanitize_audit_data(value)
 
 
 class AuditLogCreate(AuditLogBase):

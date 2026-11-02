@@ -2,6 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import JSON, Column, Date, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.config import settings
@@ -17,6 +18,13 @@ def get_local_time_naive():
     return datetime.now(tz).replace(tzinfo=None)
 
 
+def normalize_datetime(value: datetime) -> datetime:
+    timezone = ZoneInfo(settings.TIMEZONE)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone)
+    return value.astimezone(timezone)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     __table_args__ = (
@@ -25,13 +33,13 @@ class AuditLog(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     action = Column(String, nullable=False)
     entity = Column(String, nullable=False)
     entity_id = Column(Integer, nullable=True)
-    old_data = Column(JSON, nullable=True)
-    new_data = Column(JSON, nullable=True)
-    timestamp = Column(DateTime(timezone=True), default=get_local_time)
+    old_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    new_data = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    timestamp = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
 
     user = relationship("User", foreign_keys=[user_id])
 
@@ -41,7 +49,26 @@ class RoutineLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     routine_type = Column(String, index=True, nullable=False)
-    execution_time = Column(DateTime, default=get_local_time_naive, nullable=False)
+    execution_time = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
     target_date = Column(Date, nullable=True)
     status = Column(String, nullable=False)
     details = Column(String, nullable=True)
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+    __table_args__ = (Index('ix_background_jobs_claim', 'status', 'next_attempt_at'),)
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, nullable=False)
+    deduplication_key = Column(String, unique=True, nullable=True)
+    status = Column(String, nullable=False, default='PENDING')
+    payload = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=False)
+    result = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=False, default=dict)
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    lease_token = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=get_local_time)
+    finished_at = Column(DateTime(timezone=True), nullable=True)

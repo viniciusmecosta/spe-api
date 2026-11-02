@@ -1,13 +1,29 @@
 import inspect
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes
 from app.features.payroll.payroll_models import PayrollClosure
+
+
+def _closed_period_statement(first: date, last: date):
+    period = tuple_(PayrollClosure.year, PayrollClosure.month)
+    return (
+        select(PayrollClosure)
+        .where(
+            period >= (first.year, first.month),
+            period <= (last.year, last.month),
+            PayrollClosure.deleted_at.is_(None),
+            PayrollClosure.is_closed.is_(True),
+        )
+        .order_by(PayrollClosure.year, PayrollClosure.month)
+        .limit(1)
+    )
 
 
 class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
@@ -55,6 +71,9 @@ class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
         )
         return db.scalars(stmt).first()
 
+    def get_first_closed_in_range(self, db: Session, first: date, last: date) -> PayrollClosure | None:
+        return db.scalars(_closed_period_statement(first, last)).first()
+
     def get_all(self, db: Session, year: int | None = None) -> list[PayrollClosure]:
         stmt = select(PayrollClosure).where(PayrollClosure.deleted_at.is_(None))
         if year:
@@ -91,6 +110,7 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             month: int | None = None,
             year: int | None = None,
             user_id: int | None = None,
+            commit: bool = True,
     ) -> PayrollClosure:
         if obj_in is not None:
             if isinstance(obj_in, PayrollClosure):
@@ -107,8 +127,11 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
         else:
             db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
         db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        if commit:
+            await persist_changes(db)
+            await db.refresh(db_obj)
+        else:
+            await db.flush()
         return db_obj
 
     async def get_by_month(self, db: AsyncSession, month: int, year: int) -> PayrollClosure | None:
@@ -128,6 +151,9 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             first = result.first()
             return await first if inspect.isawaitable(first) else first
         return None
+
+    async def get_first_closed_in_range(self, db: AsyncSession, first: date, last: date) -> PayrollClosure | None:
+        return (await db.scalars(_closed_period_statement(first, last))).first()
 
     async def get_all(self, db: AsyncSession, year: int | None = None) -> list[PayrollClosure]:
         stmt = select(PayrollClosure).where(PayrollClosure.deleted_at.is_(None))
@@ -152,7 +178,7 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
             record.deleted_at = datetime.now()
             record.deleted_by = user_id
             record.reopen_observation = observation
-            await db.commit()
+            await persist_changes(db)
 
 
 payroll_repository = PayrollRepository()

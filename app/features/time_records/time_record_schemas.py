@@ -1,9 +1,20 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.shared.enums import RecordType
+from app.shared.timezone import to_app_timezone
+
+
+def normalize_input_datetime(value: datetime) -> datetime:
+    try:
+        normalized = to_app_timezone(value)
+    except OverflowError as error:
+        raise ValueError('Data e horário fora do intervalo permitido.') from error
+    if normalized.year > 9998:
+        raise ValueError('Data e horário fora do intervalo permitido.')
+    return normalized
 
 
 class SuccessResponse(BaseModel):
@@ -16,7 +27,6 @@ class TimeRecordBase(BaseModel):
     record_datetime: datetime
     ip_address: str | None = None
     device_name: str | None = None
-    platform: str | None = None
     biometric_id: int | None = None
 
 
@@ -30,11 +40,21 @@ class TimeRecordCreateAdmin(BaseModel):
     record_datetime: datetime
     edit_justification: str = Field(..., max_length=300)
 
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime) -> datetime:
+        return normalize_input_datetime(value)
+
 
 class TimeRecordUpdate(BaseModel):
     record_type: RecordType | None = None
     record_datetime: datetime | None = None
     edit_justification: str = Field(..., max_length=300)
+
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime | None) -> datetime | None:
+        return normalize_input_datetime(value) if value is not None else None
 
 
 class TimeRecordDeleteAdmin(BaseModel):
@@ -44,6 +64,12 @@ class TimeRecordDeleteAdmin(BaseModel):
 class TimeRecordSimple(BaseModel):
     record_type: RecordType
     record_datetime: datetime
+
+    @field_validator("record_datetime")
+    @classmethod
+    def normalize_record_timezone(cls, value: datetime) -> datetime:
+        return to_app_timezone(value)
+
     model_config = ConfigDict(from_attributes=True)
 
 

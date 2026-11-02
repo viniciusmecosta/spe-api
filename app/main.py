@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
@@ -35,6 +35,7 @@ app = FastAPI(
     },
 )
 
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=settings.UPLOAD_REQUEST_MAX_BYTES)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.add_middleware(
@@ -43,6 +44,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Export-Status", "X-Export-Generated-Count", "X-Export-Failed-Count"],
 )
 
 setup_exception_handlers(app)
@@ -59,4 +61,6 @@ def root():
 
 
 app.include_router(api_v1_router, prefix="/api/v1")
-app.mount("/uploads", StaticFiles(directory=public_upload_dir), name="uploads")
+from app.features.companies.logo_compatibility import public_upload
+
+app.add_api_route('/uploads/{filename}', public_upload, include_in_schema=False)

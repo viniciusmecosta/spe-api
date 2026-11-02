@@ -5,11 +5,15 @@ from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.database.session import get_async_db
+from app.database.unit_of_work import persist_changes
 from app.features.devices.device_models import UserBiometric
-from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
+from app.features.devices.device_repository import (
+    AsyncBiometricRepository,
+    async_biometric_repository,
+)
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
 from app.shared.trusted_time_service import trusted_time_service
@@ -57,7 +61,7 @@ class PunchService:
 
         new_record.edit_justification = "Registro feito com a hora local do servidor (Falha no NTP)."
         session.add(new_record)
-        await session.commit()
+        await persist_changes(session)
 
         await audit_service.async_log_change(
             session,
@@ -104,7 +108,6 @@ class PunchService:
                 timestamp=server_time,
                 ip_address=ip_address if ip_address else "0.0.0.0",
                 biometric_id=biometric.id,
-                platform="IOT",
                 device_name=device_name,
             )
             if hasattr(new_record, "__await__"):
@@ -117,7 +120,8 @@ class PunchService:
             return True, "Ponto Registrado", loaded_record
 
         except (SQLAlchemyError, ValueError) as e:
-            logger.exception(f"Erro ao processar punch: {e}")
+            await session.rollback()
+            logger.exception(f'Erro ao processar punch: {type(e).__name__}')
             return False, "Erro Interno", None
 
 

@@ -3,12 +3,17 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     Query,
 )
 
 from app.features.system.audit_service import AuditService
+from app.features.system.job_schemas import (
+    JobAdmissionResponse,
+    JobDetailResponse,
+    JobRetryResponse,
+)
+from app.features.system.job_service import JobService
 from app.features.system.routine_log_service import RoutineLogService
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_schemas import (
@@ -24,6 +29,7 @@ from app.shared.openapi_responses import (
     FORBIDDEN_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
+from app.shared.validation import PageLimit, PageOffset
 
 audit_router = APIRouter(responses={**AUTH_RESPONSES})
 backup_router = APIRouter(responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE})
@@ -41,8 +47,8 @@ async def read_audit_logs(
         start_date: date | None = None,
         end_date: date | None = None,
         order_by: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
-        skip: int = 0,
-        limit: int = 100,
+        skip: PageOffset = 0,
+        limit: PageLimit = 100,
 ) -> list[AuditLogResponse]:
     return await service.get_logs(
         action=action,
@@ -56,16 +62,16 @@ async def read_audit_logs(
 
 @backup_router.post(
     "/trigger",
+    response_model=JobAdmissionResponse,
+    response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def trigger_manual_backup(
-        background_tasks: BackgroundTasks,
         audit_svc: Annotated[AuditService, Depends()],
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_backup_email(
-        background_tasks=background_tasks,
         current_user=current_user,
         audit_svc=audit_svc,
     )
@@ -82,8 +88,8 @@ async def read_routine_logs(
         start_date: date | None = None,
         end_date: date | None = None,
         order_by: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
-        skip: int = 0,
-        limit: int = 100,
+        skip: PageOffset = 0,
+        limit: PageLimit = 100,
 ) -> list[RoutineLogResponse]:
     return await service.get_logs(
         routine_type=routine_type,
@@ -98,16 +104,16 @@ async def read_routine_logs(
 
 @telegram_actions_router.post(
     "/manual-backup",
+    response_model=JobAdmissionResponse,
+    response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
 )
 async def trigger_manual_backup_telegram(
-        background_tasks: BackgroundTasks,
         audit_svc: Annotated[AuditService, Depends()],
         routine_orch: Annotated[RoutineOrchestrator, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_backup_telegram(
-        background_tasks=background_tasks,
         current_user=current_user,
         audit_svc=audit_svc,
     )
@@ -115,11 +121,12 @@ async def trigger_manual_backup_telegram(
 
 @telegram_actions_router.post(
     "/manual-report",
+    response_model=JobAdmissionResponse,
+    response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
     responses={**BAD_REQUEST_RESPONSE},
 )
 async def trigger_manual_report_telegram(
-        background_tasks: BackgroundTasks,
         start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
         end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
         audit_svc: Annotated[AuditService, Depends()],
@@ -128,10 +135,23 @@ async def trigger_manual_report_telegram(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> dict[str, str]:
     return await routine_orch.trigger_manual_report_telegram(
-        background_tasks=background_tasks,
         start_date=start_date,
         end_date=end_date,
         current_user=current_user,
         audit_svc=audit_svc,
         telegram_svc=telegram_svc,
     )
+
+
+@routine_logs_router.get('/jobs/{job_id}', response_model=JobDetailResponse,
+                         dependencies=[Depends(deps.get_current_maintainer)])
+async def get_job(job_id: int, service: Annotated[JobService, Depends()]):
+    return await service.get(job_id)
+
+
+@routine_logs_router.post('/jobs/{job_id}/retry', response_model=JobRetryResponse,
+                          dependencies=[Depends(deps.get_current_maintainer)])
+async def retry_job(job_id: int, service: Annotated[JobService, Depends()]):
+    return await service.retry(job_id)
+
+

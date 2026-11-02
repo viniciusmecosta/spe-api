@@ -1,7 +1,11 @@
+import pytest
 from pydantic import ValidationError
 
-import pytest
-from app.features.companies.company_schemas import CompanyCreate, CompanyUpdate, validate_cnpj_logic
+from app.features.companies.company_schemas import (
+    CompanyCreate,
+    CompanyUpdate,
+    validate_cnpj_logic,
+)
 
 
 def test_cnpj_logic_branches():
@@ -23,9 +27,6 @@ def test_company_update_invalid_cnpj():
         CompanyUpdate(cnpj="12345")
 
 
-def test_company_update_valid_and_none():
-    up_none = CompanyUpdate(cnpj=None)
-    assert up_none.cnpj is None
-
+def test_company_update_valid():
     up_valid = CompanyUpdate(cnpj="00.000.000/0001-91")
     assert up_valid.cnpj == "00000000000191"

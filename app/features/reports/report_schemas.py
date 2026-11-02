@@ -32,7 +32,6 @@ class PunchDetail(BaseModel):
     record_type: str
     ip_address: str | None = None
     device_name: str | None = None
-    platform: str | None = None
     biometric_id: int | None = None
     edited_by: str | None = None
     edit_justification: str | None = None
@@ -125,7 +124,6 @@ class HistoryPunch(BaseModel):
     record_type: str
     ip_address: str | None = None
     device_name: str | None = None
-    platform: str | None = None
     biometric_id: int | None = None
     edited_by: str | None = None
     edit_justification: str | None = None

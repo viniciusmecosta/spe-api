@@ -175,7 +175,7 @@ def test_build_backup_message_dev(mock_template_service):
     with patch("app.features.system.email_service.settings.ENVIRONMENT", "dev"):
         service = EmailService()
         msg = service._build_backup_message(["a@a.com"], [], "html", "period")
-        assert "Backup SPE DEV" in msg["Subject"]
+        assert "Registros de ponto" in msg["Subject"]
 
 
 def test_build_backup_message_with_attachment(mock_template_service):
@@ -187,12 +187,9 @@ def test_build_backup_message_with_attachment(mock_template_service):
 
 
 def test_build_backup_message_attachment_not_exists(mock_template_service):
-    with patch("os.path.exists", return_value=False):
-        service = EmailService()
-        msg = service._build_backup_message(["a@a.com"], [("path", "file.txt")], "html", "period")
-        payloads = msg.get_payload()
-        assert len(payloads) == 1
-        assert payloads[0].get_content_type() == "text/html"
+    service = EmailService()
+    with pytest.raises(FileNotFoundError):
+        service._build_backup_message(["a@a.com"], [("missing-file", "file.txt")], "html", "period")
 
 
 def test_dispatch_payroll_email_success():
@@ -206,3 +203,57 @@ def test_dispatch_payroll_email_exception():
         mock_send.side_effect = Exception("Err")
         dispatch_payroll_email("Fechamento", "User", 1, 2023, ["test@test.com"])
         mock_send.assert_called_once()
+
+
+def test_global_prevent_real_email_sending_intercepts(mock_template_service):
+    mock_template_service.get_backup_email_html.return_value = "<html>"
+    service = EmailService()
+    result = service.send_email(["real_destination@test.com"], [], "html", "period")
+    assert result is True
+    assert smtplib.SMTP.called
+
+
+def test_send_payroll_email_raises_smtp_exception(mock_template_service, mocker):
+    mock_template_service.get_payroll_email_html.return_value = "<p>html</p>"
+    service = EmailService()
+    mocker.patch.object(service, "_send_message", side_effect=smtplib.SMTPException("SMTP err"))
+    service.send_payroll_email("action", "user", 1, 2023, None, ["maintainer@test.com"])
+
+
+def test_start_smtp_port_465_and_refused_and_response_exceptions(mocker, tmp_path):
+    with patch("app.features.system.email_service.settings.SMTP_PORT", 465), \
+            patch("app.features.system.email_service.smtplib.SMTP_SSL") as mock_ssl:
+        EmailService._start_smtp()
+        mock_ssl.assert_called_once()
+
+    assert EmailService._refused_result({"a@a.com": (550, b"err")}, ["a@a.com", "b@b.com"]).status == "PARTIAL"
+    assert EmailService._refused_result({"a@a.com": (450, b"temp")}, ["a@a.com"]).status == "RETRY"
+    assert EmailService._refused_result({"a@a.com": (550, b"perm")}, ["a@a.com"]).status == "FAILED"
+
+    service = EmailService()
+    msg = service._build_payroll_message(["a@a.com"], "sub", "html", None, 1, 2023)
+
+    mocker.patch.object(
+        service,
+        "_start_smtp",
+        side_effect=smtplib.SMTPRecipientsRefused({"a@a.com": (550, b"err")}),
+    )
+    assert service._send_message(msg, ["a@a.com"]).status == "FAILED"
+
+    mocker.patch.object(
+        service,
+        "_start_smtp",
+        side_effect=smtplib.SMTPResponseException(451, b"try again"),
+    )
+    assert service._send_message(msg, ["a@a.com"]).status == "RETRY"
+
+    logo_img = tmp_path / "logo.png"
+    logo_img.write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde"
+        b"\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0\x00\x00\x03\x01\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    mocker.patch("app.features.system.email_service.logo_file", return_value=logo_img)
+    mocker.patch("app.features.system.email_service.template_service.get_backup_email_html", return_value="<p>ok</p>")
+    msg_logo = service._build_backup_message(["a@a.com"], [], "html", "period", {"logo_path": "logo.png"})
+    assert len(msg_logo.get_payload()) >= 2
+

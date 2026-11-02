@@ -1,8 +1,7 @@
+import pytest
 from datetime import date, timedelta
-
 from pydantic import ValidationError
 
-import pytest
 from app.features.users.user_schemas import (
     UserBase,
     UserUpdate,
@@ -46,7 +45,7 @@ def test_user_update_valid():
     assert u_up.username == "adminuser"
     assert u_up.cpf == "52998224725"
 
-    u_up_none = UserUpdate(username=None, cpf=None)
+    u_up_none = UserUpdate(cpf=None)
     assert u_up_none.username is None
     assert u_up_none.cpf is None
 
@@ -62,6 +61,16 @@ def test_user_update_future_dob():
         UserUpdate(data_nascimento=future_date)
 
 
+def test_user_flags_reject_explicit_nulls():
+    with pytest.raises(ValidationError):
+        UserBase(is_active=None)
+
+    with pytest.raises(ValidationError):
+        UserUpdate(can_export_report=None)
+
+    assert UserUpdate.reject_null_required_flags(True) is True
+
+
 def test_user_update_me_valid():
     dob = date(1990, 1, 1)
     u_me = UserUpdateMe(data_nascimento=dob)
@@ -72,3 +81,10 @@ def test_user_update_me_future_dob():
     future_date = date.today() + timedelta(days=1)
     with pytest.raises(ValidationError):
         UserUpdateMe(data_nascimento=future_date)
+
+
+def test_validate_password_bytes_too_long():
+    from app.features.users.user_schemas import validate_password_bytes
+
+    with pytest.raises(ValueError, match="72 bytes"):
+        validate_password_bytes("a" * 73)

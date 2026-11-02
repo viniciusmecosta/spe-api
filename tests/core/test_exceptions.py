@@ -32,7 +32,8 @@ def test_get_error_type():
 
 def test_get_error_title():
     title_418 = _get_error_title(418)
-    assert isinstance(title_418, str) and len(title_418) > 0
+    assert isinstance(title_418, str)
+    assert len(title_418) > 0
     assert _get_error_title(999) == "Erro"
 
 

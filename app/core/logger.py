@@ -3,32 +3,42 @@ import logging.config
 import os
 import time
 from datetime import date, datetime, timedelta
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from app.core.config import settings
+from app.core.redaction import redact
 
 LOG_BASE_DIR = "logs"
 
 
-def get_log_path(target_date: date) -> str:
+def get_log_path(target_date: date, base_dir: str = LOG_BASE_DIR) -> str:
     year = target_date.strftime("%Y")
     month = target_date.strftime("%m")
     filename = target_date.strftime("%d%m%Y") + ".log"
-    return os.path.join(LOG_BASE_DIR, year, month, filename)
+    return os.path.join(base_dir, year, month, filename)
 
 
 class CleanFormatter(logging.Formatter):
-    LEVEL_MAP = {
+    LEVEL_MAP: ClassVar[dict[str, str]] = {
         "WARNING": "WARN",
         "CRITICAL": "CRIT",
     }
 
+    def formatTime(self, record, datefmt=None):
+        timestamp = datetime.fromtimestamp(record.created, ZoneInfo(settings.TIMEZONE))
+        if datefmt:
+            return timestamp.strftime(datefmt)
+        return f'{timestamp:%Y-%m-%d %H:%M:%S},{int(record.msecs):03d}'
+
     def format(self, record):
         original_levelname = record.levelname
         record.levelname = self.LEVEL_MAP.get(record.levelname, record.levelname)
-        result = super().format(record)
-        record.levelname = original_levelname
-        return result
+        try:
+            formatted = super().format(record)
+            return redact(formatted)
+        finally:
+            record.levelname = original_levelname
 
 
 class DailyRotatingFileHandler(logging.FileHandler):
@@ -45,7 +55,7 @@ class DailyRotatingFileHandler(logging.FileHandler):
 
     def _get_current_filename(self):
         now = datetime.now(self.tz)
-        log_path = get_log_path(now.date())
+        log_path = get_log_path(now.date(), base_dir=self.log_dir)
         os.makedirs(os.path.dirname(os.path.abspath(log_path)), exist_ok=True)
         return os.path.abspath(log_path)
 
@@ -61,8 +71,8 @@ class DailyRotatingFileHandler(logging.FileHandler):
                     self.stream.close()
                     os.makedirs(os.path.dirname(self.baseFilename), exist_ok=True)
                     self.stream = self._open()
-            except Exception:
-                pass
+            except OSError:
+                self.stream = None
 
     def emit(self, record):
         current_time = time.time()

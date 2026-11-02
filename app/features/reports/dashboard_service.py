@@ -38,6 +38,11 @@ from app.utils.formatters import format_short_name
 logger = logging.getLogger(__name__)
 
 
+def format_team_minutes(total_minutes: int) -> str:
+    hours, minutes = divmod(total_minutes, 60)
+    return f"{hours}h {minutes:02d}min" if minutes else f"{hours}h"
+
+
 class DashboardService:
     def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None):
         self.db = db
@@ -186,23 +191,20 @@ class DashboardService:
             report = await report_service.get_advanced_user_report(session, user.id, month_val, year_val, current_user)
             if report:
                 user_minutes = report.summary.total_accounted_minutes
-                if user_minutes >= 60:
-                    user_hours_rounded = user_minutes // 60
+                team_total_minutes += user_minutes
+                if user_minutes > 0:
                     employees_data.append(EmployeeHours(
                         user_id=user.id,
                         short_name=format_short_name(user.name),
-                        total_hours=float(user_hours_rounded),
-                        formatted_time=f"{user_hours_rounded}h"
+                        total_hours=user_minutes / 60,
+                        formatted_time=format_team_minutes(user_minutes)
                     ))
-                    team_total_minutes += user_minutes
-
-        t_hours = team_total_minutes // 60
 
         return TeamHoursResponse(
             month=month_val,
             year=year_val,
-            team_total_hours=float(t_hours),
-            team_formatted_time=f"{t_hours}h",
+            team_total_hours=team_total_minutes / 60,
+            team_formatted_time=format_team_minutes(team_total_minutes),
             employees=employees_data
         )
 

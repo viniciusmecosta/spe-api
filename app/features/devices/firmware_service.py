@@ -1,15 +1,12 @@
-import asyncio
-import os
 import re
-import shutil
-import time
+import uuid
 from typing import Annotated
 
 from fastapi import Depends, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import ROOT_DIR, settings
 from app.database.session import get_async_db
+from app.database.unit_of_work import unit_of_work
 from app.features.devices.device_exceptions import (
     FirmwareFileNotFoundError,
     FirmwareNotFoundError,
@@ -20,8 +17,14 @@ from app.features.devices.device_exceptions import (
     NoFirmwareAvailableError,
 )
 from app.features.devices.device_models import Firmware
-from app.features.devices.device_repository import AsyncFirmwareRepository, async_firmware_repository
+from app.features.devices.device_repository import (
+    AsyncFirmwareRepository,
+    async_firmware_repository,
+)
+from app.features.devices.device_schemas import FirmwareResponse
 from app.features.system.audit_service import audit_service
+from app.shared.storage import resolve_stored_file
+from app.shared.upload_storage import UploadCategory, upload_storage
 
 
 class FirmwareService:
@@ -32,8 +35,6 @@ class FirmwareService:
     ):
         self.db = db
         self._repo = repo
-        self.firmware_dir = os.path.join(settings.UPLOAD_DIR, "firmware")
-        os.makedirs(self.firmware_dir, exist_ok=True)
 
     @property
     def repo(self) -> AsyncFirmwareRepository:
@@ -50,7 +51,7 @@ class FirmwareService:
         return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
     async def upload_firmware(self, db: AsyncSession | None = None, version: str = "", file: UploadFile | None = None,
-                              current_user_id: int = 0) -> Firmware:
+                              current_user_id: int = 0) -> FirmwareResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert file is not None
@@ -77,22 +78,10 @@ class FirmwareService:
         if existing:
             raise FirmwareVersionAlreadyExistsError()
 
-        timestamp = int(time.time())
-        absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
-        relative_file_path = os.path.relpath(absolute_file_path, ROOT_DIR)
-
-        def _save_upload():
-            with open(absolute_file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-        await asyncio.to_thread(_save_upload)
-
-        firmware = await self.repo.create(session, version=version, file_path=relative_file_path)
-        await audit_service.async_log_change(session, current_user_id, "UPLOAD", new_model=firmware)
-        return firmware
+        return await self._save_firmware(session, version, file, current_user_id, "UPLOAD")
 
     async def update_firmware_file(self, db: AsyncSession | None = None, version: str = "",
-                                   file: UploadFile | None = None, current_user_id: int = 0) -> Firmware:
+                                   file: UploadFile | None = None, current_user_id: int = 0) -> FirmwareResponse:
         session = db if db is not None else self.db
         assert session is not None
         assert file is not None
@@ -103,20 +92,27 @@ class FirmwareService:
         if not firmware_old:
             raise FirmwareNotFoundError(version=version)
 
-        timestamp = int(time.time())
-        absolute_file_path = os.path.join(self.firmware_dir, f"firmware_{version}_{timestamp}.bin")
-        relative_file_path = os.path.relpath(absolute_file_path, ROOT_DIR)
+        return await self._save_firmware(session, version, file, current_user_id, "UPDATE", firmware_old)
 
-        def _save_update():
-            with open(absolute_file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-
-        await asyncio.to_thread(_save_update)
-
-        firmware = await self.repo.create(session, version=version, file_path=relative_file_path)
-        await audit_service.async_log_change(session, current_user_id, "UPDATE", old_model=firmware_old,
-                                             new_model=firmware)
-        return firmware
+    async def _save_firmware(
+        self, session: AsyncSession, version: str, file: UploadFile, current_user_id: int,
+        action: str, old_firmware: Firmware | None = None,
+    ) -> FirmwareResponse:
+        filename = f"firmware_{version}_{uuid.uuid4().hex}.bin"
+        stored = await upload_storage.save(file, UploadCategory.FIRMWARE, filename)
+        try:
+            async with unit_of_work(session):
+                firmware = await self.repo.create(session, version=version, file_path=stored.relative_path, commit=False)
+                await session.refresh(firmware)
+                await audit_service.async_log_change(
+                    session, current_user_id, action, old_model=old_firmware, new_model=firmware,
+                )
+                response = FirmwareResponse.model_validate(firmware)
+                response.model_dump(mode="json")
+        except BaseException:
+            await upload_storage.remove(stored)
+            raise
+        return response
 
     async def get_latest_firmware(self, db: AsyncSession | None = None) -> Firmware:
         session = db if db is not None else self.db
@@ -138,12 +134,10 @@ class FirmwareService:
         if not firmware:
             raise FirmwareNotFoundError(version=version)
 
-        absolute_file_path = os.path.join(ROOT_DIR, firmware.file_path) if not os.path.isabs(
-            firmware.file_path) else firmware.file_path
-        if not os.path.exists(absolute_file_path):
+        absolute_file_path = resolve_stored_file(firmware.file_path, 'firmware')
+        if absolute_file_path is None:
             raise FirmwareFileNotFoundError(version=version)
-
-        return absolute_file_path
+        return str(absolute_file_path)
 
 
 firmware_service = FirmwareService()

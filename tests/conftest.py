@@ -18,6 +18,7 @@ import app.features.payroll.payroll_models
 import app.features.adjustments.adjustment_models
 import app.features.time_records.time_record_models
 import app.features.system.system_models
+import app.features.daily_summaries.daily_summary_models
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -37,9 +38,45 @@ def cleanup_app_database():
     engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_mock):
+    mock_smtp_class = MagicMock(name="PreventRealSMTP")
+    mock_smtp_instance = mock_smtp_class.return_value
+    mock_smtp_instance.__enter__.return_value = mock_smtp_instance
+    mock_smtp_instance.__exit__.return_value = None
+    monkeypatch.setattr("smtplib.SMTP", mock_smtp_class)
+    monkeypatch.setattr("smtplib.SMTP_SSL", mock_smtp_class)
+    monkeypatch.setattr(settings, "SMTP_HOST", None)
+    monkeypatch.setattr(settings, "SMTP_USER", None)
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", None)
+    monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "")
+    monkeypatch.setattr(settings, "BACKGROUND_JOBS_ENABLED", False)
+
+    if "integration" not in request.node.nodeid:
+        import app.database.session as db_session_mod
+
+        mock_async_cm = MagicMock()
+        mock_async_cm.__aenter__ = AsyncMock(return_value=async_db_mock)
+        mock_async_cm.__aexit__ = AsyncMock(return_value=False)
+        monkeypatch.setattr(
+            db_session_mod,
+            "AsyncSessionLocal",
+            MagicMock(return_value=mock_async_cm),
+        )
+        monkeypatch.setattr(
+            db_session_mod,
+            "SessionLocal",
+            MagicMock(return_value=db_session_mock),
+        )
+    return mock_smtp_class
+
+
+
 @pytest.fixture
 def db_session_mock():
     session = MagicMock(spec=Session)
+    session.info = {}
 
     class QueryMock:
         def __init__(self, items=None):
@@ -109,6 +146,9 @@ def async_db_mock():
     session.execute = AsyncMock()
     session.get = AsyncMock()
     session.delete = AsyncMock()
+    session.info = {}
+    session.flush = AsyncMock()
+    session.rollback = AsyncMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
     session.add = MagicMock()

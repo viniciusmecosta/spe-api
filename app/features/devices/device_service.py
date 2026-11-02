@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_client_ip
 from app.database.session import get_async_db
-from app.features.devices.device_repository import AsyncBiometricRepository, async_biometric_repository
+from app.database.unit_of_work import unit_of_work
+from app.features.devices.device_repository import (
+    AsyncBiometricRepository,
+    async_biometric_repository,
+)
 from app.features.devices.device_schemas import (
     BuzzerNote,
     DeviceActions,
@@ -17,7 +21,6 @@ from app.features.devices.device_schemas import (
 from app.features.devices.punch_service import punch_service
 from app.features.system.audit_service import audit_service
 from app.features.time_records.time_record_service import time_record_service
-from app.shared.daily_excess_service import daily_excess_service
 from app.shared.enums import RecordType, UserRole
 from app.shared.trusted_time_service import trusted_time_service
 from app.utils.formatters import format_short_name
@@ -62,8 +65,6 @@ class DeviceService:
     ) -> None:
         if background_tasks:
             await time_record_service.trigger_auto_print(session, record, background_tasks)
-            background_tasks.add_task(daily_excess_service.evaluate_user_day_bg, record.user_id,
-                                      record.record_datetime.date())
 
         if request is not None and hasattr(request, "state") and record.user and record.user.name:
             request.state.attempted_user = record.user.name
@@ -132,15 +133,19 @@ class DeviceService:
         assert session is not None
         sensor_index, ip_address = self._resolve_punch_input(payload, sensor_index, ip_address, request)
         try:
-            success, message, record = await punch_service.process_biometric_punch(
-                session, sensor_index, ip_address, request=request
-            )
+            async with unit_of_work(session):
+                success, message, record = await punch_service.process_biometric_punch(
+                    session, sensor_index, ip_address, request=request
+                )
 
-            if success and record:
-                await self._handle_punch_side_effects(session, record, background_tasks, request)
-                return self._build_success_feedback(record)
+                if success and record:
+                    await self._handle_punch_side_effects(session, record, background_tasks, request)
+                    feedback = self._build_success_feedback(record)
+                else:
+                    feedback = self._build_error_feedback(message)
 
-            return self._build_error_feedback(message)
+                feedback.model_dump(mode="json")
+                return feedback
         except Exception:
             logger.exception("Erro interno ao processar ponto no dispositivo")
             return self._build_internal_error_feedback()

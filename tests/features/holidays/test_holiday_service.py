@@ -1,7 +1,7 @@
+import pytest
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from app.features.holidays.holiday_exceptions import HolidayAlreadyExistsError
 from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_schemas import HolidayCreate
@@ -88,11 +88,7 @@ async def test_delete_holiday_not_found(async_db_mock: AsyncMock, mocker: MagicM
     delete_mock.assert_not_called()
 
 
-def test_holiday_service_repo_property():
+def test_holiday_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = holiday_service.repo
-    try:
-        holiday_service.repo = custom_repo
-        assert holiday_service.repo == custom_repo
-    finally:
-        holiday_service.repo = original_repo
+    monkeypatch.setattr(holiday_service, "repo", custom_repo)
+    assert holiday_service.repo == custom_repo

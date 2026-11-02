@@ -57,7 +57,7 @@ def test_get_device_time_endpoint(client: TestClient, mocker: MagicMock) -> None
 
 def test_register_device_punch_endpoint(client: TestClient, mocker: MagicMock) -> None:
     expected_payload = FeedbackPayload(
-        line1="Vinicius C",
+        line1="Lume C",
         line2="08:00",
         line3="Entrada",
         led="green",
@@ -81,7 +81,7 @@ def test_register_device_punch_endpoint(client: TestClient, mocker: MagicMock) -
     assert response.status_code == 200
     data = response.json()
     assert data["led"] == "green"
-    assert data["line1"] == "Vinicius C"
+    assert data["line1"] == "Lume C"
     assert data["line2"] == "08:00"
     assert data["line3"] == "Entrada"
 

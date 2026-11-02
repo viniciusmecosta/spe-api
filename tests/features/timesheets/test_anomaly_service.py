@@ -1,7 +1,10 @@
 from datetime import date, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.orm import Session
+from app.features.daily_summaries.daily_summary_exceptions import DailySummaryUnavailableError
 from app.features.timesheets.anomaly_service import anomaly_service
 from app.features.timesheets.timesheet_exceptions import InvalidMonthOrYearError
 from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, UserRole
@@ -154,11 +157,14 @@ def test_check_day_anomalies():
         MockTimeRecord(1, datetime(2023, 1, 1, 8, 0), RecordType.ENTRY),
         MockTimeRecord(1, datetime(2023, 1, 1, 20, 0), RecordType.EXIT)
     ]
-    anomalies = anomaly_service._check_day_anomalies(1, "Test", current_date, records)
+    anomalies = anomaly_service._check_day_anomalies(
+        1, "Test", current_date, records, worked_seconds=12 * 3600
+    )
     assert any(a.type == "EXCESSIVE_HOURS" for a in anomalies)
 
     anomalies_ignored = anomaly_service._check_day_anomalies(1, "Test", current_date, records,
-                                                             ignore_excessive_hours=True)
+                                                             ignore_excessive_hours=True,
+                                                             worked_seconds=12 * 3600)
     assert not any(a.type == "EXCESSIVE_HOURS" for a in anomalies_ignored)
 
 
@@ -176,6 +182,38 @@ def test_get_expected_entry_time():
     assert entry_time_no_user is None
 
 
+def test_process_user_anomalies_fails_when_an_active_day_has_no_summary():
+    current = date(2026, 10, 5)
+    user = MockUser(1)
+    records = {1: {current: [MockTimeRecord(1, datetime(2026, 10, 5, 8, 0), RecordType.ENTRY)]}}
+
+    with pytest.raises(DailySummaryUnavailableError):
+        anomaly_service._process_user_anomalies(
+            1,
+            user,
+            [current],
+            records,
+            {1: {}},
+            {},
+            False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_fetch_summaries_supports_sync_session():
+    current = date(2026, 10, 5)
+    row = SimpleNamespace(user_id=1, apuration_date=current)
+    scalars = type("ScalarResult", (), {"all": lambda self: [row]})()
+    session = MagicMock(spec=Session)
+    session.scalars.return_value = scalars
+
+    result = await anomaly_service._fetch_summaries(
+        session, [1], current, current
+    )
+
+    assert result == {(1, current): row}
+
+
 @pytest.mark.asyncio
 @patch("app.features.timesheets.anomaly_service.user_repository")
 @patch("app.features.timesheets.anomaly_service.time_record_repository")
@@ -189,7 +227,16 @@ async def test_get_anomalies_with_user(mock_tr_repo, mock_user_repo, db_session_
                                 datetime(2023, 1, 1, 18, 0).time())
     db_session_mock.query.return_value.items = [adj]
 
-    anomalies = await anomaly_service.get_anomalies(db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1)
+    with patch.object(
+        anomaly_service,
+        "_fetch_summaries",
+        new=AsyncMock(return_value={(1, date(2023, 1, 1)): SimpleNamespace(
+            worked_minutes=540, waiver_minutes=0
+        )}),
+    ):
+        anomalies = await anomaly_service.get_anomalies(
+            db_session_mock, date(2023, 1, 1), date(2023, 1, 31), user_id=1
+        )
     assert len(anomalies) == 2
     types = [a.type for a in anomalies]
     assert "LONG_INTERVAL" in types

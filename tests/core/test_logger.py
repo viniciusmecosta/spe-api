@@ -30,6 +30,8 @@ def test_daily_rotating_file_handler(tmp_path):
 
     logger.info("Test log message 1")
 
+    if handler.stream:
+        handler.stream.close()
     if os.path.exists(handler.baseFilename):
         os.remove(handler.baseFilename)
     handler._check_and_reopen_stream_if_deleted()
@@ -52,7 +54,9 @@ def test_daily_rotating_file_handler(tmp_path):
     handler._cleanup_old_logs()
 
     from unittest.mock import patch
-    with patch.object(handler, "_open", side_effect=Exception("open err")):
+    with patch.object(handler, "_open", side_effect=OSError("open err")):
+        if handler.stream:
+            handler.stream.close()
         if os.path.exists(handler.baseFilename):
             os.remove(handler.baseFilename)
         handler._check_and_reopen_stream_if_deleted()
@@ -66,7 +70,39 @@ def test_daily_rotating_file_handler(tmp_path):
         handler._remove_empty_dirs()
 
     handler.close()
+    logger.removeHandler(handler)
 
 
 def test_setup_logging():
     setup_logging()
+
+
+def test_formatter_uses_fortaleza_independently_of_system_timezone(monkeypatch):
+    from datetime import UTC
+    from app.core.request_context import request_context
+
+    original = os.environ.get('TZ')
+    monkeypatch.setattr(settings, 'TIMEZONE', 'America/Fortaleza')
+    record = logging.LogRecord('test', logging.INFO, '', 0, 'mensagem', (), None)
+    record.created = datetime(2026, 10, 26, 2, 30, tzinfo=UTC).timestamp()
+    formatter = CleanFormatter('%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S')
+    try:
+        for timezone in ('UTC', 'Asia/Tokyo', 'America/Fortaleza'):
+            monkeypatch.setenv('TZ', timezone)
+            if hasattr(time, 'tzset'):
+                time.tzset()
+            with request_context('synthetic'):
+                assert formatter.format(record) == '25/10/2026 23:30:00 mensagem'
+    finally:
+        if original is None:
+            os.environ.pop('TZ', None)
+        else:
+            os.environ['TZ'] = original
+        if hasattr(time, 'tzset'):
+            time.tzset()
+
+
+def test_clean_formatter_format_time_without_datefmt():
+    formatter = CleanFormatter()
+    record = logging.LogRecord("test", logging.INFO, "path", 1, "msg", (), None)
+    assert "," in formatter.formatTime(record, datefmt=None)

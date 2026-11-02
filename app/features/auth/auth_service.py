@@ -1,14 +1,14 @@
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import security
-from app.core.config import settings
+from app.core.config import is_dev
 from app.database.session import get_async_db
 from app.features.auth.auth_exceptions import InactiveUserError, InvalidCredentialsError
 from app.features.auth.auth_schemas import Token
-from app.features.system.audit_service import audit_service
 from app.features.users.user_repository import async_user_repository
 from app.shared.enums import UserRole
 
@@ -36,16 +36,13 @@ class AuthService:
         if not user:
             raise InvalidCredentialsError()
 
-        is_dev = settings.ENVIRONMENT.lower() == "dev"
-        allow_bypass = is_dev and user.role == UserRole.EMPLOYEE
+        allow_bypass = is_dev() and user.role == UserRole.EMPLOYEE
 
-        if not allow_bypass:
-            if not security.verify_password(password, user.password_hash):
-                raise InvalidCredentialsError()
+        if not allow_bypass and not await asyncio.to_thread(security.verify_password, password, user.password_hash):
+            raise InvalidCredentialsError()
 
         if not user.is_active:
             raise InactiveUserError()
 
-        access_token = security.create_access_token(subject=user.id, name=user.name)
-        await audit_service.async_log(self.db, user.id, "LOGIN", entity="USER", entity_id=user.id)
+        access_token = security.create_access_token(subject=user.id, name=user.name, auth_version=user.auth_version or 0)
         return Token(access_token=access_token, token_type="bearer")

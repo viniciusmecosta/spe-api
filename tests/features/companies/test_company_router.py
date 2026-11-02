@@ -111,3 +111,37 @@ def test_upload_company_logo(client: TestClient, mocker: MagicMock) -> None:
     )
     assert response.status_code == 200
     assert "/uploads/logo_123.png" in response.json()["logo_path"]
+
+
+@pytest.mark.asyncio
+async def test_company_logo_compatibility_service_and_route(mocker, tmp_path):
+    from fastapi import HTTPException
+    from app.features.companies.logo_compatibility import CompanyLogoService, public_upload
+
+    db = MagicMock()
+    db.scalar = AsyncMock(return_value=Company(id=1, logo_path="logo.png"))
+    svc = CompanyLogoService(db)
+
+    with pytest.raises(HTTPException) as exc1:
+        await svc.get_public_upload("../logo.png")
+    assert exc1.value.status_code == 404
+
+    with pytest.raises(HTTPException) as exc2:
+        await svc.get_public_upload("logo.txt")
+    assert exc2.value.status_code == 404
+
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"png")
+    mocker.patch("app.features.companies.logo_compatibility.logo_file", return_value=logo)
+    res = await public_upload("logo.png", svc)
+    assert res.path == logo
+
+    mocker.patch("app.features.companies.logo_compatibility.logo_file", return_value=None)
+    with pytest.raises(HTTPException) as exc3:
+        await svc.get_public_upload("logo.png")
+    assert exc3.value.status_code == 404
+
+    db.scalar = AsyncMock(return_value=None)
+    with pytest.raises(HTTPException) as exc4:
+        await svc.get_public_upload("logo.png")
+    assert exc4.value.status_code == 404

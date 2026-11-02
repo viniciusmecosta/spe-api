@@ -1,9 +1,8 @@
+import pytest
 from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 from unittest.mock import AsyncMock, MagicMock
 
-from sqlalchemy.exc import SQLAlchemyError
-
-import pytest
 from app.features.devices.device_models import UserBiometric
 from app.features.devices.punch_service import punch_service
 from app.features.time_records.time_record_models import TimeRecord
@@ -167,11 +166,11 @@ async def test_process_biometric_punch_refetch_returns_none(async_db_mock, mocke
     assert rec is None
 
 
-def test_punch_service_repo_property():
+def test_punch_service_repo_property(monkeypatch):
     mock_repo = MagicMock()
-    punch_service.repo = mock_repo
+    monkeypatch.setattr(punch_service, "repo", mock_repo)
     assert punch_service.repo == mock_repo
-    punch_service.repo = None
+    monkeypatch.setattr(punch_service, "repo", None)
     assert punch_service.repo is not None
 
 
@@ -208,7 +207,6 @@ async def test_process_biometric_punch_propagates_device_name_from_state(async_d
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Catraca-Principal",
     )
 
@@ -247,7 +245,6 @@ async def test_process_biometric_punch_propagates_device_name_from_header_when_n
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Header-Device",
     )
 
@@ -286,7 +283,6 @@ async def test_process_biometric_punch_header_overrides_state(async_db_mock, moc
         timestamp=datetime(2023, 10, 1),
         ip_address="192.168.1.43",
         biometric_id=1,
-        platform="IOT",
         device_name="Header-Custom-Device",
     )
 

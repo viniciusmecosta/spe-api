@@ -25,7 +25,6 @@ reusable_oauth2 = OAuth2PasswordBearer(
 )
 
 api_key_header = APIKeyHeader(name="X-API-KEY", scheme_name="DeviceApiKey", auto_error=False)
-consumer_api_key_header = APIKeyHeader(name="X-CONSUMER-API-KEY", scheme_name="ConsumerApiKey", auto_error=False)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -75,6 +74,9 @@ async def get_current_user(
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+    if token_data.ver != (user.auth_version or 0):
+        raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.",
+                            headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -148,43 +150,6 @@ async def verify_device_api_key(
     return device
 
 
-async def verify_consumer_api_key(
-    request: Request,
-    api_key: Annotated[str | None, Security(consumer_api_key_header)],
-        db: Annotated[Any, Depends(get_async_db)],
-) -> DeviceCredential:
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Chave de API de integração ausente.",
-        )
-
-    hashed_key = get_api_key_hash(api_key)
-    stmt = select(DeviceCredential).where(
-        DeviceCredential.api_key_hash == hashed_key,
-        DeviceCredential.key_type == DeviceKeyType.CONSUMER,
-    )
-    if hasattr(db, "scalars"):
-        res = db.scalars(stmt)
-        if inspect.isawaitable(res):
-            res = await res
-        consumer = res.first() if hasattr(res, "first") else None
-    else:
-        consumer = db.query(DeviceCredential).filter(
-            DeviceCredential.api_key_hash == hashed_key,
-            DeviceCredential.key_type == DeviceKeyType.CONSUMER,
-        ).first()
-
-    if not consumer or not consumer.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Chave de API de integração inválida ou inativa.",
-        )
-
-    request.state.device_name = consumer.name
-    return consumer
-
-
 def parse_optional_employee_ids(
         employee_ids: Annotated[list[str] | None, Query(description="Lista de IDs de colaboradores")] = None,
 ) -> list[int] | None:
@@ -192,11 +157,11 @@ def parse_optional_employee_ids(
         return None
     cleaned: list[int] = []
     for item in employee_ids:
-        if not item:
-            continue
         for part in item.split(","):
             part = part.strip()
-            if part.isdigit():
-                cleaned.append(int(part))
-    return cleaned if cleaned else None
-
+            if not part.isascii() or not part.isdigit() or len(part) > 10 or not 0 < int(part) <= 2**31 - 1:
+                raise HTTPException(status_code=422, detail="Informe somente IDs positivos de colaboradores.")
+            employee_id = int(part)
+            if employee_id not in cleaned:
+                cleaned.append(employee_id)
+    return cleaned

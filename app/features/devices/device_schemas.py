@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.shared.enums import DeviceKeyType
 
@@ -41,6 +41,14 @@ class DeviceCredentialCreate(BaseModel):
 class DeviceCredentialUpdate(BaseModel):
     name: str | None = None
     is_active: bool | None = None
+
+
+    @field_validator("name", "is_active", mode="before")
+    @classmethod
+    def reject_null_required_fields(cls, value):
+        if value is None:
+            raise ValueError("Este campo obrigatório não pode ser nulo.")
+        return value
 
 
 class DeviceCredentialResponse(BaseModel):

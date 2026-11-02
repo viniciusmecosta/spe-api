@@ -20,20 +20,25 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-mock pytest-asyncio anyio
-          pip install mypy
+        run: uv sync --locked --no-build
 
       - name: Check Python Syntax (Compile)
         run: |
-          python -m compileall -q app/
+          uv run --no-sync python -m compileall -q app/
+
+      - name: Run Ruff
+        run: uv run --no-sync ruff check app scripts
 
       - name: Run Mypy (Type Checking)
         run: |
-          mypy app/
+          uv run --no-sync mypy app/
 
   test:
     runs-on: ubuntu-latest
@@ -47,11 +52,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pytest-mock pytest-asyncio anyio
+        run: uv sync --locked --no-build
 
       - name: Prepare Environment for Tests
         run: |
@@ -61,4 +69,36 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml
+          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov=alembic --cov-report=xml
+
+  postgresql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
+        with:
+          version: '0.11.7'
+      - run: uv sync --locked --no-build
+      - run: cp .env.example .env
+      - name: Provision disposable PostgreSQL
+        shell: bash
+        run: |
+          DB_TEST_PASSWORD=$(openssl rand -hex 24)
+          echo "::add-mask::$DB_TEST_PASSWORD"
+          printf 'SPE_TEST_DATABASE_URL=postgresql+asyncpg://spe_test:%s@localhost:5432/spe_test\n' "$DB_TEST_PASSWORD" >> "$GITHUB_ENV"
+          printf 'SQLALCHEMY_DATABASE_URI=postgresql+asyncpg://spe_test:%s@localhost:5432/spe_test\n' "$DB_TEST_PASSWORD" >> "$GITHUB_ENV"
+          docker run -d --name spe-ci-postgres -p 127.0.0.1:5432:5432 -e POSTGRES_DB=spe_test -e POSTGRES_USER=spe_test -e POSTGRES_PASSWORD="$DB_TEST_PASSWORD" postgres:17-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec spe-ci-postgres pg_isready -U spe_test -d spe_test; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Test native PostgreSQL migrations and transactional apuration
+        env:
+          ENVIRONMENT: dev
+        run: uv run --no-sync python -m pytest tests/integration/ -q --tb=short --no-cov

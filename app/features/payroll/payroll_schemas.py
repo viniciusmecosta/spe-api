@@ -3,10 +3,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.shared.validation import Month, Year
+
 
 class PayrollClosureCreate(BaseModel):
-    month: int
-    year: int
+    month: Month
+    year: Year
 
 
 class PayrollReopenCreate(PayrollClosureCreate):

@@ -1,3 +1,20 @@
+from collections import Counter
+
+
+def build_report_names(names: dict[int, str]) -> dict[int, str]:
+    short_names = {user_id: format_short_name(name) for user_id, name in names.items()}
+    counts = Counter(short_names.values())
+    labels = {}
+    used = set()
+    for user_id, short_name in short_names.items():
+        label = names[user_id] if counts[short_name] > 1 else short_name
+        while label in used:
+            label = f"{label} (ID {user_id})"
+        used.add(label)
+        labels[user_id] = label
+    return labels
+
+
 def format_short_name(full_name: str) -> str:
     if not full_name:
         return ""

@@ -1,6 +1,5 @@
-import asyncio
+import logging
 import os
-import shutil
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -9,7 +8,9 @@ from fastapi import Depends, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.exceptions import DomainException
 from app.database.session import get_async_db
+from app.database.unit_of_work import persist_changes, transactional, unit_of_work
 from app.features.companies.company_exceptions import (
     CompanyAlreadyExistsError,
     CompanyNotFoundError,
@@ -17,13 +18,21 @@ from app.features.companies.company_exceptions import (
     LogoSaveError,
 )
 from app.features.companies.company_models import Company
-from app.features.companies.company_repository import AsyncCompanyRepository, async_company_repository
+from app.features.companies.company_repository import (
+    AsyncCompanyRepository,
+    async_company_repository,
+)
 from app.features.companies.company_schemas import (
     CompanyCreate,
     CompanyResponse,
     CompanyUpdate,
 )
+from app.features.printers.printer_models import Printer
 from app.features.system.audit_service import audit_service, serialize_model
+from app.shared.storage import resolve_stored_file
+from app.shared.upload_storage import UploadCategory, upload_storage
+
+logger = logging.getLogger(__name__)
 
 
 class CompanyService:
@@ -61,6 +70,7 @@ class CompanyService:
             response_obj.logo_path = f"{clean_base_url}/uploads/{response_obj.logo_path}"
         return response_obj
 
+    @transactional(response_model=CompanyResponse)
     async def create_company(self, db: AsyncSession | None = None, obj_in: CompanyCreate | None = None,
                              current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
         session = db if db is not None else self.db
@@ -69,12 +79,14 @@ class CompanyService:
         existing = await self.repo.get_current(session)
         if existing:
             raise CompanyAlreadyExistsError()
+        await self._validate_default_printer(session, obj_in.default_printer_id)
         company = await self.repo.create(session, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "CREATE", new_model=company)
         if base_url:
             return self.enrich_logo_url(company, base_url)
         return company
 
+    @transactional(response_model=CompanyResponse)
     async def update_company(self, db: AsyncSession | None = None, obj_in: CompanyUpdate | None = None,
                              current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
         session = db if db is not None else self.db
@@ -84,6 +96,7 @@ class CompanyService:
         if not existing:
             raise CompanyNotFoundError("Nenhuma empresa cadastrada para atualizar.")
 
+        await self._validate_default_printer(session, obj_in.default_printer_id)
         old_data = serialize_model(existing)
         company = await self.repo.update(session, db_obj=existing, obj_in=obj_in)
         await audit_service.async_log_change(session, current_user_id, "UPDATE", old_model=old_data, new_model=company)
@@ -97,41 +110,19 @@ class CompanyService:
             raise InvalidLogoFormatError()
         return ext
 
-    async def _save_uploaded_logo(self, file: UploadFile, filename: str) -> None:
-        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
-        Path(public_dir).mkdir(parents=True, exist_ok=True)
-        full_file_path = os.path.join(public_dir, filename)
-
-        def _save_file() -> None:
-            with open(full_file_path, "wb") as f:
-                shutil.copyfileobj(file.file, f)
-
-        try:
-            await asyncio.to_thread(_save_file)
-        except Exception as e:
-            raise LogoSaveError(f"Erro ao salvar o arquivo: {e}")
-
     async def _cleanup_old_logo(self, old_logo_path: str | None) -> None:
         if not old_logo_path:
             return
-
-        public_dir = os.path.join(settings.UPLOAD_DIR, "public")
-        old_full_path = os.path.join(public_dir, old_logo_path)
-        legacy_full_path = os.path.join(settings.UPLOAD_DIR, old_logo_path)
-
-        def _delete_old_file() -> None:
-            if os.path.exists(old_full_path):
-                try:
-                    os.remove(old_full_path)
-                except OSError:
-                    pass
-            elif os.path.exists(legacy_full_path):
-                try:
-                    os.remove(legacy_full_path)
-                except OSError:
-                    pass
-
-        await asyncio.to_thread(_delete_old_file)
+        old_file = resolve_stored_file(old_logo_path, 'public')
+        if old_file is None:
+            raw = Path(old_logo_path.replace('\\', '/'))
+            if raw.name != str(raw) or raw.suffix.lower() not in {'.png', '.jpg', '.jpeg'}:
+                return
+            old_file = resolve_stored_file(old_logo_path)
+            if old_file is not None and old_file.parent != Path(settings.UPLOAD_DIR).resolve():
+                return
+        if old_file is not None:
+            await upload_storage.remove_path(old_file)
 
     async def upload_logo(self, db: AsyncSession | None = None, file: UploadFile | None = None,
                           current_user_id: int = 0, base_url: str | None = None) -> Company | CompanyResponse:
@@ -145,22 +136,38 @@ class CompanyService:
         ext = self._validate_logo_extension(file.filename)
         filename = f"logo_{uuid.uuid4().hex}{ext}"
 
-        await self._save_uploaded_logo(file, filename)
-        await self._cleanup_old_logo(existing.logo_path)
-
+        try:
+            stored = await upload_storage.save(file, UploadCategory.LOGO, filename)
+        except OSError as exc:
+            raise LogoSaveError("Não foi possível salvar o logotipo.") from exc
         old_logo = existing.logo_path
-        existing.logo_path = filename
-        session.add(existing)
-        await session.commit()
-        await session.refresh(existing)
+        try:
+            async with unit_of_work(session):
+                existing.logo_path = filename
+                session.add(existing)
+                await persist_changes(session)
+                await session.refresh(existing)
+                await audit_service.async_log_change(
+                    session, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
+                    old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
+                )
+                response = CompanyResponse.model_validate(existing)
+                if base_url:
+                    response = self.enrich_logo_url(response, base_url)
+                response.model_dump(mode="json")
+        except BaseException:
+            await upload_storage.remove(stored)
+            raise
+        try:
+            await self._cleanup_old_logo(old_logo)
+        except OSError:
+            logger.exception("Não foi possível remover o logotipo anterior.")
+        return response
 
-        await audit_service.async_log_change(
-            session, current_user_id, "UPDATE_LOGO", entity="COMPANY", entity_id=existing.id,
-            old_data={"logo_path": old_logo}, new_data={"logo_path": filename}
-        )
-        if base_url:
-            return self.enrich_logo_url(existing, base_url)
-        return existing
+    @staticmethod
+    async def _validate_default_printer(session: AsyncSession, printer_id: int | None) -> None:
+        if printer_id is not None and await session.get(Printer, printer_id) is None:
+            raise DomainException("A impressora padrão informada não existe.", 422)
 
 
 company_service = CompanyService()

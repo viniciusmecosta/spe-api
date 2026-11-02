@@ -9,15 +9,15 @@ from app.middleware.request_logging import RequestLoggingMiddleware, _extract_us
 
 
 def test_extract_user_name():
-    token = create_access_token(subject="1", name="João da Silva")
+    token = create_access_token(subject="1", name="João da Nevoa")
     req = MagicMock(spec=Request)
     req.headers.get.side_effect = lambda k, d="": f"Bearer {token}" if k.lower() == "authorization" else d
-    assert _extract_user_name(req) == "João Silva"
+    assert _extract_user_name(req) == "João Nevoa"
 
     req2 = MagicMock(spec=Request)
     req2.headers.get.side_effect = lambda k, d="": "Bearer invalid" if k.lower() == "authorization" else d
-    req2.state.attempted_user = "Maria Souza"
-    assert _extract_user_name(req2) == "Maria Souza"
+    req2.state.attempted_user = "Jardim Souza"
+    assert _extract_user_name(req2) == "Jardim Souza"
 
 
 def test_middleware_status_codes():

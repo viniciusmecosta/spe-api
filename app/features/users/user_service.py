@@ -5,12 +5,17 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.session import get_async_db
+from app.database.unit_of_work import transactional
 from app.features.system.audit_service import audit_service, serialize_model
+from app.features.users.user_authorization import UserAuthorizationPolicy
 from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import UserNotFoundError
 from app.features.users.user_models import User
-from app.features.users.user_repository import AsyncUserRepository, async_user_repository
-from app.features.users.user_schemas import UserCreate, UserUpdate
+from app.features.users.user_repository import (
+    AsyncUserRepository,
+    async_user_repository,
+)
+from app.features.users.user_schemas import UserCreate, UserResponse, UserUpdate
 from app.features.users.user_validator import UserValidator
 from app.shared.enums import UserRole
 from app.utils.formatters import format_name
@@ -56,11 +61,14 @@ class UserService:
             return data_in.model_dump(exclude_unset=True)
         return vars(data_in)
 
+    @transactional(response_model=UserResponse)
     async def create_user(
             self, user_in: UserCreate | dict[str, Any], current_user_id: int
-    ) -> User:
-        await self._validate_unique_fields(user_in)
+    ) -> UserResponse:
         data = self._extract_data(user_in)
+        actor = await self.repository.get(self.db, current_user_id)
+        UserAuthorizationPolicy.validate(actor, requested_role=data.get("role", UserRole.EMPLOYEE))
+        await self._validate_unique_fields(user_in)
 
         if data.get("name"):
             data["name"] = self._format_name(data["name"])
@@ -70,12 +78,13 @@ class UserService:
         await audit_service.async_log_change(self.db, current_user_id, "CREATE", new_model=db_user)
         return db_user
 
+    @transactional(response_model=UserResponse)
     async def update_user(
         self,
         user_id: int,
         user_in: UserUpdate | dict[str, Any],
         current_user_id: int,
-    ) -> User:
+    ) -> UserResponse:
         user = await self.repository.get(self.db, user_id)
         if not user:
             raise UserNotFoundError(user_id=user_id)
@@ -109,7 +118,7 @@ class UserService:
             self,
             current_user: User,
             user_in: Any,
-    ) -> User:
+    ) -> UserResponse:
         update_data = self._extract_data(user_in)
         return await self.update_user(
             user_id=current_user.id,
@@ -168,12 +177,18 @@ class UserService:
         user_id: int,
         user_in: UserUpdate | dict[str, Any],
         current_user: User,
-    ) -> User:
+    ) -> UserResponse:
         user = await self.repository.get(self.db, user_id=user_id)
         if not user:
             raise UserNotFoundError(user_id=user_id)
 
-        self.validator.validate_manager_privilege(current_user, user)
+        data = self._extract_data(user_in)
+        UserAuthorizationPolicy.validate(current_user, user, data.get("role"))
+        removes_maintainer = user.role == UserRole.MAINTAINER and (
+            data.get("role", user.role) != UserRole.MAINTAINER or data.get("is_active") is False
+        )
+        if removes_maintainer and user.is_active:
+            await self.repository.protect_last_maintainer(self.db, user.id)
         return await self.update_user(
             user_id=user_id, user_in=user_in, current_user_id=current_user.id
         )

@@ -32,9 +32,10 @@ class AdjustmentRequest(Base):
     )
 
     USERS_ID = "users.id"
+    SET_NULL_ACTION = "SET NULL"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey(USERS_ID), nullable=False)
+    user_id = Column(Integer, ForeignKey(USERS_ID, ondelete="CASCADE"), nullable=False)
     adjustment_type = Column(Enum(AdjustmentType), nullable=False)
     record_type = Column(Enum(RecordType), nullable=True)
     target_date = Column(Date, nullable=False)
@@ -43,29 +44,31 @@ class AdjustmentRequest(Base):
     reason_text = Column(String, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
-    manager_id = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    manager_id = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
     manager_comment = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(Integer, ForeignKey(USERS_ID), nullable=True)
+    deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
     approved_amount_hours = Column(Float, nullable=True)
+    applied_time_record_id = Column(Integer, ForeignKey("time_records.id", name="fk_adjustment_applied_record",
+                                                       ondelete=SET_NULL_ACTION, use_alter=True), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
 
     @property
     def user_name(self):
-        return self.user.name if self.user else "Desconhecido"
+        return self.user.name if self.user and self.user.name else "Desconhecido"
 
 
 class AdjustmentAttachment(Base):
     __tablename__ = "adjustment_attachments"
 
     id = Column(Integer, primary_key=True, index=True)
-    adjustment_request_id = Column(Integer, ForeignKey("adjustment_requests.id"), nullable=False)
+    adjustment_request_id = Column(Integer, ForeignKey("adjustment_requests.id", ondelete="CASCADE"), nullable=False)
     file_path = Column(String, nullable=False)
     file_type = Column(String, nullable=False)
-    uploaded_at = Column(DateTime(timezone=True), default=get_local_time)
+    uploaded_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
 
     request = relationship("AdjustmentRequest", backref="attachments")

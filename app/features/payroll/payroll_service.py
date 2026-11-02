@@ -3,6 +3,7 @@ import inspect
 import logging
 import os
 import pathlib
+import uuid
 from datetime import date, datetime
 from io import BytesIO
 from typing import Annotated, Any
@@ -10,10 +11,14 @@ from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Depends
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.database.errors import constraint_name
+from app.database.payroll_lock import lock_payroll_periods
+from app.database.unit_of_work import transactional, unit_of_work
 from app.features.payroll.payroll_exceptions import (
     PayrollAlreadyClosedError,
     PayrollClosureNotFoundError,
@@ -29,12 +34,16 @@ from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
 )
+from app.features.payroll.payroll_schemas import PayrollClosureResponse
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
-from app.features.system.email_service import dispatch_payroll_email, email_service
+from app.features.system.email_service import email_service
+from app.features.system.job_queue import enqueue
 from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.enums import UserRole
+from app.shared.storage import resolve_stored_file
+from app.shared.upload_storage import UploadCategory, upload_storage
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +60,7 @@ def dispatch_closure_email_background(month: int, year: int, user_name: str, rep
             action="Fechamento", user_name=user_name, month=month, year=year, attachment=attachment, to_emails=to_emails
         )
     except Exception as e:
-        logger.exception(f"Error in dispatch_closure_email_background: {e}")
+        logger.exception(f'Error in dispatch_closure_email_background: {type(e).__name__}')
 
 
 class PayrollService:
@@ -66,6 +75,18 @@ class PayrollService:
     @property
     def repo(self) -> AsyncPayrollRepository:
         return self._repo if self._repo is not None else async_payroll_repository
+
+    async def _queue_notification(self, session, action: str, current_user, closure, month: int, year: int):
+        maintainers = list((await session.scalars(select(User).where(
+            User.role == UserRole.MAINTAINER, User.is_active.is_(True), User.email.isnot(None)
+        ))).all())
+        recipients = [maintainer.email for maintainer in maintainers if maintainer.email]
+        await enqueue(session, 'NOTIFICATION', {
+            'routine_type': 'EMAIL_PAYROLL', 'action': action, 'month': month, 'year': year,
+            'user_name': current_user.name, 'to_emails': recipients,
+            'report_path': closure.report_path if action == 'Fechamento' else None,
+            'target_date': date(year, month, 1).isoformat(),
+        }, f'EMAIL_PAYROLL:{closure.id}:{action}')
 
     def _build_history(self, month_closures: list) -> list[dict[str, Any]]:
         history = []
@@ -184,6 +205,8 @@ class PayrollService:
                 f"Não é possível fechar a folha do mês atual ou de meses futuros ({month:02d}/{year}). Apenas meses anteriores podem ser fechados."
             )
 
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lambda db: lock_payroll_periods(db, {(year, month)}, exclusive=True))
         existing = await self.repo.get_by_month(session, month, year)
         if existing:
             raise PayrollAlreadyClosedError(
@@ -197,7 +220,7 @@ class PayrollService:
             reports_dir = os.path.join(settings.UPLOAD_DIR, "reports")
             os.makedirs(reports_dir, exist_ok=True)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             filename = f"folha_ponto_{month:02d}_{year}_{timestamp}.xlsx"
             file_path = os.path.join(reports_dir, filename)
 
@@ -208,31 +231,31 @@ class PayrollService:
             await asyncio.to_thread(_write_report)
         except Exception as e:
             logger.exception("Falha ao gerar/salvar arquivo do relatório de fechamento.")
-            raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {str(e)}")
+            raise PayrollReportGenerationError(f"Falha ao gerar o relatório Excel: {e!s}")
 
-        await session.commit()
+        try:
+            async with unit_of_work(session):
+                closure = await self.repo.create(
+                    session, month=month, year=year, user_id=current_user.id, commit=False
+                )
+                closure.report_path = f"reports/{filename}"
+                await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
+                await self._queue_notification(session, 'Fechamento', current_user, closure, month, year)
+                response = PayrollClosureResponse.model_validate(closure)
+                response.model_dump(mode="json")
+        except IntegrityError as exc:
+            await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
+            if constraint_name(exc) != "uq_payroll_closures_active_period":
+                raise
+            raise PayrollAlreadyClosedError(
+                f"A folha de ponto referente a {month:02d}/{year} já está fechada."
+            ) from exc
+        except BaseException:
+            await asyncio.to_thread(pathlib.Path(file_path).unlink, missing_ok=True)
+            raise
+        return response
 
-        closure = await self.repo.create(session, month=month, year=year, user_id=current_user.id)
-        closure.report_path = f"reports/{filename}"
-        await session.commit()
-        await session.refresh(closure)
-
-        await audit_service.async_log_change(session, current_user.id, "CLOSE", new_model=closure)
-
-        stmt = select(User).where(
-            User.role == UserRole.MAINTAINER,
-            User.is_active == True,
-            User.email.isnot(None),
-        )
-        maintainers = list((await session.scalars(stmt)).all())
-        to_emails = [m.email for m in maintainers if m.email]
-
-        background_tasks.add_task(
-            dispatch_closure_email_background,
-            month, year, current_user.name, closure.report_path, to_emails
-        )
-        return closure
-
+    @transactional
     async def reopen_period(
             self,
             db: AsyncSession | None = None,
@@ -255,6 +278,8 @@ class PayrollService:
         if current_user.role != UserRole.MAINTAINER:
             raise PayrollPermissionError("Acesso negado: Apenas mantenedores reabrem folhas.")
 
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lambda db: lock_payroll_periods(db, {(year, month)}, exclusive=True))
         existing = await self.repo.get_by_month(session, month, year)
         if not existing:
             raise PayrollNotClosedError(
@@ -270,18 +295,7 @@ class PayrollService:
             old_data={"is_closed": True}, new_data={"is_closed": False}
         )
 
-        stmt = select(User).where(
-            User.role == UserRole.MAINTAINER,
-            User.is_active == True,
-            User.email.isnot(None),
-        )
-        maintainers = list((await session.scalars(stmt)).all())
-        to_emails = [m.email for m in maintainers if m.email]
-
-        background_tasks.add_task(
-            dispatch_payroll_email,
-            "Reabertura", current_user.name, month, year, to_emails
-        )
+        await self._queue_notification(session, 'Reabertura', current_user, existing, month, year)
         return {"status": "success", "message": f"Folha de ponto de {month:02d}/{year} reaberta com sucesso."}
 
     def validate_period_open(self, db: Session | None = None, target_date: date | None = None):
@@ -312,10 +326,6 @@ class PayrollService:
             file_content: bytes = b"",
             upload_file: Any = None,
     ) -> dict[str, str]:
-        if upload_file is not None:
-            original_filename = upload_file.filename or ""
-            file_content = await upload_file.read()
-
         session = db if db is not None else self.db
         assert session is not None
         stmt = select(PayrollClosure).where(PayrollClosure.id == closure_id)
@@ -323,22 +333,22 @@ class PayrollService:
         if not closure:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
-        legacy_dir = os.path.join(settings.UPLOAD_DIR, "reports", "legacy")
-        os.makedirs(legacy_dir, exist_ok=True)
-
-        ext = pathlib.Path(original_filename).suffix
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"folha_ponto_{closure.month:02d}_{closure.year}_{timestamp}{ext}"
-        file_path = os.path.join(legacy_dir, filename)
-
-        def _write_legacy():
-            with open(file_path, "wb") as f:
-                f.write(file_content)
-
-        await asyncio.to_thread(_write_legacy)
-
-        closure.report_path = f"reports/legacy/{filename}"
-        await session.commit()
+        if upload_file is not None:
+            original_filename = upload_file.filename or ""
+        extension = pathlib.Path(original_filename).suffix.lower()
+        filename = f"folha_ponto_{closure.month:02d}_{closure.year}_{uuid.uuid4().hex}{extension}"
+        if upload_file is not None:
+            stored = await upload_storage.save(upload_file, UploadCategory.LEGACY_REPORT, filename)
+        else:
+            stored = await upload_storage.save_bytes(file_content, original_filename, UploadCategory.LEGACY_REPORT,
+                                                     filename)
+        closure.report_path = stored.relative_path
+        try:
+            await session.commit()
+        except BaseException:
+            await session.rollback()
+            await upload_storage.remove(stored)
+            raise
         return {"status": "success", "message": "Documento legado anexado com sucesso."}
 
     async def get_report_file_path(
@@ -353,12 +363,12 @@ class PayrollService:
         if not closure or not closure.report_path:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
-        file_path = os.path.join(settings.UPLOAD_DIR, closure.report_path)
-        if not os.path.exists(file_path):
+        file_path = resolve_stored_file(closure.report_path, 'reports')
+        if file_path is None:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
         filename = os.path.basename(file_path)
-        return file_path, filename
+        return str(file_path), filename
 
 
 payroll_service = PayrollService()

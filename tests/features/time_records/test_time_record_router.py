@@ -25,7 +25,9 @@ def mock_user() -> User:
 @pytest.fixture
 def client(mock_user: User, db_session_mock: MagicMock) -> TestClient:
     async def override_get_async_db():
-        yield AsyncMock()
+        session = AsyncMock()
+        session.info = {}
+        yield session
 
     app.dependency_overrides[deps.get_current_active_user] = lambda: mock_user
     app.dependency_overrides[deps.get_current_manager] = lambda: mock_user
@@ -245,11 +247,3 @@ def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None
     response = client.get("/api/v1/time-records/1/timeline")
     assert response.status_code == 200
     assert len(response.json()) == 1
-
-
-def test_trigger_tolerance_cron(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch("app.features.time_records.time_record_router.tolerance_cron_service.process_unverified_entries")
-
-    response = client.post("/api/v1/time-records/admin/tolerance/process")
-    assert response.status_code == 200
-    assert response.json()["status"] == "success"

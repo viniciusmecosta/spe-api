@@ -12,6 +12,6 @@ class Printer(Base):
     address = Column(String, nullable=False)
     status = Column(Boolean, default=True, nullable=False)
     paper_width = Column(Integer, default=80, nullable=False)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
 
     company = relationship("Company", back_populates="printers", foreign_keys=[company_id])

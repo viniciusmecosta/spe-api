@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -13,6 +13,30 @@ class Settings(BaseSettings):
 
     TIMEZONE: str
     SQLALCHEMY_DATABASE_URI: str
+    POSTGRES_DB: str | None = None
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: str | None = None
+    POSTGRES_HOST: str | None = None
+    POSTGRES_PORT: int | None = None
+    DB_POOL_SIZE: int = Field(default=5, ge=1, le=100)
+    DB_MAX_OVERFLOW: int = Field(default=5, ge=0, le=100)
+    DB_POOL_TIMEOUT_SECONDS: int = Field(default=15, ge=1, le=120)
+    DB_CONNECT_TIMEOUT_SECONDS: int = Field(default=10, ge=1, le=120)
+    DB_STATEMENT_TIMEOUT_MS: int = Field(default=120000, ge=1000, le=3600000)
+    DB_LOCK_TIMEOUT_MS: int = Field(default=10000, ge=100, le=300000)
+    DB_IDLE_TRANSACTION_TIMEOUT_MS: int = Field(default=60000, ge=1000, le=3600000)
+    BACKGROUND_JOBS_ENABLED: bool = True
+    REPROCESS_MAX_DAYS: int = Field(default=3660, ge=1, le=36600)
+    REPROCESS_MAX_ITEMS: int = Field(default=100000, ge=1, le=1000000)
+    REPROCESS_BATCH_SIZE: int = Field(default=25, ge=1, le=100)
+    TRUSTED_PROXY_CIDRS: list[str] = []
+    UPLOAD_LOGO_MAX_BYTES: int = Field(default=5 * 1024 * 1024, ge=1)
+    UPLOAD_ATTACHMENT_MAX_BYTES: int = Field(default=10 * 1024 * 1024, ge=1)
+    UPLOAD_FIRMWARE_MAX_BYTES: int = Field(default=16 * 1024 * 1024, ge=1)
+    UPLOAD_LEGACY_REPORT_MAX_BYTES: int = Field(default=25 * 1024 * 1024, ge=1)
+    UPLOAD_LOGO_MAX_DIMENSION: int = Field(default=4096, ge=1)
+    UPLOAD_LOGO_MAX_PIXELS: int = Field(default=16000000, ge=1)
+    UPLOAD_REQUEST_MAX_BYTES: int = Field(default=32 * 1024 * 1024, ge=1)
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
@@ -30,20 +54,18 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str | None = None
     TELEGRAM_MAX_MESSAGE_LENGTH: int
 
-    OPERATION_MODE: str
-    CONSUMER_SERVER_URL: str | None = None
-    CONSUMER_API_KEY: str | None = None
-
     ROUTINE_LOG_RETENTION_DAYS: int
     DAILY_REPORT_HOUR: int
     HOURLY_BACKUP_START_HOUR: int
     HOURLY_BACKUP_END_HOUR: int
 
-    @property
-    def DATABASE_PATH(self) -> str:
-        if self.SQLALCHEMY_DATABASE_URI.startswith("sqlite:///"):
-            return self.SQLALCHEMY_DATABASE_URI.replace("sqlite:///", "")
-        return "spe.db"
+    @field_validator("TRUSTED_PROXY_CIDRS")
+    @classmethod
+    def validate_proxy_networks(cls, values: list[str]) -> list[str]:
+        from ipaddress import ip_network
+        for value in values:
+            ip_network(value, strict=False)
+        return values
 
     @field_validator("BACKEND_CORS_ORIGINS")
     @classmethod
@@ -69,3 +91,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def _is_environment(name: str) -> bool:
+    return settings.ENVIRONMENT.strip().casefold() == name
+
+
+def is_prod() -> bool:
+    return _is_environment("prod")
+
+
+def is_dev() -> bool:
+    return _is_environment("dev")

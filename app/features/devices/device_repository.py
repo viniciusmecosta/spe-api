@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_api_key_hash
 from app.database.repository import AsyncBaseRepository, BaseRepository
+from app.database.unit_of_work import persist_changes
 from app.features.devices.device_models import (
     DeviceCredential,
     Firmware,
@@ -124,7 +125,7 @@ class AsyncDeviceCredentialRepository(
             is_active=obj_in.is_active,
         )
         db.add(db_obj)
-        await db.commit()
+        await persist_changes(db)
         await db.refresh(db_obj)
         return db_obj
 
@@ -175,14 +176,18 @@ class AsyncFirmwareRepository(AsyncBaseRepository[Firmware, Firmware, Firmware])
             obj_in: Firmware | None = None,
             version: str | None = None,
             file_path: str | None = None,
+            commit: bool = True,
     ) -> Firmware:
         if obj_in is not None:
             db_obj = obj_in
         else:
             db_obj = Firmware(version=version, file_path=file_path)
         db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        if commit:
+            await persist_changes(db)
+            await db.refresh(db_obj)
+        else:
+            await db.flush()
         return db_obj
 
 

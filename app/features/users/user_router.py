@@ -30,7 +30,7 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 async def read_users(
         user_service: Annotated[UserService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        after_id: Annotated[int | None, Query(ge=0)] = None,
+        after_id: Annotated[int | None, Query(ge=0, le=2**31 - 1)] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = 100,
         is_active: Annotated[bool | None, Query()] = None,
         role: Annotated[UserRole | None, Query()] = None,

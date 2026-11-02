@@ -1,12 +1,14 @@
+import os
+import pytest
 import sys
 from datetime import datetime
 from io import BytesIO
+from types import SimpleNamespace
+from openpyxl import Workbook
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from openpyxl import Workbook
-
-import pytest
 from app.features.reports.excel_service import ExcelService
+from app.features.reports.excel_workbook_builder import ExcelWorkbookBuilder
 from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -15,6 +17,11 @@ from app.shared.enums import UserRole
 @pytest.fixture
 def excel_service():
     return ExcelService()
+
+
+@pytest.fixture
+def excel_builder():
+    return ExcelWorkbookBuilder()
 
 
 @pytest.fixture
@@ -30,42 +37,86 @@ def mock_user():
     return user
 
 
-def test_setup_styles(excel_service):
-    assert excel_service.font_regular.name == 'Times New Roman'
+def test_setup_styles(excel_builder):
+    assert excel_builder.font_regular.name == 'Times New Roman'
 
 
-def test_set_columns_width(excel_service):
+@pytest.mark.asyncio
+@patch('app.features.reports.excel_service.report_service')
+async def test_generate_user_reports_list_includes_waiver_without_worked_minutes(
+        mock_report_service, excel_service):
+    waiver_user = MagicMock(spec=User)
+    waiver_user.id = 1
+    empty_user = MagicMock(spec=User)
+    empty_user.id = 2
+    worked_user = MagicMock(spec=User)
+    worked_user.id = 3
+
+    waiver_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=0),
+        daily_details=[SimpleNamespace(adjustment_id=10)],
+    )
+    empty_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=0),
+        daily_details=[SimpleNamespace(adjustment_id=None)],
+    )
+    worked_report = SimpleNamespace(
+        summary=SimpleNamespace(total_worked_minutes=1),
+        daily_details=[SimpleNamespace(adjustment_id=None)],
+    )
+    mock_report_service.get_advanced_user_report = AsyncMock(
+        side_effect=[waiver_report, empty_report, worked_report]
+    )
+
+    reports = await excel_service._generate_user_reports_list(
+        session=MagicMock(),
+        users=[waiver_user, empty_user, worked_user],
+        month=5,
+        year=2023,
+        current_user=None,
+        all_records_batch=[],
+        all_adjustments_batch=[],
+        holidays_batch=[],
+    )
+
+    assert [(user.id, report) for user, report in reports] == [
+        (waiver_user.id, waiver_report),
+        (worked_user.id, worked_report),
+    ]
+
+
+def test_set_columns_width(excel_builder):
     wb = Workbook()
     ws = wb.active
-    excel_service._set_columns_width(ws)
+    excel_builder._set_columns_width(ws)
     assert ws.column_dimensions['A'].width == 5
 
 
-def test_format_cnpj(excel_service):
-    assert excel_service._format_cnpj('') == 'Não registrado'
-    assert excel_service._format_cnpj('12345678901234') == '12.345.678/9012-34'
-    assert excel_service._format_cnpj('123') == '123'
+def test_format_cnpj(excel_builder):
+    assert excel_builder._format_cnpj('') == 'Não registrado'
+    assert excel_builder._format_cnpj('12345678901234') == '12.345.678/9012-34'
+    assert excel_builder._format_cnpj('123') == '123'
 
 
-def test_format_phone(excel_service):
-    assert excel_service._format_phone('') == 'Não registrado'
-    assert excel_service._format_phone('11987654321') == '(11) 98765-4321'
-    assert excel_service._format_phone('1187654321') == '(11) 8765-4321'
-    assert excel_service._format_phone('118765432') == '118765432'
+def test_format_phone(excel_builder):
+    assert excel_builder._format_phone('') == 'Não registrado'
+    assert excel_builder._format_phone('11987654321') == '(11) 98765-4321'
+    assert excel_builder._format_phone('1187654321') == '(11) 8765-4321'
+    assert excel_builder._format_phone('118765432') == '118765432'
 
 
-def test_get_month_name(excel_service):
-    assert excel_service._get_month_name(1) == 'JANEIRO'
-    assert excel_service._get_month_name(13) == ''
+def test_get_month_name(excel_builder):
+    assert excel_builder._get_month_name(1) == 'JANEIRO'
+    assert excel_builder._get_month_name(13) == ''
 
 
-def test_time_str_to_fraction(excel_service):
-    assert excel_service._time_str_to_fraction(None) == 0.0
-    assert excel_service._time_str_to_fraction('10') == 0.0
-    assert excel_service._time_str_to_fraction('invalid:time') == 0.0
-    assert excel_service._time_str_to_fraction('aa:bb') == 0.0
-    assert excel_service._time_str_to_fraction('10:30') == (10 + 30 / 60.0) / 24.0
-    assert excel_service._time_str_to_fraction(':') == 0.0
+def test_time_str_to_fraction(excel_builder):
+    assert excel_builder._time_str_to_fraction(None) == 0.0
+    assert excel_builder._time_str_to_fraction('10') == 0.0
+    assert excel_builder._time_str_to_fraction('invalid:time') == 0.0
+    assert excel_builder._time_str_to_fraction('aa:bb') == 0.0
+    assert excel_builder._time_str_to_fraction('10:30') == (10 + 30 / 60.0) / 24.0
+    assert excel_builder._time_str_to_fraction(':') == 0.0
 
 
 class MockDatetimeMay:
@@ -118,7 +169,7 @@ def test_validate_employee_report_period_january(excel_service, mock_user, monke
 @patch('app.features.reports.excel_service.company_repository')
 @patch('os.path.exists')
 async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report_service, mock_validate, excel_service,
-                               db_session_mock, mock_user):
+                                     db_session_mock, mock_user):
     mock_exists.return_value = True
     mock_company = MagicMock()
     mock_company.logo_path = 'logo.png'
@@ -151,6 +202,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '07:00'
     mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = False
@@ -169,7 +221,7 @@ async def test_generate_excel_report(mock_exists, mock_company_repo, mock_report
 @patch('app.features.reports.excel_service.report_service')
 @patch('app.features.reports.excel_service.company_repository')
 async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_service, excel_service, db_session_mock,
-                                       mock_user):
+                                             mock_user):
     mock_company = MagicMock()
     mock_company.logo_path = None
     mock_company.cnpj = '12345678901234'
@@ -201,6 +253,7 @@ async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_serv
     mock_report.summary.days_worked = 1
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '08:00'
     mock_day.unapproved_extra_time = None
     mock_day.is_holiday = True
     mock_day.holiday_name = 'Dia do Trabalho'
@@ -215,37 +268,37 @@ async def test_generate_excel_report_no_logo(mock_company_repo, mock_report_serv
     assert isinstance(output, BytesIO)
 
 
-def test_apply_key_value(excel_service):
+def test_apply_key_value(excel_builder):
     wb = Workbook()
     ws = wb.active
-    excel_service._apply_key_value(ws, 1, 1, 'Key', 2, 'Value', 2, borders=True)
+    excel_builder._apply_key_value(ws, 1, 1, 'Key', 2, 'Value', 2, borders=True)
     assert ws.cell(row=1, column=1).value == 'Key'
     assert ws.cell(row=1, column=3).value == 'Value'
-    excel_service._apply_key_value(ws, 2, 1, 'Key', 2, 'Value', 2, borders=False)
+    excel_builder._apply_key_value(ws, 2, 1, 'Key', 2, 'Value', 2, borders=False)
 
 
-@patch('app.features.reports.excel_service.OpenpyxlImage')
-def test_insert_header(mock_image, excel_service):
+@patch('app.features.reports.excel_workbook_builder.OpenpyxlImage')
+def test_insert_header(mock_image, excel_builder):
     wb = Workbook()
     ws = wb.active
     mock_company = MagicMock()
     mock_company.cnpj = '12345678901234'
     mock_company.phone = '11987654321'
     mock_company.address = 'Address'
-    excel_service._insert_header(ws, mock_company, 'logo.png')
+    excel_builder._insert_header(ws, mock_company, 'logo.png')
     assert ws.max_row > 1
 
 
-@patch('app.features.reports.excel_service.OpenpyxlImage')
-def test_insert_header_no_company(mock_image, excel_service):
+@patch('app.features.reports.excel_workbook_builder.OpenpyxlImage')
+def test_insert_header_no_company(mock_image, excel_builder):
     wb = Workbook()
     ws = wb.active
-    excel_service._insert_header(ws, None, None)
+    excel_builder._insert_header(ws, None, None)
     assert ws.max_row > 1
 
 
-@patch('app.features.reports.excel_service.OpenpyxlImage')
-def test_insert_header_image_error(mock_image, excel_service):
+@patch('app.features.reports.excel_workbook_builder.OpenpyxlImage')
+def test_insert_header_image_error(mock_image, excel_builder):
     mock_image.side_effect = ValueError('Invalid image')
     wb = Workbook()
     ws = wb.active
@@ -253,31 +306,32 @@ def test_insert_header_image_error(mock_image, excel_service):
     mock_company.cnpj = '12345678901234'
     mock_company.phone = '11987654321'
     mock_company.address = 'Address'
-    excel_service._insert_header(ws, mock_company, 'logo.png')
+    excel_builder._insert_header(ws, mock_company, 'logo.png')
     mock_image.side_effect = OSError('No file')
-    excel_service._insert_header(ws, mock_company, 'logo.png')
+    excel_builder._insert_header(ws, mock_company, 'logo.png')
 
 
-def test_append_notes(excel_service):
+def test_append_notes(excel_builder):
     wb = Workbook()
     ws = wb.active
-    excel_service._append_notes(ws)
+    excel_builder._append_notes(ws)
     assert ws.max_row >= 4
 
 
-def test_merge_for_table(excel_service):
+def test_merge_for_table(excel_builder):
     wb = Workbook()
     ws = wb.active
-    excel_service._merge_for_table(ws, 1, [2, 2], ['Text1', 'Text2'], excel_service.font_regular,
-                                   excel_service.align_center, fill=excel_service.fill_holiday, borders=True)
-    excel_service._merge_for_table(ws, 2, [1], ['Text'], None, None, fill=None, borders=False)
+    excel_builder._merge_for_table(ws, 1, [2, 2], ['Text1', 'Text2'], excel_builder.font_regular,
+                                   excel_builder.align_center, fill=excel_builder.fill_holiday, borders=True)
+    excel_builder._merge_for_table(ws, 2, [1], ['Text'], None, None, fill=None, borders=False)
 
 
-def test_build_day_row(excel_service):
+def test_build_day_row(excel_builder):
     wb = Workbook()
     ws = wb.active
     mock_day = MagicMock()
     mock_day.worked_time = '08:00'
+    mock_day.accounted_time = '07:00'
     mock_day.unapproved_extra_time = '01:00'
     mock_day.is_holiday = False
     mock_day.is_weekend = True
@@ -285,22 +339,43 @@ def test_build_day_row(excel_service):
     mock_day.punches = ['08:00', '12:00']
     mock_day.date = datetime(2023, 5, 1)
     mock_day.day_name = 'Sábado'
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
+    excel_builder._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
     mock_day.is_holiday = True
     mock_day.is_weekend = False
     mock_day.status = 'Atestado'
     mock_day.punches = ['08:00']
     mock_day.holiday_name = None
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
+    excel_builder._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
     mock_day.status = 'Abonado'
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
+    excel_builder._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
     mock_day.is_holiday = True
     mock_day.punches = []
     mock_day.status = 'Feriado'
-    excel_service._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
+    excel_builder._build_day_row(ws, mock_day, [1, 1, 1, 1, 1, 1])
 
 
-def test_build_employee_sheet_no_phone_endereco(excel_service):
+def test_build_day_row_keeps_gross_and_accounted_distinct(excel_builder):
+    wb = Workbook()
+    ws = wb.active
+    day = MagicMock()
+    day.date = datetime(2026, 9, 4)
+    day.day_name = 'Sexta'
+    day.punches = ['07:28', '17:02']
+    day.worked_time = '08:02'
+    day.accounted_time = '08:00'
+    day.unapproved_extra_time = '00:01'
+    day.is_holiday = False
+    day.is_weekend = False
+    day.status = 'Normal'
+
+    gross, unapproved, accounted = excel_builder._build_day_row(ws, day, [2, 3, 13, 2, 2, 2])
+
+    assert round(gross * 1440) == 482
+    assert round(unapproved * 1440) == 1
+    assert round(accounted * 1440) == 480
+
+
+def test_build_employee_sheet_no_phone_endereco(excel_builder):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
     mock_user.name = 'Test User'
@@ -311,12 +386,12 @@ def test_build_employee_sheet_no_phone_endereco(excel_service):
     mock_report = MagicMock()
     mock_report.daily_details = []
     from datetime import date
-    excel_service._build_employee_sheet(wb, mock_user, mock_report, 5, 2023, None, None, date(2023, 5, 1),
+    excel_builder._build_employee_sheet(wb, mock_user, mock_report, 5, 2023, None, None, date(2023, 5, 1),
                                         date(2023, 5, 31))
     assert 'Tes' in wb.sheetnames[-1]
 
 
-def test_build_summary_sheet(excel_service):
+def test_build_summary_sheet(excel_builder):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
     mock_user.name = 'Test User'
@@ -329,11 +404,11 @@ def test_build_summary_sheet(excel_service):
     mock_day.worked_time = '08:00'
     mock_day.unapproved_extra_time = '01:00'
     mock_report.daily_details = [mock_day]
-    excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
+    excel_builder._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
     assert 'Resumo' in wb.sheetnames
 
 
-def test_build_summary_sheet_bruto_less_extra(excel_service):
+def test_build_summary_sheet_bruto_less_extra(excel_builder):
     wb = Workbook()
     mock_user = MagicMock(spec=User)
     mock_user.name = 'Test User'
@@ -346,7 +421,7 @@ def test_build_summary_sheet_bruto_less_extra(excel_service):
     mock_day.worked_time = '01:00'
     mock_day.unapproved_extra_time = '02:00'
     mock_report.daily_details = [mock_day]
-    excel_service._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
+    excel_builder._build_summary_sheet(wb, 5, 2023, [(mock_user, mock_report)], None, None)
     assert 'Resumo' in wb.sheetnames
 
 
@@ -361,7 +436,7 @@ from app.features.reports.report_schemas import UserPayrollSummary, DailyReportI
 @patch('os.path.exists')
 async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_repo, mock_report_service,
                                                       mock_validate,
-                                                excel_service, db_session_mock, mock_user):
+                                                      excel_service, db_session_mock, mock_user):
     mock_exists.return_value = False
     mock_company = MagicMock()
     mock_company.logo_path = None
@@ -388,7 +463,7 @@ async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_
     mock_report_service.apply_employee_filters.return_value = query_mock
     mock_report_service.get_month_range.return_value = (datetime(2023, 10, 1).date(), datetime(2023, 10, 31).date())
     mock_report = MagicMock()
-    mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Silva', total_worked_time='10:00',
+    mock_report.summary = UserPayrollSummary(user_id=1, user_name='Teste Nevoa', total_worked_time='10:00',
                                              total_expected_time='08:00', total_worked_minutes=600,
                                              total_expected_minutes=480, days_worked=2, absences=1,
                                              total_worked_hours=10.0, total_expected_hours=8.0, total_extra_hours=2.0,
@@ -436,15 +511,15 @@ async def test_exhaustive_excel_structural_generation(mock_exists, mock_company_
     assert ws_func.cell(row=row_day1, column=1).alignment.horizontal is not None
 
 
-def test_format_day_groups(excel_service):
-    assert excel_service._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
-    assert excel_service._format_day_groups([0, 2, 4]) == "Segunda, Quarta e Sexta"
-    assert excel_service._format_day_groups([0, 1, 2, 4, 5, 6]) == "Segunda a Quarta e Sexta a Domingo"
-    assert excel_service._format_day_groups([5]) == "Sábado"
-    assert excel_service._format_day_groups([]) == ""
+def test_format_day_groups(excel_builder):
+    assert excel_builder._format_day_groups([0, 1, 2, 3, 4]) == "Segunda a Sexta"
+    assert excel_builder._format_day_groups([0, 2, 4]) == "Segunda, Quarta e Sexta"
+    assert excel_builder._format_day_groups([0, 1, 2, 4, 5, 6]) == "Segunda a Quarta e Sexta a Domingo"
+    assert excel_builder._format_day_groups([5]) == "Sábado"
+    assert excel_builder._format_day_groups([]) == ""
 
 
-def test_build_work_schedules_section(excel_service):
+def test_build_work_schedules_section(excel_builder):
     from app.features.users.user_models import UserWorkScheduleConfig
     from datetime import date, time
     from openpyxl import Workbook
@@ -467,7 +542,7 @@ def test_build_work_schedules_section(excel_service):
     )
     mock_user.historical_schedules = [sch1, sch2]
 
-    excel_service._build_work_schedules_section(ws, mock_user, date(2023, 5, 1), date(2023, 5, 31))
+    excel_builder._build_work_schedules_section(ws, mock_user, date(2023, 5, 1), date(2023, 5, 31))
 
     assert ws.max_row > 1
     found_title = False
@@ -486,11 +561,11 @@ def test_build_work_schedules_section(excel_service):
     assert found_second_period
 
 
-def test_format_day_groups_two_days(excel_service):
-    assert excel_service._format_day_groups([0, 1]) == "Segunda e Terça"
+def test_format_day_groups_two_days(excel_builder):
+    assert excel_builder._format_day_groups([0, 1]) == "Segunda e Terça"
 
 
-def test_build_work_schedules_section_edge_cases(excel_service):
+def test_build_work_schedules_section_edge_cases(excel_builder):
     from datetime import date
     from openpyxl import Workbook
     from app.features.users.user_models import UserWorkScheduleConfig
@@ -500,26 +575,26 @@ def test_build_work_schedules_section_edge_cases(excel_service):
 
     mock_user_no_sched = MagicMock(spec=User)
     mock_user_no_sched.historical_schedules = []
-    excel_service._build_work_schedules_section(ws, mock_user_no_sched, date(2023, 5, 1), date(2023, 5, 31))
+    excel_builder._build_work_schedules_section(ws, mock_user_no_sched, date(2023, 5, 1), date(2023, 5, 31))
 
     mock_user_empty_periods = MagicMock(spec=User)
     mock_user_empty_periods.historical_schedules = [
         UserWorkScheduleConfig(day_of_week=0, valid_from=date(2023, 5, 1), valid_until=date(2023, 5, 1))
     ]
-    with patch.object(excel_service, "_group_schedules_by_period", return_value=[]):
-        excel_service._build_work_schedules_section(ws, mock_user_empty_periods, date(2023, 5, 1), date(2023, 5, 31))
+    with patch.object(excel_builder, "_group_schedules_by_period", return_value=[]):
+        excel_builder._build_work_schedules_section(ws, mock_user_empty_periods, date(2023, 5, 1), date(2023, 5, 31))
 
 
-def test_group_schedules_by_period_start_greater_than_end(excel_service):
+def test_group_schedules_by_period_start_greater_than_end(excel_builder):
     from datetime import date
     user = MagicMock()
     user.historical_schedules = []
     transitions = [date(2023, 5, 10), date(2023, 5, 10)]
-    periods = excel_service._group_schedules_by_period(user, transitions)
+    periods = excel_builder._group_schedules_by_period(user, transitions)
     assert periods == []
 
 
-def test_write_period_schedules_empty_entries_and_no_grouped(excel_service):
+def test_write_period_schedules_empty_entries_and_no_grouped(excel_builder):
     from openpyxl import Workbook
     from app.features.users.user_models import UserWorkScheduleConfig
     from datetime import date
@@ -533,7 +608,7 @@ def test_write_period_schedules_empty_entries_and_no_grouped(excel_service):
         valid_until=date(2023, 5, 31),
         entry_1=None, exit_1=None, entry_2=None, exit_2=None
     )
-    excel_service._write_period_schedules(ws, date(2023, 5, 1), date(2023, 5, 31), [sch_empty], is_single_period=False)
+    excel_builder._write_period_schedules(ws, date(2023, 5, 1), date(2023, 5, 31), [sch_empty], is_single_period=False)
 
     found_no_sched = False
     for row in ws.iter_rows(values_only=True):
@@ -542,7 +617,7 @@ def test_write_period_schedules_empty_entries_and_no_grouped(excel_service):
     assert found_no_sched
 
 
-def test_time_str_to_fraction_fallback(excel_service):
+def test_time_str_to_fraction_fallback(excel_builder):
     class CustomStr(str):
         def __contains__(self, item):
             return True
@@ -550,10 +625,10 @@ def test_time_str_to_fraction_fallback(excel_service):
         def split(self, sep=None, maxsplit=-1):
             return ["10"]
 
-    assert excel_service._time_str_to_fraction(CustomStr("10:00")) == 0.0
+    assert excel_builder._time_str_to_fraction(CustomStr("10:00")) == 0.0
 
 
-def test_build_day_row_abono_status(excel_service):
+def test_build_day_row_abono_status(excel_builder):
     from openpyxl import Workbook
     from datetime import datetime
     from app.features.reports.report_schemas import DailyReportItem
@@ -585,16 +660,16 @@ def test_build_day_row_abono_status(excel_service):
     )
 
     merges = [2, 3, 13, 2, 2, 2]
-    excel_service._build_day_row(ws, day_abono, merges)
+    excel_builder._build_day_row(ws, day_abono, merges)
     last_row = ws.max_row
-    assert ws.cell(row=last_row, column=6).fill == excel_service.fill_excused
+    assert ws.cell(row=last_row, column=6).fill == excel_builder.fill_excused
 
 
 @pytest.mark.asyncio
 @patch("app.features.reports.excel_service.company_repository")
 @patch("app.features.reports.excel_service.report_service")
 async def test_generate_excel_report_with_records_and_adjustments(mock_report_service, mock_comp_repo, excel_service,
-                                                            db_session_mock):
+                                                                  db_session_mock):
     from datetime import datetime, date
     from app.features.time_records.time_record_models import TimeRecord
     from app.features.adjustments.adjustment_models import AdjustmentRequest
@@ -746,37 +821,10 @@ async def test_insert_header_includes_generated_at_and_metadata(excel_service, d
 
 
 @pytest.mark.asyncio
-async def test_export_monthly_report_saved_file(excel_service, tmp_path, async_db_mock):
-    test_file = tmp_path / "folha_saved.xlsx"
-    test_file.write_bytes(b"saved content")
-
-    mock_closure = MagicMock()
-    mock_closure.is_closed = True
-    mock_closure.report_path = str(test_file)
-
-    with patch(
-        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-        new_callable=AsyncMock,
-        return_value=mock_closure,
-    ), patch.object(excel_service, "generate_excel_report", new_callable=AsyncMock) as mock_gen:
-        resp = await excel_service.export_monthly_report(
-            month=7,
-            year=2026,
-            db=async_db_mock,
-        )
-        assert resp.path == str(test_file)
-        mock_gen.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_export_monthly_report_fallback(excel_service, async_db_mock):
+async def test_export_monthly_report_generates_current_data(excel_service, async_db_mock):
     fake_stream = BytesIO(b"generated content")
 
-    with patch(
-        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
-        new_callable=AsyncMock,
-        return_value=None,
-    ), patch.object(
+    with patch.object(
         excel_service,
         "generate_excel_report",
         new_callable=AsyncMock,
@@ -797,11 +845,13 @@ async def test_excel_service_fetch_data_branches(excel_service, async_db_mock):
     mock_res = MagicMock()
     mock_res.all.return_value = []
     async_db_mock.scalars.return_value = mock_res
-    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock, return_value=None):
+    with patch("app.features.reports.excel_service.async_company_repository.get_current", new_callable=AsyncMock,
+               return_value=None):
         users, comp = await excel_service._fetch_users_and_company(async_db_mock, None)
         assert users == []
 
-    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock, return_value=[]):
+    with patch("app.features.reports.excel_service.async_holiday_repository.get_by_month", new_callable=AsyncMock,
+               return_value=[]):
         recs, adjs, hols = await excel_service._fetch_batch_data(
             async_db_mock, [], datetime(2026, 8, 1), datetime(2026, 8, 31),
             date(2026, 8, 1), date(2026, 8, 31), 8, 2026
@@ -834,7 +884,7 @@ def test_resolve_logo_path(excel_service, mocker):
     mocker.patch("os.path.exists", side_effect=lambda p: "public" in p)
     path = excel_service._resolve_logo_path(comp)
     assert path is not None
-    assert "public/logo.png" in path
+    assert os.path.join("public", "logo.png") in path
 
     mocker.patch("os.path.exists", side_effect=lambda p: "public" not in p)
     path_legacy = excel_service._resolve_logo_path(comp)
@@ -845,3 +895,21 @@ def test_resolve_logo_path(excel_service, mocker):
     assert excel_service._resolve_logo_path(comp) is None
 
 
+def test_alphabetical_employee_order_is_stable_with_accents():
+    from types import SimpleNamespace
+    users = [SimpleNamespace(id=4, name='Zélia'), SimpleNamespace(id=3, name='bruno'),
+             SimpleNamespace(id=2, name='Álvaro'), SimpleNamespace(id=7, name='Ana'),
+             SimpleNamespace(id=6, name='Ana')]
+    ordered = sorted(users, key=ExcelService._alphabetical_user_key)
+    assert [(user.name, user.id) for user in ordered] == [
+        ('Álvaro', 2), ('Ana', 6), ('Ana', 7), ('bruno', 3), ('Zélia', 4)]
+
+
+@pytest.mark.asyncio
+async def test_resolve_cached_closure_file_returns_none_when_no_closure(excel_service, async_db_mock):
+    with patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        assert await excel_service._resolve_cached_closure_file(async_db_mock, 5, 2026) is None

@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validat
 
 from app.features.time_records.time_record_schemas import TimeRecordSimple
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
+from app.shared.timezone import to_app_timezone
+from app.shared.validation import BusinessDate
 
 
 class AdjustmentRequestBase(BaseModel):
@@ -17,6 +19,9 @@ class AdjustmentRequestBase(BaseModel):
 
 
 class AdjustmentRequestCreate(AdjustmentRequestBase):
+    target_date: BusinessDate
+    amount_hours: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
     @model_validator(mode='after')
     def validate_rules(self) -> 'AdjustmentRequestCreate':
         if self.adjustment_type == AdjustmentType.WAIVER:
@@ -32,35 +37,26 @@ class AdjustmentRequestCreate(AdjustmentRequestBase):
 
 class AdjustmentWaiverCreate(BaseModel):
     user_id: int
-    target_date: date
-    amount_hours: float
+    target_date: BusinessDate
+    amount_hours: float = Field(gt=0, le=10, allow_inf_nan=False)
     reason_text: str
 
 
 class AdjustmentApproveRequest(BaseModel):
     comment: str | None = None
-    approved_amount_hours: float | None = Field(default=None, ge=0)
-
-
-class BulkReprocessDailyExcessRequest(BaseModel):
-    start_date: date
-    end_date: date
-    user_ids: list[int]
-    overwrite_reviewed: bool = False
+    approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class AdjustmentAttachmentResponse(BaseModel):
     id: int
+    adjustment_request_id: int = Field(exclude=True)
     file_path: str
     file_type: str
     uploaded_at: datetime
 
     @computed_field
     def url(self) -> str:
-        filename = self.file_path.split("/")[-1]
-        if "\\" in filename:
-            filename = filename.split("\\")[-1]
-        return f"/static/{filename}"
+        return f"/api/v1/adjustments/{self.adjustment_request_id}/download"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,11 +75,11 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     time_records: list[TimeRecordSimple] = []
 
     def _build_extra_time_info(self) -> dict:
-        extra_mins = int(round(self.amount_hours * 60)) if self.amount_hours else 0
+        extra_mins = round(self.amount_hours * 60) if self.amount_hours else 0
         actual_time = self.time.strftime("%H:%M") if self.time else "--:--"
         expected = "--:--"
         if self.time and self.amount_hours:
-            dummy = datetime.combine(datetime.today(), self.time)
+            dummy = datetime.combine(self.target_date, self.time)
             expected_dt = dummy + timedelta(minutes=extra_mins + 5)
             expected = expected_dt.strftime("%H:%M")
         return {
@@ -93,8 +89,8 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
         }
 
     def _build_daily_excess_info(self) -> dict:
-        extra_mins = int(round(self.amount_hours * 60)) if self.amount_hours else 0
-        approved_mins = int(round(self.approved_amount_hours * 60)) if self.approved_amount_hours is not None else None
+        extra_mins = round(self.amount_hours * 60) if self.amount_hours else 0
+        approved_mins = round(self.approved_amount_hours * 60) if self.approved_amount_hours is not None else None
         return {
             "tempo_excedente_minutos": extra_mins,
             "tempo_aprovado_minutos": approved_mins,
@@ -106,7 +102,10 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
         return {
             "horario_solicitado": req_time,
             "tipo_batida": self.record_type.value if self.record_type else None,
-            "batidas_do_dia": [r.record_datetime.strftime("%H:%M") for r in self.time_records]
+            "batidas_do_dia": [
+                to_app_timezone(record.record_datetime).strftime("%H:%M")
+                for record in self.time_records
+            ]
         }
 
     @computed_field

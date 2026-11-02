@@ -3,18 +3,19 @@ from app.features.reports.template_service import TemplateService, template_serv
 
 def test_generate_punches_html_even_punches(db_session_mock):
     user_activity = {
-        "User 1": [
+        "Pietro de Lira Flora": [
             {"time": "08:00", "type": "E"},
             {"time": "12:00", "type": "S"}
         ]
     }
     result = TemplateService._generate_punches_html(user_activity)
-    assert "User 1" in result
+    assert "Pietro de Lira Flora" in result
     assert "#ffffff" in result
     assert "#2E7D32" in result
     assert "#EF6C00" in result
     assert "08:00" in result
     assert "12:00" in result
+    assert "white-space: nowrap" in result
 
 
 def test_generate_punches_html_odd_punches():
@@ -58,7 +59,7 @@ def test_get_daily_report_html_with_records():
 
 def test_get_backup_email_html():
     result = TemplateService.get_backup_email_html("Period Text", "<p>Report HTML</p>")
-    assert "Resumo Operacional SPE" in result
+    assert "Registros de ponto" in result
     assert "Period Text" in result
     assert "<p>Report HTML</p>" in result
 

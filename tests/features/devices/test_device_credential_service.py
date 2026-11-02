@@ -1,10 +1,15 @@
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from app.features.devices.device_credential_service import device_credential_service
 from app.features.devices.device_exceptions import DeviceCredentialNotFoundError
 from app.features.devices.device_models import DeviceCredential
-from app.features.devices.device_schemas import DeviceCredentialCreate, DeviceCredentialUpdate
+from app.features.devices.device_schemas import (
+    DeviceCredentialCreate,
+    DeviceCredentialUpdate,
+)
 from app.shared.enums import DeviceKeyType
 
 
@@ -16,6 +21,8 @@ async def test_create_device_credential(async_db_mock: AsyncMock, mocker: MagicM
         key_type=DeviceKeyType.DEVICE,
         api_key_hash="hash",
         is_active=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     mocker.patch(
         "app.features.devices.device_credential_service.async_device_credential_repository.create",
@@ -52,7 +59,8 @@ async def test_get_all_device_credentials(async_db_mock: AsyncMock, mocker: Magi
 @pytest.mark.asyncio
 async def test_update_device_credential_success(async_db_mock: AsyncMock, mocker: MagicMock) -> None:
     device = DeviceCredential(id=1, name="Old Name", is_active=True)
-    updated_device = DeviceCredential(id=1, name="New Name", is_active=True)
+    updated_device = DeviceCredential(id=1, name="New Name", is_active=True, key_type=DeviceKeyType.DEVICE,
+                                      created_at=datetime.now(UTC), updated_at=datetime.now(UTC))
     mocker.patch(
         "app.features.devices.device_credential_service.async_device_credential_repository.get",
         new_callable=AsyncMock,
@@ -122,11 +130,7 @@ async def test_delete_device_credential_not_found(async_db_mock: AsyncMock, mock
     assert exc_info.value.status_code == 404
 
 
-def test_device_credential_service_repo_property():
+def test_device_credential_service_repo_property(monkeypatch):
     custom_repo = MagicMock()
-    original_repo = device_credential_service.repo
-    try:
-        device_credential_service.repo = custom_repo
-        assert device_credential_service.repo == custom_repo
-    finally:
-        device_credential_service.repo = original_repo
+    monkeypatch.setattr(device_credential_service, "repo", custom_repo)
+    assert device_credential_service.repo == custom_repo

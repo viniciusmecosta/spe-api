@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, status
+from sqlalchemy.exc import IntegrityError
 
 import pytest
 from app.features.payroll.payroll_exceptions import (
@@ -19,6 +21,12 @@ from app.features.payroll.payroll_models import PayrollClosure
 from app.features.payroll.payroll_service import payroll_service
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
+
+
+@pytest.fixture(autouse=True)
+def mock_payroll_queue(mocker):
+    return mocker.patch('app.features.payroll.payroll_service.enqueue', new_callable=AsyncMock)
+
 
 
 @pytest.fixture
@@ -302,7 +310,7 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     mock_datetime.now.return_value = mock_now
 
     mock_get_by_month.return_value = None
-    mock_closure = MagicMock(id=99)
+    mock_closure = PayrollClosure(id=99, month=4, year=2024, is_closed=True)
     mock_create.return_value = mock_closure
 
     mock_excel.generate_excel_report.return_value = BytesIO(b"data")
@@ -316,15 +324,51 @@ async def test_close_period_success(mock_excel, mock_create, mock_get_by_month, 
     with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
         result = await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
 
-    assert result == mock_closure
-    mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id)
-    assert async_db_mock.commit.call_count == 2
+    assert result.id == mock_closure.id
+    mock_create.assert_called_once_with(async_db_mock, month=4, year=2024, user_id=mock_user_manager.id, commit=False)
+    assert async_db_mock.commit.call_count == 1
     mock_audit.assert_called_once_with(
         async_db_mock, mock_user_manager.id, "CLOSE", new_model=mock_closure
     )
-    mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, 4, 2024, mock_user_manager.name, mock_closure.report_path, ["main@test.com"]
+    mock_background_tasks.add_task.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("constraint", "expected_error"),
+    [
+        ("uq_payroll_closures_active_period", PayrollAlreadyClosedError),
+        ("fk_payroll_closures_closed_by", IntegrityError),
+    ],
+)
+async def test_close_period_rolls_back_conflict_and_removes_report(
+    mocker, tmp_path, async_db_mock, mock_user_manager, mock_background_tasks,
+    constraint, expected_error,
+):
+    mocker.patch("app.features.payroll.payroll_service.settings.UPLOAD_DIR", str(tmp_path))
+    async_db_mock.rollback = AsyncMock()
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock, return_value=None,
     )
+    original = Exception("conflict")
+    original.diag = SimpleNamespace(constraint_name=constraint)
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.create",
+        new_callable=AsyncMock, side_effect=IntegrityError("INSERT", {}, original),
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.excel_service.generate_excel_report",
+        return_value=BytesIO(b"report"),
+    )
+
+    with pytest.raises(expected_error):
+        await payroll_service.close_period(
+            async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks,
+        )
+
+    async_db_mock.rollback.assert_awaited_once()
+    assert list((tmp_path / "reports").glob("*.xlsx")) == []
 
 
 @pytest.mark.asyncio
@@ -344,7 +388,7 @@ async def test_reopen_period_not_found(mock_get_by_month, async_db_mock, mock_us
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
 
 
-@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.enqueue")
 @patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)
@@ -371,20 +415,19 @@ async def test_reopen_period_success(mock_delete, mock_get_by_month, mock_audit,
         entity="PAYROLL_CLOSURE", entity_id=mock_closure.id,
         old_data={"is_closed": True}, new_data={"is_closed": False}
     )
-    mock_background_tasks.add_task.assert_called_once_with(
-        mock_dispatch, "Reabertura", mock_user_maintainer.name, 4, 2024, ["main@test.com"]
-    )
+    mock_background_tasks.add_task.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_upload_legacy_report_success(async_db_mock, mock_user_maintainer):
+async def test_upload_legacy_report_success(async_db_mock, mock_user_maintainer, mocker, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     mock_closure = MagicMock(id=1, month=4, year=2024)
     mock_scalars = MagicMock()
     mock_scalars.first.return_value = mock_closure
     async_db_mock.scalars.return_value = mock_scalars
 
-    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"data")
+    await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"%PDF-1.4\nbody")
+    assert (tmp_path / mock_closure.report_path).read_bytes() == b"%PDF-1.4\nbody"
 
     async_db_mock.commit.assert_called_once()
     assert mock_closure.report_path.startswith("reports/legacy/folha_ponto_04_2024_")
@@ -474,7 +517,7 @@ async def test_async_validate_period_open_success_and_closed():
 
 
 @pytest.mark.asyncio
-async def test_get_report_file_path_success(async_db_mock, mocker):
+async def test_get_report_file_path_success(async_db_mock, mocker, tmp_path):
     closure = MagicMock(spec=PayrollClosure)
     closure.id = 10
     closure.report_path = "reports/folha_ponto_10_2026.xlsx"
@@ -483,7 +526,9 @@ async def test_get_report_file_path_success(async_db_mock, mocker):
     scalars_mock.first.return_value = closure
     async_db_mock.scalars.return_value = scalars_mock
 
-    mocker.patch("os.path.exists", return_value=True)
+    mocker.patch('app.core.config.settings.UPLOAD_DIR', str(tmp_path))
+    (tmp_path / 'reports').mkdir()
+    (tmp_path / closure.report_path).write_bytes(b'synthetic workbook')
 
     path, name = await payroll_service.get_report_file_path(async_db_mock, 10)
     assert name == "folha_ponto_10_2026.xlsx"
@@ -542,7 +587,7 @@ async def test_close_period_with_period_schema(
 ):
     mock_get_by_month.return_value = None
     mock_excel.return_value = BytesIO(b"data")
-    mock_closure = MagicMock(id=1, month=4, year=2024, report_path="reports/test.xlsx")
+    mock_closure = PayrollClosure(id=1, month=4, year=2024, is_closed=True, report_path="reports/test.xlsx")
     mock_create.return_value = mock_closure
 
     maintainer = MagicMock(spec=User)
@@ -559,10 +604,10 @@ async def test_close_period_with_period_schema(
         result = await payroll_service.close_period(
             async_db_mock, current_user=mock_user_manager, background_tasks=mock_background_tasks, period=period_schema
         )
-    assert result == mock_closure
+    assert result.id == mock_closure.id
 
 
-@patch("app.features.payroll.payroll_service.dispatch_payroll_email")
+@patch("app.features.payroll.payroll_service.enqueue")
 @patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.get_by_month", new_callable=AsyncMock)
 @patch("app.features.payroll.payroll_service.async_payroll_repository.delete", new_callable=AsyncMock)
@@ -593,20 +638,104 @@ async def test_reopen_period_with_period_schema(
 
 
 @pytest.mark.asyncio
-async def test_upload_legacy_report_with_upload_file(async_db_mock):
+async def test_upload_legacy_report_with_upload_file(async_db_mock, mocker, tmp_path):
+    from fastapi import UploadFile
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
     mock_closure = MagicMock(id=1, month=4, year=2024)
     mock_scalars = MagicMock()
     mock_scalars.first.return_value = mock_closure
     async_db_mock.scalars.return_value = mock_scalars
 
-    mock_upload = MagicMock()
-    mock_upload.filename = "legacy_file.pdf"
-    mock_upload.read = AsyncMock(return_value=b"binary content")
-
-    with patch("os.makedirs"), patch("builtins.open", new_callable=MagicMock()):
-        res = await payroll_service.upload_legacy_report(
-            async_db_mock, closure_id=1, upload_file=mock_upload
-        )
+    upload = UploadFile(filename="legacy_file.pdf", file=BytesIO(b"%PDF-1.4\nbody"))
+    res = await payroll_service.upload_legacy_report(async_db_mock, closure_id=1, upload_file=upload)
+    assert (tmp_path / mock_closure.report_path).read_bytes() == b"%PDF-1.4\nbody"
 
     assert res["status"] == "success"
     assert mock_closure.report_path.endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_legacy_report_commit_failure_removes_new_file(mocker, async_db_mock, tmp_path):
+    mocker.patch("app.core.config.settings.UPLOAD_DIR", str(tmp_path))
+    closure = MagicMock(id=1, month=4, year=2024, report_path="reports/old.xlsx")
+    result = MagicMock()
+    result.first.return_value = closure
+    async_db_mock.scalars.return_value = result
+    async_db_mock.commit.side_effect = RuntimeError("commit failed")
+    async_db_mock.rollback = AsyncMock()
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await payroll_service.upload_legacy_report(async_db_mock, 1, "test.pdf", b"%PDF-1.4\nbody")
+    assert list((tmp_path / "reports" / "legacy").iterdir()) == []
+    async_db_mock.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_period_generic_exception_rolls_back_and_unlinks(
+    mocker, tmp_path, async_db_mock, mock_user_manager, mock_background_tasks
+):
+    mocker.patch("app.features.payroll.payroll_service.settings.UPLOAD_DIR", str(tmp_path))
+    async_db_mock.rollback = AsyncMock()
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock, return_value=None,
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.create",
+        new_callable=AsyncMock, side_effect=RuntimeError("db failure"),
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.excel_service.generate_excel_report",
+        return_value=BytesIO(b"report"),
+    )
+
+    with pytest.raises(RuntimeError, match="db failure"):
+        await payroll_service.close_period(async_db_mock, 4, 2024, mock_user_manager, mock_background_tasks)
+
+    async_db_mock.rollback.assert_awaited_once()
+    assert list((tmp_path / "reports").glob("*.xlsx")) == []
+
+
+@pytest.mark.asyncio
+async def test_close_and_reopen_period_with_async_session_runs_sync_lock(
+    mocker, tmp_path, mock_user_maintainer, mock_background_tasks
+):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    mocker.patch("app.features.payroll.payroll_service.settings.UPLOAD_DIR", str(tmp_path))
+    session = MagicMock(spec=AsyncSession)
+    mock_lock = mocker.patch("app.features.payroll.payroll_service.lock_payroll_periods")
+
+    async def fake_run_sync(fn):
+        return fn(MagicMock())
+
+    session.run_sync = AsyncMock(side_effect=fake_run_sync)
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = []
+    session.scalars = AsyncMock(return_value=scalars_mock)
+
+    mock_closure = PayrollClosure(id=55, month=4, year=2024, is_closed=True)
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock, side_effect=[None, mock_closure],
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.create",
+        new_callable=AsyncMock, return_value=mock_closure,
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.async_payroll_repository.delete",
+        new_callable=AsyncMock,
+    )
+    mocker.patch(
+        "app.features.payroll.payroll_service.excel_service.generate_excel_report",
+        return_value=BytesIO(b"report"),
+    )
+    mocker.patch("app.features.payroll.payroll_service.audit_service.async_log_change", new_callable=AsyncMock)
+
+    await payroll_service.close_period(session, 4, 2024, mock_user_maintainer, mock_background_tasks)
+    await payroll_service.reopen_period(session, 4, 2024, "Obs", mock_user_maintainer, mock_background_tasks)
+
+    assert session.run_sync.await_count == 2
+    assert mock_lock.call_count == 2

@@ -21,8 +21,8 @@ class DeviceCredential(Base):
     key_type = Column(Enum(DeviceKeyType), nullable=False, default=DeviceKeyType.DEVICE)
     api_key_hash = Column(String, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
-    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=get_local_time, onupdate=get_local_time, nullable=False)
 
 
 class Firmware(Base):
@@ -31,18 +31,18 @@ class Firmware(Base):
     id = Column(Integer, primary_key=True, index=True)
     version = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
 
 
 class UserBiometric(Base):
     __tablename__ = "user_biometrics"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     sensor_index = Column(Integer, nullable=True)
     template_data = Column(String, nullable=True)
     finger_id = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=get_local_time)
+    created_at = Column(DateTime(timezone=True), default=get_local_time, nullable=False)
 
     user = relationship("User", back_populates="biometrics")
     time_records = relationship("TimeRecord", back_populates="biometric")

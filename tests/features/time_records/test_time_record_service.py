@@ -1,10 +1,9 @@
+import pytest
 from datetime import date, datetime, timedelta
+from fastapi import Request, status
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from fastapi import Request, status
-
-import pytest
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_exceptions import (
@@ -15,15 +14,26 @@ from app.features.time_records.time_record_exceptions import (
     TimeRecordNotFoundError,
     TimeRecordUserNotFoundError,
 )
+from app.features.time_records.time_record_change_service import time_record_change_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import (
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordResponse,
     TimeRecordUpdate,
 )
 from app.features.time_records.time_record_service import time_record_service
 from app.features.users.user_models import User
 from app.shared.enums import RecordType, UserRole
+
+
+@pytest.fixture(autouse=True)
+def isolate_response_serialization(mocker):
+    def preserve_mock_record(record):
+        record.model_dump = lambda **kwargs: {}
+        return record
+
+    mocker.patch.object(TimeRecordResponse, "model_validate", side_effect=preserve_mock_record)
 
 
 @pytest.fixture
@@ -35,19 +45,21 @@ def mock_user_repo():
 @pytest.fixture
 def mock_time_record_repo():
     with patch("app.features.time_records.time_record_service.time_record_repository") as mock:
-        yield mock
+        with patch("app.features.time_records.time_record_admin_service.time_record_repository", new=mock):
+            yield mock
 
 
 @pytest.fixture
 def mock_payroll_service():
-    with patch("app.features.time_records.time_record_service.payroll_service") as mock:
+    with patch("app.features.time_records.time_record_change_service.payroll_service") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_audit_service():
     with patch("app.features.time_records.time_record_service.audit_service") as mock:
-        yield mock
+        with patch("app.features.time_records.time_record_admin_service.audit_service", new=mock):
+            yield mock
 
 
 @pytest.fixture
@@ -220,7 +232,6 @@ async def test_register_entry_success(mock_get_trusted_time, mock_validate, db_s
         record_datetime=current_time,
         ip_address="127.0.0.1",
         device_name="TestDevice",
-        platform="desktop",
     )
 
 
@@ -272,7 +283,6 @@ async def test_register_exit_success(mock_get_trusted_time, mock_validate, db_se
         record_datetime=current_time,
         ip_address="127.0.0.1",
         device_name="TestDevice",
-        platform="desktop",
     )
 
 
@@ -333,7 +343,6 @@ async def test_toggle_record_type_success(db_session_mock, mock_time_record_repo
     assert record.is_ignored is True
     assert result.original_record_id == 1
     assert result.edit_justification == "Inversão de marcação efetuada"
-    assert result.is_verified is True
     db_session_mock.add.assert_any_call(result)
     db_session_mock.add.assert_any_call(record)
     assert db_session_mock.flush.called
@@ -353,7 +362,6 @@ async def test_toggle_record_type_success_employee(db_session_mock, mock_time_re
     assert result.record_type == RecordType.ENTRY
     assert record.is_ignored is True
     assert result.original_record_id == 5
-    assert result.is_verified is False
 
 
 @pytest.mark.asyncio
@@ -369,10 +377,8 @@ async def test_create_admin_record(db_session_mock, mock_time_record_repo, mock_
     assert result == record
     assert result.edited_by == 2
     assert result.edit_justification == "Forgot"
-    assert result.is_verified is True
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
-                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="Dev",
-                                                         platform="WEB_ADMIN")
+                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="Dev")
     db_session_mock.add.assert_called_once_with(record)
     db_session_mock.commit.assert_called_once()
     db_session_mock.refresh.assert_called_once_with(record)
@@ -389,8 +395,7 @@ async def test_create_admin_record_no_device(db_session_mock, mock_time_record_r
     await time_record_service.create_admin_record(db_session_mock, obj_in, manager_id=2, ip_address="127.0.0.1",
                                             device_name=None)
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
-                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="",
-                                                         platform="WEB_ADMIN")
+                                                         record_datetime=dt, ip_address="127.0.0.1", device_name="")
 
 
 @pytest.mark.asyncio
@@ -422,16 +427,14 @@ async def test_update_admin_record_with_changes(db_session_mock, mock_time_recor
                         original_record_id=5)
     mock_time_record_repo.get.return_value = record
     obj_in = TimeRecordUpdate(record_type=RecordType.EXIT, record_datetime=dt_new, edit_justification="Fixed")
-    result = await time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2, "1.1.1.1", "Dev", "Plat")
+    result = await time_record_service.update_admin_record(db_session_mock, 1, obj_in, 2, "1.1.1.1", "Dev")
     assert result.record_type == RecordType.EXIT
     assert result.record_datetime == dt_new
     assert record.is_ignored is True
     assert result.original_record_id == 5
     assert result.edit_justification == "Fixed"
-    assert result.is_verified is True
     assert result.ip_address == "1.1.1.1"
     assert result.device_name == "Dev"
-    assert result.platform == "Plat"
     mock_payroll_service.validate_period_open.assert_any_call(db_session_mock, dt.date())
     mock_payroll_service.validate_period_open.assert_any_call(db_session_mock, dt_new.date())
     db_session_mock.add.assert_any_call(result)
@@ -500,7 +503,7 @@ async def test_create_punch_first_record(mock_get_device, db_session_mock, mock_
     assert result == record
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
                                                          record_datetime=dt, ip_address="1.1.1.1", device_name="Dev",
-                                                         platform="desktop", biometric_id=None)
+                                                         biometric_id=None)
 
 
 @pytest.mark.asyncio
@@ -515,7 +518,7 @@ async def test_create_punch_same_day_exit(mock_get_device, db_session_mock, mock
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1", biometric_id=123)
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.EXIT,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name="Dev", platform="desktop", biometric_id=123)
+                                                         device_name="Dev", biometric_id=123)
 
 
 @pytest.mark.asyncio
@@ -529,7 +532,7 @@ async def test_create_punch_different_day(mock_get_device, db_session_mock, mock
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1")
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.ENTRY,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name=mock_get_device.return_value, platform="desktop",
+                                                         device_name=mock_get_device.return_value,
                                                          biometric_id=None)
 
 
@@ -544,7 +547,7 @@ async def test_create_punch_naive_datetimes(mock_get_device, db_session_mock, mo
     await time_record_service.create_punch(db_session_mock, 1, dt_curr, "1.1.1.1")
     mock_time_record_repo.create.assert_called_once_with(db_session_mock, user_id=1, record_type=RecordType.EXIT,
                                                          record_datetime=dt_curr, ip_address="1.1.1.1",
-                                                         device_name=mock_get_device.return_value, platform="desktop",
+                                                         device_name=mock_get_device.return_value,
                                                          biometric_id=None)
 
 
@@ -568,7 +571,6 @@ async def test_create_punch_with_explicit_device_name(mock_get_device, db_sessio
         record_datetime=dt,
         ip_address="192.168.1.43",
         device_name="Relogio-Portaria",
-        platform="desktop",
         biometric_id=None,
     )
 
@@ -591,7 +593,7 @@ async def test_invalidate_extra_time_requests(db_session_mock):
     req1 = AdjustmentRequest(id=1)
     req2 = AdjustmentRequest(id=2)
     mock_filter.all.return_value = [req1, req2]
-    await time_record_service._invalidate_extra_time_requests(db_session_mock, 1, date(2023, 1, 1))
+    await time_record_change_service.invalidate_pending_extra_time_requests(db_session_mock, 1, date(2023, 1, 1))
     assert db_session_mock.delete.call_count == 2
     db_session_mock.flush.assert_called_once()
 
@@ -605,9 +607,9 @@ async def test_is_first_entry_affected_no_entries(db_session_mock):
     mock_query.filter.return_value = mock_filter
     mock_filter.order_by.return_value = mock_order
     mock_order.first.return_value = None
-    result = await time_record_service._is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1))
+    result = await time_record_change_service.is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1))
     assert result is False
-    result2 = await time_record_service._is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
+    result2 = await time_record_change_service.is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
                                                            new_datetime=datetime.now(ZoneInfo("UTC")))
     assert result2 is True
 
@@ -622,7 +624,7 @@ async def test_is_first_entry_affected_matches_record_id(db_session_mock):
     mock_query.filter.return_value = mock_filter
     mock_filter.order_by.return_value = mock_order
     mock_order.first.return_value = first_entry
-    result = await time_record_service._is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1), record_id=10)
+    result = await time_record_change_service.is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1), record_id=10)
     assert result is True
 
 
@@ -637,7 +639,7 @@ async def test_is_first_entry_affected_new_datetime_earlier(db_session_mock):
     mock_filter.order_by.return_value = mock_order
     mock_order.first.return_value = first_entry
     new_dt = datetime(2023, 1, 1, 7, 0, tzinfo=ZoneInfo("UTC"))
-    result = await time_record_service._is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
+    result = await time_record_change_service.is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
                                                                 new_datetime=new_dt)
     assert result is True
 
@@ -653,14 +655,14 @@ async def test_is_first_entry_affected_new_datetime_later(db_session_mock):
     mock_filter.order_by.return_value = mock_order
     mock_order.first.return_value = first_entry
     new_dt = datetime(2023, 1, 1, 9, 0, tzinfo=ZoneInfo("UTC"))
-    result = await time_record_service._is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
+    result = await time_record_change_service.is_first_entry_affected(db_session_mock, 1, date(2023, 1, 1),
                                                                 new_datetime=new_dt)
     assert result is False
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_toggle_record_type_invalidates_first_entry(mock_invalidate, mock_is_first, db_session_mock,
                                                     mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -674,8 +676,8 @@ async def test_toggle_record_type_invalidates_first_entry(mock_invalidate, mock_
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_toggle_record_type_invalidates_new_entry(mock_invalidate, mock_is_first, db_session_mock,
                                                   mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -689,8 +691,8 @@ async def test_toggle_record_type_invalidates_new_entry(mock_invalidate, mock_is
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_create_admin_record_invalidates(mock_invalidate, mock_is_first, db_session_mock, mock_time_record_repo,
                                          mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -704,8 +706,8 @@ async def test_create_admin_record_invalidates(mock_invalidate, mock_is_first, d
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_update_admin_record_invalidates_old_date(mock_invalidate, mock_is_first, db_session_mock,
                                                   mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -720,8 +722,8 @@ async def test_update_admin_record_invalidates_old_date(mock_invalidate, mock_is
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_update_admin_record_invalidates_new_date(mock_invalidate, mock_is_first, db_session_mock,
                                                   mock_time_record_repo, mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -736,8 +738,8 @@ async def test_update_admin_record_invalidates_new_date(mock_invalidate, mock_is
 
 
 @pytest.mark.asyncio
-@patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock)
-@patch.object(time_record_service, "_invalidate_extra_time_requests", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock)
+@patch.object(time_record_change_service, "invalidate_pending_extra_time_requests", new_callable=AsyncMock)
 async def test_delete_admin_record_invalidates(mock_invalidate, mock_is_first, db_session_mock, mock_time_record_repo,
                                          mock_payroll_service, mock_audit_service):
     dt = datetime.now(ZoneInfo(settings.TIMEZONE))
@@ -840,10 +842,12 @@ async def test_trigger_auto_print_disabled(db_session_mock, mocker):
 
 
 @pytest.mark.asyncio
-async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
+async def test_admin_modifications_persist_without_inline_daily_excess_reprocessing(db_session_mock, mock_time_record_repo,
                                                                              mock_payroll_service, mock_audit_service,
                                                                              mocker):
-    reprocess_mock = mocker.patch.object(time_record_service, "_reprocess_daily_excess", return_value=None)
+    reprocess_mock = mocker.patch(
+        "app.shared.daily_excess_service.daily_excess_service.evaluate_user_day_sync"
+    )
 
     dt = datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo(settings.TIMEZONE))
     create_obj = TimeRecordCreateAdmin(
@@ -856,26 +860,17 @@ async def test_admin_modifications_trigger_realtime_daily_excess_reprocessing(db
     mock_time_record_repo.create.return_value = rec
 
     await time_record_service.create_admin_record(db_session_mock, create_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     mock_time_record_repo.get.return_value = rec
     update_obj = TimeRecordUpdate(
         record_datetime=datetime(2024, 1, 15, 8, 30, tzinfo=ZoneInfo(settings.TIMEZONE)),
         edit_justification="Horario alterado"
     )
     await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     delete_obj = TimeRecordDeleteAdmin(edit_justification="Batida indevida")
     await time_record_service.delete_admin_record(db_session_mock, record_id=1, obj_in=delete_obj, manager_id=2)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
-
-    reprocess_mock.reset_mock()
     admin_user = User(id=2, role=UserRole.MANAGER)
     await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=admin_user)
-    reprocess_mock.assert_called_with(db_session_mock, 1, dt.date())
+    reprocess_mock.assert_not_called()
 
 
 def test_time_record_service_custom_repo():
@@ -889,25 +884,20 @@ def test_time_record_service_custom_repo():
 async def test_time_record_service_async_session_crud(mocker):
     from unittest.mock import AsyncMock
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
     async_sess.add = MagicMock()
 
     mock_scalars = MagicMock()
-    mock_scalars.all.return_value = [AdjustmentRequest(id=1), TimeRecord(id=1, is_verified=True)]
+    mock_scalars.all.return_value = [AdjustmentRequest(id=1), TimeRecord(id=1)]
     mock_scalars.first.return_value = TimeRecord(id=1, record_type=RecordType.ENTRY,
                                                  record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
     async_sess.scalars.return_value = mock_scalars
 
-    await time_record_service._invalidate_extra_time_requests(async_sess, 1, date(2024, 1, 15))
+    await time_record_change_service.invalidate_pending_extra_time_requests(async_sess, 1, date(2024, 1, 15))
     assert async_sess.delete.called
 
-    await time_record_service._delete_daily_excess_adjustments(async_sess, 1, date(2024, 1, 15))
-    await time_record_service._unverify_daily_time_records(async_sess, 1, date(2024, 1, 15))
-
-    mocker.patch("app.shared.daily_excess_service.daily_excess_service.evaluate_user_day_async", new_callable=AsyncMock)
-    await time_record_service._reprocess_daily_excess(async_sess, 1, date(2024, 1, 15))
-
-    is_first = await time_record_service._is_first_entry_affected(async_sess, 1, date(2024, 1, 15), record_id=1)
+    is_first = await time_record_change_service.is_first_entry_affected(async_sess, 1, date(2024, 1, 15), record_id=1)
     assert is_first is True
 
     user = User(id=1, role=UserRole.MANAGER, can_manual_punch_desktop=True)
@@ -919,7 +909,7 @@ async def test_time_record_service_async_session_crud(mocker):
 
     mocker.patch("app.features.payroll.payroll_service.payroll_service.async_validate_period_open",
                  new_callable=AsyncMock)
-    await time_record_service._validate_period_open_helper(async_sess, date(2024, 1, 15))
+    await time_record_change_service.validate_period_open(async_sess, date(2024, 1, 15))
 
     rec = TimeRecord(id=10, user_id=1, record_type=RecordType.ENTRY,
                      record_datetime=datetime(2024, 1, 15, 8, 0, tzinfo=ZoneInfo("UTC")))
@@ -982,6 +972,7 @@ async def test_time_record_service_async_session_crud(mocker):
 async def test_time_record_service_async_session_receipts_and_print(mocker):
     from unittest.mock import AsyncMock
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
 
     mock_company = MagicMock()
@@ -1025,27 +1016,16 @@ async def test_time_record_service_async_session_receipts_and_print(mocker):
 
 @pytest.mark.asyncio
 async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
-    sync_db = MagicMock(spec=["query", "delete", "flush"])
-    mock_adj = MagicMock()
-    mock_rec = MagicMock()
-    sync_db.query.return_value.filter.return_value.all.side_effect = [[mock_adj], [mock_rec]]
-
-    await time_record_service._delete_daily_excess_adjustments(sync_db, 1, date(2026, 8, 1))
-    sync_db.delete.assert_called_once_with(mock_adj)
-
-    await time_record_service._unverify_daily_time_records(sync_db, 1, date(2026, 8, 1))
-    assert mock_rec.is_verified is False
-
     async_sess = AsyncMock()
+    async_sess.info = {}
     async_sess.sync_session = MagicMock()
-    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
     mocker.patch("app.features.system.audit_service.audit_service.async_log_change", new_callable=AsyncMock)
     rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
                      record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")))
-    await time_record_service._commit_and_audit_admin_update(
-        async_sess, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+    await time_record_service.admin_service._commit_and_audit_admin_update(
+        async_sess, 99, {}, rec
     )
-    assert time_record_service._reprocess_daily_excess.call_count == 2
+    async_sess.commit.assert_awaited_once()
 
     mock_bg = MagicMock()
     rec.user = User(id=1, auto_print_receipt=True)
@@ -1063,24 +1043,21 @@ async def test_time_record_service_sync_helpers_and_auto_print_branches(mocker):
 
 @pytest.mark.asyncio
 async def test_time_record_service_admin_update_date_change_branches(mocker):
-    mocker.patch.object(time_record_service, "_is_first_entry_affected", new_callable=AsyncMock, return_value=False)
-    mocker.patch.object(time_record_service, "_invalidate_daily_excess_and_unverify", new_callable=AsyncMock)
+    mocker.patch.object(time_record_change_service, "is_first_entry_affected", new_callable=AsyncMock, return_value=False)
     rec = TimeRecord(id=1, user_id=1, record_type=RecordType.ENTRY,
                      record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
     obj_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 2, 8, 0, tzinfo=ZoneInfo("UTC")), edit_justification="Reason")
-    await time_record_service._handle_admin_update_invalidations(
+    await time_record_service.admin_service._handle_admin_update_invalidations(
 
         MagicMock(), rec, obj_in, date(2026, 8, 1), date(2026, 8, 2), RecordType.EXIT
     )
-    assert time_record_service._invalidate_daily_excess_and_unverify.call_count == 2
-
-    sync_session = MagicMock(spec=["flush", "commit", "refresh"])
-    mocker.patch.object(time_record_service, "_reprocess_daily_excess", new_callable=AsyncMock)
+    sync_session = MagicMock(spec=["flush", "commit", "refresh", "info"])
+    sync_session.info = {}
     mocker.patch("app.features.system.audit_service.audit_service.log_change")
-    await time_record_service._commit_and_audit_admin_update(
-        sync_session, 99, {}, rec, 1, date(2026, 8, 1), date(2026, 8, 2)
+    await time_record_service.admin_service._commit_and_audit_admin_update(
+        sync_session, 99, {}, rec
     )
-    assert time_record_service._reprocess_daily_excess.call_count == 2
+    sync_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1090,11 +1067,11 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
         TimeRecordDeleteAdmin
 
     bg = BackgroundTasks()
-    mocker.patch.object(time_record_service, "_register_manual_punch", new_callable=AsyncMock)
+    mock_punch = mocker.patch.object(time_record_service, "_register_manual_punch", new_callable=AsyncMock)
     mocker.patch.object(time_record_service, "trigger_auto_print", new_callable=AsyncMock)
     mock_rec = TimeRecord(id=1, user_id=2, record_type=RecordType.ENTRY,
                           record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")))
-    time_record_service._register_manual_punch.return_value = mock_rec
+    mock_punch.return_value = mock_rec
 
     res1 = await time_record_service.register_entry(db_session_mock, user_id=2, request=MagicMock(),
                                                     background_tasks=bg)
@@ -1102,25 +1079,25 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
 
     mock_rec2 = TimeRecord(id=2, user_id=2, record_type=RecordType.EXIT,
                            record_datetime=datetime(2026, 8, 1, 18, 0, tzinfo=ZoneInfo("UTC")))
-    time_record_service._register_manual_punch.return_value = mock_rec2
+    mock_punch.return_value = mock_rec2
     res2 = await time_record_service.register_exit(db_session_mock, user_id=2, request=MagicMock(), background_tasks=bg)
     assert res2 == mock_rec2
 
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_rec)
-    mocker.patch.object(time_record_service, "_validate_period_open_helper", new_callable=AsyncMock)
+    mocker.patch.object(time_record_change_service, "validate_period_open", new_callable=AsyncMock)
     mocker.patch.object(time_record_service, "_process_toggle_invalidations", new_callable=AsyncMock)
     mocker.patch.object(time_record_service, "_commit_and_audit_toggle_record", new_callable=AsyncMock)
     mgr_user = User(id=2, role=UserRole.MANAGER)
-    res3 = await time_record_service.toggle_record_type(db_session_mock, record_id=1, current_user=mgr_user,
-                                                        background_tasks=bg)
+    res3 = await time_record_service.toggle_record_type(
+        db_session_mock, record_id=1, current_user=mgr_user
+    )
     assert res3.record_type == RecordType.EXIT
 
     req = MagicMock()
     req.client.host = "10.0.0.1"
-    req.headers.get.side_effect = lambda k, default=None: "custom-device" if k == "X-Device-Name" else (
-        "ios" if k == "X-Platform" else default)
+    req.headers.get.side_effect = lambda k, default=None: "custom-device" if k == "X-Device-Name" else default
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.create", return_value=mock_rec)
-    mocker.patch.object(time_record_service, "_commit_and_audit_admin_create", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service.admin_service, "_commit_and_audit_admin_create", new_callable=AsyncMock)
     create_in = TimeRecordCreateAdmin(user_id=2, record_type=RecordType.ENTRY,
                                       record_datetime=datetime(2026, 8, 1, 8, 0, tzinfo=ZoneInfo("UTC")),
                                       edit_justification="Test")
@@ -1128,20 +1105,20 @@ async def test_time_record_service_background_tasks_and_request(mocker, db_sessi
     assert res4.edited_by == 1
 
     mocker.patch("app.features.time_records.time_record_service.time_record_repository.get", return_value=mock_rec)
-    mocker.patch.object(time_record_service, "_handle_admin_update_invalidations", new_callable=AsyncMock)
-    mocker.patch.object(time_record_service, "_commit_and_audit_admin_update", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service.admin_service, "_handle_admin_update_invalidations", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service.admin_service, "_commit_and_audit_admin_update", new_callable=AsyncMock)
     update_in = TimeRecordUpdate(record_datetime=datetime(2026, 8, 1, 9, 0, tzinfo=ZoneInfo("UTC")),
                                  edit_justification="Update")
     res5 = await time_record_service.update_admin_record(db_session_mock, record_id=1, obj_in=update_in, manager_id=1,
                                                          request=req)
-    assert res5.platform == "ios"
+    assert res5.device_name == "custom-device"
 
     with pytest.raises(HTTPException) as exc_info:
         await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,
                                                       validate_justification=True)
     assert exc_info.value.status_code == 422
 
-    mocker.patch.object(time_record_service, "_commit_and_audit_admin_delete", new_callable=AsyncMock)
+    mocker.patch.object(time_record_service.admin_service, "_commit_and_audit_admin_delete", new_callable=AsyncMock)
     await time_record_service.delete_admin_record(db_session_mock, record_id=1, manager_id=1,
                                                   justification="Manual delete", validate_justification=True)
 

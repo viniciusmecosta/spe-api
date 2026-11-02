@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -18,7 +17,6 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
     AdjustmentWaiverCreate,
-    BulkReprocessDailyExcessRequest,
 )
 from app.features.adjustments.adjustment_service import AdjustmentService
 from app.features.users.user_models import User
@@ -31,6 +29,7 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
+from app.shared.validation import Month, Year
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -59,24 +58,6 @@ async def waive_absence_admin(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> AdjustmentRequestResponse:
     return await service.create_manager_waiver(waiver_in=waiver_in, manager_id=current_user.id)
-
-
-@router.post(
-    "/admin/reprocess-daily-excess",
-    status_code=status.HTTP_200_OK,
-    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
-)
-async def reprocess_historical_daily_excess(
-        request_in: BulkReprocessDailyExcessRequest,
-        background_tasks: BackgroundTasks,
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-) -> dict[str, str]:
-    return await service.reprocess_historical_daily_excess(
-        request_in=request_in,
-        background_tasks=background_tasks,
-        current_user=current_user,
-    )
 
 
 @router.post(
@@ -119,8 +100,8 @@ async def read_my_adjustments(
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
         status: Annotated[
             str | None,
             Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
@@ -142,8 +123,8 @@ async def read_all_adjustments(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
         skip: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Annotated[int | None, Query(ge=1, le=12)] = None,
-        year: Annotated[int | None, Query(ge=2000)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
         status: Annotated[
             str | None,
             Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
@@ -164,13 +145,13 @@ async def approve_adjustment(
         id: int,
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
-        body: Annotated[AdjustmentApproveRequest, Body()] = AdjustmentApproveRequest(),
+        body: Annotated[AdjustmentApproveRequest | None, Body()] = None,
 ) -> AdjustmentRequestResponse:
     return await service.approve_adjustment(
         request_id=id,
         manager_id=current_user.id,
-        comment=body.comment,
-        approved_amount_hours=body.approved_amount_hours,
+        comment=body.comment if body else None,
+        approved_amount_hours=body.approved_amount_hours if body else None,
     )
 
 

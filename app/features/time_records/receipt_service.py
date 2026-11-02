@@ -9,11 +9,40 @@ from reportlab.lib.pagesizes import mm
 from reportlab.pdfgen import canvas
 
 from app.features.printers.printer_models import Printer
+from app.shared.enums import RecordType
+from app.utils.formatters import mask_cnpj, mask_cpf
 
 logger = logging.getLogger(__name__)
 
 
 class ReceiptService:
+    @staticmethod
+    def build_receipt_data(record, company, short_id: str, for_print: bool = False) -> dict:
+        if company is None:
+            company_cnpj = "N/A"
+            company_address = "N/A"
+        elif for_print:
+            company_cnpj = mask_cnpj(company.cnpj) if company.cnpj else "N/A"
+            company_address = company.address or "N/A"
+        else:
+            company_cnpj = mask_cnpj(company.cnpj or "")
+            company_address = company.address
+        employee_pis = record.user.pis or "N/A" if for_print else record.user.pis
+        return {
+            "company_name": company.name if company else "N/A",
+            "company_address": company_address,
+            "company_cnpj": company_cnpj,
+            "employee_name": record.user.name,
+            "employee_cpf": mask_cpf(record.user.cpf or ""),
+            "employee_pis": employee_pis,
+            "record_date": record.record_datetime.strftime("%d/%m/%Y"),
+            "record_time": record.record_datetime.strftime("%H:%M"),
+            "record_type_str": "Entrada" if record.record_type == RecordType.ENTRY else "Saída",
+            "device_name": record.device_name or "Desconhecido",
+            "nsr": record.id,
+            "short_id": short_id.upper(),
+        }
+
     @staticmethod
     def _get_escpos_printer(printer_config: Printer):
         address = printer_config.address.strip()
@@ -47,13 +76,8 @@ class ReceiptService:
             finally:
                 p.close()
         except Exception as e:
-            logger.exception(
-                "Falha ao imprimir comprovante na impressora '%s' (%s): %s",
-                printer_config.name,
-                printer_config.address,
-                e,
-                exc_info=True,
-            )
+            logger.exception("Falha ao imprimir comprovante na impressora '%s' (%s): %s", printer_config.name,
+                             printer_config.address, type(e).__name__)
 
     @staticmethod
     async def print_receipt_async(printer_config: Printer, data: dict):

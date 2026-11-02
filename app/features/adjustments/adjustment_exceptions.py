@@ -8,6 +8,12 @@ class WaiverLimitExceededError(DomainException):
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
 
 
+class ExcessApprovalLimitError(DomainException):
+    def __init__(self):
+        super().__init__(detail="O tempo aprovado não pode exceder o excedente disponível.",
+                         status_code=status.HTTP_400_BAD_REQUEST)
+
+
 class AdjustmentNotFoundError(DomainException):
     def __init__(self, adjustment_id: int | str | None = None, detail: str | None = None):
         if detail is None:

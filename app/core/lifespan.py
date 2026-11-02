@@ -1,3 +1,4 @@
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -7,8 +8,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
-from app.core.config import settings
-from app.features.devices.sync_service import sync_service
+from app.core.config import is_prod, settings
+from app.features.daily_summaries.daily_summary_events import bind_dispatch_loop
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
 
@@ -17,19 +18,23 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    bind_dispatch_loop(asyncio.get_running_loop())
     Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     Path(os.path.join(settings.UPLOAD_DIR, "public")).mkdir(parents=True, exist_ok=True)
     tz = ZoneInfo(settings.TIMEZONE)
 
+    startup_ntp_task = asyncio.create_task(trusted_time_service.sync_ntp_with_backoff_async())
+
     trigger_aligned = CronTrigger(minute='0,10,20,30,40,50', timezone=tz)
     trigger_hourly = CronTrigger(minute=0, timezone=tz)
 
-    scheduler.add_job(routine_orchestrator.run_daily_backup_routine_email, trigger=trigger_aligned,
-                      id="daily_backup_email",
-                      max_instances=1, coalesce=True)
-    scheduler.add_job(routine_orchestrator.execute_hourly_backup_telegram, trigger=trigger_aligned,
-                      id="hourly_backup_telegram",
-                      max_instances=1, coalesce=True)
+    if is_prod():
+        scheduler.add_job(routine_orchestrator.run_daily_backup_routine_email, trigger=trigger_aligned,
+                          id="daily_backup_email",
+                          max_instances=1, coalesce=True)
+        scheduler.add_job(routine_orchestrator.execute_hourly_backup_telegram, trigger=trigger_aligned,
+                          id="hourly_backup_telegram",
+                          max_instances=1, coalesce=True)
     scheduler.add_job(routine_orchestrator.send_managerial_report_telegram, trigger=trigger_aligned,
                       id="daily_report_telegram",
                       max_instances=1, coalesce=True)
@@ -40,10 +45,15 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(trusted_time_service.sync_ntp_async, trigger=trigger_hourly, id="hourly_ntp_sync",
                       max_instances=1, coalesce=True)
 
-    if settings.OPERATION_MODE == "EXPORTADOR":
-        scheduler.add_job(sync_service.send_database_to_consumer, trigger=trigger_aligned, id="hourly_sync_db",
-                          max_instances=1, coalesce=True)
-
+    from app.features.system.job_queue import process_once
+    from app.features.system.notification_jobs import cleanup_delivered_attachments
+    scheduler.add_job(process_once, 'interval', seconds=5, id='durable_jobs', max_instances=1, coalesce=True)
+    scheduler.add_job(cleanup_delivered_attachments, 'interval', hours=1, id='delivery_cleanup',
+                      max_instances=1, coalesce=True)
     scheduler.start()
     yield
+    if not startup_ntp_task.done():
+        startup_ntp_task.cancel()
+        await asyncio.gather(startup_ntp_task, return_exceptions=True)
     scheduler.shutdown()
+    bind_dispatch_loop(None)

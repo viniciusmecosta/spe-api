@@ -237,7 +237,8 @@ async def test_validate_unique_fields_dup_cpf(user_validator, async_db_mock):
 @pytest.mark.asyncio
 async def test_create_user(user_service, mocker):
     mocker.patch.object(user_service.validator, "validate_unique_fields", new_callable=AsyncMock)
-    user_service.repository.create = AsyncMock(return_value=User(name="Test", password_hash="hash"))
+    user_service.repository.get = AsyncMock(return_value=User(id=99, role=UserRole.MAINTAINER))
+    user_service.repository.create = AsyncMock(return_value=User(id=1, name="Test", password_hash="hash"))
     mocker.patch("app.features.users.user_service.audit_service.async_log_change", new_callable=AsyncMock)
 
     class DummyCreate:
@@ -261,7 +262,7 @@ async def test_create_user(user_service, mocker):
 
     user = await user_service.create_user(user_in, 99)
     assert user.name == "Test"
-    assert user.password_hash == "hash"
+    assert "password_hash" not in user.model_dump()
 
 
 @pytest.mark.asyncio
@@ -299,15 +300,15 @@ async def test_update_user_ok(user_service, mocker):
 
     res = await user_service.update_user(1, user_in, 99)
     assert res.name == "New"
-    assert res.password_hash == "hash"
+    assert "password_hash" not in res.model_dump()
     mock_log.assert_called_once()
     assert mock_log.call_args[1]["new_data"] == {"password_changed": True}
 
 
 def test_format_name(user_service):
-    assert user_service._format_name("vinicius da costa") == "Vinicius da Costa"
+    assert user_service._format_name("lume da nilo") == "Lume da Nilo"
     assert user_service._format_name("ze do carmo") == "Ze do Carmo"
-    assert user_service._format_name("MARIA DAS GRACAS") == "Maria das Gracas"
+    assert user_service._format_name("JARDIM DAS GRACAS") == "Jardim das Gracas"
     assert user_service._format_name("ana de almeida") == "Ana de Almeida"
     assert user_service._format_name("") == ""
     assert user_service._format_name("   ") == "   "
@@ -317,3 +318,28 @@ def test_format_name(user_service):
 def test_extract_data_dict(user_service):
     res = user_service._extract_data({"key": "val"})
     assert res == {"key": "val"}
+
+
+def test_authorization_policy_and_validator_privileges(user_validator):
+    from app.features.users.user_authorization import UserAuthorizationPolicy
+
+    with pytest.raises(InsufficientPrivilegesError):
+        UserAuthorizationPolicy.validate(None)
+
+    mgr = User(id=1, role=UserRole.MANAGER, is_active=True)
+    maint = User(id=2, role=UserRole.MAINTAINER, is_active=True)
+    with pytest.raises(InsufficientPrivilegesError):
+        user_validator.validate_manager_privilege(mgr, maint)
+
+
+@pytest.mark.asyncio
+async def test_update_user_by_admin_protects_last_maintainer(user_service, mocker):
+    maint_user = User(id=2, role=UserRole.MAINTAINER, is_active=True)
+    actor_maint = User(id=1, role=UserRole.MAINTAINER, is_active=True)
+    user_service.repository.get = AsyncMock(return_value=maint_user)
+    user_service.repository.protect_last_maintainer = AsyncMock()
+    mocker.patch.object(user_service, "update_user", new_callable=AsyncMock, return_value=maint_user)
+
+    up = UserUpdate(is_active=False)
+    await user_service.update_user_by_admin(2, up, actor_maint)
+    user_service.repository.protect_last_maintainer.assert_awaited_once_with(user_service.db, 2)

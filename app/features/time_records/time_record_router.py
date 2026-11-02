@@ -1,7 +1,16 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Query,
+    Request,
+    Response,
+    status,
+)
 
 from app.features.time_records.time_record_schemas import (
     ReceiptResponse,
@@ -22,7 +31,7 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
-from app.shared.tolerance_cron_service import tolerance_cron_service
+from app.shared.validation import PageLimit, PageOffset
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -65,12 +74,11 @@ async def register_exit(
 )
 async def toggle_record_type(
         id: int,
-        background_tasks: BackgroundTasks,
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
 ) -> TimeRecordResponse:
     return await service.toggle_record_type(
-        record_id=id, current_user=current_user, background_tasks=background_tasks
+        record_id=id, current_user=current_user
     )
 
 
@@ -78,8 +86,8 @@ async def toggle_record_type(
 async def read_my_records(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        skip: int = 0,
-        limit: int = 100,
+        skip: PageOffset = 0,
+        limit: PageLimit = 100,
 ) -> list[TimeRecordResponse]:
     return await service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
 
@@ -162,18 +170,6 @@ async def get_time_record_timeline(
         current_user: Annotated[User, Depends(deps.get_current_maintainer)],
 ) -> list[TimeRecordTimelineResponse]:
     return await service.get_record_timeline(record_id=id)
-
-
-@router.post(
-    "/admin/tolerance/process",
-    dependencies=[Depends(deps.get_current_maintainer)],
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def trigger_tolerance_cron() -> SuccessResponse:
-    tolerance_cron_service.process_unverified_entries()
-    return SuccessResponse(
-        status="success", message="Rotina de tolerância acionada e concluída com sucesso."
-    )
 
 
 @router.get(
