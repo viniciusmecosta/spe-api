@@ -52,6 +52,7 @@ def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_m
     monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "")
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "")
     monkeypatch.setattr(settings, "BACKGROUND_JOBS_ENABLED", False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
 
     if "integration" not in request.node.nodeid:
         import app.database.session as db_session_mod
