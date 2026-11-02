@@ -1,6 +1,10 @@
 from html import escape
 
-from app.features.system.notification_context import base_context
+from app.features.system.notification_context import (
+    base_context,
+    company_identity,
+    format_company_phone,
+)
 
 
 class TemplateService:
@@ -70,7 +74,9 @@ class TemplateService:
         company = escape(str(info.get('company') or info['project']))
         logo = '<img src="cid:company-logo" alt="' + company + '" width="132" style="max-width:132px;max-height:64px;width:auto;height:auto;display:block;margin-bottom:22px">' if info.get('logo_available') else ''
         metadata = ' · '.join(escape(str(info[key])) for key in ('project', 'version', 'environment'))
-        address = ' · '.join(escape(str(info[key])) for key in ('cnpj', 'address', 'phone') if info.get(key))
+        _, cnpj = company_identity(info)
+        phone = format_company_phone(str(info.get('phone') or ''))
+        address = ' · '.join(escape(str(value)) for value in (cnpj, info.get('address'), phone) if value)
         title = escape(str(info.get('title', 'Registros de ponto')))
         execution = escape(str(info.get('execution_id', '')))
         attempt = escape(str(info.get('attempt', 1)))

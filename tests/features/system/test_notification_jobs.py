@@ -21,6 +21,27 @@ def _ctx(session):
     return _Manager()
 
 
+@pytest.mark.parametrize('routine', ['TELEGRAM_HOURLY_BACKUP', 'TELEGRAM_MANUAL_BACKUP'])
+def test_telegram_backup_identifies_company_and_cnpj(routine):
+    context = {'company': 'Empresa Exemplo', 'cnpj': '11222333000181', 'project': 'SPE', 'execution_id': '9'}
+    parts = notification_jobs._notification_parts(
+        routine, {'text': ''}, [('path', 'spe.zip.enc')], context, date(2026, 11, 1), date(2026, 11, 2)
+    )
+    caption = parts[0]['caption']
+    assert 'Empresa: Empresa Exemplo' in caption
+    assert 'CNPJ: 11.222.333/0001-81' in caption
+    assert 'spe.zip.enc' in caption
+
+
+def test_telegram_backup_uses_project_when_company_is_missing():
+    context = {'company': '', 'project': 'SPE Exemplo', 'execution_id': '9'}
+    parts = notification_jobs._notification_parts(
+        'TELEGRAM_HOURLY_BACKUP', {'text': ''}, [('path', 'spe.zip.enc')], context,
+        date(2026, 11, 1), date(2026, 11, 2)
+    )
+    assert 'Empresa: SPE Exemplo' in parts[0]['caption']
+
+
 @pytest.mark.asyncio
 async def test_remove_and_cleanup_delivered_attachments(mocker, tmp_path):
     mocker.patch.object(settings, "UPLOAD_DIR", str(tmp_path))

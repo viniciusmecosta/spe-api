@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from app.core.config import is_dev, settings
 from app.features.reports.template_service import template_service
 from app.features.system.delivery_result import DeliveryResult
-from app.features.system.notification_context import logo_file
+from app.features.system.notification_context import company_identity, logo_file
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ class EmailService:
         tz = ZoneInfo(settings.TIMEZONE)
         current_date = datetime.now(tz).strftime("%d/%m/%Y")
         info = dict(context or {})
-        company_name = info.get('company') or settings.PROJECT_NAME
+        company_name, _ = company_identity(info)
         title = info.get('title', 'Registros de ponto')
         msg['Subject'] = f"{title} · {company_name} · {current_date}"
 

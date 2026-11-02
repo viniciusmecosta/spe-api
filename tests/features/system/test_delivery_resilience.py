@@ -91,3 +91,39 @@ def test_email_context_is_dynamic_and_contains_no_journey_summary():
         assert expected in result
     for forbidden in ('Resumo de jornada', 'Último teste de restauração', 'Apuração diária', 'Não incluir tokens'):
         assert forbidden not in result
+
+
+def test_backup_emails_distinguish_companies_and_are_not_replies():
+    service = EmailService()
+    first = service._build_backup_message(['recipient@example.test'], [], '', 'Ontem', {
+        'company': 'Empresa Exemplo', 'cnpj': '11222333000181',
+    })
+    second = service._build_backup_message(['recipient@example.test'], [], '', 'Ontem', {
+        'company': 'Empresa Alternativa', 'cnpj': '11222333000262',
+    })
+    assert 'Empresa Exemplo' in first['Subject']
+    assert 'Empresa Alternativa' in second['Subject']
+    assert 'CNPJ' not in first['Subject']
+    assert '11.222.333/0001-81' not in first['Subject']
+    assert first['Subject'] != second['Subject']
+    assert first['Message-ID'] != second['Message-ID']
+    for message in (first, second):
+        assert message['In-Reply-To'] is None
+        assert message['References'] is None
+
+
+@pytest.mark.parametrize(('phone', 'formatted'), [
+    ('85987654321', '(85) 98765-4321'),
+    ('8533334444', '(85) 3333-4444'),
+    ('(85) 98765-4321', '(85) 98765-4321'),
+    ('+5585987654321', '+55 (85) 98765-4321'),
+    ('(85) 3333-4444 ramal 1', '(85) 3333-4444 ramal 1'),
+    ('123', '123'),
+])
+def test_email_company_contact_uses_formatted_cnpj_and_phone(phone, formatted):
+    from app.features.reports.template_service import TemplateService
+    body = TemplateService.get_backup_email_html('Ontem', '', {
+        'company': 'Empresa Exemplo', 'cnpj': '11222333000181', 'phone': phone,
+    })
+    assert '11.222.333/0001-81' in body
+    assert formatted in body

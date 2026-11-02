@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -6,6 +7,26 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.features.companies.company_models import Company
+from app.utils.formatters import mask_cnpj
+
+
+def company_identity(context: dict) -> tuple[str, str]:
+    name = ' '.join(str(context.get('company') or context.get('project') or settings.PROJECT_NAME).split())
+    cnpj = ' '.join(str(context.get('cnpj') or '').split())
+    return name, mask_cnpj(cnpj)
+
+
+def format_company_phone(value: str) -> str:
+    if any(character.isalpha() for character in value):
+        return value
+    digits = re.sub(r'\D', '', value)
+    if len(digits) in (12, 13) and digits.startswith('55'):
+        return f'+55 {format_company_phone(digits[2:])}'
+    if len(digits) == 11:
+        return f'({digits[:2]}) {digits[2:7]}-{digits[7:]}'
+    if len(digits) == 10:
+        return f'({digits[:2]}) {digits[2:6]}-{digits[6:]}'
+    return value
 
 
 def logo_file(logo_path: str | None) -> Path | None:

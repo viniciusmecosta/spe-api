@@ -18,7 +18,7 @@ from app.database.session import get_async_session_context
 from app.features.system.delivery_result import DeliveryResult
 from app.features.system.email_service import email_service
 from app.features.system.job_queue import checkpoint, utc_now
-from app.features.system.notification_context import company_context
+from app.features.system.notification_context import company_context, company_identity
 from app.features.system.system_models import BackgroundJob
 from app.features.system.system_repository import async_routine_log_repository
 from app.features.system.telegram_service import telegram_service
@@ -155,8 +155,10 @@ def _notification_parts(routine, content, attachments, context, start, end):
     parts = []
     if content['text']:
         parts.extend({'kind': 'text', 'text': chunk} for chunk in telegram_service.split_text(content['text']))
+    company, cnpj = company_identity(context)
+    identity = f"Empresa: {company}" + (f"\nCNPJ: {cnpj}" if cnpj else '')
     parts.extend({'kind': 'document', 'path': path, 'filename': filename,
-                  'caption': f"{context.get('company', context['project'])} · {filename}\n{start:%d/%m/%Y} a {end:%d/%m/%Y} · Execução #{context['execution_id']}"}
+                  'caption': f"{identity}\nArquivo: {filename}\n{start:%d/%m/%Y} a {end:%d/%m/%Y} · Execução #{context['execution_id']}"}
                  for path, filename in attachments)
     return parts
 

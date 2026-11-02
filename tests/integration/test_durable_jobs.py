@@ -206,6 +206,11 @@ async def test_notification_preparation_preserves_files_and_real_report_content(
         assert job.result['context']['company'] == 'Empresa Dinâmica'
         if routine.startswith('EMAIL'):
             message = smtp.call_args.args[0]
+            assert 'Empresa Dinâmica' in message['Subject']
+            assert 'synthetic' not in message['Subject']
+            assert message['Message-ID']
+            assert message['In-Reply-To'] is None
+            assert message['References'] is None
             body = next(part.get_payload(decode=True).decode('utf-8') for part in message.walk() if
                         part.get_content_type() == 'text/html')
             assert 'Empresa Dinâmica' in body
@@ -221,6 +226,10 @@ async def test_notification_preparation_preserves_files_and_real_report_content(
             assert 'E: 07:00' in text_send.call_args.args[0]
         if routine == 'TELEGRAM_HOURLY_BACKUP':
             document_send.assert_called_once()
+        if routine in ('TELEGRAM_HOURLY_BACKUP', 'TELEGRAM_MANUAL_BACKUP'):
+            captions = [call.args[1] for call in document_send.call_args_list]
+            assert any('Empresa: Empresa Dinâmica' in caption and 'CNPJ: synthetic' in caption
+                       for caption in captions)
     if 'BACKUP' in routine:
         assert not archive.exists()
     for retained_log in (tmp_path / '.delivery_queue' / str(job_id)).glob('*.log'):

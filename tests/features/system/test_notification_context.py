@@ -7,8 +7,16 @@ from app.features.companies.company_models import Company
 from app.features.system.notification_context import (
     base_context,
     company_context,
+    company_identity,
     logo_file,
 )
+
+
+def test_company_identity_normalizes_header_whitespace_and_falls_back():
+    assert company_identity({'company': 'Empresa\nExemplo', 'cnpj': '11222333000181'}) == (
+        'Empresa Exemplo', '11.222.333/0001-81'
+    )
+    assert company_identity({'company': '', 'project': 'Sistema Exemplo'}) == ('Sistema Exemplo', '')
 
 
 def test_logo_file_resolution(mocker, tmp_path):
