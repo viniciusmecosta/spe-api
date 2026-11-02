@@ -5,6 +5,7 @@ from sqlalchemy import Index, text
 from app.database.base import Base
 
 MODEL_MODULES = (
+    "app.features.auth.auth_models",
     "app.features.adjustments.adjustment_models",
     "app.features.companies.company_models",
     "app.features.daily_summaries.daily_summary_models",

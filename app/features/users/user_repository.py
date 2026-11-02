@@ -133,6 +133,9 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
             del update_data["password"]
             update_data["auth_version"] = User.auth_version + 1
 
+        if update_data.get("password_change_required") is True:
+            update_data["auth_version"] = User.auth_version + 1
+
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
@@ -321,6 +324,9 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         if update_data.get("password"):
             update_data["password_hash"] = await asyncio.to_thread(get_password_hash, update_data["password"])
             del update_data["password"]
+            update_data["auth_version"] = User.auth_version + 1
+
+        if update_data.get("password_change_required") is True:
             update_data["auth_version"] = User.auth_version + 1
 
         for field, value in update_data.items():

@@ -95,8 +95,9 @@ def setup_exception_handlers(app: FastAPI):
                          exc_info=(type(exc), exc, exc.__traceback__))
 
         detail_msg = exc.detail
+        error_code = detail_msg.get("code") if isinstance(detail_msg, dict) else None
         if isinstance(detail_msg, dict):
-            detail_msg = str(detail_msg)
+            detail_msg = detail_msg.get("message", str(detail_msg))
 
         if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
             if request.url.path.startswith("/uploads/"):
@@ -116,6 +117,7 @@ def setup_exception_handlers(app: FastAPI):
                 "title": _get_error_title(exc.status_code),
                 "status": exc.status_code,
                 "detail": detail_msg,
+                **({"code": error_code} if error_code else {}),
                 "instance": request.url.path
             }
         )

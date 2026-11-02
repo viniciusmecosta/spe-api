@@ -15,6 +15,7 @@ async def test_lifespan_default(mocker):
         assert "daily_excess_check" not in job_ids
         assert "tolerance_entries_check" not in job_ids
         assert "hourly_ntp_sync" in job_ids
+        assert "expired_refresh_tokens" in job_ids
         assert "daily_backup_email" in job_ids
         assert "hourly_backup_telegram" in job_ids
     mock_sync.assert_called_once()
@@ -30,3 +31,4 @@ async def test_lifespan_dev_does_not_schedule_backups(mocker):
         assert "daily_backup_email" not in job_ids
         assert "hourly_backup_telegram" not in job_ids
         assert "hourly_ntp_sync" in job_ids
+        assert "expired_refresh_tokens" in job_ids

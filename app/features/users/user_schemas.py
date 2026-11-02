@@ -122,6 +122,7 @@ class UserBase(BaseModel):
     can_export_report: bool = False
     is_exempt_from_rules: bool = False
     is_tolerance_exempt: bool = False
+    password_change_required: bool = False
     auto_print_receipt: bool | None = None
 
 
@@ -157,12 +158,14 @@ class UserUpdate(BaseModel):
     can_export_report: bool | None = None
     is_exempt_from_rules: bool | None = None
     is_tolerance_exempt: bool | None = None
+    password_change_required: bool | None = None
     auto_print_receipt: bool | None = None
     biometrics: list[UserBiometricUpdate] | None = None
 
     @field_validator(
         "username",
         "role",
+        "password_change_required",
         "is_active",
         "can_manual_punch_desktop",
         "can_manual_punch_mobile",
@@ -194,6 +197,7 @@ class UserInDBBase(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
     @field_validator(
+        "password_change_required",
         "is_active",
         "can_manual_punch_desktop",
         "can_manual_punch_mobile",
@@ -206,6 +210,7 @@ class UserInDBBase(UserBase):
     def set_boolean_defaults(cls, value: Any, info) -> Any:
         if value is None:
             defaults = {
+                "password_change_required": False,
                 "is_active": True,
                 "can_manual_punch_desktop": True,
                 "can_manual_punch_mobile": False,

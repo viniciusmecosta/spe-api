@@ -214,7 +214,9 @@ async def test_all_private_routes_reject_unauthenticated_access(api):
     from app.main import app
 
     public = {("GET", "/api/v1/health"): 200, ("GET", "/api/v1/ready"): 200,
-              ("POST", "/api/v1/auth/login"): 422}
+              ("POST", "/api/v1/auth/login"): 422,
+              ("POST", "/api/v1/auth/refresh"): 422,
+              ("POST", "/api/v1/auth/logout"): 422}
     for path, methods in app.openapi()["paths"].items():
         concrete = path.replace("{valid_from}", "2026-09-01").replace("{valid_until}", "2026-09-30")
         concrete = re.sub(r"\{[^}]+\}", "999999", concrete)

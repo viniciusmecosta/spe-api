@@ -58,6 +58,7 @@ class User(Base):
     endereco = Column(String, nullable=True)
     data_nascimento = Column(Date, nullable=True)
     password_hash = Column(String)
+    password_change_required = Column(Boolean, nullable=False, default=False, server_default="false")
     auth_version = Column(Integer, nullable=False, default=0, server_default="0")
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(Enum(UserRole, native_enum=False, length=50), default=UserRole.EMPLOYEE, nullable=False)

@@ -1,5 +1,6 @@
 import inspect
 from collections.abc import Generator
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 import jwt
@@ -15,6 +16,7 @@ from app.database.session import (
     SessionLocal,
     get_async_db,
 )
+from app.features.auth.auth_models import RefreshToken
 from app.features.auth.auth_schemas import TokenPayload
 from app.features.devices.device_models import DeviceCredential
 from app.features.users.user_models import User
@@ -35,7 +37,7 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-async def get_current_user(
+async def get_password_change_user(
         db: Annotated[Any, Depends(get_async_db)],
         token: Annotated[str, Depends(reusable_oauth2)],
 ) -> User:
@@ -51,7 +53,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not token_data.sub:
+    if not token_data.sub or token_data.purpose not in ("access", "password_change"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido.",
@@ -77,7 +79,33 @@ async def get_current_user(
     if token_data.ver != (user.auth_version or 0):
         raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.",
                             headers={"WWW-Authenticate": "Bearer"})
+    if token_data.purpose == "password_change" and user.password_change_required is not True:
+        raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.")
+    if token_data.sid:
+        valid_session = await db.scalar(select(RefreshToken.id).where(
+            RefreshToken.family_id == token_data.sid,
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.used_at.is_(None),
+            RefreshToken.expires_at > datetime.now(UTC),
+        ).limit(1))
+        if not valid_session:
+            raise HTTPException(status_code=401, detail="Sessão encerrada. Entre novamente.")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Usuário inativo.")
     return user
+
+
+async def get_current_user(
+    db: Annotated[Any, Depends(get_async_db)],
+    token: Annotated[str, Depends(reusable_oauth2)],
+) -> User:
+    current_user = await get_password_change_user(db, token)
+    if current_user.password_change_required is True:
+        raise HTTPException(status_code=403, detail={
+            "code": "password_change_required", "message": "Redefina sua senha para continuar.",
+        })
+    return current_user
 
 
 def get_current_active_user(

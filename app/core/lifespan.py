@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 
 from app.core.config import is_prod, settings
+from app.features.auth.auth_maintenance import purge_expired_refresh_tokens
 from app.features.daily_summaries.daily_summary_events import bind_dispatch_loop
 from app.features.system.routine_orchestrator import routine_orchestrator
 from app.shared.trusted_time_service import trusted_time_service
@@ -43,6 +44,8 @@ async def lifespan(app: FastAPI):
                       max_instances=1, coalesce=True)
 
     scheduler.add_job(trusted_time_service.sync_ntp_async, trigger=trigger_hourly, id="hourly_ntp_sync",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(purge_expired_refresh_tokens, trigger=trigger_aligned, id="expired_refresh_tokens",
                       max_instances=1, coalesce=True)
 
     from app.features.system.job_queue import process_once
