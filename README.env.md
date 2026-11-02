@@ -72,4 +72,6 @@ Copie [`.env.example`](.env.example) para `.env` e ajuste os valores. O arquivo 
 | `REPROCESS_MAX_ITEMS` | Limite de itens em uma solicitação de reprocessamento. |
 | `REPROCESS_BATCH_SIZE` | Quantidade de itens por lote de reprocessamento. |
 
+Em `DEV`, a autenticação de funcionários admite o acesso sem conferir a senha, exceto quando há redefinição obrigatória. Use `PROD` no ambiente real.
+
 Mantenha segredos fora do controle de versão. Para caracteres reservados na senha da URI, use codificação percentual. O processamento de tarefas pode ser pausado com `BACKGROUND_JOBS_ENABLED=false` durante verificações de recuperação.
