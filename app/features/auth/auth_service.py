@@ -18,7 +18,7 @@ from app.features.users.user_models import User
 from app.features.users.user_repository import async_user_repository
 from app.shared.enums import UserRole
 
-DUMMY_PASSWORD_HASH = "$2b$12$CPxM9UaNMltN9hwmyiJg8uQIy2HcDU9aVpmi4/sozyLhAZ3eIdbIa"
+TIMING_EQUALIZER_HASH = "$2b$12$CPxM9UaNMltN9hwmyiJg8uQIy2HcDU9aVpmi4/sozyLhAZ3eIdbIa"
 
 
 class AuthService:
@@ -94,7 +94,7 @@ class AuthService:
         )
         if not user:
             await asyncio.to_thread(
-                security.verify_password, password, DUMMY_PASSWORD_HASH
+                security.verify_password, password, TIMING_EQUALIZER_HASH
             )
             raise InvalidCredentialsError()
         allow_bypass = (
