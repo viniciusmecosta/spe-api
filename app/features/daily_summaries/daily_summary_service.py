@@ -32,6 +32,7 @@ from app.shared.time_calculation_service import (
     PeriodTimeResult,
     time_calculation_service,
 )
+from app.shared.work_schedule_time import minutes_to_seconds, schedule_expected_seconds
 
 
 def from_legacy_period(day: date, result: PeriodTimeResult) -> DaySummaryValues:
@@ -89,9 +90,9 @@ class DailySummaryService:
     @staticmethod
     def _expected_seconds(row, schedule, is_holiday: bool) -> int:
         if row is not None:
-            return float(row.expected_minutes) * 60
+            return minutes_to_seconds(row.expected_minutes)
         if schedule is not None and not is_holiday:
-            return schedule.daily_hours * 3600
+            return schedule_expected_seconds(schedule)
         return 0
 
     @staticmethod
@@ -111,12 +112,12 @@ class DailySummaryService:
         is_holiday = current in holiday_days
         schedule = self._schedule_for_day(historical_schedules, current)
         expected = self._expected_seconds(row, schedule, is_holiday)
-        gross = float(row.worked_minutes) * 60 if row is not None else 0
-        net = float(row.accounted_minutes) * 60 if row is not None else 0
-        waiver = float(row.waiver_minutes) * 60 if row is not None else 0
+        gross = minutes_to_seconds(row.worked_minutes) if row is not None else 0
+        net = minutes_to_seconds(row.accounted_minutes) if row is not None else 0
+        waiver = minutes_to_seconds(row.waiver_minutes) if row is not None else 0
         unapproved = gross - net
         extra = max(0, net - expected) if historical_schedules else 0
-        missing = float(row.missing_minutes) * 60 if row is not None else expected
+        missing = minutes_to_seconds(row.missing_minutes) if row is not None else expected
         daily_result = DailyTimeResult(
             raw_worked_seconds=gross,
             waiver_seconds=waiver,
@@ -135,8 +136,8 @@ class DailySummaryService:
             excess_work_seconds=0,
             excess_lunch_seconds=0,
             early_return_seconds=0,
-            total_excess_seconds=float(row.excess_minutes) * 60 if row is not None else 0,
-            approved_seconds=float(row.authorized_excess_minutes) * 60 if row is not None else 0,
+            total_excess_seconds=minutes_to_seconds(row.excess_minutes) if row is not None else 0,
+            approved_seconds=minutes_to_seconds(row.authorized_excess_minutes) if row is not None else 0,
             accounted_seconds=net,
             has_schedule=expected > 0,
             has_lunch_rule=False,
@@ -148,8 +149,8 @@ class DailySummaryService:
         ), None)
         totals = (
             net, gross, expected, waiver, unapproved, extra, missing,
-            float(row.excess_minutes) * 60 if row is not None else 0,
-            float(row.authorized_excess_minutes) * 60 if row is not None else 0,
+            minutes_to_seconds(row.excess_minutes) if row is not None else 0,
+            minutes_to_seconds(row.authorized_excess_minutes) if row is not None else 0,
         )
         return daily_result, accounted_result, expected, is_holiday, approved_waiver, totals
 

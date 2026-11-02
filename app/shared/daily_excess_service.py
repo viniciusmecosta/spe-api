@@ -2,13 +2,14 @@ import logging
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.session import get_async_session_context
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import UserWorkScheduleConfig
@@ -18,7 +19,12 @@ from app.shared.enums import (
     DayOfWeek,
     RecordType,
 )
-from app.shared.time_calculation_service import time_calculation_service
+from app.shared.time_calculation_service import (
+    approved_waivers,
+    time_calculation_service,
+    waiver_for_calculation,
+)
+from app.shared.work_schedule_time import schedule_expected_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +65,7 @@ class DailyExcessService:
         return bool(
             schedule and
             getattr(schedule, 'is_daily_excess_enabled', False) and
-            getattr(schedule, 'daily_hours', 0) > 0 and
+            schedule_expected_seconds(schedule) > 0 and
             day_records
         )
 
@@ -102,6 +108,7 @@ class DailyExcessService:
             UserWorkScheduleConfig.day_of_week == target_day.value,
             UserWorkScheduleConfig.valid_from <= target_date,
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= target_date)),
+            ~exists(select(Holiday.id).where(Holiday.date == target_date)),
         ).order_by(UserWorkScheduleConfig.valid_from.desc())
         schedule = await db.scalar(sched_stmt)
 
@@ -114,11 +121,7 @@ class DailyExcessService:
         existing_adjustments = [
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
-        waiver_adj = next(
-            (adj for adj in day_adjustments if
-             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
-            None
-        )
+        waiver_adj = waiver_for_calculation(approved_waivers(day_adjustments, target_date))
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments
@@ -178,6 +181,7 @@ class DailyExcessService:
             UserWorkScheduleConfig.day_of_week == target_day.value,
             UserWorkScheduleConfig.valid_from <= target_date,
             (UserWorkScheduleConfig.valid_until.is_(None) | (UserWorkScheduleConfig.valid_until >= target_date)),
+            ~exists(select(Holiday.id).where(Holiday.date == target_date)),
         ).order_by(UserWorkScheduleConfig.valid_from.desc()).first()
 
         day_adjustments = db.query(AdjustmentRequest).filter(
@@ -188,11 +192,7 @@ class DailyExcessService:
         existing_adjustments = [
             adj for adj in day_adjustments if adj.adjustment_type == AdjustmentType.DAILY_EXCESS
         ]
-        waiver_adj = next(
-            (adj for adj in day_adjustments if
-             adj.adjustment_type == AdjustmentType.WAIVER and adj.status == AdjustmentStatus.APPROVED),
-            None
-        )
+        waiver_adj = waiver_for_calculation(approved_waivers(day_adjustments, target_date))
         has_reviewed = any(
             adj.status in (AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED)
             for adj in existing_adjustments

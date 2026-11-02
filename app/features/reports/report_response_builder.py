@@ -12,6 +12,7 @@ from app.features.reports.report_schemas import (
 )
 from app.features.time_records.time_record_models import TimeRecord
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek
+from app.shared.time_calculation_service import approved_waivers
 
 WEEKEND_STATUS = "Fim de semana"
 
@@ -174,6 +175,7 @@ class ReportResponseBuilder:
         daily_res = period_result.daily_results[current]
         worked_seconds = daily_res.gross_worked_seconds
         abono = period_result.daily_waivers[current]
+        waivers = approved_waivers(day_adjustments or [], current)
 
         accounted_res = period_result.daily_accounted_results[current]
         accounted_time_str = self.format_duration(accounted_res.accounted_seconds)
@@ -201,6 +203,9 @@ class ReportResponseBuilder:
         worked_time_str = f"{hours:02d}:{minutes:02d}"
 
         anomalies_list = [a.description for a in day_anomalies]
+        waiver_hours = abono.amount_hours if abono else None
+        if waivers:
+            waiver_hours = sum(waiver.amount_hours or 0 for waiver in waivers)
 
         return HistoryDay(
             date=current,
@@ -215,8 +220,8 @@ class ReportResponseBuilder:
             punches=punches,
             has_anomaly=len(anomalies_list) > 0,
             anomalies=anomalies_list,
-            abono_hours=abono.amount_hours if abono else None,
-            abono_id=abono.id if abono and is_manager else None,
+            abono_hours=waiver_hours,
+            abono_id=abono.id if abono and is_manager and len(waivers) <= 1 else None,
             has_excess=has_excess,
             excess_status=excess_status,
             daily_excess_id=daily_excess_id,

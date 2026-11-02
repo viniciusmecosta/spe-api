@@ -10,6 +10,30 @@ from app.shared.enums import (
     DayOfWeek,
     RecordType,
 )
+from app.shared.work_schedule_time import schedule_expected_seconds
+
+
+@dataclass(frozen=True)
+class WaiverTotal:
+    amount_hours: float
+
+
+def approved_waivers(adjustments: list[AdjustmentRequest], day: date) -> list[AdjustmentRequest]:
+    return [
+        adjustment for adjustment in adjustments
+        if adjustment.target_date == day
+        and adjustment.adjustment_type == AdjustmentType.WAIVER
+        and adjustment.status == AdjustmentStatus.APPROVED
+        and getattr(adjustment, "deleted_at", None) is None
+    ]
+
+
+def waiver_for_calculation(waivers: list[AdjustmentRequest]) -> AdjustmentRequest | WaiverTotal | None:
+    if not waivers:
+        return None
+    if len(waivers) == 1:
+        return waivers[0]
+    return WaiverTotal(sum(waiver.amount_hours or 0 for waiver in waivers))
 
 
 @dataclass
@@ -107,7 +131,7 @@ class TimeCalculationService:
             self,
             day_records: list[TimeRecord],
             expected_seconds: float,
-            waiver_adj: AdjustmentRequest | None = None,
+            waiver_adj: AdjustmentRequest | WaiverTotal | None = None,
             extra_time_adjs: list[AdjustmentRequest] | None = None,
             is_excused: bool = False,
             has_schedule: bool = True,
@@ -166,7 +190,7 @@ class TimeCalculationService:
 
     def _calculate_waiver(
             self,
-            waiver_adj: AdjustmentRequest | None,
+            waiver_adj: AdjustmentRequest | WaiverTotal | None,
             is_excused: bool
     ) -> float:
         if not (is_excused or waiver_adj):
@@ -281,7 +305,7 @@ class TimeCalculationService:
             day_records: list[TimeRecord],
             schedule: Any | None,
             daily_excess_adj: AdjustmentRequest | None = None,
-            waiver_adj: AdjustmentRequest | None = None,
+            waiver_adj: AdjustmentRequest | WaiverTotal | None = None,
             extra_time_adjs: list[AdjustmentRequest] | None = None,
     ) -> DailyAccountedResult:
         valid_records = [
@@ -299,7 +323,7 @@ class TimeCalculationService:
         has_schedule = schedule is not None
         has_lunch_rule, excess_lunch, early_return = self._compute_lunch_metrics(sorted_records, schedule)
 
-        expected_seconds = float(schedule.daily_hours * 3600.0) if has_schedule and getattr(schedule, 'daily_hours', None) else 0.0
+        expected_seconds = schedule_expected_seconds(schedule)
         has_legacy_extra = any(extra_time_adjs or [])
         is_enabled = bool(has_schedule and getattr(schedule, 'is_daily_excess_enabled', False) and not has_legacy_extra)
 
@@ -362,7 +386,7 @@ class TimeCalculationService:
             is_holiday = any(h.date == current_date for h in holidays)
             daily_is_holiday[current_date] = is_holiday
 
-            day_expected_hours = 0.0
+            day_expected_seconds = 0.0
             schedule = None
             if not is_holiday and has_schedule:
                 target_day = DayOfWeek.from_date(current_date)
@@ -372,15 +396,14 @@ class TimeCalculationService:
                 ]
                 schedule = next((s for s in valid_schedules if s.day_of_week == target_day.value), None)
                 if schedule:
-                    day_expected_hours = schedule.daily_hours
+                    day_expected_seconds = schedule_expected_seconds(schedule)
 
-            daily_expected[current_date] = day_expected_hours * 3600
-            total_expected += day_expected_hours * 3600
+            daily_expected[current_date] = day_expected_seconds
+            total_expected += day_expected_seconds
 
-            abono = next((adj for adj in adjustments if
-                          adj.target_date == current_date and
-                          adj.adjustment_type == AdjustmentType.WAIVER and
-                          adj.status == AdjustmentStatus.APPROVED), None)
+            waivers = approved_waivers(adjustments, current_date)
+            abono = waivers[0] if waivers else None
+            waiver_value = waiver_for_calculation(waivers)
 
             daily_waivers[current_date] = abono
 
@@ -397,7 +420,7 @@ class TimeCalculationService:
                 day_records=day_records,
                 schedule=schedule,
                 daily_excess_adj=day_excess,
-                waiver_adj=abono,
+                waiver_adj=waiver_value,
                 extra_time_adjs=day_extra_time_adjs,
             )
             daily_accounted_results[current_date] = accounted_res
@@ -405,8 +428,8 @@ class TimeCalculationService:
 
             daily_result = self.calculate_daily_time(
                 day_records=day_records,
-                expected_seconds=day_expected_hours * 3600,
-                waiver_adj=abono,
+                expected_seconds=day_expected_seconds,
+                waiver_adj=waiver_value,
                 extra_time_adjs=day_extra_time_adjs,
                 is_excused=bool(abono),
                 has_schedule=has_schedule,

@@ -263,3 +263,46 @@ async def test_apuration_history_and_excel_preserve_gross_and_partial_excess(api
     row = next(row for row in sheet.iter_rows() if row[0].value == "29/09/26")
     assert row[18].value == timedelta(hours=9)
     assert row[22].value == timedelta(hours=8, minutes=30)
+
+async def test_excel_monthly_totals_match_visible_daily_minutes(api, pg_session_factory):
+    from app.features.users.user_models import UserWorkScheduleConfig
+
+    user_id = await api.create_employee()
+    async with pg_session_factory() as session:
+        session.add(UserWorkScheduleConfig(
+            user_id=user_id,
+            day_of_week=1,
+            daily_hours=8.02,
+            valid_from=date(2026, 9, 15),
+            valid_until=date(2026, 9, 30),
+            is_daily_excess_enabled=True,
+        ))
+        await session.commit()
+
+    for day in ("2026-09-15", "2026-09-22", "2026-09-29"):
+        for kind, clock in (("ENTRY", "08:00"), ("EXIT", "17:00")):
+            await api.request("POST", "/time-records/admin", 201, json={
+                "user_id": user_id,
+                "record_type": kind,
+                "record_datetime": f"{day}T{clock}:00-03:00",
+                "edit_justification": "Teste de escala sintetica",
+            })
+
+    history = await api.json("GET", f"/reports/history/user/{user_id}", params=PERIOD)
+    report = await api.json("GET", f"/reports/user/{user_id}", params=PERIOD)
+    excel = await api.request("GET", "/reports/export/excel", params=PERIOD)
+    workbook = load_workbook(BytesIO(excel.content), data_only=True)
+    summary_row = next(row for row in workbook["Resumo"].iter_rows() if row[0].value == "Colaborador Alfa")
+    sheet = workbook["Colaborador Alfa"]
+    rows = [next(row for row in sheet.iter_rows() if row[0].value == day)
+            for day in ("15/09/26", "22/09/26", "29/09/26")]
+    total_row = next(row for row in sheet.iter_rows() if row[0].value == "TOTAIS")
+    expected = timedelta(hours=24, minutes=3)
+
+    assert [row[22].value for row in rows] == [timedelta(hours=8, minutes=1)] * 3
+    assert total_row[22].value == expected
+    assert summary_row[19].value == expected
+    assert history["total_accounted_time"] == "24:03"
+    assert report["summary"]["total_accounted_time"] == "24:03"
+    assert report["summary"]["total_accounted_minutes"] == 1443
+    assert total_row[18].value - total_row[20].value == total_row[22].value

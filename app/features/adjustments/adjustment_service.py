@@ -14,6 +14,7 @@ from app.features.adjustments.adjustment_exceptions import (
     AdjustmentPermissionError,
     AttachmentFileNotFoundError,
     CorruptedAttachmentError,
+    ExcessApprovalLimitError,
     InvalidAdjustmentFilenameError,
     InvalidAdjustmentTypeError,
     InvalidAttachmentFormatError,
@@ -295,15 +296,18 @@ class AdjustmentService:
 
         if request.status == AdjustmentStatus.APPROVED and request.adjustment_type != AdjustmentType.DAILY_EXCESS:
             return await self._build_response(session, request)
+        old_data = serialize_model(request)
         if request.adjustment_type == AdjustmentType.WAIVER:
             if not request.attachments:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
         elif request.adjustment_type == AdjustmentType.DAILY_EXCESS:
+            if (approved_amount_hours is not None
+                    and round(approved_amount_hours * 60) > round((request.amount_hours or 0) * 60)):
+                raise ExcessApprovalLimitError()
             request.approved_amount_hours = approved_amount_hours
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
             await self._execute_adjustment_action(session, request, manager_id)
 
-        old_data = serialize_model(request)
         updated = await self.repo.update_status(session, request, AdjustmentStatus.APPROVED, manager_id, comment)
         await audit_service.async_log_change(
             session, manager_id, "APPROVE_ADJUSTMENT",

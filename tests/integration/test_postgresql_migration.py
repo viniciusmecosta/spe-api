@@ -196,7 +196,7 @@ async def test_closing_waits_for_the_writer_and_exports_its_summary(pg_session_f
 
 
 @pytest.mark.asyncio
-async def test_fractional_schedules_preserve_legacy_period_totals(pg_session_factory):
+async def test_fractional_schedules_sum_rounded_daily_minutes(pg_session_factory):
     factory = pg_session_factory
     user = await seed(factory)
     first, last = date(2026, 4, 1), date(2026, 4, 10)
@@ -222,7 +222,7 @@ async def test_fractional_schedules_preserve_legacy_period_totals(pg_session_fac
     )
     assert result.total_expected_seconds == pytest.approx(legacy.total_expected_seconds)
     assert result.total_missing_seconds == pytest.approx(legacy.total_missing_seconds)
-    assert round(result.total_expected_seconds / 60) == 4848
+    assert round(result.total_expected_seconds / 60) == 4850
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
@@ -24,6 +24,7 @@ from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared import deps
 from app.shared.enums import DayOfWeek
 from app.shared.validation import validate_date_order
+from app.shared.work_schedule_time import schedule_expected_seconds
 
 
 class UserWorkScheduleService:
@@ -32,33 +33,6 @@ class UserWorkScheduleService:
             db: Annotated[AsyncSession, Depends(deps.get_async_db)] = None,
     ):
         self.db = db
-
-    @staticmethod
-    def _parse_schedule_time(t_obj):
-        if not t_obj:
-            return None
-        if isinstance(t_obj, time):
-            return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), t_obj)
-        if isinstance(t_obj, str):
-            try:
-                parts = t_obj.split(':')
-                if len(parts) >= 2:
-                    sec = int(parts[2]) if len(parts) > 2 else 0
-                    return datetime.combine(datetime.now(ZoneInfo(settings.TIMEZONE)).date(), time(int(parts[0]), int(parts[1]), sec))
-            except (ValueError, IndexError):
-                return None
-        return None
-
-    @classmethod
-    def _calculate_shift_seconds(cls, entry_time, exit_time) -> float:
-        dt_entry = cls._parse_schedule_time(entry_time)
-        dt_exit = cls._parse_schedule_time(exit_time)
-        if not dt_entry or not dt_exit:
-            return 0.0
-        diff = (dt_exit - dt_entry).total_seconds()
-        if diff < 0:
-            diff += 24 * 3600
-        return diff
 
     def _apply_schedule_updates(self, sch: UserWorkScheduleConfig, sch_data: dict, valid_from: date, valid_until: date):
         sch.day_of_week = sch_data.get('day_of_week', sch.day_of_week)
@@ -73,11 +47,8 @@ class UserWorkScheduleService:
             sch.is_daily_excess_enabled if sch.is_daily_excess_enabled is not None else True,
         )
 
-        total_seconds = (
-                self._calculate_shift_seconds(sch.entry_1, sch.exit_1) +
-                self._calculate_shift_seconds(sch.entry_2, sch.exit_2)
-        )
-        sch.daily_hours = round(total_seconds / 3600, 2)
+        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
+        sch.daily_hours = schedule_expected_seconds(sch) / 3600
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
         return {
