@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
@@ -45,6 +46,23 @@ class AdjustmentWaiverCreate(BaseModel):
 class AdjustmentApproveRequest(BaseModel):
     comment: str | None = None
     approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
+class AdjustmentReviewRequest(BaseModel):
+    status: Literal[AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED]
+    comment: str | None = None
+    approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode='after')
+    def validate_review(self) -> 'AdjustmentReviewRequest':
+        if self.status == AdjustmentStatus.REJECTED:
+            if not self.comment or not self.comment.strip():
+                raise ValueError("A rejeição requer uma justificativa.")
+            if self.approved_amount_hours is not None:
+                raise ValueError("Uma rejeição não pode conter horas aprovadas.")
+        return self
+
+    model_config = ConfigDict(extra='forbid')
 
 
 class AdjustmentAttachmentResponse(BaseModel):

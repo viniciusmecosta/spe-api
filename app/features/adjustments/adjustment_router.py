@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -16,6 +16,7 @@ from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
+    AdjustmentReviewRequest,
     AdjustmentWaiverCreate,
 )
 from app.features.adjustments.adjustment_service import AdjustmentService
@@ -94,7 +95,26 @@ async def download_adjustment_attachment(
     )
 
 
-@router.get("/my")
+@router.get("", responses={**FORBIDDEN_RESPONSE})
+async def read_adjustments(
+        service: Annotated[AdjustmentService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        scope: Literal["mine", "team"] = "mine",
+        skip: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+        month: Month | None = None,
+        year: Year | None = None,
+        status: Annotated[str | None, Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$")] = None,
+        order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
+        order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
+) -> list[AdjustmentRequestResponse]:
+    return await service.list_adjustments(
+        current_user=current_user, scope=scope, skip=skip, limit=limit,
+        month=month, year=year, status=status, order_by=order_by, order_direction=order_direction,
+    )
+
+
+@router.get("/my", deprecated=True)
 async def read_my_adjustments(
         service: Annotated[AdjustmentService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -116,6 +136,7 @@ async def read_my_adjustments(
 
 @router.get(
     "/",
+    deprecated=True,
     responses={**FORBIDDEN_RESPONSE},
 )
 async def read_all_adjustments(
@@ -138,7 +159,21 @@ async def read_all_adjustments(
 
 
 @router.put(
+    "/{id}/review",
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
+)
+async def review_adjustment(
+        id: int,
+        body: AdjustmentReviewRequest,
+        service: Annotated[AdjustmentService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+) -> AdjustmentRequestResponse:
+    return await service.review_adjustment(request_id=id, manager_id=current_user.id, review=body)
+
+
+@router.put(
     "/{id}/approve",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def approve_adjustment(
@@ -157,6 +192,7 @@ async def approve_adjustment(
 
 @router.put(
     "/{id}/reject",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def reject_adjustment(
@@ -184,6 +220,7 @@ async def delete_adjustment(
 
 @router.delete(
     "/admin/{id}",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def admin_delete_adjustment(

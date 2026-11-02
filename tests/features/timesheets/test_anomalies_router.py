@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.timesheets.anomaly_service import AnomalyService
 from app.features.timesheets.timesheet_schemas import AnomalyResponse
 from app.features.users.user_models import User
@@ -80,3 +80,34 @@ def test_get_user_anomalies(client: TestClient, mocker: MagicMock) -> None:
     data = response.json()
     assert len(data) == 1
     assert data[0]["user_id"] == 2
+
+
+@pytest.mark.parametrize('user_id', [None, 7])
+def test_canonical_anomalies_filters_by_optional_user(client, mocker, user_id):
+    operation = mocker.patch.object(AnomalyService, 'get_anomalies_by_month', new_callable=AsyncMock, return_value=[])
+    query = {'month': 8, 'year': 2026}
+    if user_id is not None:
+        query['user_id'] = user_id
+    response = client.get('/api/v1/anomalies', params=query)
+    assert response.status_code == 200
+    assert response.history == []
+    operation.assert_awaited_once_with(month=8, year=2026, user_id=user_id, viewer_role=UserRole.MANAGER)
+
+
+@pytest.mark.parametrize('user_id', [0, -1, 'invalid'])
+def test_canonical_anomalies_rejects_invalid_user(client, user_id):
+    assert client.get('/api/v1/anomalies', params={'month': 8, 'year': 2026, 'user_id': user_id}).status_code == 422
+
+
+def test_canonical_anomalies_requires_manager():
+    from fastapi import HTTPException
+
+    def denied():
+        raise HTTPException(status_code=403)
+
+    app.dependency_overrides[deps.get_current_manager] = denied
+    try:
+        with TestClient(app) as client:
+            assert client.get('/api/v1/anomalies?month=8&year=2026').status_code == 403
+    finally:
+        app.dependency_overrides.clear()

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
 from app.features.reports.dashboard_service import DashboardService
@@ -48,7 +48,21 @@ async def get_my_dashboard(
     return await dashboard_service.get_my_dashboard(current_user=current_user)
 
 
-@router.get("/history/me")
+@router.get("/history", responses={**FORBIDDEN_RESPONSE})
+async def get_history(
+        report_service: Annotated[ReportService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        user_id: Annotated[int | None, Query(gt=0)] = None,
+        month: Month | None = None,
+        year: Year | None = None,
+) -> HistoryResponse:
+    return await report_service.get_history_report(
+        user_id=current_user.id if user_id is None else user_id,
+        month=month, year=year, current_user=current_user,
+    )
+
+
+@router.get("/history/me", deprecated=True)
 async def get_my_history(
         report_service: Annotated[ReportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -61,6 +75,7 @@ async def get_my_history(
 
 @router.get(
     "/history/user/{user_id}",
+    deprecated=True,
     responses={**FORBIDDEN_RESPONSE},
 )
 async def get_user_history(
