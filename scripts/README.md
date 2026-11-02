@@ -156,7 +156,8 @@ A renderização Excel é executada fora do event loop.
 
 No resumo de horas da equipe, `team_total_hours` representa o total contabilizado em horas decimais e
 `team_formatted_time` inclui os minutos quando necessário. Por exemplo, 50 minutos são retornados como
-`0.8333333333333334` e `0h 50min`. As barras individuais continuam exibindo horas inteiras.
+`0.8333333333333334` e `0h 50min`. As barras individuais também preservam os minutos e incluem
+colaboradores com menos de uma hora contabilizada.
 
 ### Uploads, proxy e exportações
 

@@ -213,11 +213,11 @@ async def test_get_my_dashboard_last_record_entry(mock_datetime, mock_get_truste
     assert response.next_punch_type == "EXIT"
 
 
-@pytest.mark.parametrize(("minutes", "expected_hours", "employee_count"), [([30, 30], 1, 0), ([90, 30], 2, 1)])
+@pytest.mark.parametrize(("minutes", "expected_hours"), [([30, 30], 1), ([90, 30], 2)])
 @pytest.mark.asyncio
 @patch("app.features.reports.dashboard_service.report_service.get_advanced_user_report", new_callable=AsyncMock)
 async def test_team_total_includes_employees_with_less_than_one_hour(
-    mock_get_report, db_session_mock, mock_db_query, minutes, expected_hours, employee_count
+    mock_get_report, db_session_mock, mock_db_query, minutes, expected_hours
 ):
     current_user = User(id=1, name="Gestora Fictícia", role=UserRole.MANAGER)
     users = [User(id=2, name="Funcionário Alfa"), User(id=3, name="Funcionário Beta")]
@@ -231,7 +231,8 @@ async def test_team_total_includes_employees_with_less_than_one_hour(
 
     assert response.team_total_hours == float(expected_hours)
     assert response.team_formatted_time == f"{expected_hours}h"
-    assert len(response.employees) == employee_count
+    assert len(response.employees) == 2
+    assert [employee.total_hours for employee in response.employees] == pytest.approx([value / 60 for value in minutes])
 
 
 @pytest.mark.asyncio
@@ -288,11 +289,13 @@ async def test_get_team_worked_hours(mock_get_report, db_session_mock, mock_db_q
     assert response.year == 2026
     assert response.team_total_hours == 3.0
     assert response.team_formatted_time == "3h"
-    assert len(response.employees) == 1
+    assert len(response.employees) == 2
     assert response.employees[0].user_id == 2
     assert response.employees[0].short_name == "User 1"
-    assert response.employees[0].total_hours == 2.0
-    assert response.employees[0].formatted_time == "2h"
+    assert response.employees[0].total_hours == 2.5
+    assert response.employees[0].formatted_time == "2h 30min"
+    assert response.employees[1].total_hours == 0.5
+    assert response.employees[1].formatted_time == "0h 30min"
 
 
 @pytest.mark.asyncio
