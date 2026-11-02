@@ -13,10 +13,13 @@ from fastapi import (
 )
 
 from app.features.time_records.time_record_schemas import (
+    AdministrativeTimeRecordCreate,
+    ManualTimeRecordCreate,
     ReceiptResponse,
     SuccessResponse,
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordFilters,
     TimeRecordResponse,
     TimeRecordTimelineResponse,
     TimeRecordUpdate,
@@ -37,7 +40,34 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
 
 @router.post(
+    "", status_code=status.HTTP_201_CREATED,
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+async def register_manual_record(
+    record_in: ManualTimeRecordCreate | AdministrativeTimeRecordCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    service: Annotated[TimeRecordService, Depends()],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+) -> TimeRecordResponse:
+    return await service.create_record(
+        current_user=current_user, request=request, record_in=record_in,
+        background_tasks=background_tasks,
+    )
+
+
+@router.get("", responses={**FORBIDDEN_RESPONSE})
+async def list_records(
+    filters: Annotated[TimeRecordFilters, Query()],
+    service: Annotated[TimeRecordService, Depends()],
+    current_user: Annotated[User, Depends(deps.get_current_active_user)],
+) -> list[TimeRecordResponse]:
+    return await service.list_records(filters=filters, current_user=current_user)
+
+
+@router.post(
     "/entry",
+    deprecated=True,
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE},
 )
@@ -54,6 +84,7 @@ async def register_entry(
 
 @router.post(
     "/exit",
+    deprecated=True,
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE},
 )
@@ -68,8 +99,13 @@ async def register_exit(
     )
 
 
+@router.post(
+    "/{id}/type-transitions",
+    responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
+)
 @router.put(
     "/{id}/toggle",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 async def toggle_record_type(
@@ -82,7 +118,7 @@ async def toggle_record_type(
     )
 
 
-@router.get("/my")
+@router.get("/my", deprecated=True)
 async def read_my_records(
         service: Annotated[TimeRecordService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
@@ -94,6 +130,7 @@ async def read_my_records(
 
 @router.get(
     "/admin/list",
+    deprecated=True,
     responses={**FORBIDDEN_RESPONSE},
 )
 async def list_records_for_admin(
@@ -108,6 +145,7 @@ async def list_records_for_admin(
 
 @router.post(
     "/admin",
+    deprecated=True,
     status_code=status.HTTP_201_CREATED,
     responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
 )
@@ -122,8 +160,13 @@ async def create_time_record_admin(
     )
 
 
+@router.patch(
+    "/{record_id}",
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
+)
 @router.put(
     "/admin/{record_id}",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def update_time_record_admin(
@@ -140,6 +183,7 @@ async def update_time_record_admin(
 
 @router.delete(
     "/admin/{record_id}",
+    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def delete_time_record_admin(
@@ -155,6 +199,23 @@ async def delete_time_record_admin(
         justification=justification,
         request_body=request_body,
         validate_justification=True,
+    )
+    return SuccessResponse(status="success", message="Registro excluído com sucesso.")
+
+
+@router.delete(
+    "/{record_id}",
+    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
+)
+async def delete_time_record(
+        record_id: int,
+        service: Annotated[TimeRecordService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+        justification: Annotated[str, Query(min_length=5, max_length=300)],
+) -> SuccessResponse:
+    await service.delete_admin_record(
+        record_id=record_id, manager_id=current_user.id,
+        justification=justification, validate_justification=True,
     )
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 

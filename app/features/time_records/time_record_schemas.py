@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.shared.enums import RecordType
 from app.shared.timezone import to_app_timezone
@@ -34,6 +41,31 @@ class TimeRecordCreate(BaseModel):
     pass
 
 
+class ManualTimeRecordCreate(BaseModel):
+    record_type: RecordType
+    model_config = ConfigDict(extra="forbid")
+
+
+class TimeRecordFilters(BaseModel):
+    user_id: int | None = Field(default=None, gt=0, le=2**31 - 1)
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    skip: int = Field(default=0, ge=0, le=2**63 - 1)
+    limit: int = Field(default=100, ge=1, le=1000)
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def normalize_filter_timezone(cls, value: datetime | None) -> datetime | None:
+        return normalize_input_datetime(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "TimeRecordFilters":
+        if self.start_date is not None and self.end_date is not None and self.start_date > self.end_date:
+            raise ValueError("A data inicial não pode ser maior que a data final.")
+        return self
+
+
 class TimeRecordCreateAdmin(BaseModel):
     user_id: int
     record_type: RecordType
@@ -44,6 +76,11 @@ class TimeRecordCreateAdmin(BaseModel):
     @classmethod
     def normalize_record_timezone(cls, value: datetime) -> datetime:
         return normalize_input_datetime(value)
+
+
+class AdministrativeTimeRecordCreate(TimeRecordCreateAdmin):
+    user_id: int = Field(gt=0, le=2**31 - 1)
+    model_config = ConfigDict(extra="forbid")
 
 
 class TimeRecordUpdate(BaseModel):

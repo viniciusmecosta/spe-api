@@ -308,3 +308,40 @@ async def test_excel_monthly_totals_match_visible_daily_minutes(api, pg_session_
     assert report["summary"]["total_accounted_time"] == "24:03"
     assert report["summary"]["total_accounted_minutes"] == 1443
     assert total_row[18].value - total_row[20].value == total_row[22].value
+
+
+async def test_canonical_record_and_review_contracts_preserve_authorization(api):
+    user_id = await api.create_employee()
+    record = await api.json('POST', '/time-records', 201, json={
+        'user_id': user_id, 'record_type': 'ENTRY',
+        'record_datetime': f'{DAY}T08:00:00-03:00',
+        'edit_justification': 'Inclusão gerencial autorizada',
+    })
+    record_id = record['id']
+    await api.request('POST', '/time-records', 403, headers=api.employee_headers, json={
+        'user_id': user_id, 'record_type': 'EXIT',
+        'record_datetime': f'{DAY}T17:00:00-03:00',
+        'edit_justification': 'Tentativa sem autorização',
+    })
+    records = await api.json('GET', '/time-records', params={'user_id': user_id})
+    assert [item['id'] for item in records] == [record_id]
+    changed = await api.json('PATCH', f'/time-records/{record_id}', json={
+        'record_datetime': f'{DAY}T08:05:00-03:00',
+        'record_type': 'ENTRY', 'edit_justification': 'Correção autorizada',
+    })
+    await api.request('DELETE', f"/time-records/{changed['id']}", params={'justification': 'Registro duplicado'})
+    assert await api.json('GET', '/time-records', params={'user_id': user_id}) == []
+    adjustment = await api.json('POST', '/adjustments/', 201, headers=api.employee_headers, json={
+        'adjustment_type': 'FORGOT_PUNCH', 'record_type': 'ENTRY',
+        'target_date': DAY, 'time': '08:00:00',
+    })
+    review = await api.json('PUT', f"/adjustments/{adjustment['id']}/review", json={
+        'status': 'APPROVED', 'comment': 'Horário confirmado',
+    })
+    assert review['status'] == 'APPROVED'
+    mine = await api.json('GET', '/adjustments', headers=api.employee_headers)
+    assert [item['id'] for item in mine] == [adjustment['id']]
+    await api.request('GET', '/adjustments', 403, headers=api.employee_headers, params={'scope': 'team'})
+    history = await api.json('GET', '/reports/history', params={'user_id': user_id, **PERIOD})
+    assert history['month'] == PERIOD['month']
+    await api.request('GET', '/anomalies', params={'user_id': user_id, **PERIOD})
