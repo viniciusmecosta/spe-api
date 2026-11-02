@@ -248,6 +248,8 @@ route_test_report.md
 
 deploy/
 .env-prod
+.env-prod-*
+env-prod-*
 portarias/
 
 # Test generated files
