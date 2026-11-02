@@ -1,6 +1,26 @@
 from datetime import date, datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.shared.validation import BusinessDate
+
+
+class BackupOperationRequest(BaseModel):
+    operation: Literal["BACKUP_EMAIL", "BACKUP_TELEGRAM"]
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReportOperationRequest(BaseModel):
+    operation: Literal["REPORT_TELEGRAM"]
+    start_date: BusinessDate
+    end_date: BusinessDate
+    model_config = ConfigDict(extra="forbid")
+
+
+OperationJobRequest = Annotated[
+    BackupOperationRequest | ReportOperationRequest, Field(discriminator="operation")
+]
 
 
 class JobAdmissionResponse(BaseModel):

@@ -16,8 +16,10 @@ from app.database.session import get_async_session_context
 from app.features.reports.daily_report_service import daily_report_service
 from app.features.system.backup_service import backup_service
 from app.features.system.job_queue import enqueue, submit
+from app.features.system.job_schemas import OperationJobRequest, ReportOperationRequest
 from app.features.system.system_exceptions import (
     NoMaintainersWithEmailError,
+    OperationPermissionError,
 )
 from app.features.system.system_repository import (
     AsyncRoutineLogRepository,
@@ -287,6 +289,27 @@ class RoutineOrchestrator:
                           'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()},
             )
             return job.id
+
+    async def submit_manual_job(
+        self, *, operation: OperationJobRequest, current_user: User,
+        audit_svc: Any, telegram_svc: Any,
+    ) -> dict[str, str]:
+        if current_user.role != UserRole.MAINTAINER:
+            raise OperationPermissionError()
+        if isinstance(operation, ReportOperationRequest):
+            result = await self.trigger_manual_report_telegram(
+                start_date=operation.start_date, end_date=operation.end_date,
+                current_user=current_user, audit_svc=audit_svc, telegram_svc=telegram_svc,
+            )
+        elif operation.operation == "BACKUP_EMAIL":
+            result = await self.trigger_manual_backup_email(
+                current_user=current_user, audit_svc=audit_svc,
+            )
+        else:
+            result = await self.trigger_manual_backup_telegram(
+                current_user=current_user, audit_svc=audit_svc,
+            )
+        return {**result, "status_url": f"/api/v1/routine-logs/jobs/{result['job_id']}"}
 
     async def trigger_manual_backup_email(
             self,

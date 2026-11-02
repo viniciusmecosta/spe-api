@@ -62,6 +62,7 @@ async def read_audit_logs(
 
 @backup_router.post(
     "/trigger",
+    deprecated=True,
     response_model=JobAdmissionResponse,
     response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -104,6 +105,7 @@ async def read_routine_logs(
 
 @telegram_actions_router.post(
     "/manual-backup",
+    deprecated=True,
     response_model=JobAdmissionResponse,
     response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -121,6 +123,7 @@ async def trigger_manual_backup_telegram(
 
 @telegram_actions_router.post(
     "/manual-report",
+    deprecated=True,
     response_model=JobAdmissionResponse,
     response_model_exclude_unset=True,
     dependencies=[Depends(deps.get_current_maintainer)],
