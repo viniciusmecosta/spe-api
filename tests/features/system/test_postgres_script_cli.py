@@ -1,0 +1,65 @@
+from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
+
+from scripts import apply_sql_to_postgresql, db_manager
+
+
+def test_identifier_quoting_escapes_embedded_quotes():
+    assert apply_sql_to_postgresql.quote_identifier('weird"name') == '"weird""name"'
+
+
+def test_restore_discovers_backup_without_sqlite_migration_default(monkeypatch, mocker):
+    monkeypatch.setattr('sys.argv', ['restore', '--restore', '--yes'])
+    restore = mocker.patch.object(apply_sql_to_postgresql, 'restore_backup', return_value={
+        'database': 'spe_test', 'statements': 1, 'insert_tables': ['users'],
+    })
+    apply_sql_to_postgresql.main()
+    restore.assert_called_once_with(None, allow_destructive=True, expected_database=None, dry_run=False, allow_unverified_dump=False)
+
+
+def test_restore_requires_explicit_source_or_discovery(monkeypatch):
+    monkeypatch.setattr('sys.argv', ['restore', '--yes'])
+    with pytest.raises(SystemExit) as error:
+        apply_sql_to_postgresql.main()
+    assert error.value.code == 2
+
+
+def test_explicit_postgres_dump_is_validated_without_mutation(monkeypatch, mocker):
+    monkeypatch.setattr('sys.argv', ['restore', '--file', 'backup.sql', '--dry-run'])
+    apply = mocker.patch.object(apply_sql_to_postgresql, 'apply_sql_file', return_value={
+        'database': 'spe_test', 'statements': 1, 'insert_tables': ['users'],
+    })
+    apply_sql_to_postgresql.main()
+    apply.assert_called_once_with(Path('backup.sql'), truncate_first=True, allow_destructive=False, expected_database=None, dry_run=True, allow_unverified_dump=False)
+
+
+def test_db_manager_keeps_postgres_dump_and_restore(monkeypatch, mocker):
+    monkeypatch.setattr('sys.argv', ['db_manager', '--dump', '--dump-ddl', '--dump-data', '--restore', '--yes', '--file', 'backup.zip.enc', '--confirm-database', 'spe_test'])
+    dump = mocker.patch.object(db_manager, 'dump_database')
+    ddl = mocker.patch.object(db_manager, 'dump_schema_ddl')
+    data = mocker.patch.object(db_manager, 'dump_data_inserts')
+    restore = mocker.patch.object(db_manager, 'restore_database')
+    db_manager.main()
+    dump.assert_called_once_with()
+    ddl.assert_called_once_with()
+    data.assert_called_once_with()
+    restore.assert_called_once_with(Path('backup.zip.enc'), expected_database='spe_test')
+
+
+def test_db_manager_rejects_restore_without_confirmation(monkeypatch, mocker):
+    monkeypatch.setattr('sys.argv', ['db_manager', '--restore'])
+    restore = mocker.patch.object(db_manager, 'restore_database', new=MagicMock())
+    with pytest.raises(SystemExit) as error:
+        db_manager.main()
+    assert error.value.code == 1
+    restore.assert_not_called()
+
+
+@pytest.mark.parametrize('option', ['--export-sqlite', '--sqlite-db', '--verify', '--apply-dump'])
+def test_db_manager_rejects_removed_migration_options(monkeypatch, option):
+    monkeypatch.setattr('sys.argv', ['db_manager', option])
+    with pytest.raises(SystemExit) as error:
+        db_manager.main()
+    assert error.value.code == 2

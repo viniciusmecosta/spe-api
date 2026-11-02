@@ -18,24 +18,19 @@ from app.features.system.backup_crypto import encrypt_backup
 from app.features.system.backup_manifest import add_manifest
 from app.shared.sql_text import remove_psql_directives, sql_lines
 from scripts.apply_sql_to_postgresql import (
-    apply_sql_file,
     get_pg_credentials,
     load_environment,
     restore_backup,
     strip_sql_comments,
 )
-from scripts.export_sqlite_to_postgresql import export_sqlite_to_postgresql
-from scripts.verify_parity import verify_parity
 
 FILENAME_SPE_DUMP = "spe_dump.sql"
 FILENAME_SPE_DB = "spe-db.sql"
 FILENAME_SPE_ZIP = "spe.zip"
-DEFAULT_SQLITE_PATH = ROOT_DIR / "spe.db"
 DEFAULT_SCHEMA_PATH = ROOT_DIR / FILENAME_SPE_DB
 DEFAULT_DUMP_PATH = ROOT_DIR / FILENAME_SPE_DUMP
 DEFAULT_ZIP_PATH = ROOT_DIR / FILENAME_SPE_ZIP
 DEFAULT_ENCRYPTED_PATH = ROOT_DIR / "spe.zip.enc"
-DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 
 
 def _clean_pg_dump_bytes(raw_bytes: bytes) -> str:
@@ -301,7 +296,7 @@ def restore_database(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Utilitário de migração, geração de SQL e gerenciamento do banco de dados."
+        description="Utilitário de backup e restauração do PostgreSQL."
     )
     parser.add_argument(
         "--dump",
@@ -330,33 +325,6 @@ def main() -> None:
         help="Caminho do arquivo de backup para restauração",
     )
     parser.add_argument(
-        "--export-sqlite",
-        action="store_true",
-        help="Extrai os dados do SQLite e gera data_inserts_postgresql.sql",
-    )
-    parser.add_argument(
-        "--apply-dump",
-        action="store_true",
-        help="Aplica data_inserts_postgresql.sql no PostgreSQL de forma atômica",
-    )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="Verifica paridade célula a célula entre SQLite e PostgreSQL",
-    )
-    parser.add_argument(
-        "--sqlite-db",
-        type=Path,
-        default=DEFAULT_SQLITE_PATH,
-        help="Caminho do arquivo SQLite (padrão: spe.db)",
-    )
-    parser.add_argument(
-        "--dml-out",
-        type=Path,
-        default=DEFAULT_DML_PATH,
-        help="Caminho de saída do script de dados SQL",
-    )
-    parser.add_argument(
         "--yes",
         action="store_true",
         help="Confirma operações que apagam os dados atuais do PostgreSQL",
@@ -368,7 +336,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if not any([args.dump, args.dump_ddl, args.dump_data, args.restore, args.export_sqlite, args.apply_dump, args.verify]):
+    if not any([args.dump, args.dump_ddl, args.dump_data, args.restore]):
         parser.print_help()
         sys.exit(0)
 
@@ -383,19 +351,6 @@ def main() -> None:
             if not args.yes:
                 raise ValueError("--restore apaga dados; informe --yes")
             restore_database(args.file, expected_database=args.confirm_database)
-        if args.export_sqlite:
-            export_sqlite_to_postgresql(args.sqlite_db, args.dml_out)
-        if args.apply_dump:
-            if not args.yes:
-                raise ValueError("--apply-dump apaga dados; informe --yes")
-            apply_sql_file(
-                args.dml_out,
-                truncate_first=True,
-                allow_destructive=True,
-                expected_database=args.confirm_database,
-            )
-        if args.verify and not verify_parity(args.sqlite_db):
-            sys.exit(1)
     except Exception as e:
         logging.getLogger(__name__).exception("Falha na operação", exc_info=False)
         print(f"\n[ERRO]: {e}", file=sys.stderr)

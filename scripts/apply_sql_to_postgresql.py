@@ -32,12 +32,6 @@ try:
 except ImportError:
     psycopg2 = None
 
-try:
-    from scripts.database_migration_config import quote_identifier
-except ModuleNotFoundError:
-    from database_migration_config import quote_identifier
-
-DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 FILENAME_SPE_DUMP = "spe_dump.sql"
 FILENAME_SPE_DB = "spe-db.sql"
 MAX_SQL_BYTES = 2 * 1024 * 1024 * 1024
@@ -61,6 +55,10 @@ ALLOWED_SET_NAMES = {
     "transaction_timeout",
     "constraints",
 }
+
+
+def quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def load_environment() -> None:
@@ -675,7 +673,6 @@ def find_backup_source() -> Path | None:
         ROOT_DIR / "spe.zip",
         ROOT_DIR / FILENAME_SPE_DUMP,
         ROOT_DIR / "scripts" / FILENAME_SPE_DUMP,
-        DEFAULT_DML_PATH,
     ]
     return next((path for path in candidates if path.is_file()), None)
 
@@ -773,7 +770,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Valida e aplica um dump somente de dados no PostgreSQL, preservando o schema."
     )
-    parser.add_argument("--file", type=Path, default=DEFAULT_DML_PATH, help="Arquivo SQL ou ZIP")
+    parser.add_argument("--file", type=Path, help="Arquivo SQL; para ZIP ou backup criptografado use --restore")
     parser.add_argument(
         "--restore",
         action="store_true",
@@ -796,14 +793,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if not args.restore and args.file is None:
+        parser.error("informe --file ou --restore")
     if not args.no_truncate and not args.yes and not args.dry_run:
         parser.error("a restauração apaga os dados atuais; informe --yes")
 
     try:
-        source = None if args.restore and args.file == DEFAULT_DML_PATH else args.file
         if args.restore:
             result = restore_backup(
-                source,
+                args.file,
                 allow_destructive=args.yes,
                 expected_database=args.confirm_database,
                 dry_run=args.dry_run,
