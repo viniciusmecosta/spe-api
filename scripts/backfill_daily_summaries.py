@@ -5,17 +5,20 @@ import importlib
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
 from app.core.config import settings
 from app.database.session import AsyncSessionLocal
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.daily_summaries.daily_summary_models import DailySummary
 from app.features.daily_summaries.daily_summary_service import (
     daily_summary_service,
 )
 from app.features.holidays.holiday_models import Holiday
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User, UserWorkScheduleConfig
+from app.shared.enums import AdjustmentType
+from app.shared.work_schedule_time import minutes_to_seconds
 
 
 async def _periods() -> list[tuple[int, int]]:
@@ -47,6 +50,45 @@ async def _periods() -> list[tuple[int, int]]:
     return periods
 
 
+async def report_excess_differences(year: int, month: int, last_day: int) -> None:
+    first = date(year, month, 1)
+    last = date(year, month, last_day)
+    statement = (
+        select(DailySummary.user_id, DailySummary.apuration_date, DailySummary.excess_minutes,
+               AdjustmentRequest.id, AdjustmentRequest.status, AdjustmentRequest.amount_hours,
+               AdjustmentRequest.approved_amount_hours)
+        .outerjoin(AdjustmentRequest, and_(
+            AdjustmentRequest.user_id == DailySummary.user_id,
+            AdjustmentRequest.target_date == DailySummary.apuration_date,
+            AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+            AdjustmentRequest.deleted_at.is_(None),
+        ))
+        .where(DailySummary.apuration_date >= first, DailySummary.apuration_date <= last)
+        .order_by(DailySummary.apuration_date, DailySummary.user_id, AdjustmentRequest.id)
+    )
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(statement)).all()
+    differences = 0
+    for user_id, day, excess_minutes, adjustment_id, status, amount_hours, approved_hours in rows:
+        calculated = int(minutes_to_seconds(excess_minutes) / 60)
+        registered = int(minutes_to_seconds((amount_hours or 0) * 60) / 60) if adjustment_id is not None else 0
+        approved = int(minutes_to_seconds(approved_hours * 60) / 60) if approved_hours is not None else None
+        if calculated == registered and (approved is None or approved <= calculated):
+            continue
+        differences += 1
+        print(
+            f"Excedente para revisão: usuário={user_id}, data={day}, "
+            f"ajuste={adjustment_id or 'ausente'}, status={status.value if status else 'ausente'}, "
+            f"minutos_registrados={registered}, minutos_aprovados={approved}, minutos_apurados={calculated}",
+            flush=True,
+        )
+    print(
+        f"Conferência de excedentes {year:04d}-{month:02d}: {differences} divergências. "
+        "Nenhuma aprovação foi alterada; revise as divergências antes da liberação.",
+        flush=True,
+    )
+
+
 async def backfill(selected: tuple[int, int] | None, execute: bool) -> None:
     periods = [selected] if selected else await _periods()
     if not execute:
@@ -75,6 +117,7 @@ async def backfill(selected: tuple[int, int] | None, execute: bool) -> None:
                 )
                 processed += 1
         print(f"Processed {processed} user days for {year:04d}-{month:02d}", flush=True)
+        await report_excess_differences(year, month, last_day)
 
 
 def main() -> None:
