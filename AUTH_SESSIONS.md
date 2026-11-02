@@ -1,6 +1,6 @@
 # Sessões renováveis e redefinição obrigatória
 
-Implementação em `feature/refresh-token` no repositório SPE. As regras de autenticação ficam em `AuthService`; os routers recebem dados validados e delegam. O repositório concentra consultas e bloqueios. A auditoria individual dos contratos está em `ENDPOINT_AUDIT.md`.
+As regras de autenticação ficam em serviços; os routers recebem dados validados e delegam. O repositório concentra consultas e bloqueios.
 
 ## Contrato
 
@@ -15,8 +15,6 @@ Quando a flag estiver ativa, o login emite exclusivamente um bearer curto com fi
 
 ## Segurança e concorrência
 
-BFRI após isolamento em serviço/repositório: arquitetura 5, testabilidade 5, complexidade 2, risco de dados 2, risco operacional 3; resultado 3. Os controles adicionais são testes de integração e concorrência, migração aditiva e revogação transacional.
-
 Refresh tokens são opacos, aleatórios e persistidos somente como SHA-256. Cada rotação preserva a família e seu prazo absoluto. Reutilizar um refresh consumido revoga toda a família; nenhum nó depende de memória local para essa decisão. Bloqueio da linha do usuário serializa rotação, logout e redefinição. O Flutter coordena requisições simultâneas para compartilhar uma renovação e limita a repetição da chamada original.
 
 O índice único do hash atende à busca do refresh; índices de família e usuário atendem revogação. O índice parcial de sessão ativa atende à verificação de access tokens, sem varrer o histórico de rotações. O índice de expiração atende à remoção de até 1.000 registros por execução a cada dez minutos. A remoção usa SKIP LOCKED e só elimina famílias cujo prazo absoluto expirou, preservando detecção de replay até esse prazo.
@@ -30,7 +28,7 @@ A segurança de refresh segue a rotação com detecção de replay da [RFC 9700,
 3. Publicar o backend. Configurações novas: `REFRESH_TOKEN_EXPIRE_DAYS=30` e `PASSWORD_CHANGE_TOKEN_EXPIRE_MINUTES=10`. Recomenda-se `ACCESS_TOKEN_EXPIRE_MINUTES=15`; o valor existente foi preservado para não alterar sessões implicitamente.
 4. Publicar o Flutter e validar login, renovação, logout e redefinição em celular, tablet e desktop. Só então começar a exigir redefinição dos usuários.
 5. Manter os adaptadores de endpoints antigos enquanto houver clientes anteriores. Eles aparecem depreciados no OpenAPI, mas continuam funcionando.
-6. Monitorar 401/403 por rota, falhas do job `expired_refresh_tokens`, crescimento de `refresh_tokens` e latência de login/refresh. Aplicar limites de requisição no ingresso compartilhado para login, refresh e troca de senha; o repositório não tinha infraestrutura de limitação distribuída e esta entrega não a provisiona.
+6. Monitorar 401/403 por rota, falhas do job `expired_refresh_tokens`, crescimento de `refresh_tokens` e latência de login/refresh. Configure os limites de requisições e os proxies confiáveis conforme [README.operacao.md](README.operacao.md).
 
 Na reversão, suspender primeiro a ativação de novas exigências. Reverter os aplicativos mantendo a migração aditiva enquanto houver sessões da versão nova. Um backend antigo não aplica a exigência de redefinição, portanto reverter o backend exige avaliar essa perda de proteção. O downgrade 009 remove somente a tabela de tokens e a flag e encerra a renovação de todas as sessões. Não executar downgrade durante tráfego da versão nova.
 

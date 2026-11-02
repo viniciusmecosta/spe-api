@@ -19,6 +19,10 @@ Copie [`.env.example`](.env.example) para `.env` e ajuste os valores. O arquivo 
 | `FIRST_SUPERUSER_PASSWORD` | Senha do mantenedor inicial. |
 | `BACKEND_CORS_ORIGINS` | Origens autorizadas pelo CORS. |
 | `TRUSTED_PROXY_CIDRS` | Redes dos proxies autorizados a informar o IP de origem. |
+| `RATE_LIMIT_ENABLED` | Habilita a limitação por origem; padrão `true`. Acesso direto por localhost é isento. |
+| `RATE_LIMIT_REQUESTS_PER_SECOND` | Requisições permitidas por IP em um segundo; padrão `30`. |
+| `RATE_LIMIT_REQUESTS_PER_MINUTE` | Requisições gerais permitidas por IP em 60 segundos; padrão `600`. |
+| `RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE` | Limite adicional compartilhado entre login, renovação e alteração de senha; padrão `60`. |
 
 ## PostgreSQL
 

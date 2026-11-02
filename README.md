@@ -25,7 +25,16 @@ A documentação interativa está em `/docs`, o esquema OpenAPI em `/api/v1/open
 
 O login usa `POST /api/v1/auth/login`; chamadas protegidas enviam o access token como Bearer. O refresh rotativo usa `POST /api/v1/auth/refresh`, e o logout revoga a sessão. Quando exigida por gestor ou mantenedor, a troca de senha bloqueia os demais recursos até `POST /api/v1/auth/password` ser concluído. [Detalhes de sessões e implantação](AUTH_SESSIONS.md).
 
-Os contratos incluem marcações em `/api/v1/time-records`, ajustes em `/api/v1/adjustments` e transições da folha em `/api/v1/payroll/{year}/{month}/transitions`. A [auditoria dos endpoints](ENDPOINT_AUDIT.md) descreve permissões, filtros e caminhos depreciados.
+As principais áreas da API são:
+
+| Área | Recursos |
+| --- | --- |
+| Pessoas e jornada | Usuários, empresas, expedientes, feriados e dispositivos. |
+| Ponto | Marcações, ajustes, apurações diárias, anomalias e comprovantes. |
+| Gestão | Folha, relatórios, painéis e registros de auditoria. |
+| Operação | Tarefas, backups, impressoras, biometria, firmware e notificações. |
+
+Consulte os caminhos, permissões e formatos atuais em `/docs`. Contratos antigos preservados aparecem como depreciados. A API limita requisições por origem e responde `429` com `Retry-After` quando necessário. [Configuração e operação](README.operacao.md).
 
 ## Verificação
 
