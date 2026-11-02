@@ -48,6 +48,16 @@ def test_db_manager_keeps_postgres_dump_and_restore(monkeypatch, mocker):
     restore.assert_called_once_with(Path('backup.zip.enc'), expected_database='spe_test')
 
 
+def test_db_manager_without_operation_shows_help(monkeypatch, mocker, capsys):
+    monkeypatch.setattr('sys.argv', ['db_manager'])
+    dump = mocker.patch.object(db_manager, 'dump_database')
+    with pytest.raises(SystemExit) as error:
+        db_manager.main()
+    assert error.value.code == 0
+    assert '--dump' in capsys.readouterr().out
+    dump.assert_not_called()
+
+
 def test_db_manager_rejects_restore_without_confirmation(monkeypatch, mocker):
     monkeypatch.setattr('sys.argv', ['db_manager', '--restore'])
     restore = mocker.patch.object(db_manager, 'restore_database', new=MagicMock())
