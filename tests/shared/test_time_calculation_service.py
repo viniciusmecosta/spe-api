@@ -45,7 +45,7 @@ def schedule_factory():
         sched.valid_from = valid_from
         sched.valid_until = valid_until
         sched.day_of_week = day
-        sched.daily_hours = hours
+        sched.daily_minutes = round(hours * 60)
         sched.entry_1 = None
         sched.exit_1 = None
         sched.entry_2 = None

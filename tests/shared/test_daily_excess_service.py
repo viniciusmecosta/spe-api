@@ -28,7 +28,7 @@ async def test_evaluate_user_day_async_with_excess(excess_service):
         id=1,
         user_id=10,
         day_of_week=DayOfWeek.SABADO.value,
-        daily_hours=8.0, is_daily_excess_enabled=True,
+        daily_minutes=480, is_daily_excess_enabled=True,
         valid_from=date(2026, 1, 1),
         valid_until=None,
     )
@@ -94,7 +94,7 @@ def test_evaluate_user_day_sync_with_lunch_and_work_excess(excess_service):
         id=1,
         user_id=10,
         day_of_week=DayOfWeek.SABADO.value,
-        daily_hours=8.0, is_daily_excess_enabled=True,
+        daily_minutes=480, is_daily_excess_enabled=True,
         valid_from=date(2026, 1, 1),
         valid_until=None,
     )
@@ -257,7 +257,7 @@ async def test_evaluate_user_day_async_overwrites_reviewed_adjustment_when_overw
         id=1,
         user_id=10,
         day_of_week=DayOfWeek.SABADO.value,
-        daily_hours=8.0,
+        daily_minutes=480,
         is_daily_excess_enabled=True,
         valid_from=date(2026, 1, 1),
         valid_until=None,

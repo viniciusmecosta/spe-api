@@ -63,7 +63,7 @@ PastDate = Annotated[date | None, AfterValidator(_validate_dob)]
 
 class WorkScheduleBase(BaseModel):
     day_of_week: int = Field(ge=0, le=6)
-    daily_hours: float
+    daily_minutes: int
     entry_1: time | None = None
     exit_1: time | None = None
     entry_2: time | None = None

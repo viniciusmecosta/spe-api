@@ -23,7 +23,7 @@ async def test_materialized_hours_preserve_gross_and_accounted_contract(pg_sessi
         user = User(name='Funcionário Sintético', username='contract')
         session.add(user)
         await session.commit()
-        schedule = UserWorkScheduleConfig(user_id=user.id, day_of_week=day.weekday(), daily_hours=8,
+        schedule = UserWorkScheduleConfig(user_id=user.id, day_of_week=day.weekday(), daily_minutes=480,
                                           valid_from=day, valid_until=day)
         session.add(schedule)
         await session.commit()

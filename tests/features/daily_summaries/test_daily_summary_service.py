@@ -276,7 +276,7 @@ async def test_build_period_treats_missing_inactive_days_as_zero_without_inserti
     last = date(2026, 5, 12)
     schedule = UserWorkScheduleConfig(
         day_of_week=first.weekday(),
-        daily_hours=8,
+        daily_minutes=480,
         valid_from=date(2026, 1, 1),
         valid_until=None,
     )

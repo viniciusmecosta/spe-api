@@ -1,4 +1,5 @@
 from datetime import date, time, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -22,7 +23,7 @@ def test_expected_time_uses_complete_intervals_or_legacy_value(clocks, legacy_ho
     day = date(2026, 9, 29)
     entry_1, exit_1, entry_2, exit_2 = [time.fromisoformat(clock) if clock else None for clock in clocks]
     schedule = SimpleNamespace(day_of_week=day.weekday(), valid_from=day, valid_until=day,
-                               daily_hours=legacy_hours, entry_1=entry_1, exit_1=exit_1,
+                               daily_minutes=int(Decimal(str(legacy_hours)) * 60 + Decimal("0.5")), entry_1=entry_1, exit_1=exit_1,
                                entry_2=entry_2, exit_2=exit_2, is_daily_excess_enabled=True)
     result = time_calculation_service.calculate_period_time(day, day, [], [], [], [schedule])
     assert result.daily_expected_seconds[day] == pytest.approx(expected_seconds)
@@ -33,7 +34,7 @@ def test_period_totals_sum_each_daily_minute_for_legacy_schedule():
     start = date(2026, 9, 15)
     end = date(2026, 9, 29)
     schedule = SimpleNamespace(day_of_week=start.weekday(), valid_from=start, valid_until=end,
-                               daily_hours=8.01, entry_1=None, exit_1=None, entry_2=None, exit_2=None,
+                               daily_minutes=481, entry_1=None, exit_1=None, entry_2=None, exit_2=None,
                                is_daily_excess_enabled=True)
     result = time_calculation_service.calculate_period_time(start, end, [], [], [], [schedule])
     assert result.total_expected_seconds == 3 * 481 * 60

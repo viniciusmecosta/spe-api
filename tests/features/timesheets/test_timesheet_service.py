@@ -61,19 +61,19 @@ def test_get_daily_schedule_filters_by_date_and_weekday():
     target = date(2026, 10, 5)
     expected = UserWorkScheduleConfig(
         day_of_week=target.weekday(),
-        daily_hours=8,
+        daily_minutes=480,
         valid_from=date(2026, 1, 1),
         valid_until=None,
     )
     invalid_date = UserWorkScheduleConfig(
         day_of_week=target.weekday(),
-        daily_hours=7,
+        daily_minutes=420,
         valid_from=date(2026, 10, 6),
         valid_until=None,
     )
     invalid_weekday = UserWorkScheduleConfig(
         day_of_week=(target.weekday() + 1) % 7,
-        daily_hours=6,
+        daily_minutes=360,
         valid_from=date(2026, 1, 1),
         valid_until=None,
     )

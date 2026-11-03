@@ -47,13 +47,13 @@ class UserWorkScheduleService:
             sch.is_daily_excess_enabled if sch.is_daily_excess_enabled is not None else True,
         )
 
-        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
-        sch.daily_hours = schedule_expected_seconds(sch) / 3600
+        sch.daily_minutes = sch_data.get('daily_minutes', sch.daily_minutes)
+        sch.daily_minutes = int(schedule_expected_seconds(sch) / 60)
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
         return {
             "day_of_week": sch.day_of_week,
-            "daily_hours": sch.daily_hours,
+            "daily_minutes": sch.daily_minutes,
             "is_daily_excess_enabled": sch.is_daily_excess_enabled,
             "valid_from": str(sch.valid_from) if sch.valid_from else None,
             "valid_until": str(sch.valid_until) if sch.valid_until else None,
@@ -168,7 +168,7 @@ class UserWorkScheduleService:
     def _extract_schedule_item(cfg: UserWorkScheduleConfig) -> dict:
         return {
             "day_of_week": cfg.day_of_week,
-            "daily_hours": cfg.daily_hours,
+            "daily_minutes": cfg.daily_minutes,
             "is_daily_excess_enabled": cfg.is_daily_excess_enabled,
             "entry_1": cfg.entry_1,
             "exit_1": cfg.exit_1,

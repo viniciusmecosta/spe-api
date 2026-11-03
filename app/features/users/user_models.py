@@ -8,7 +8,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -33,7 +32,7 @@ class UserWorkScheduleConfig(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     day_of_week = Column(SmallInteger, nullable=False)
-    daily_hours = Column(Float, nullable=False)
+    daily_minutes = Column(Integer, nullable=False)
     entry_1 = Column(Time, nullable=True)
     exit_1 = Column(Time, nullable=True)
     entry_2 = Column(Time, nullable=True)

@@ -50,7 +50,7 @@ def test_apply_schedule_updates_variations():
     }
     user_work_schedule_service._apply_schedule_updates(sch, sch_data, date(2026, 9, 1), date(2026, 9, 30))
     assert sch.day_of_week == 1
-    assert sch.daily_hours == 30.0
+    assert sch.daily_minutes == 1800
 
 
 def test_apply_schedule_updates_invalid_and_none():
@@ -63,13 +63,13 @@ def test_apply_schedule_updates_invalid_and_none():
         "exit_2": None,
     }
     user_work_schedule_service._apply_schedule_updates(sch, sch_data, date(2026, 9, 1), date(2026, 9, 30))
-    assert sch.daily_hours == 0.0
+    assert sch.daily_minutes == 0
 
 
 def test_extract_schedule_data():
     sch = UserWorkScheduleConfig(
         day_of_week=1,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 9, 1),
         valid_until=date(2026, 9, 30),
         entry_1=time(8, 0),
@@ -79,7 +79,7 @@ def test_extract_schedule_data():
     )
     data = user_work_schedule_service._extract_schedule_data(sch)
     assert data["day_of_week"] == 1
-    assert data["daily_hours"] == 8.0
+    assert data["daily_minutes"] == 480
     assert data["entry_1"] == "08:00:00"
 
 
@@ -150,7 +150,7 @@ async def test_check_schedule_overlap_open_ended(db_session_mock):
 @pytest.mark.asyncio
 async def test_get_bulk_schedules(db_session_mock):
     cfg1 = UserWorkScheduleConfig(
-        id=1, user_id=1, day_of_week=1, daily_hours=8.0,
+        id=1, user_id=1, day_of_week=1, daily_minutes=480,
         valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
         entry_1=time(8, 0), exit_1=time(17, 0), entry_2=None, exit_2=None,
     )
@@ -168,7 +168,7 @@ async def test_get_bulk_schedules(db_session_mock):
 @pytest.mark.asyncio
 async def test_get_bulk_schedule_found(db_session_mock):
     cfg1 = UserWorkScheduleConfig(
-        id=1, user_id=1, day_of_week=1, daily_hours=8.0,
+        id=1, user_id=1, day_of_week=1, daily_minutes=480,
         valid_from=date(2026, 9, 1), valid_until=date(2026, 9, 30),
         entry_1=time(8, 0), exit_1=time(17, 0), entry_2=None, exit_2=None,
     )
@@ -208,7 +208,7 @@ async def test_bulk_add_schedules_success(db_session_mock, mocker):
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 9, 30),
-        "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_hours": 8.0}]}],
+        "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_minutes": 480}]}],
     }
 
     res = await user_work_schedule_service.bulk_add_schedules(db_session_mock, bulk_data, 99)
@@ -306,8 +306,8 @@ async def test_update_bulk_schedules_success(db_session_mock, mocker):
             {
                 "user_id": 1,
                 "schedules": [
-                    {"day_of_week": 1, "daily_hours": 9.0},
-                    {"day_of_week": 3, "daily_hours": 8.0},
+                    {"day_of_week": 1, "daily_minutes": 540},
+                    {"day_of_week": 3, "daily_minutes": 480},
                 ],
             }
         ],
@@ -547,7 +547,7 @@ async def test_bulk_add_schedules_success_async_session(mocker):
     bulk_data = {
         "valid_from": date(2026, 9, 1),
         "valid_until": date(2026, 9, 30),
-        "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_hours": 8.0}]}],
+        "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_minutes": 480}]}],
     }
 
     res = await user_work_schedule_service.bulk_add_schedules(async_session, bulk_data, 99)
@@ -589,8 +589,8 @@ async def test_update_bulk_schedules_success_async_session(mocker):
             {
                 "user_id": 1,
                 "schedules": [
-                    {"day_of_week": 1, "daily_hours": 9.0},
-                    {"day_of_week": 3, "daily_hours": 8.0},
+                    {"day_of_week": 1, "daily_minutes": 540},
+                    {"day_of_week": 3, "daily_minutes": 480},
                 ],
             }
         ],
@@ -624,7 +624,7 @@ async def test_bulk_schedule_with_pydantic_model(mocker):
             return {
                 "valid_from": date(2026, 9, 1),
                 "valid_until": date(2026, 9, 30),
-                "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_hours": 8.0}]}],
+                "users": [{"user_id": 1, "schedules": [{"day_of_week": 1, "daily_minutes": 480}]}],
             }
 
     model = DummyModel()
