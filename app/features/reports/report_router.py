@@ -62,32 +62,6 @@ async def get_history(
     )
 
 
-@router.get("/history/me", deprecated=True)
-async def get_my_history(
-        report_service: Annotated[ReportService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Month | None = None,
-        year: Year | None = None,
-) -> HistoryResponse:
-    return await report_service.get_history_report(user_id=current_user.id, month=month, year=year,
-                                                   current_user=current_user)
-
-
-@router.get(
-    "/history/user/{user_id}",
-    deprecated=True,
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def get_user_history(
-        user_id: int,
-        report_service: Annotated[ReportService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Month | None = None,
-        year: Year | None = None,
-) -> HistoryResponse:
-    return await report_service.get_history_report(user_id=user_id, month=month, year=year, current_user=current_user)
-
-
 @router.get(
     "/team-hours",
     responses={**FORBIDDEN_RESPONSE},
@@ -111,12 +85,14 @@ async def export_monthly_report_excel(
         month: Month | None = None,
         year: Year | None = None,
         employee_ids: Annotated[list[int] | None, Depends(deps.parse_optional_employee_ids)] = None,
+        regenerate: bool = False,
 ) -> Response:
     return await excel_service.export_monthly_report(
         month=month,
         year=year,
         employee_ids=employee_ids,
         current_user=current_user,
+        regenerate=regenerate,
     )
 
 

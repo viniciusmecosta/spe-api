@@ -25,7 +25,10 @@ from app.features.holidays.holiday_repository import (
 )
 from app.features.payroll.payroll_repository import async_payroll_repository
 from app.features.reports.excel_workbook_builder import ExcelWorkbookBuilder
-from app.features.reports.report_exceptions import EmployeeInvalidReportPeriodError
+from app.features.reports.report_exceptions import (
+    EmployeeInvalidReportPeriodError,
+    ReportExportPermissionError,
+)
 from app.features.reports.report_service import report_service
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.users.user_models import User
@@ -195,12 +198,15 @@ class ExcelService:
             employee_ids: list[int] | None = None,
             current_user: User | None = None,
             db: Any | None = None,
+            regenerate: bool = False,
     ) -> Response:
         session = db if db is not None else self.db
         month_val, year_val, now = self._resolve_target_period(month, year)
         await self._validate_export_access(current_user, session, month_val, year_val, now)
+        if regenerate and (current_user is None or current_user.role != UserRole.MAINTAINER):
+            raise ReportExportPermissionError(detail="Apenas mantenedores podem gerar novamente o relatório.")
 
-        if not employee_ids and session is not None:
+        if not regenerate and not employee_ids and session is not None:
             cached_file = await self._resolve_cached_closure_file(session, month_val, year_val)
             if cached_file:
                 return cached_file

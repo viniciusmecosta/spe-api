@@ -2,11 +2,12 @@ import io
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.excel_service import ExcelService
+from app.features.reports.report_exceptions import ReportExportPermissionError
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
@@ -85,7 +86,7 @@ def test_get_my_history(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(ReportService, "get_history_report", new_callable=AsyncMock, return_value=expected)
 
-    response = client.get("/api/v1/reports/history/me?month=8&year=2026")
+    response = client.get("/api/v1/reports/history?month=8&year=2026")
     assert response.status_code == 200
     assert response.json()["month"] == 8
 
@@ -99,7 +100,7 @@ def test_get_user_history(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(ReportService, "get_history_report", new_callable=AsyncMock, return_value=expected)
 
-    response = client.get("/api/v1/reports/history/user/2?month=8&year=2026")
+    response = client.get("/api/v1/reports/history?user_id=2&month=8&year=2026")
     assert response.status_code == 200
     assert response.json()["month"] == 8
 
@@ -185,6 +186,50 @@ def test_export_monthly_report_excel_returns_saved_closed_file(
     generate.assert_not_called()
 
 
+def test_export_monthly_report_excel_regenerates_without_replacing_saved_file(
+    client: TestClient, mock_manager_user: User, mocker: MagicMock, tmp_path
+) -> None:
+    mock_manager_user.role = UserRole.MAINTAINER
+    saved_file = tmp_path / "closed.xlsx"
+    saved_file.write_bytes(b"official closed report")
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    lookup = mocker.patch(
+        "app.features.reports.excel_service.async_payroll_repository.get_by_month",
+        new_callable=AsyncMock,
+    )
+    mocker.patch.object(
+        ExcelService, "generate_excel_report", new_callable=AsyncMock,
+        return_value=io.BytesIO(b"fresh report"),
+    )
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026&regenerate=true")
+
+    assert response.status_code == 200
+    assert response.content == b"fresh report"
+    assert saved_file.read_bytes() == b"official closed report"
+    lookup.assert_not_called()
+
+
+@pytest.mark.parametrize("role", [UserRole.MANAGER, UserRole.EMPLOYEE])
+def test_export_monthly_report_excel_regeneration_requires_maintainer(
+    client: TestClient, mock_manager_user: User, mocker: MagicMock, role: UserRole
+) -> None:
+    mock_manager_user.role = role
+    mocker.patch.object(ReportService, "validate_excel_export_permission", new_callable=AsyncMock)
+    generate = mocker.patch.object(ExcelService, "generate_excel_report", new_callable=AsyncMock)
+
+    response = client.get("/api/v1/reports/export/excel?month=7&year=2026&regenerate=true")
+
+    assert response.status_code == 403
+    generate.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_excel_regeneration_rejects_missing_user() -> None:
+    with pytest.raises(ReportExportPermissionError):
+        await ExcelService().export_monthly_report(regenerate=True)
+
+
 def test_export_monthly_report_excel_generates_when_closed_file_is_missing(
     client: TestClient, mocker: MagicMock
 ) -> None:
@@ -244,4 +289,5 @@ def test_export_monthly_report_excel_empty_employee_ids_param(client: TestClient
 
     response2 = client.get("/api/v1/reports/export/excel?month=7&year=2026&employee_ids")
     assert response2.status_code == 422
+    mock_generate.assert_not_called()
 
