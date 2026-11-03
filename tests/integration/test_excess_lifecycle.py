@@ -39,8 +39,10 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
             row = await session.scalar(select(DailySummary).where(
                 DailySummary.user_id == user_id, DailySummary.apuration_date == date(2026, 9, 29),
             ))
-            assert (row.worked_minutes, row.excess_minutes, row.accounted_minutes,
-                    row.authorized_excess_minutes) == (540, 60, accounted, authorized)
+            assert row.worked_minutes == 540
+            assert row.excess_minutes == 60
+            assert row.accounted_minutes == accounted
+            assert row.authorized_excess_minutes == authorized
 
     await verify(480, 0)
     await api.request("PUT", f"/adjustments/{excess_id}/review", json={"status": "APPROVED", "approved_amount_hours": 0.5})

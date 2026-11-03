@@ -215,7 +215,9 @@ def test_decrypt_propagates_temporary_file_creation_failure(tmp_path, monkeypatc
 
 
 def test_resolve_existing_file_raises_when_missing(tmp_path):
+    missing_file = tmp_path / 'inexistente.enc'
+    missing_dir_file = tmp_path / 'pasta_inexistente' / 'inexistente.enc'
     with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
-        resolve_existing_file(tmp_path / 'inexistente.enc')
+        resolve_existing_file(missing_file)
     with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
-        resolve_existing_file(tmp_path / 'pasta_inexistente' / 'inexistente.enc')
+        resolve_existing_file(missing_dir_file)

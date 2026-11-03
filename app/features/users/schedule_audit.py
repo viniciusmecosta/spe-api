@@ -30,6 +30,12 @@ def _extract_daily_minutes(item: dict[str, Any]) -> int | None:
     return None
 
 
+def _format_excess_flag(excess: Any) -> str:
+    if excess is None:
+        return "não informado"
+    return "sim" if excess else "não"
+
+
 def _format_schedule_descriptor(item: dict[str, Any]) -> str:
     periods = []
     for number in (1, 2):
@@ -43,9 +49,7 @@ def _format_schedule_descriptor(item: dict[str, Any]) -> str:
     if daily_minutes is not None:
         details.append(f"{daily_minutes} min")
     if item.get("_has_excess", True):
-        excess = item.get("is_daily_excess_enabled")
-        excess_text = "não informado" if excess is None else "sim" if excess else "não"
-        details.append(f"excedente: {excess_text}")
+        details.append(f"excedente: {_format_excess_flag(item.get('is_daily_excess_enabled'))}")
     suffix = f" ({'; '.join(details)})" if details else ""
     return f"{hours}{suffix}"
 
@@ -130,6 +134,18 @@ def schedule_audit_data(configs, valid_from, valid_until, names=None):
     }
 
 
+def _extract_bulk_user_schedules(user_entry: Any) -> list[dict[str, Any]]:
+    if not isinstance(user_entry, dict) or not isinstance(user_entry.get("schedules"), list):
+        return []
+    uid = user_entry.get("user_id")
+    uname = user_entry.get("user_name")
+    return [
+        {**schedule, "user_id": uid, "user_name": uname}
+        for schedule in user_entry["schedules"]
+        if isinstance(schedule, dict)
+    ]
+
+
 def _extract_legacy_configs(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
     snapshot_zlib = payload.get("schedule_snapshot_zlib")
     if isinstance(snapshot_zlib, str) and snapshot_zlib.startswith("v1:"):
@@ -142,13 +158,7 @@ def _extract_legacy_configs(payload: dict[str, Any]) -> list[dict[str, Any]] | N
     if isinstance(bulk, dict) and isinstance(bulk.get("users"), list):
         extracted: list[dict[str, Any]] = []
         for user_entry in bulk["users"]:
-            if not isinstance(user_entry, dict) or not isinstance(user_entry.get("schedules"), list):
-                continue
-            uid = user_entry.get("user_id")
-            uname = user_entry.get("user_name")
-            for schedule in user_entry["schedules"]:
-                if isinstance(schedule, dict):
-                    extracted.append({**schedule, "user_id": uid, "user_name": uname})
+            extracted.extend(_extract_bulk_user_schedules(user_entry))
         return extracted
     return None
 
@@ -187,6 +197,23 @@ def _decode_json_column(value: Any) -> dict[str, Any] | None:
     return None
 
 
+def _period_key(data: dict[str, Any] | None) -> tuple[str, str] | None:
+    if not isinstance(data, dict):
+        return None
+    vf = data.get("valid_from")
+    vu = data.get("valid_until")
+    if vf and vu:
+        return str(vf), str(vu)
+    return None
+
+
+def _load_user_names(connection: Any, tables: set[str], sa: Any) -> dict[int, str]:
+    if "users" not in tables:
+        return {}
+    user_rows = connection.execute(sa.text("SELECT id, name FROM users")).all()
+    return {int(row[0]): str(row[1]) for row in user_rows if row[0] is not None and row[1]}
+
+
 def migrate_schedule_audit_logs(connection: Any) -> None:
     import sqlalchemy as sa
 
@@ -194,10 +221,7 @@ def migrate_schedule_audit_logs(connection: Any) -> None:
     tables = set(inspector.get_table_names())
     if "audit_logs" not in tables:
         return
-    names: dict[int, str] = {}
-    if "users" in tables:
-        user_rows = connection.execute(sa.text("SELECT id, name FROM users")).all()
-        names = {int(row[0]): str(row[1]) for row in user_rows if row[0] is not None and row[1]}
+    names = _load_user_names(connection, tables, sa)
     audit_table = sa.table(
         "audit_logs",
         sa.column("id", sa.Integer),
@@ -218,20 +242,14 @@ def migrate_schedule_audit_logs(connection: Any) -> None:
     for row_id, raw_old, raw_new in rows:
         old_data = _decode_json_column(raw_old)
         new_data = _decode_json_column(raw_new)
-        fallback_old = None
-        if isinstance(old_data, dict):
-            old_vf = old_data.get("valid_from")
-            old_vu = old_data.get("valid_until")
-            if old_vf and old_vu:
-                fallback_old = last_summary_by_period.get((str(old_vf), str(old_vu)))
+        old_key = _period_key(old_data)
+        fallback_old = last_summary_by_period.get(old_key) if old_key else None
         migrated_old = migrate_schedule_audit_payload(old_data, names, fallback_old)
         migrated_new = migrate_schedule_audit_payload(new_data, names)
-        if isinstance(migrated_new, dict):
-            new_vf = migrated_new.get("valid_from")
-            new_vu = migrated_new.get("valid_until")
-            new_summary = migrated_new.get("schedule_summary")
-            if new_vf and new_vu and new_summary:
-                last_summary_by_period[(str(new_vf), str(new_vu))] = str(new_summary)
+        new_key = _period_key(migrated_new)
+        new_summary = migrated_new.get("schedule_summary") if isinstance(migrated_new, dict) else None
+        if new_key and new_summary:
+            last_summary_by_period[new_key] = str(new_summary)
         if migrated_old != old_data or migrated_new != new_data:
             connection.execute(
                 audit_table.update()

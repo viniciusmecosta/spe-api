@@ -120,9 +120,12 @@ async def test_employee_list_self(user_id, db_session_mock, mocker):
 @pytest.mark.asyncio
 async def test_employee_cannot_list_other_user(db_session_mock, mocker):
     repository = mocker.patch('app.features.time_records.time_record_service.time_record_repository')
+    service = TimeRecordService(db=db_session_mock)
+    filters = TimeRecordFilters(user_id=2)
+    actor = User(id=1, role=UserRole.EMPLOYEE)
     with pytest.raises(TimeRecordAccessDeniedError):
-        await TimeRecordService(db=db_session_mock).list_records(
-            filters=TimeRecordFilters(user_id=2), current_user=User(id=1, role=UserRole.EMPLOYEE),
+        await service.list_records(
+            filters=filters, current_user=actor,
         )
     repository.get_filtered.assert_not_called()
 
@@ -153,8 +156,9 @@ async def test_manual_record_transaction(db_session_mock, mocker, print_receipt,
 async def test_manual_record_failure_rolls_back(db_session_mock, mocker):
     service = TimeRecordService(db=db_session_mock)
     mocker.patch.object(service, '_register_manual_punch', new_callable=AsyncMock, side_effect=TimeRecordAccessDeniedError())
+    request = MagicMock(spec=Request)
     with pytest.raises(TimeRecordAccessDeniedError):
-        await service.register_manual_record(user_id=1, request=MagicMock(spec=Request), record_type=RecordType.ENTRY)
+        await service.register_manual_record(user_id=1, request=request, record_type=RecordType.ENTRY)
     db_session_mock.rollback.assert_called_once()
     db_session_mock.commit.assert_not_called()
 

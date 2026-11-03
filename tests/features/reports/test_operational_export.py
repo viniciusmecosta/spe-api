@@ -66,15 +66,19 @@ async def test_operational_journey_uses_existing_report(session):
 @pytest.mark.asyncio
 async def test_operational_export_rejects_unknown_user(session):
     session.get.return_value = None
+    service = OperationalExportService(session)
+    actor = MagicMock()
     with pytest.raises(ReportUserNotFoundError):
-        await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+        await service.export("marcacoes", 7, 2, 2026, actor)
 
 
 @pytest.mark.asyncio
 async def test_operational_export_rejects_too_many_records(session):
     session.scalars.return_value.all.return_value = [None] * (MAX_RECORDS + 1)
+    service = OperationalExportService(session)
+    actor = MagicMock()
     with pytest.raises(HTTPException) as error:
-        await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+        await service.export("marcacoes", 7, 2, 2026, actor)
     assert error.value.status_code == 422
 
 
@@ -100,8 +104,10 @@ async def test_operational_export_all_employees_with_one_query(session):
 
 @pytest.mark.asyncio
 async def test_operational_journey_requires_employee(session):
+    service = OperationalExportService(session)
+    actor = MagicMock()
     with pytest.raises(HTTPException) as error:
-        await OperationalExportService(session).export("jornada", None, 2, 2026, MagicMock())
+        await service.export("jornada", None, 2, 2026, actor)
     assert error.value.status_code == 422
     session.execute.assert_not_awaited()
 
@@ -112,8 +118,10 @@ async def test_collective_export_rejects_too_many_records(session):
     result = MagicMock()
     result.all.return_value = [(record, 'Pessoa')] * (MAX_RECORDS + 1)
     session.execute.return_value = result
+    service = OperationalExportService(session)
+    actor = MagicMock()
     with pytest.raises(HTTPException) as error:
-        await OperationalExportService(session).export('marcacoes', None, 2, 2026, MagicMock())
+        await service.export('marcacoes', None, 2, 2026, actor)
     assert error.value.status_code == 422
 
 

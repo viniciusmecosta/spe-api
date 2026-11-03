@@ -36,14 +36,17 @@ async def test_team_scope_requires_privileged_actor(mocker, role):
 async def test_employee_team_scope_is_denied_before_read(mocker):
     service = AdjustmentService()
     team = mocker.patch.object(service, 'get_all_enriched', new_callable=AsyncMock)
+    employee = SimpleNamespace(id=7, role=UserRole.EMPLOYEE)
     with pytest.raises(AdjustmentPermissionError):
-        await service.list_adjustments(SimpleNamespace(id=7, role=UserRole.EMPLOYEE), scope='team')
+        await service.list_adjustments(employee, scope='team')
     team.assert_not_awaited()
 
 
 async def test_unknown_service_scope_is_rejected():
+    service = AdjustmentService()
+    maintainer = SimpleNamespace(id=7, role=UserRole.MAINTAINER)
     with pytest.raises(DomainException) as error:
-        await AdjustmentService().list_adjustments(SimpleNamespace(id=7, role=UserRole.MAINTAINER), scope='unknown')
+        await service.list_adjustments(maintainer, scope='unknown')
     assert error.value.status_code == 422
 
 

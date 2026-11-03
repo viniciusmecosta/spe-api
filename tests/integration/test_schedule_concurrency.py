@@ -60,6 +60,7 @@ async def test_duplicate_employee_weekday_in_payload_is_rejected(pg_session_fact
             payload['users'].append(payload['users'][0].copy())
         else:
             payload['users'][0]['schedules'].append(payload['users'][0]['schedules'][0].copy())
+        service = UserWorkScheduleService(session)
         with pytest.raises(BulkScheduleValidationError):
-            await UserWorkScheduleService(session).bulk_add_schedules(bulk_data=payload, current_user_id=user.id)
+            await service.bulk_add_schedules(bulk_data=payload, current_user_id=user.id)
         assert await session.scalar(select(func.count()).select_from(UserWorkScheduleConfig)) == 0

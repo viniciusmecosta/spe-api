@@ -226,8 +226,9 @@ def test_export_monthly_report_excel_regeneration_requires_maintainer(
 
 @pytest.mark.asyncio
 async def test_excel_regeneration_rejects_missing_user() -> None:
+    service = ExcelService()
     with pytest.raises(ReportExportPermissionError):
-        await ExcelService().export_monthly_report(regenerate=True)
+        await service.export_monthly_report(regenerate=True)
 
 
 def test_export_monthly_report_excel_generates_when_closed_file_is_missing(

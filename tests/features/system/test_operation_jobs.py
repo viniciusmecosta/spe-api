@@ -104,10 +104,13 @@ def test_jobs_require_authentication():
 async def test_orchestrator_rejects_unprivileged_callers(role, mocker):
     service = RoutineOrchestrator()
     enqueue = mocker.patch.object(service, '_record_manual_job', new_callable=AsyncMock)
+    operation = BackupOperationRequest(operation='BACKUP_EMAIL')
+    actor = User(id=1, role=role)
+    telegram_svc = TelegramService()
     with pytest.raises(OperationPermissionError):
         await service.submit_manual_job(
-            operation=BackupOperationRequest(operation='BACKUP_EMAIL'),
-            current_user=User(id=1, role=role), audit_svc=None, telegram_svc=TelegramService(),
+            operation=operation,
+            current_user=actor, audit_svc=None, telegram_svc=telegram_svc,
         )
     enqueue.assert_not_awaited()
 
@@ -116,10 +119,13 @@ async def test_orchestrator_rejects_unprivileged_callers(role, mocker):
 async def test_failed_admission_propagates_without_success(mocker):
     service = RoutineOrchestrator()
     enqueue = mocker.patch.object(service, '_record_manual_job', new_callable=AsyncMock, side_effect=RuntimeError('queue unavailable'))
+    operation = BackupOperationRequest(operation='BACKUP_TELEGRAM')
+    actor = User(id=1, role=UserRole.MAINTAINER)
+    telegram_svc = TelegramService()
     with pytest.raises(RuntimeError, match='queue unavailable'):
         await service.submit_manual_job(
-            operation=BackupOperationRequest(operation='BACKUP_TELEGRAM'),
-            current_user=User(id=1, role=UserRole.MAINTAINER), audit_svc=None, telegram_svc=TelegramService(),
+            operation=operation,
+            current_user=actor, audit_svc=None, telegram_svc=telegram_svc,
         )
     enqueue.assert_awaited_once()
 

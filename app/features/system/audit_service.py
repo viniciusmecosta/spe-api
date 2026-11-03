@@ -184,27 +184,23 @@ class AuditService:
             new_data=final_new,
         )
 
+    def _preserve_schedule_period(
+        self, old_data: dict, new_data: dict, actual_old: dict, actual_new: dict
+    ) -> None:
+        if "schedule_summary" not in old_data and "schedule_summary" not in new_data:
+            return
+        for period_key in ("valid_from", "valid_until"):
+            if old_data.get(period_key) is not None:
+                actual_old[period_key] = old_data[period_key]
+            if new_data.get(period_key) is not None:
+                actual_new[period_key] = new_data[period_key]
+
     def compute_diffs(self, old_data: dict, new_data: dict) -> tuple[dict, dict]:
-        actual_old = {}
-        actual_new = {}
-
         all_keys = set(old_data.keys()).union(new_data.keys())
-        for key in all_keys:
-            old_val = old_data.get(key)
-            new_val = new_data.get(key)
-            if old_val != new_val:
-                if key in old_data:
-                    actual_old[key] = old_val
-                if key in new_data:
-                    actual_new[key] = new_val
-
-        if "schedule_summary" in old_data or "schedule_summary" in new_data:
-            for period_key in ("valid_from", "valid_until"):
-                if period_key in old_data and old_data[period_key] is not None:
-                    actual_old[period_key] = old_data[period_key]
-                if period_key in new_data and new_data[period_key] is not None:
-                    actual_new[period_key] = new_data[period_key]
-
+        changed_keys = {key for key in all_keys if old_data.get(key) != new_data.get(key)}
+        actual_old = {key: old_data[key] for key in changed_keys if key in old_data}
+        actual_new = {key: new_data[key] for key in changed_keys if key in new_data}
+        self._preserve_schedule_period(old_data, new_data, actual_old, actual_new)
         return actual_old, actual_new
 
     async def get_logs(self, db: AsyncSession | None = None, action: str | None = None,

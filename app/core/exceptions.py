@@ -87,6 +87,25 @@ def _request_headers(request: Request, headers=None):
     return result
 
 
+def _resolve_http_error_detail(request: Request, exc: StarletteHTTPException) -> tuple[str, str | None]:
+    raw_detail = exc.detail
+    error_code = raw_detail.get("code") if isinstance(raw_detail, dict) else None
+    detail_msg = raw_detail.get("message", str(raw_detail)) if isinstance(raw_detail, dict) else raw_detail
+
+    if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
+        if request.url.path.startswith("/uploads/"):
+            return "O documento ou arquivo solicitado não foi encontrado.", error_code
+        return "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis.", error_code
+
+    unauthorized_messages = {
+        "Incorrect username or password": "Usuário ou senha incorretos.",
+        "Could not validate credentials": "Não foi possível validar as credenciais de acesso.",
+    }
+    if exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg in unauthorized_messages:
+        return unauthorized_messages[detail_msg], error_code
+    return detail_msg, error_code
+
+
 def setup_exception_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -94,20 +113,7 @@ def setup_exception_handlers(app: FastAPI):
             logger.error(f"HTTP {exc.status_code} na rota {request.url.path}: {exc.detail}",
                          exc_info=(type(exc), exc, exc.__traceback__))
 
-        detail_msg = exc.detail
-        error_code = detail_msg.get("code") if isinstance(detail_msg, dict) else None
-        if isinstance(detail_msg, dict):
-            detail_msg = detail_msg.get("message", str(detail_msg))
-
-        if exc.status_code == status.HTTP_404_NOT_FOUND and detail_msg == "Not Found":
-            if request.url.path.startswith("/uploads/"):
-                detail_msg = "O documento ou arquivo solicitado não foi encontrado."
-            else:
-                detail_msg = "A URL acessada não existe. Verifique a documentação em /docs para ver as rotas disponíveis."
-        elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Incorrect username or password":
-            detail_msg = "Usuário ou senha incorretos."
-        elif exc.status_code == status.HTTP_401_UNAUTHORIZED and detail_msg == "Could not validate credentials":
-            detail_msg = "Não foi possível validar as credenciais de acesso."
+        detail_msg, error_code = _resolve_http_error_detail(request, exc)
 
         return JSONResponse(
             status_code=exc.status_code,

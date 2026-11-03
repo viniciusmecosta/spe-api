@@ -133,20 +133,28 @@ async def test_reopen_dispatch_preserves_justification(db_session_mock, mocker):
 
 @pytest.mark.asyncio
 async def test_manager_cannot_reopen_through_canonical_dispatch(db_session_mock):
+    service = PayrollService(db=db_session_mock)
+    transition = PayrollReopenTransition(action='REOPEN', observation='Correção')
+    actor = User(id=1, role=UserRole.MANAGER)
+    tasks = BackgroundTasks()
     with pytest.raises(PayrollPermissionError):
-        await PayrollService(db=db_session_mock).transition_period(
-            year=2026, month=9, transition=PayrollReopenTransition(action='REOPEN', observation='Correção'),
-            current_user=User(id=1, role=UserRole.MANAGER), background_tasks=BackgroundTasks(),
+        await service.transition_period(
+            year=2026, month=9, transition=transition,
+            current_user=actor, background_tasks=tasks,
         )
     db_session_mock.rollback.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_employee_cannot_close_through_dispatch(db_session_mock):
+    service = PayrollService(db=db_session_mock)
+    transition = PayrollCloseTransition(action='CLOSE')
+    actor = User(id=1, role=UserRole.EMPLOYEE)
+    tasks = BackgroundTasks()
     with pytest.raises(PayrollPermissionError):
-        await PayrollService(db=db_session_mock).transition_period(
-            year=2026, month=9, transition=PayrollCloseTransition(action='CLOSE'),
-            current_user=User(id=1, role=UserRole.EMPLOYEE), background_tasks=BackgroundTasks(),
+        await service.transition_period(
+            year=2026, month=9, transition=transition,
+            current_user=actor, background_tasks=tasks,
         )
 
 

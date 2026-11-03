@@ -66,8 +66,9 @@ async def test_refresh_invalidates_family(
     revoke = mocker.patch.object(
         auth_repository, "revoke_family", new_callable=AsyncMock
     )
+    service = AuthService(async_db_mock)
     with pytest.raises(InvalidCredentialsError):
-        await AuthService(async_db_mock).refresh("secret")
+        await service.refresh("secret")
     revoke.assert_awaited_once()
     async_db_mock.commit.assert_awaited_once()
 
@@ -76,8 +77,9 @@ async def test_unknown_refresh_is_rejected(async_db_mock, mocker):
     mocker.patch.object(
         auth_repository, "find_refresh", new_callable=AsyncMock, return_value=None
     )
+    service = AuthService(async_db_mock)
     with pytest.raises(InvalidCredentialsError):
-        await AuthService(async_db_mock).refresh("unknown")
+        await service.refresh("unknown")
     async_db_mock.commit.assert_not_awaited()
 
 
@@ -92,8 +94,9 @@ async def test_password_change_rejects_stale_user(
         new_callable=AsyncMock,
         return_value=None if missing else refresh_user,
     )
+    service = AuthService(async_db_mock)
     with pytest.raises(InvalidCredentialsError):
-        await AuthService(async_db_mock).change_password(current, "old", "new")
+        await service.change_password(current, "old", "new")
 
 
 async def test_utc_preserves_aware_and_assigns_naive():
@@ -113,8 +116,9 @@ async def test_refresh_disappearing_after_lock_is_rejected(
         side_effect=[refresh_record, None],
     )
     mocker.patch.object(auth_repository, "lock_user", new_callable=AsyncMock)
+    service = AuthService(async_db_mock)
     with pytest.raises(InvalidCredentialsError):
-        await AuthService(async_db_mock).refresh("expired-and-purged")
+        await service.refresh("expired-and-purged")
 
 
 async def test_refresh_rotates_credential(
