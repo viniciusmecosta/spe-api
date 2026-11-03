@@ -5,6 +5,10 @@ from fastapi.responses import Response
 
 from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.excel_service import ExcelService
+from app.features.reports.operational_export_service import (
+    ExportKind,
+    OperationalExportService,
+)
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
@@ -94,6 +98,21 @@ async def export_monthly_report_excel(
         current_user=current_user,
         regenerate=regenerate,
     )
+
+
+@router.get(
+    "/operational-export",
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+async def export_operational_data(
+        kind: ExportKind,
+        user_id: Annotated[int, Query(gt=0)],
+        month: Month,
+        year: Year,
+        service: Annotated[OperationalExportService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+) -> Response:
+    return await service.export(kind=kind, user_id=user_id, month=month, year=year, user=current_user)
 
 
 @router.get(
