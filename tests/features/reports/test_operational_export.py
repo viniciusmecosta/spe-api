@@ -78,13 +78,54 @@ async def test_operational_export_rejects_too_many_records(session):
     assert error.value.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_operational_export_all_employees_with_one_query(session):
+    record = SimpleNamespace(
+        id=42, user_id=7, record_datetime=datetime(2026, 2, 1, 12, tzinfo=UTC),
+        record_type=RecordType.ENTRY, device_name="Relógio", is_ignored=False,
+        deleted_at=None, original_record_id=None, source_adjustment_id=None,
+    )
+    result = MagicMock()
+    result.all.return_value = [(record, "Pessoa")]
+    session.execute.return_value = result
+    response = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
+    data = json.loads(response.body)
+    assert data["usuario"] is None
+    assert data["marcacoes"][0]["usuario"] == {"id": 7, "nome": "Pessoa"}
+    assert "operacional_marcacoes_todos_202602.json" in response.headers["content-disposition"]
+    session.get.assert_not_awaited()
+    session.scalars.assert_not_awaited()
+    session.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_operational_journey_requires_employee(session):
+    with pytest.raises(HTTPException) as error:
+        await OperationalExportService(session).export("jornada", None, 2, 2026, MagicMock())
+    assert error.value.status_code == 422
+    session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collective_export_rejects_too_many_records(session):
+    record = SimpleNamespace(user_id=1)
+    result = MagicMock()
+    result.all.return_value = [(record, 'Pessoa')] * (MAX_RECORDS + 1)
+    session.execute.return_value = result
+    with pytest.raises(HTTPException) as error:
+        await OperationalExportService(session).export('marcacoes', None, 2, 2026, MagicMock())
+    assert error.value.status_code == 422
+
+
 def test_operational_export_requires_manager():
     employee = MagicMock(id=7, role=UserRole.EMPLOYEE, is_active=True)
     app.dependency_overrides[deps.get_current_active_user] = lambda: employee
     try:
         with TestClient(app) as client:
             response = client.get("/api/v1/reports/operational-export?user_id=7&month=2&year=2026&kind=marcacoes")
+            collective = client.get("/api/v1/reports/operational-export?month=2&year=2026&kind=marcacoes")
         assert response.status_code == 403
+        assert collective.status_code == 403
     finally:
         app.dependency_overrides.clear()
 
@@ -102,5 +143,20 @@ def test_operational_export_route_passes_filters():
         assert response.status_code == 200
         assert invalid.status_code == 422
         service.export.assert_awaited_once_with(kind="jornada", user_id=7, month=2, year=2026, user=manager)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_operational_export_route_allows_collective_records():
+    manager = MagicMock(id=1, role=UserRole.MANAGER, is_active=True)
+    service = MagicMock()
+    service.export = AsyncMock(return_value=Response(content='{}', media_type='application/json'))
+    app.dependency_overrides[deps.get_current_manager] = lambda: manager
+    app.dependency_overrides[OperationalExportService] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.get('/api/v1/reports/operational-export?month=2&year=2026&kind=marcacoes')
+        assert response.status_code == 200
+        service.export.assert_awaited_once_with(kind='marcacoes', user_id=None, month=2, year=2026, user=manager)
     finally:
         app.dependency_overrides.clear()

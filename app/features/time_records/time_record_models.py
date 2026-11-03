@@ -27,6 +27,7 @@ class TimeRecord(Base):
     __tablename__ = "time_records"
     __table_args__ = (
         Index('idx_tr_user_date', 'user_id', 'record_datetime'),
+        Index('idx_tr_date_id', 'record_datetime', 'id'),
         Index('idx_tr_ignored', 'is_ignored'),
     )
 

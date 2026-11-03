@@ -37,3 +37,15 @@ async def test_operational_export_filters_local_month_and_deleted_records(pg_ses
         assert records[0]["data_hora"].startswith("2026-02-01T00:00:00")
         assert records[1]["data_hora"].startswith("2026-02-28T23:59:00")
         assert records[1]["excluida_em"] is not None
+
+        other = User(username="operational-other", name="Outra pessoa", role=UserRole.EMPLOYEE)
+        session.add(other)
+        await session.flush()
+        await session.execute(insert(TimeRecord.__table__).values(
+            user_id=other.id, record_type="ENTRY", record_datetime=datetime(2026, 2, 2, 12, tzinfo=UTC),
+        ))
+        result = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
+        collective = json.loads(result.body)["marcacoes"]
+        assert [item["usuario"]["id"] for item in collective] == [employee.id, other.id, employee.id]
+        assert collective[1]["usuario"]["nome"] == "Outra pessoa"
+        assert collective[-1]["excluida_em"] is not None

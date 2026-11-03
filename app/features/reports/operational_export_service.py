@@ -29,22 +29,33 @@ class OperationalExportService:
     def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)]):
         self.db = db
 
-    async def export(self, kind: ExportKind, user_id: int, month: int, year: int, user: User) -> Response:
-        employee = await self.db.get(User, user_id)
-        if employee is None:
+    async def export(self, kind: ExportKind, user_id: int | None, month: int, year: int, user: User) -> Response:
+        if user_id is None and kind == "jornada":
+            raise HTTPException(status_code=422, detail="Selecione um funcionário para exportar a jornada.")
+        employee = await self.db.get(User, user_id) if user_id is not None else None
+        if user_id is not None and employee is None:
             raise ReportUserNotFoundError(user_id=user_id)
         tz = ZoneInfo(settings.TIMEZONE)
         first = date(year, month, 1)
         last = date(year, month, monthrange(year, month)[1])
         start = datetime.combine(first, time.min, tzinfo=tz)
         end = datetime.combine(last + timedelta(days=1), time.min, tzinfo=tz)
-        statement = (
-            select(TimeRecord)
-            .where(TimeRecord.user_id == user_id, TimeRecord.record_datetime >= start, TimeRecord.record_datetime < end)
-            .order_by(TimeRecord.record_datetime, TimeRecord.id)
-            .limit(MAX_RECORDS + 1)
-        )
-        records = list((await self.db.scalars(statement)).all())
+        conditions = (TimeRecord.record_datetime >= start, TimeRecord.record_datetime < end)
+        if user_id is None:
+            statement = (
+                select(TimeRecord, User.name).join(User, TimeRecord.user_id == User.id)
+                .where(*conditions).order_by(TimeRecord.record_datetime, TimeRecord.id).limit(MAX_RECORDS + 1)
+            )
+            rows = list((await self.db.execute(statement)).all())
+            records = [row[0] for row in rows]
+            names = {row[0].user_id: row[1] for row in rows}
+        else:
+            statement = (
+                select(TimeRecord).where(*conditions, TimeRecord.user_id == user_id)
+                .order_by(TimeRecord.record_datetime, TimeRecord.id).limit(MAX_RECORDS + 1)
+            )
+            records = list((await self.db.scalars(statement)).all())
+            names = {}
         if len(records) > MAX_RECORDS:
             raise HTTPException(status_code=422, detail="Período excede o limite de registros para exportação.")
 
@@ -54,7 +65,7 @@ class OperationalExportService:
             "gerado_em": datetime.now(UTC).isoformat(),
             "fuso_horario": settings.TIMEZONE,
             "periodo": {"inicio": first.isoformat(), "fim": last.isoformat()},
-            "usuario": {"id": employee.id, "nome": employee.name},
+            "usuario": {"id": employee.id, "nome": employee.name} if employee else None,
         }
         if kind == "marcacoes":
             payload["marcacoes"] = [
@@ -67,6 +78,7 @@ class OperationalExportService:
                     "excluida_em": record.deleted_at.isoformat() if record.deleted_at else None,
                     "registro_original_id": record.original_record_id,
                     "ajuste_origem_id": record.source_adjustment_id,
+                    **({"usuario": {"id": record.user_id, "nome": names[record.user_id]}} if user_id is None else {}),
                 }
                 for record in records
             ]
@@ -75,7 +87,7 @@ class OperationalExportService:
                 user_id=user_id, month=month, year=year, current_user=user,
             )
             payload["jornada"] = report.model_dump(mode="json")
-        filename = f"operacional_{kind}_{user_id}_{year:04d}{month:02d}.json"
+        filename = f"operacional_{kind}_{user_id if user_id is not None else 'todos'}_{year:04d}{month:02d}.json"
         return Response(
             content=json.dumps(jsonable_encoder(payload), ensure_ascii=False),
             media_type="application/json",

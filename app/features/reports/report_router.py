@@ -106,11 +106,11 @@ async def export_monthly_report_excel(
 )
 async def export_operational_data(
         kind: ExportKind,
-        user_id: Annotated[int, Query(gt=0)],
         month: Month,
         year: Year,
         service: Annotated[OperationalExportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_manager)],
+        user_id: Annotated[int | None, Query(gt=0)] = None,
 ) -> Response:
     return await service.export(kind=kind, user_id=user_id, month=month, year=year, user=current_user)
 
