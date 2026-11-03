@@ -223,8 +223,13 @@ temp_backup_*.db
 temp_backup_*.sql
 temp_inserts_*.sql
 temp_*.zip
+temp_*.zip.enc
 spe.zip
+spe.zip.enc
 *.zip
+*.zip.enc
+scripts/spe.zip.enc
+scripts/*.zip.enc
 *.sql
 scripts/*.sql
 /uploads
