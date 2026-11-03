@@ -73,3 +73,48 @@ def test_db_manager_rejects_removed_migration_options(monkeypatch, option):
     with pytest.raises(SystemExit) as error:
         db_manager.main()
     assert error.value.code == 2
+
+
+def test_zip_with_duplicate_preferred_dump_is_rejected(tmp_path):
+    from zipfile import ZipFile
+
+    path = tmp_path / 'backup.zip'
+    with ZipFile(path, 'w') as archive:
+        archive.writestr('first/data.sql', 'INSERT INTO users VALUES (1);')
+        archive.writestr('second/data.sql', 'INSERT INTO users VALUES (2);')
+    with ZipFile(path) as archive, pytest.raises(ValueError, match='duplicados'):
+        apply_sql_to_postgresql._find_data_member(archive)
+
+
+def test_zip_with_unambiguous_preferred_dump_keeps_existing_selection(tmp_path):
+    from zipfile import ZipFile
+
+    path = tmp_path / 'backup.zip'
+    with ZipFile(path, 'w') as archive:
+        archive.writestr('backup/data.sql', 'INSERT INTO users VALUES (1);')
+        archive.writestr('schema.sql', 'CREATE TABLE users (id integer);')
+    with ZipFile(path) as archive:
+        member = apply_sql_to_postgresql._find_data_member(archive)
+        assert member.filename == 'backup/data.sql'
+
+
+def test_zip_with_single_unrecognized_sql_dump_is_supported(tmp_path):
+    from zipfile import ZipFile
+
+    path = tmp_path / 'backup.zip'
+    with ZipFile(path, 'w') as archive:
+        archive.writestr('legacy/custom.sql', 'INSERT INTO users VALUES (1);')
+    with ZipFile(path) as archive:
+        member = apply_sql_to_postgresql._find_data_member(archive)
+        assert member.filename == 'legacy/custom.sql'
+
+
+def test_zip_without_unambiguous_sql_is_rejected(tmp_path):
+    from zipfile import ZipFile
+
+    path = tmp_path / 'backup.zip'
+    with ZipFile(path, 'w') as archive:
+        archive.writestr('first.sql', 'INSERT INTO users VALUES (1);')
+        archive.writestr('second.sql', 'INSERT INTO users VALUES (2);')
+    with ZipFile(path) as archive, pytest.raises(FileNotFoundError, match='inequívoco'):
+        apply_sql_to_postgresql._find_data_member(archive)

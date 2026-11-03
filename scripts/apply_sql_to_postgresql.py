@@ -654,10 +654,12 @@ def apply_sql_file(
 
 def _find_data_member(archive: zipfile.ZipFile) -> zipfile.ZipInfo:
     files = [item for item in archive.infolist() if not item.is_dir()]
-    by_basename = {Path(item.filename).name: item for item in files}
     for name in (FILENAME_SPE_DUMP, "data.sql", "data_inserts_postgresql.sql"):
-        if name in by_basename:
-            return by_basename[name]
+        matches = [item for item in files if Path(item.filename).name == name]
+        if len(matches) > 1:
+            raise ValueError("O ZIP contém arquivos de dados SQL com nomes duplicados")
+        if matches:
+            return matches[0]
     sql_files = [item for item in files if item.filename.lower().endswith(".sql")]
     sql_files = [item for item in sql_files if Path(item.filename).name != FILENAME_SPE_DB]
     if len(sql_files) == 1:
