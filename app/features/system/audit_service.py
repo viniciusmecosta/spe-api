@@ -140,9 +140,27 @@ class AuditService:
             return self.compute_diffs(raw_old, raw_new)
         return raw_old, raw_new
 
+    def _prepare_change_log_args(
+        self,
+        db: Any | None,
+        entity: str | None,
+        entity_id: int | None,
+        old_model: Any | None,
+        new_model: Any | None,
+        old_data: dict | None,
+        new_data: dict | None,
+    ) -> tuple[Any, str, int, dict | None, dict | None]:
+        session = db if db is not None else self.db
+        assert session is not None
+        raw_old = self._prepare_raw_data(old_model, old_data)
+        raw_new = self._prepare_raw_data(new_model, new_data)
+        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
+        final_old, final_new = self._compute_final_data(raw_old, raw_new)
+        return session, resolved_entity, resolved_id, final_old, final_new
+
     def log_change(
         self,
-            db: Any | None = None,
+        db: Any | None = None,
         user_id: int | None = None,
         action: str = "",
         *,
@@ -153,13 +171,9 @@ class AuditService:
         old_data: dict | None = None,
         new_data: dict | None = None,
     ):
-        session = db if db is not None else self.db
-        assert session is not None
-        raw_old = self._prepare_raw_data(old_model, old_data)
-        raw_new = self._prepare_raw_data(new_model, new_data)
-        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
-        final_old, final_new = self._compute_final_data(raw_old, raw_new)
-
+        session, resolved_entity, resolved_id, final_old, final_new = self._prepare_change_log_args(
+            db, entity, entity_id, old_model, new_model, old_data, new_data
+        )
         return self.log(
             session,
             user_id=user_id,
@@ -183,6 +197,13 @@ class AuditService:
                     actual_old[key] = old_val
                 if key in new_data:
                     actual_new[key] = new_val
+
+        if "schedule_summary" in old_data or "schedule_summary" in new_data:
+            for period_key in ("valid_from", "valid_until"):
+                if period_key in old_data and old_data[period_key] is not None:
+                    actual_old[period_key] = old_data[period_key]
+                if period_key in new_data and new_data[period_key] is not None:
+                    actual_new[period_key] = new_data[period_key]
 
         return actual_old, actual_new
 
@@ -225,25 +246,21 @@ class AuditService:
         return await self.repo.create(session, obj_in=obj_in)
 
     async def async_log_change(
-            self,
-            db: AsyncSession | None = None,
-            user_id: int | None = None,
-            action: str = "",
-            *,
-            entity: str | None = None,
-            entity_id: int | None = None,
-            old_model: Any | None = None,
-            new_model: Any | None = None,
-            old_data: dict | None = None,
-            new_data: dict | None = None,
+        self,
+        db: AsyncSession | None = None,
+        user_id: int | None = None,
+        action: str = "",
+        *,
+        entity: str | None = None,
+        entity_id: int | None = None,
+        old_model: Any | None = None,
+        new_model: Any | None = None,
+        old_data: dict | None = None,
+        new_data: dict | None = None,
     ):
-        session = db if db is not None else self.db
-        assert session is not None
-        raw_old = self._prepare_raw_data(old_model, old_data)
-        raw_new = self._prepare_raw_data(new_model, new_data)
-        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
-        final_old, final_new = self._compute_final_data(raw_old, raw_new)
-
+        session, resolved_entity, resolved_id, final_old, final_new = self._prepare_change_log_args(
+            db, entity, entity_id, old_model, new_model, old_data, new_data
+        )
         return await self.async_log(
             session,
             user_id=user_id,
