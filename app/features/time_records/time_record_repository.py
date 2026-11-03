@@ -43,11 +43,10 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
     def create(
         self,
         db: Session,
-            *,
-            obj_in: TimeRecordCreate | None = None,
-            user_id: int | None = None,
-            record_type: RecordType | None = None,
-            record_datetime: datetime | None = None,
+        obj_in: TimeRecordCreate | None = None,
+        user_id: int | None = None,
+        record_type: RecordType | None = None,
+        record_datetime: datetime | None = None,
         ip_address: str | None = None,
         device_name: str | None = None,
         biometric_id: int | None = None,
@@ -237,16 +236,15 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
         super().__init__(TimeRecord)
 
     async def create(
-            self,
-            db: AsyncSession,
-            *,
-            obj_in: TimeRecordCreate | None = None,
-            user_id: int | None = None,
-            record_type: RecordType | None = None,
-            record_datetime: datetime | None = None,
-            ip_address: str | None = None,
-            device_name: str | None = None,
-            biometric_id: int | None = None,
+        self,
+        db: AsyncSession,
+        obj_in: TimeRecordCreate | None = None,
+        user_id: int | None = None,
+        record_type: RecordType | None = None,
+        record_datetime: datetime | None = None,
+        ip_address: str | None = None,
+        device_name: str | None = None,
+        biometric_id: int | None = None,
     ) -> TimeRecord:
         if obj_in is not None:
             return await super().create(db, obj_in=obj_in)

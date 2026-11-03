@@ -79,6 +79,7 @@ def test_setup_logging():
 
 def test_formatter_uses_fortaleza_independently_of_system_timezone(monkeypatch):
     from datetime import UTC
+
     from app.core.request_context import request_context
 
     original = os.environ.get('TZ')
@@ -95,9 +96,9 @@ def test_formatter_uses_fortaleza_independently_of_system_timezone(monkeypatch):
                 assert formatter.format(record) == '25/10/2026 23:30:00 mensagem'
     finally:
         if original is None:
-            os.environ.pop('TZ', None)
+            monkeypatch.delenv('TZ', raising=False)
         else:
-            os.environ['TZ'] = original
+            monkeypatch.setenv('TZ', original)
         if hasattr(time, 'tzset'):
             time.tzset()
 

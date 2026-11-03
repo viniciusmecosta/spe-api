@@ -21,12 +21,13 @@ class BaseRepository[
         return db.get(self.model, id)
 
     def get_multi(
-        self, db: Session, *, skip: int = 0, limit: int = 100
+        self, db: Session, skip: int = 0, limit: int = 100
     ) -> Sequence[ModelType]:
         stmt = select(self.model).offset(skip).limit(limit)
         return db.scalars(stmt).all()
 
-    def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
+    def create(self, db: Session, obj_in: CreateSchemaType | None = None) -> ModelType:
+        assert obj_in is not None
         if isinstance(obj_in, dict):
             create_data = obj_in
         elif hasattr(obj_in, "model_dump"):
@@ -102,13 +103,14 @@ class AsyncBaseRepository[
         return await db.get(self.model, id)
 
     async def get_multi(
-            self, db: AsyncSession, *, skip: int = 0, limit: int = 100
+        self, db: AsyncSession, skip: int = 0, limit: int = 100
     ) -> Sequence[ModelType]:
         stmt = select(self.model).offset(skip).limit(limit)
         result = await db.scalars(stmt)
         return result.all()
 
-    async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
+    async def create(self, db: AsyncSession, obj_in: CreateSchemaType | None = None) -> ModelType:
+        assert obj_in is not None
         if isinstance(obj_in, dict):
             create_data = obj_in
         elif hasattr(obj_in, "model_dump"):

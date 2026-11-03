@@ -84,6 +84,34 @@ class DashboardService:
             date=today
         )
 
+    async def _fetch_today_punch_state(
+        self, session: Any, user_id: int, start_dt_today: datetime, end_dt_today: datetime
+    ) -> tuple[list[TodayPunch], str]:
+        if hasattr(session, "sync_session"):
+            today_records = await async_time_record_repository.get_by_range(
+                session, user_id, start_dt_today, end_dt_today
+            )
+        else:
+            today_records = time_record_repository.get_by_range(
+                session, user_id, start_dt_today, end_dt_today
+            )
+        today_records.sort(key=lambda x: x.record_datetime)
+
+        today_punches = [
+            TodayPunch(
+                id=rec.id,
+                short_id=rec.short_id,
+                time=rec.record_datetime.strftime("%H:%M"),
+                record_type=rec.record_type.value,
+            )
+            for rec in today_records
+        ]
+
+        next_punch_type = "ENTRY"
+        if today_records and today_records[-1].record_type == RecordType.ENTRY:
+            next_punch_type = "EXIT"
+        return today_punches, next_punch_type
+
     async def get_my_dashboard(self, db: Any | None = None, current_user: User | None = None) -> MyDashboardResponse:
         session = db if db is not None else self.db
         assert session is not None
@@ -95,28 +123,9 @@ class DashboardService:
 
         start_dt_today = datetime.combine(today_date, datetime.min.time(), tzinfo=tz)
         end_dt_today = datetime.combine(today_date, datetime.max.time(), tzinfo=tz)
-
-        if hasattr(session, "sync_session"):
-            today_records = await async_time_record_repository.get_by_range(session, current_user.id, start_dt_today,
-                                                                            end_dt_today)
-        else:
-            today_records = time_record_repository.get_by_range(session, current_user.id, start_dt_today, end_dt_today)
-        today_records.sort(key=lambda x: x.record_datetime)
-
-        today_punches = []
-        for rec in today_records:
-            today_punches.append(TodayPunch(
-                id=rec.id,
-                short_id=rec.short_id,
-                time=rec.record_datetime.strftime("%H:%M"),
-                record_type=rec.record_type.value
-            ))
-
-        next_punch_type = "ENTRY"
-        if today_records:
-            last_record = today_records[-1]
-            if last_record.record_type == RecordType.ENTRY:
-                next_punch_type = "EXIT"
+        today_punches, next_punch_type = await self._fetch_today_punch_state(
+            session, current_user.id, start_dt_today, end_dt_today
+        )
 
         month_anomalies = []
         anomalies = await anomaly_service.get_anomalies(
@@ -219,28 +228,9 @@ class DashboardService:
 
         start_dt_today = datetime.combine(today_date, datetime.min.time(), tzinfo=tz)
         end_dt_today = datetime.combine(today_date, datetime.max.time(), tzinfo=tz)
-
-        if hasattr(session, "sync_session"):
-            today_records = await async_time_record_repository.get_by_range(session, current_user.id, start_dt_today,
-                                                                            end_dt_today)
-        else:
-            today_records = time_record_repository.get_by_range(session, current_user.id, start_dt_today, end_dt_today)
-        today_records.sort(key=lambda x: x.record_datetime)
-
-        today_punches = []
-        for rec in today_records:
-            today_punches.append(TodayPunch(
-                id=rec.id,
-                short_id=rec.short_id,
-                time=rec.record_datetime.strftime("%H:%M"),
-                record_type=rec.record_type.value
-            ))
-
-        next_punch_type = "ENTRY"
-        if today_records:
-            last_record = today_records[-1]
-            if last_record.record_type == RecordType.ENTRY:
-                next_punch_type = "EXIT"
+        today_punches, next_punch_type = await self._fetch_today_punch_state(
+            session, current_user.id, start_dt_today, end_dt_today
+        )
 
         all_anomalies = await anomaly_service.get_anomalies_by_month(
             session, now.month, now.year, user_id=None, ignore_excessive_hours=False, viewer_role=current_user.role

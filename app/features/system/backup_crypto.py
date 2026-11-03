@@ -47,18 +47,29 @@ def encrypt_backup(source: Path, secret: str, destination: Path | None = None) -
             temporary.unlink(missing_ok=True)
 
 
+def resolve_existing_file(path: Path) -> Path:
+    resolved = path.resolve()
+    parent = resolved.parent
+    if parent.is_dir():
+        for entry in parent.iterdir():
+            if entry.name == resolved.name and entry.is_file():
+                return entry
+    raise FileNotFoundError(f"Arquivo não encontrado: {path}")
+
+
 def decrypt_backup(source: Path, secret: str) -> Path:
     key = _key(secret)
-    if source.stat().st_size < len(MAGIC) + NONCE_SIZE + TAG_SIZE:
+    safe_source = resolve_existing_file(source)
+    if safe_source.stat().st_size < len(MAGIC) + NONCE_SIZE + TAG_SIZE:
         raise ValueError("Backup criptografado incompleto")
-    with source.open("rb") as encrypted:
+    with safe_source.open("rb") as encrypted:
         header = encrypted.read(len(MAGIC) + NONCE_SIZE)
         if not header.startswith(MAGIC):
             raise ValueError("Formato de backup criptografado inválido")
         encrypted.seek(-TAG_SIZE, os.SEEK_END)
         tag = encrypted.read(TAG_SIZE)
         encrypted.seek(len(MAGIC) + NONCE_SIZE)
-        remaining = source.stat().st_size - len(MAGIC) - NONCE_SIZE - TAG_SIZE
+        remaining = safe_source.stat().st_size - len(MAGIC) - NONCE_SIZE - TAG_SIZE
         decryptor = Cipher(
             algorithms.AES(key), modes.GCM(header[len(MAGIC):], tag)
         ).decryptor()

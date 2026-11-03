@@ -20,6 +20,26 @@ from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.shared.enums import UserRole
 
 
+def _build_users_filter_stmt(
+    is_active: bool | None = None,
+    role: str | None = None,
+    search: str | None = None,
+):
+    stmt = select(User).options(
+        selectinload(User.current_schedules_rel),
+        selectinload(User.biometrics),
+        selectinload(User.historical_schedules),
+    )
+    if is_active is not None:
+        stmt = stmt.where(User.is_active == is_active)
+    if role is not None:
+        stmt = stmt.where(User.role == role)
+    if search:
+        search_term = f"%{search}%"
+        stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
+    return stmt
+
+
 class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def __init__(self):
         super().__init__(User)
@@ -43,7 +63,6 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def get_multi(
         self,
         db: Session,
-        *,
         skip: int = 0,
         limit: int = 100,
         is_active: bool | None = None,
@@ -52,22 +71,9 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         order_by: str = "id",
         order_direction: str = "asc",
     ) -> list[User]:
-        stmt = select(User).options(
-            selectinload(User.current_schedules_rel),
-            selectinload(User.biometrics),
-            selectinload(User.historical_schedules),
-        )
-        if is_active is not None:
-            stmt = stmt.where(User.is_active == is_active)
-        if role is not None:
-            stmt = stmt.where(User.role == role)
-        if search:
-            search_term = f"%{search}%"
-            stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
-
+        stmt = _build_users_filter_stmt(is_active=is_active, role=role, search=search)
         order_column = user_order_column(order_by)
         stmt = stmt.order_by(*user_sort_order(order_column, order_direction.lower() == "desc"))
-
         stmt = stmt.offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
 
@@ -159,8 +165,9 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         super().__init__(User)
 
     async def create(
-            self, db: AsyncSession, *, obj_in: UserCreate | dict[str, Any]
+        self, db: AsyncSession, obj_in: UserCreate | dict[str, Any] | None = None
     ) -> User:
+        assert obj_in is not None
         if isinstance(obj_in, dict):
             create_data = dict(obj_in)
         elif hasattr(obj_in, "model_dump"):
@@ -218,32 +225,18 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         return result.first()
 
     async def get_multi(
-            self,
-            db: AsyncSession,
-            *,
-            skip: int = 0,
-            after_id: int | None = None,
-            limit: int = 100,
-            is_active: bool | None = None,
-            role: str | None = None,
-            search: str | None = None,
-            order_by: str = "id",
-            order_direction: str = "asc",
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        after_id: int | None = None,
+        is_active: bool | None = None,
+        role: str | None = None,
+        search: str | None = None,
+        order_by: str = "id",
+        order_direction: str = "asc",
     ) -> list[User]:
-        stmt = select(User).options(
-            selectinload(User.current_schedules_rel),
-            selectinload(User.biometrics),
-            selectinload(User.historical_schedules),
-        )
-
-        if is_active is not None:
-            stmt = stmt.where(User.is_active == is_active)
-        if role is not None:
-            stmt = stmt.where(User.role == role)
-        if search:
-            search_term = f"%{search}%"
-            stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
-
+        stmt = _build_users_filter_stmt(is_active=is_active, role=role, search=search)
         order_column = user_order_column(order_by)
         descending = order_direction.lower() == "desc"
         if after_id:

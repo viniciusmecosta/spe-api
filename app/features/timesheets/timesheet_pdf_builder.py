@@ -218,8 +218,7 @@ class TimesheetPdfBuilder:
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('ALIGN', (1, 0), (1, 0), 'RIGHT')
                 ]))
-                story.append(header_table)
-                story.append(Spacer(1, 10))
+                story.extend([header_table, Spacer(1, 10)])
             except (OSError, ValueError):
                 story.append(Paragraph(document_title, title_style))
         else:
@@ -247,8 +246,7 @@ class TimesheetPdfBuilder:
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
             ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
         ]))
-        story.append(comp_table)
-        story.append(Spacer(1, 8))
+        story.extend([comp_table, Spacer(1, 8)])
 
     def _draw_employee_header(self, story, user, section_heading_style, header_style):
         role_map = {
@@ -279,8 +277,7 @@ class TimesheetPdfBuilder:
             ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
             ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.HexColor("#F1F5F9"))
         ]))
-        story.append(emp_table)
-        story.append(Spacer(1, 8))
+        story.extend([emp_table, Spacer(1, 8)])
 
     def _format_day_groups(self, days: list[int]) -> str:
         return format_day_groups(days)
@@ -348,13 +345,11 @@ class TimesheetPdfBuilder:
         for p_start, p_end, schedules in periods:
             if not is_single_period:
                 period_str = f"<b>Período:</b> {p_start.strftime('%d/%m/%Y')} a {p_end.strftime('%d/%m/%Y')}"
-                story.append(Paragraph(period_str, header_style))
-                story.append(Spacer(1, 2))
+                story.extend([Paragraph(period_str, header_style), Spacer(1, 2)])
 
             grouped = self._group_schedules_by_interval(schedules)
             table = self._build_schedule_table_element(grouped, header_style)
-            story.append(table)
-            story.append(Spacer(1, 5))
+            story.extend([table, Spacer(1, 5)])
 
     def _calculate_summary_totals(self, period_result) -> tuple[str, str, str]:
         total_gross = getattr(period_result, "total_gross_worked_seconds", None)
@@ -521,8 +516,7 @@ class TimesheetPdfBuilder:
                 ]
             )
         )
-        story.append(per_table)
-        story.append(Spacer(1, 8))
+        story.extend([per_table, Spacer(1, 8)])
 
         data_table = [
             [
@@ -543,8 +537,7 @@ class TimesheetPdfBuilder:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]
 
-
-        story.append(
+        story.extend([
             self._build_daily_records_table(
                 start_date=start_date,
                 end_date=end_date,
@@ -555,14 +548,13 @@ class TimesheetPdfBuilder:
                 table_text_style=table_text_style,
                 records=records,
                 all_adjustments=all_adjustments,
-            )
-        )
-        story.append(Spacer(1, 10))
+            ),
+            Spacer(1, 10),
+        ])
 
         total_dur, total_unapp, total_acc = self._calculate_summary_totals(period_result)
         sum_table = self._build_summary_table(total_dur, total_unapp, total_acc, header_style)
-        story.append(sum_table)
-        story.append(Spacer(1, 8))
+        story.extend([sum_table, Spacer(1, 8)])
 
         self._build_work_schedules_section(story, user, start_date, end_date, section_heading_style, header_style)
 
@@ -575,11 +567,12 @@ class TimesheetPdfBuilder:
         )
         now, _ = trusted_time_service.get_trusted_time()
         generated_at = now.strftime("%d/%m/%Y %H:%M")
-        story.append(Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style))
-        story.append(
-            Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style))
-        story.append(Paragraph(f"* Documento gerado em: {generated_at}", note_style))
-        story.append(Spacer(1, 8))
+        story.extend([
+            Paragraph("* Nota: O formato de tempo exibido é HH:MM (Horas:Minutos).", note_style),
+            Paragraph("  Exemplo: 10:20 representa exatamente 10 horas e 20 minutos contabilizados.", note_style),
+            Paragraph(f"* Documento gerado em: {generated_at}", note_style),
+            Spacer(1, 8),
+        ])
 
         term_style = ParagraphStyle(
             'TermStyle',
@@ -588,10 +581,13 @@ class TimesheetPdfBuilder:
             alignment=4,
             textColor=colors.HexColor("#444444")
         )
-        story.append(Paragraph(
-            "Reconheço a exatidão das anotações de horários registradas neste documento, servindo o mesmo como espelho de ponto mensal regulamentar. Declaro estar ciente de que as informações contidas refletem fielmente as jornadas executadas, passível de validação manual ou assinatura eletrônica via Gov.br.",
-            term_style))
-        story.append(Spacer(1, 30))
+        story.extend([
+            Paragraph(
+                "Reconheço a exatidão das anotações de horários registradas neste documento, servindo o mesmo como espelho de ponto mensal regulamentar. Declaro estar ciente de que as informações contidas refletem fielmente as jornadas executadas, passível de validação manual ou assinatura eletrônica via Gov.br.",
+                term_style,
+            ),
+            Spacer(1, 30),
+        ])
 
         sig_text_style = ParagraphStyle(
             'SigText',

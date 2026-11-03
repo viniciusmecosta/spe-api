@@ -15,7 +15,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.database.connection import postgres_connection_params
-from app.features.system.backup_crypto import decrypt_backup
+from app.features.system.backup_crypto import decrypt_backup, resolve_existing_file
 from app.features.system.backup_manifest import (
     validate_manifest,
     validate_manifest_file,
@@ -463,11 +463,11 @@ def _truncate_database_tables(cursor: Any, table_names: list[str]) -> None:
     cursor.execute(f"TRUNCATE TABLE {qualified} RESTART IDENTITY CASCADE")
 
 
-def _check_sql_file(sql_path: Path) -> None:
-    if not sql_path.is_file():
-        raise FileNotFoundError(f"Arquivo SQL não encontrado: {sql_path}")
-    if sql_path.stat().st_size > MAX_SQL_BYTES:
+def _check_sql_file(sql_path: Path) -> Path:
+    safe_path = resolve_existing_file(sql_path)
+    if safe_path.stat().st_size > MAX_SQL_BYTES:
         raise ValueError(f"Arquivo SQL excede o limite de {MAX_SQL_BYTES} bytes")
+    return safe_path
 
 
 def _execute_statements(cursor, statement_factory, statement_count: int) -> None:
@@ -530,8 +530,9 @@ def _execute_restore(cursor, statement_factory, statement_count, application_tab
 
 
 def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
+    safe_path = resolve_existing_file(sql_path)
     remainder = ""
-    with sql_path.open("r", encoding="utf-8") as source:
+    with safe_path.open("r", encoding="utf-8") as source:
         for line in sql_lines(source, reject_psql_commands=True):
             remainder += line
             if len(remainder.encode("utf-8")) > MAX_STATEMENT_BYTES:
@@ -687,9 +688,10 @@ def restore_backup(
     dry_run: bool = False,
     allow_unverified_dump: bool = False,
 ) -> dict[str, Any]:
-    target = source_path or find_backup_source()
-    if not target or not target.is_file():
+    candidate = source_path or find_backup_source()
+    if not candidate or not candidate.is_file():
         raise FileNotFoundError("Arquivo de backup ou dump não encontrado")
+    target = resolve_existing_file(candidate)
 
     if target.name.endswith(".zip.enc"):
         return _restore_encrypted_backup(

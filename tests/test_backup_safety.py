@@ -13,6 +13,7 @@ from app.features.system.backup_crypto import (
     TAG_SIZE,
     decrypt_backup,
     encrypt_backup,
+    resolve_existing_file,
 )
 from app.features.system.backup_manifest import (
     add_manifest,
@@ -27,7 +28,8 @@ def test_application_does_not_import_scripts():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
-                assert node.module != "scripts" and not node.module.startswith("scripts."), path
+                assert node.module != "scripts", path
+                assert not node.module.startswith("scripts."), path
             if isinstance(node, ast.Import):
                 assert all(
                     name.name != "scripts" and not name.name.startswith("scripts.")
@@ -210,3 +212,10 @@ def test_decrypt_propagates_temporary_file_creation_failure(tmp_path, monkeypatc
     monkeypatch.setattr(tempfile, 'NamedTemporaryFile', unavailable)
     with pytest.raises(OSError, match='temporário indisponível'):
         decrypt_backup(encrypted, 'x' * 40)
+
+
+def test_resolve_existing_file_raises_when_missing(tmp_path):
+    with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
+        resolve_existing_file(tmp_path / 'inexistente.enc')
+    with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
+        resolve_existing_file(tmp_path / 'pasta_inexistente' / 'inexistente.enc')

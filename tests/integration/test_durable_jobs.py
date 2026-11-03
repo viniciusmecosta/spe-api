@@ -2,9 +2,9 @@ import asyncio
 from datetime import date, timedelta
 from unittest.mock import AsyncMock
 
-from sqlalchemy import select, text, update
-
 import pytest
+from sqlalchemy import select, update
+
 from app.core.config import settings
 from app.features.system import job_queue
 from app.features.system.delivery_result import DeliveryResult
@@ -136,7 +136,7 @@ async def test_private_attachment_survives_original_cleanup_and_is_redacted(pg_s
     from app.features.system.notification_jobs import _retain_file
     source = tmp_path / 'source.log'
     source.write_text('ERROR https://api.telegram.org/bot123:secret/sendDocument password=secret')
-    path, filename = _retain_file(42, str(source), 'system.log')
+    path, _filename = _retain_file(42, str(source), 'system.log')
     source.unlink()
     from pathlib import Path
     retained = Path(path)
@@ -148,7 +148,9 @@ async def test_private_attachment_survives_original_cleanup_and_is_redacted(pg_s
 
 async def seed_notification_data(factory, tmp_path):
     from datetime import datetime
+
     from PIL import Image
+
     from app.features.companies.company_models import Company
     from app.features.time_records.time_record_models import TimeRecord
     from app.features.users.user_models import User
@@ -172,8 +174,8 @@ async def seed_notification_data(factory, tmp_path):
 async def test_notification_preparation_preserves_files_and_real_report_content(pg_session_factory, tmp_path, mocker,
                                                                                 routine):
     from app.features.system.email_service import email_service
-    from app.features.system.telegram_service import telegram_service
     from app.features.system.routine_orchestrator import routine_orchestrator
+    from app.features.system.telegram_service import telegram_service
     factory = pg_session_factory
     await seed_notification_data(factory, tmp_path)
     log = tmp_path / 'day.log'
@@ -217,7 +219,8 @@ async def test_notification_preparation_preserves_files_and_real_report_content(
             assert 'cid:company-logo' in body
             if routine == 'EMAIL_DAILY_BACKUP':
                 assert 'Ana &lt;Nevoa&gt;' in body
-                assert '07:00' in body and '16:00' in body
+                assert '07:00' in body
+                assert '16:00' in body
                 assert 'Ocorrências relevantes' in body
                 assert '123:exposed' not in body
                 assert 'password=hidden' not in body

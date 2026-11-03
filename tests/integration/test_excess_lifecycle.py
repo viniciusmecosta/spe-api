@@ -14,7 +14,7 @@ __all__ = ["api"]
 pytestmark = pytest.mark.asyncio
 
 
-async def test_excess_approval_transitions_update_summary_and_audit(api, pg_session_factory):
+async def _seed_excess_scenario(api):
     user_id = await api.create_employee()
     await api.request("POST", "/schedules/bulk", json={
         "valid_from": "2026-09-01", "valid_until": "2026-09-30", "users": [{
@@ -27,6 +27,11 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
     await api.add_punch(user_id, "EXIT", "17:00")
     adjustments = await api.json("GET", "/adjustments", params={"scope": "team", "month": 9, "year": 2026})
     excess = next(item for item in adjustments if item["adjustment_type"] == "DAILY_EXCESS")
+    return user_id, excess
+
+
+async def test_excess_approval_transitions_update_summary_and_audit(api, pg_session_factory):
+    user_id, excess = await _seed_excess_scenario(api)
     excess_id = excess["id"]
 
     async def verify(accounted, authorized):
@@ -42,7 +47,9 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
     await verify(510, 30)
     async with pg_session_factory() as session:
         before = await session.scalar(select(AdjustmentRequest).where(AdjustmentRequest.id == excess_id))
-        prior = (before.status, before.approved_amount_hours, before.reviewed_at)
+        prior_status = before.status
+        prior_hours = before.approved_amount_hours
+        prior_reviewed_at = before.reviewed_at
         audits_before = len(list(await session.scalars(select(AuditLog).where(
             AuditLog.entity_id == excess_id, AuditLog.action == "APPROVE_ADJUSTMENT",
         ))))
@@ -54,7 +61,9 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
     await verify(510, 30)
     async with pg_session_factory() as session:
         after = await session.scalar(select(AdjustmentRequest).where(AdjustmentRequest.id == excess_id))
-        assert (after.status, after.approved_amount_hours, after.reviewed_at) == prior
+        assert after.status == prior_status
+        assert after.approved_amount_hours == prior_hours
+        assert after.reviewed_at == prior_reviewed_at
         audits_after = len(list(await session.scalars(select(AuditLog).where(
             AuditLog.entity_id == excess_id, AuditLog.action == "APPROVE_ADJUSTMENT",
         ))))
@@ -83,18 +92,7 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
 
 @pytest.mark.parametrize("review", ["pending", "approved", "rejected"])
 async def test_holiday_removes_excess_and_deletion_restores_it(api, pg_session_factory, review):
-    user_id = await api.create_employee()
-    await api.request("POST", "/schedules/bulk", json={
-        "valid_from": "2026-09-01", "valid_until": "2026-09-30", "users": [{
-            "user_id": user_id, "schedules": [{"day_of_week": 1, "daily_minutes": 480,
-              "entry_1": "08:00", "exit_1": "12:00", "entry_2": "13:00", "exit_2": "17:00",
-              "is_daily_excess_enabled": True}],
-        }],
-    })
-    await api.add_punch(user_id, "ENTRY", "08:00")
-    await api.add_punch(user_id, "EXIT", "17:00")
-    adjustments = await api.json("GET", "/adjustments", params={"scope": "team", "month": 9, "year": 2026})
-    excess = next(item for item in adjustments if item["adjustment_type"] == "DAILY_EXCESS")
+    user_id, excess = await _seed_excess_scenario(api)
     if review == "approved":
         await api.request("PUT", f"/adjustments/{excess['id']}/review", json={"status": "APPROVED", "approved_amount_hours": 0.5})
     elif review == "rejected":

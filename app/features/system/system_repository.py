@@ -15,11 +15,56 @@ from app.features.system.system_models import (
 from app.features.system.system_schemas import AuditLogCreate, RoutineLogCreate
 
 
+def _build_audit_logs_stmt(
+    action: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    order_by: str = "desc",
+    skip: int = 0,
+    limit: int = 100,
+):
+    stmt = select(AuditLog).options(selectinload(AuditLog.user))
+    if action:
+        stmt = stmt.where(AuditLog.action == action)
+    if start_date:
+        dt_start = normalize_datetime(datetime.combine(start_date, time.min))
+        stmt = stmt.where(AuditLog.timestamp >= dt_start)
+    if end_date:
+        dt_end = normalize_datetime(datetime.combine(end_date, time.max))
+        stmt = stmt.where(AuditLog.timestamp <= dt_end)
+    order_fn = asc if order_by.lower() == "asc" else desc
+    return stmt.order_by(order_fn(AuditLog.timestamp)).offset(skip).limit(limit)
+
+
+def _build_routine_logs_stmt(
+    routine_type: str | None = None,
+    status: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    order_by: str = "desc",
+    skip: int = 0,
+    limit: int = 100,
+):
+    stmt = select(RoutineLog)
+    if routine_type:
+        stmt = stmt.where(RoutineLog.routine_type == routine_type)
+    if status:
+        stmt = stmt.where(RoutineLog.status == status)
+    if start_date:
+        start_dt = normalize_datetime(datetime.combine(start_date, time.min))
+        stmt = stmt.where(RoutineLog.execution_time >= start_dt)
+    if end_date:
+        end_dt = normalize_datetime(datetime.combine(end_date, time.max))
+        stmt = stmt.where(RoutineLog.execution_time <= end_dt)
+    order_fn = asc if order_by == "asc" else desc
+    return stmt.order_by(order_fn(RoutineLog.execution_time)).offset(skip).limit(limit)
+
+
 class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
     def __init__(self):
         super().__init__(AuditLog)
 
-    def create(self, db: Session, *, obj_in: AuditLogCreate) -> AuditLog:
+    def create(self, db: Session, obj_in: AuditLogCreate | None = None) -> AuditLog:
         return super().create(db, obj_in=obj_in)
 
     def get_logs(
@@ -54,57 +99,28 @@ class AuditRepository(BaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
         return query.offset(skip).limit(limit).all()
 
     def _read_scalars(self, db, action, start_date, end_date, order_by, skip, limit):
-        stmt = select(AuditLog).options(selectinload(AuditLog.user))
-        if action:
-            stmt = stmt.where(AuditLog.action == action)
-        if start_date:
-            dt_start = normalize_datetime(datetime.combine(start_date, time.min))
-            stmt = stmt.where(AuditLog.timestamp >= dt_start)
-        if end_date:
-            dt_end = normalize_datetime(datetime.combine(end_date, time.max))
-            stmt = stmt.where(AuditLog.timestamp <= dt_end)
-        if order_by.lower() == "asc":
-            stmt = stmt.order_by(asc(AuditLog.timestamp))
-        else:
-            stmt = stmt.order_by(desc(AuditLog.timestamp))
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = _build_audit_logs_stmt(action, start_date, end_date, order_by, skip, limit)
         return list(db.scalars(stmt).all())
-
 
 
 class AsyncAuditRepository(AsyncBaseRepository[AuditLog, AuditLogCreate, AuditLogCreate]):
     def __init__(self):
         super().__init__(AuditLog)
 
-    async def create(self, db: AsyncSession, *, obj_in: AuditLogCreate) -> AuditLog:
+    async def create(self, db: AsyncSession, obj_in: AuditLogCreate | None = None) -> AuditLog:
         return await super().create(db, obj_in=obj_in)
 
     async def get_logs(
-            self,
-            db: AsyncSession,
-            action: str | None = None,
-            start_date: date | None = None,
-            end_date: date | None = None,
-            order_by: str = "desc",
-            skip: int = 0,
-            limit: int = 100,
+        self,
+        db: AsyncSession,
+        action: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        order_by: str = "desc",
+        skip: int = 0,
+        limit: int = 100,
     ) -> list[AuditLog]:
-        stmt = select(AuditLog).options(selectinload(AuditLog.user))
-        if action:
-            stmt = stmt.where(AuditLog.action == action)
-        if start_date:
-            dt_start = normalize_datetime(datetime.combine(start_date, time.min))
-            stmt = stmt.where(AuditLog.timestamp >= dt_start)
-        if end_date:
-            dt_end = normalize_datetime(datetime.combine(end_date, time.max))
-            stmt = stmt.where(AuditLog.timestamp <= dt_end)
-
-        if order_by.lower() == "asc":
-            stmt = stmt.order_by(asc(AuditLog.timestamp))
-        else:
-            stmt = stmt.order_by(desc(AuditLog.timestamp))
-
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = _build_audit_logs_stmt(action, start_date, end_date, order_by, skip, limit)
         result = await db.scalars(stmt)
         return list(result.all())
 
@@ -147,22 +163,7 @@ class RoutineLogRepository(BaseRepository[RoutineLog, RoutineLogCreate, RoutineL
         return query.offset(skip).limit(limit).all()
 
     def _read_scalars(self, db, routine_type, status, start_date, end_date, order_by, skip, limit):
-        stmt = select(RoutineLog)
-        if routine_type:
-            stmt = stmt.where(RoutineLog.routine_type == routine_type)
-        if status:
-            stmt = stmt.where(RoutineLog.status == status)
-        if start_date:
-            start_dt = normalize_datetime(datetime.combine(start_date, time.min))
-            stmt = stmt.where(RoutineLog.execution_time >= start_dt)
-        if end_date:
-            end_dt = normalize_datetime(datetime.combine(end_date, time.max))
-            stmt = stmt.where(RoutineLog.execution_time <= end_dt)
-        if order_by == "asc":
-            stmt = stmt.order_by(asc(RoutineLog.execution_time))
-        else:
-            stmt = stmt.order_by(desc(RoutineLog.execution_time))
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = _build_routine_logs_stmt(routine_type, status, start_date, end_date, order_by, skip, limit)
         return list(db.scalars(stmt).all())
 
 
@@ -275,37 +276,17 @@ class AsyncRoutineLogRepository(AsyncBaseRepository[RoutineLog, RoutineLogCreate
         super().__init__(RoutineLog)
 
     async def get_logs(
-            self,
-            db: AsyncSession,
-            routine_type: str | None = None,
-            status: str | None = None,
-            start_date: date | None = None,
-            end_date: date | None = None,
-            order_by: str = "desc",
-            skip: int = 0,
-            limit: int = 100,
+        self,
+        db: AsyncSession,
+        routine_type: str | None = None,
+        status: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        order_by: str = "desc",
+        skip: int = 0,
+        limit: int = 100,
     ) -> list[RoutineLog]:
-        stmt = select(RoutineLog)
-        if routine_type:
-            stmt = stmt.where(RoutineLog.routine_type == routine_type)
-
-        if status:
-            stmt = stmt.where(RoutineLog.status == status)
-
-        if start_date:
-            start_dt = normalize_datetime(datetime.combine(start_date, time.min))
-            stmt = stmt.where(RoutineLog.execution_time >= start_dt)
-
-        if end_date:
-            end_dt = normalize_datetime(datetime.combine(end_date, time.max))
-            stmt = stmt.where(RoutineLog.execution_time <= end_dt)
-
-        if order_by == "asc":
-            stmt = stmt.order_by(asc(RoutineLog.execution_time))
-        else:
-            stmt = stmt.order_by(desc(RoutineLog.execution_time))
-
-        stmt = stmt.offset(skip).limit(limit)
+        stmt = _build_routine_logs_stmt(routine_type, status, start_date, end_date, order_by, skip, limit)
         result = await db.scalars(stmt)
         return list(result.all())
 
