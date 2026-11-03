@@ -31,14 +31,14 @@ jobs:
 
       - name: Check Python Syntax (Compile)
         run: |
-          uv run --no-sync python -m compileall -q app/
+          uv run --no-sync --no-build python -m compileall -q app/
 
       - name: Run Ruff
-        run: uv run --no-sync ruff check app scripts
+        run: uv run --no-sync --no-build ruff check app scripts
 
       - name: Run Mypy (Type Checking)
         run: |
-          uv run --no-sync mypy app/
+          uv run --no-sync --no-build mypy app/
 
   test:
     runs-on: ubuntu-latest
@@ -69,7 +69,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          uv run --no-sync python -m pytest tests/ -q --tb=short --cov=app --cov=alembic --cov-report=xml
+          uv run --no-sync --no-build python -m pytest tests/ -q --tb=short --cov=app --cov=alembic --cov-report=xml
 
   postgresql:
     runs-on: ubuntu-latest
@@ -101,4 +101,4 @@ jobs:
       - name: Test native PostgreSQL migrations and transactional apuration
         env:
           ENVIRONMENT: dev
-        run: uv run --no-sync python -m pytest tests/integration/ -q --tb=short --no-cov
+        run: uv run --no-sync --no-build python -m pytest tests/integration/ -q --tb=short --no-cov
