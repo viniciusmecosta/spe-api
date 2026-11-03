@@ -4,7 +4,6 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +13,7 @@ from app.features.payroll.payroll_repository import (
     payroll_repository,
 )
 from app.features.system.audit_service import audit_service
+from app.features.users.schedule_audit import schedule_audit_data
 from app.features.users.user_exceptions import (
     BulkScheduleNotFoundError,
     BulkScheduleValidationError,
@@ -271,6 +271,13 @@ class UserWorkScheduleService:
             else:
                 session.delete(cfg)
 
+    async def _schedule_user_names(self, session: Any, user_ids: set[int]) -> dict[int, str]:
+        if not user_ids:
+            return {}
+        statement = select(User.id, User.name).where(User.id.in_(user_ids))
+        result = await session.execute(statement) if hasattr(session, "sync_session") else session.execute(statement)
+        return {row.id: row.name for row in result.all() if row.name}
+
     async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str,
                                      old_data: dict | None = None, new_data: dict | None = None):
         if hasattr(session, "sync_session"):
@@ -329,9 +336,16 @@ class UserWorkScheduleService:
         for sch in new_schedules:
             session.add(sch)
 
+        if hasattr(session, "sync_session"):
+            await session.flush()
+        else:
+            session.flush()
         await self._commit_and_audit_bulk(
             session, current_user_id, "CREATE",
-            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            new_data=schedule_audit_data(
+                new_schedules, valid_from, valid_until,
+                {user_id: user.name for user_id, user in users_map.items()},
+            ),
         )
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
@@ -378,21 +392,31 @@ class UserWorkScheduleService:
         if errors:
             raise BulkScheduleValidationError(errors)
 
+        audit_names = await self._schedule_user_names(
+            session, {cfg.user_id for cfg in old_configs} | {user.id for user, _ in to_create}
+        )
+        old_audit_data = schedule_audit_data(old_configs, old_valid_from, old_valid_until, audit_names)
         await self._delete_schedule_configs(session, to_delete)
 
         for cfg, new_data in to_update:
             self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
             session.add(cfg)
 
+        new_configs = [cfg for cfg, _ in to_update]
         for user, new_data in to_create:
             new_sch = UserWorkScheduleConfig(user_id=user.id)
             self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
             session.add(new_sch)
+            new_configs.append(new_sch)
 
+        if hasattr(session, "sync_session"):
+            await session.flush()
+        else:
+            session.flush()
         await self._commit_and_audit_bulk(
             session, current_user_id, "UPDATE",
-            old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
-            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            old_data=old_audit_data,
+            new_data=schedule_audit_data(new_configs, new_valid_from, new_valid_until, audit_names),
         )
 
         return {"message": "Expedientes atualizados com sucesso."}
@@ -425,11 +449,13 @@ class UserWorkScheduleService:
 
         count = len(configs)
 
+        audit_names = await self._schedule_user_names(session, {cfg.user_id for cfg in configs})
+        old_audit_data = schedule_audit_data(configs, valid_from, valid_until, audit_names)
         await self._delete_schedule_configs(session, configs)
 
         await self._commit_and_audit_bulk(
             session, current_user_id, "DELETE",
-            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
+            old_data=old_audit_data,
         )
 
         return {"message": f"{count} registros removidos com sucesso."}

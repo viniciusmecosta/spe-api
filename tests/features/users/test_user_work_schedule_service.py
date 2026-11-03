@@ -493,6 +493,7 @@ async def test_user_work_schedule_service_async_session_branches(mocker):
     mock_scalars = MagicMock()
     mock_scalars.all.return_value = [cfg]
     async_sess.scalars.return_value = mock_scalars
+    async_sess.execute.return_value = MagicMock()
 
     res_bulk_list = await user_work_schedule_service.get_bulk_schedules(async_sess, month=1, year=2026)
     assert len(res_bulk_list) == 1
