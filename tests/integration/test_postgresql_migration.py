@@ -117,6 +117,7 @@ async def test_utc_admin_request_cannot_write_closed_local_month(pg_session_fact
         session.add(PayrollClosure(month=1, year=2026, closed_by_user_id=user.id))
         await session.commit()
     app.dependency_overrides[deps.get_current_manager] = lambda: user
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -133,6 +134,7 @@ async def test_utc_admin_request_cannot_write_closed_local_month(pg_session_fact
         assert response.status_code == 400
     finally:
         app.dependency_overrides.pop(deps.get_current_manager, None)
+        app.dependency_overrides.pop(deps.get_current_active_user, None)
     async with pg_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 0
 

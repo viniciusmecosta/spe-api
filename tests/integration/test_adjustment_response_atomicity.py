@@ -116,8 +116,9 @@ async def test_adjustment_mutations_return_serializable_responses(pg_session_fac
                 response = await client.put(f"/api/v1/adjustments/admin/{adjustment_id}/revert-status",
                                             json={"status": "REJECTED", "comment": "Teste sintetico"})
             else:
-                body = {"comment": "Teste sintetico"}
-                response = await client.put(f"/api/v1/adjustments/{adjustment_id}/{operation}", json=body)
+                status_value = "APPROVED" if operation == "approve" else "REJECTED"
+                body = {"status": status_value, "comment": "Teste sintetico"}
+                response = await client.put(f"/api/v1/adjustments/{adjustment_id}/review", json=body)
         assert response.status_code in {200, 201}, response.text
         assert response.json()["attachments"] == []
         assert response.json()["user_name"] in {"Gestor Sintetico", "Colaborador Alfa"}
