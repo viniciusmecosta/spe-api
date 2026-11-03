@@ -21,6 +21,7 @@ from reportlab.platypus import (
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
+from app.shared.document_authenticity import compute_timesheet_authenticity_hash
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek
 from app.shared.schedule_report_service import (
     format_day_groups,
@@ -605,10 +606,24 @@ class TimesheetPdfBuilder:
         story.append(sig_table)
 
         company_name = company.name if company else "Empresa Não Cadastrada"
+        authenticity_hash = compute_timesheet_authenticity_hash(
+            user=user,
+            company=company,
+            month=month,
+            year=year,
+            start_date=start_date,
+            end_date=end_date,
+            records=records,
+            holidays=holidays,
+            adjustments=all_adjustments,
+            period_result=period_result,
+        )
 
         def _add_pdf_meta(canvas, document):
             canvas.setTitle(f"{company_name} - Registro de Ponto")
             canvas.setAuthor(company_name)
+            canvas.setSubject(f"Relatório Oficial de Ponto | sha256:{authenticity_hash}")
+            canvas.setKeywords(f"sha256:{authenticity_hash}")
 
         doc.build(story, onFirstPage=_add_pdf_meta, onLaterPages=_add_pdf_meta)
         buffer.seek(0)

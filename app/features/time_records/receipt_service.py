@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import mm
 from reportlab.pdfgen import canvas
 
 from app.features.printers.printer_models import Printer
+from app.shared.document_authenticity import compute_receipt_authenticity_hash
 from app.shared.enums import RecordType
 from app.utils.formatters import mask_cnpj, mask_cpf
 
@@ -96,11 +97,13 @@ class ReceiptService:
         height = 24 * mm
 
         c = canvas.Canvas(buffer, pagesize=(width, height))
+        authenticity_hash = compute_receipt_authenticity_hash(data)
 
         c.setTitle(str(data['nsr']))
         c.setAuthor(str(val('company_name')))
-        c.setSubject("COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR")
+        c.setSubject(f"COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR | sha256:{authenticity_hash}")
         c.setCreator("SISTEMA DE PONTO ELETRÔNICO")
+        c.setKeywords(f"sha256:{authenticity_hash}")
 
         c.setFont("Courier-Bold", 6.5)
         c.drawCentredString(width / 2.0, height - 2.5 * mm, "COMPROVANTE DE REGISTRO DE PONTO DO TRABALHADOR")
