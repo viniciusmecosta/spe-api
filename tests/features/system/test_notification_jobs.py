@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -91,6 +92,29 @@ def test_retain_file_and_log_incidents(mocker, tmp_path):
 
     incidents_short = notification_jobs._log_incidents([(str(src_bin), "data.bin")])
     assert incidents_short == []
+
+    src_log_yesterday = tmp_path / "log_23102026.log"
+    src_log_yesterday.write_text("[INFO] ontem password=segredo", encoding="utf-8")
+    src_log_today = tmp_path / "log_24102026.log"
+    src_log_today.write_text("[INFO] hoje", encoding="utf-8")
+    combined_attachments = notification_jobs._retain_attachments(
+        2,
+        [
+            (str(src_bin), "data.bin"),
+            (str(src_log_yesterday), "log_23102026.log"),
+            (str(src_log_today), "log_24102026.log"),
+        ],
+    )
+    assert len(combined_attachments) == 2
+    assert combined_attachments[0][1] == "data.bin"
+    combined_path, combined_name = combined_attachments[1]
+    assert combined_name == "log_23102026_24102026.log"
+    combined_text = Path(combined_path).read_text(encoding="utf-8")
+    assert "=== log_23102026.log ===" in combined_text
+    assert "=== log_24102026.log ===" in combined_text
+    assert "ontem" in combined_text
+    assert "hoje" in combined_text
+    assert "segredo" not in combined_text
 
 
 @pytest.mark.asyncio
