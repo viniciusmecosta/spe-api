@@ -8,6 +8,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.database.schedule_lock import lock_schedule_mutations
 from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
@@ -295,6 +296,13 @@ class UserWorkScheduleService:
                 old_data=old_data, new_data=new_data
             )
 
+    @staticmethod
+    async def _lock_mutations(session: Any) -> None:
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lock_schedule_mutations)
+        elif not hasattr(session, "sync_session"):
+            lock_schedule_mutations(session)
+
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
                                   current_user_id: int = 0):
         session = db if db is not None else self.db
@@ -317,6 +325,7 @@ class UserWorkScheduleService:
         if not users_input:
             raise BulkScheduleValidationError("Nenhum usuário informado.")
 
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, valid_from, valid_until)
 
         uids = [u.get('user_id') for u in users_input if u.get('user_id')]
@@ -378,6 +387,7 @@ class UserWorkScheduleService:
         if (new_valid_until - new_valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, old_valid_from, old_valid_until)
         await self.check_payroll_closure(session, new_valid_from, new_valid_until)
 
@@ -430,17 +440,23 @@ class UserWorkScheduleService:
 
     @staticmethod
     def _validate_schedule_days(users_input: list[dict]) -> None:
+        seen = set()
         for user_input in users_input:
             for schedule in user_input.get('schedules', []):
                 day = schedule.get('day_of_week')
                 if not isinstance(day, int) or not 0 <= day <= 6:
                     raise BulkScheduleValidationError('O dia da semana deve estar entre 0 e 6.')
+                key = (user_input.get('user_id'), day)
+                if key in seen:
+                    raise BulkScheduleValidationError('O mesmo usuário e dia da semana foram informados mais de uma vez.')
+                seen.add(key)
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date | None = None,
                                     valid_until: date | None = None,
                                     current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, valid_from, valid_until)
 
         configs = await self._query_schedule_configs(session, valid_from, valid_until)
