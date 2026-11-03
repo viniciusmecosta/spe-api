@@ -98,7 +98,7 @@ def main() -> None:
         assert _queued(session, user_id, first + timedelta(days=2))
 
         session.add(UserWorkScheduleConfig(
-            user_id=user_id, day_of_week=(first + timedelta(days=3)).weekday(), daily_hours=8,
+            user_id=user_id, day_of_week=(first + timedelta(days=3)).weekday(), daily_minutes=480,
             valid_from=first + timedelta(days=3),
             valid_until=first + timedelta(days=4),
         ))
@@ -109,7 +109,7 @@ def main() -> None:
         local_today = datetime.now(ZoneInfo(settings.TIMEZONE)).date()
         open_start = local_today - timedelta(days=14)
         session.add(UserWorkScheduleConfig(
-            user_id=user_id, day_of_week=open_start.weekday(), daily_hours=8,
+            user_id=user_id, day_of_week=open_start.weekday(), daily_minutes=480,
             valid_from=open_start, valid_until=None,
         ))
         session.flush()
