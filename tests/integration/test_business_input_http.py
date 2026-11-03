@@ -30,7 +30,7 @@ async def test_invalid_waivers_and_failed_approval_do_not_create_approved_adjust
     request = await api.json("POST", "/adjustments/", 201, headers=api.employee_headers, json={
         "adjustment_type": "WAIVER", "target_date": DAY, "amount_hours": 1, "reason_text": "Atestado sintetico",
     })
-    await api.request("PUT", f"/adjustments/{request['id']}/approve", 400)
+    await api.request("PUT", f"/adjustments/{request['id']}/review", 400, json={"status": "APPROVED"})
     async with pg_session_factory() as session:
         count = await session.scalar(select(func.count()).select_from(AdjustmentRequest))
         assert count == 1
@@ -51,8 +51,8 @@ async def test_business_boundaries_and_reprocessing_are_rejected_without_creatin
     await api.request("POST", "/daily-summaries/admin/reprocess", 422, json={
         "start_date": DAY, "end_date": DAY, "user_ids": [],
     })
-    await api.request("POST", "/payroll/close", 422, json={"month": 13, "year": 2026})
-    await api.request("GET", "/reports/history/me", 422, params={**PERIOD, "month": 0})
+    await api.request("POST", "/payroll/2026/13/transitions", 422, json={"action": "CLOSE"})
+    await api.request("GET", "/reports/history", 422, params={**PERIOD, "month": 0})
     async with pg_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(BackgroundJob)) == 0
 
@@ -75,7 +75,8 @@ async def test_employee_cannot_access_other_employees_records(api):
         "username": "qa_other", "name": "Colaborador Beta", "password": "Synthetic-flow-password-123",
     })
     record = await api.add_punch(other["id"], "ENTRY", "08:00")
-    for path in [f"/reports/history/user/{other['id']}", f"/reports/user/{other['id']}",
+    await api.request("GET", "/reports/history", 403, headers=api.employee_headers, params={**PERIOD, "user_id": other["id"]})
+    for path in [f"/reports/user/{other['id']}",
                  f"/timesheets/user/{other['id']}/pdf", f"/time-records/receipt/{record['short_id']}"]:
         await api.request("GET", path, 403, headers=api.employee_headers, params=PERIOD)
     assert user_id != other["id"]

@@ -133,5 +133,5 @@ def test_discriminated_contract_exposes_only_supported_operations():
 
 
 @pytest.mark.parametrize('path', ['/backup/trigger', '/telegram/manual-backup', '/telegram/manual-report'])
-def test_legacy_manual_routes_are_deprecated(path):
-    assert app.openapi()['paths']['/api/v1' + path]['post']['deprecated'] is True
+def test_legacy_manual_routes_are_removed(path):
+    assert 'post' not in app.openapi()['paths'].get('/api/v1' + path, {})

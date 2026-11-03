@@ -1,9 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
-from app.features.system.audit_service import AuditService
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.users.user_models import User
 from app.main import app
@@ -37,8 +36,8 @@ def test_trigger_manual_backup_success(client: TestClient, mocker: MagicMock) ->
         return_value=42,
     )
 
-    response = client.post("/api/v1/backup/trigger")
-    assert response.status_code == 200
+    response = client.post("/api/v1/operations/jobs", json={"operation": "BACKUP_EMAIL"})
+    assert response.status_code == 202
     data = response.json()
     assert data["status"] == "success"
     assert data["job_id"] == "42"
@@ -56,6 +55,6 @@ def test_trigger_manual_backup_forbidden_for_employee(db_session_mock: MagicMock
     app.dependency_overrides[deps.get_db] = lambda: db_session_mock
     client = TestClient(app)
 
-    response = client.post("/api/v1/backup/trigger")
+    response = client.post("/api/v1/operations/jobs", json={"operation": "BACKUP_EMAIL"})
     assert response.status_code == 403
     app.dependency_overrides.clear()

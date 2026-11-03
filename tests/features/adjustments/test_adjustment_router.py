@@ -4,9 +4,9 @@ import tempfile
 from datetime import date, datetime, time
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentAttachmentResponse,
     AdjustmentRequestResponse,
@@ -150,12 +150,12 @@ def test_download_adjustment_attachment(client: TestClient, mocker: MagicMock) -
 def test_read_my_adjustments(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
-        "get_my_enriched",
+        "list_adjustments",
         new_callable=AsyncMock,
         return_value=[],
     )
 
-    response = client.get("/api/v1/adjustments/my")
+    response = client.get("/api/v1/adjustments")
     assert response.status_code == 200
     assert response.json() == []
 
@@ -163,12 +163,12 @@ def test_read_my_adjustments(client: TestClient, mocker: MagicMock) -> None:
 def test_read_all_adjustments(client: TestClient, mocker: MagicMock) -> None:
     mocker.patch.object(
         AdjustmentService,
-        "get_all_enriched",
+        "list_adjustments",
         new_callable=AsyncMock,
         return_value=[],
     )
 
-    response = client.get("/api/v1/adjustments/")
+    response = client.get("/api/v1/adjustments?scope=team")
     assert response.status_code == 200
     assert response.json() == []
 
@@ -187,14 +187,14 @@ def test_approve_adjustment(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         AdjustmentService,
-        "approve_adjustment",
+        "review_adjustment",
         new_callable=AsyncMock,
         return_value=expected,
     )
 
     response = client.put(
-        "/api/v1/adjustments/1/approve",
-        json={"comment": "Aprovado"},
+        "/api/v1/adjustments/1/review",
+        json={"status": "APPROVED", "comment": "Aprovado"},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "APPROVED"
@@ -214,14 +214,14 @@ def test_reject_adjustment(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         AdjustmentService,
-        "reject_adjustment",
+        "review_adjustment",
         new_callable=AsyncMock,
         return_value=expected,
     )
 
     response = client.put(
-        "/api/v1/adjustments/1/reject",
-        json={"comment": "Recusado"},
+        "/api/v1/adjustments/1/review",
+        json={"status": "REJECTED", "comment": "Recusado"},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "REJECTED"
@@ -236,9 +236,9 @@ def test_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
 
 
 def test_admin_delete_adjustment(client: TestClient, mocker: MagicMock) -> None:
-    mocker.patch.object(AdjustmentService, "admin_delete_adjustment", new_callable=AsyncMock)
+    mocker.patch.object(AdjustmentService, "delete_adjustment", new_callable=AsyncMock)
 
-    response = client.delete("/api/v1/adjustments/admin/1?reason=Exclusao+admin+justificada")
+    response = client.delete("/api/v1/adjustments/1?reason=Exclusao+admin+justificada")
     assert response.status_code == 200
     assert response.json()["status"] == "success"
 

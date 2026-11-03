@@ -30,19 +30,18 @@ async def test_missing_entities_do_not_succeed_or_modify_data(api, pg_session_fa
         ('GET', '/payroll/999999/download-report', {}),
         ('GET', '/routine-logs/jobs/999999', {}),
         ('POST', '/routine-logs/jobs/999999/retry', {}),
-        ('PUT', '/time-records/999999/toggle', {}),
-        ('PUT', '/time-records/admin/999999', {'json': {
+        ('POST', '/time-records/999999/type-transitions', {}),
+        ('PATCH', '/time-records/999999', {'json': {
             'record_datetime': '2026-09-29T08:00:00-03:00',
             'edit_justification': 'Teste sintetico de registro inexistente',
         }}),
-        ('DELETE', '/time-records/admin/999999', {'json': {
-            'edit_justification': 'Teste sintetico de registro inexistente',
+        ('DELETE', '/time-records/999999', {'params': {
+            'justification': 'Teste sintetico de registro inexistente',
         }}),
         ('GET', '/adjustments/999999/download', {}),
-        ('PUT', '/adjustments/999999/approve', {'json': {}}),
-        ('PUT', '/adjustments/999999/reject', {'json': {'comment': 'Teste sintetico'}}),
+        ('PUT', '/adjustments/999999/review', {'json': {'status': 'APPROVED'}}),
+        ('PUT', '/adjustments/999999/review', {'json': {'status': 'REJECTED', 'comment': 'Teste sintetico'}}),
         ('DELETE', '/adjustments/999999', {'params': {'reason': 'Teste sintetico'}}),
-        ('DELETE', '/adjustments/admin/999999', {'params': {'reason': 'Teste sintetico'}}),
         ('PUT', '/adjustments/admin/999999/revert-status', {'json': {
             'status': 'PENDING', 'comment': 'Teste sintetico',
         }}),

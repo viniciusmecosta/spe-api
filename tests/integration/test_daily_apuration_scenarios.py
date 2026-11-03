@@ -40,7 +40,7 @@ async def test_apuration_scenarios_match_expected_minutes_and_history(
     if schedule != 'none':
         await api.request('POST', '/schedules/bulk', json={
             'valid_from': DAY, 'valid_until': DAY, 'users': [{'user_id': user_id, 'schedules': [{
-                'day_of_week': 1, 'daily_hours': 8, 'entry_1': '08:00', 'exit_1': '12:00',
+                'day_of_week': 1, 'daily_minutes': 480, 'entry_1': '08:00', 'exit_1': '12:00',
                 'entry_2': '13:00', 'exit_2': '17:00', 'is_daily_excess_enabled': schedule == 'enabled',
             }]}],
         })
@@ -49,13 +49,13 @@ async def test_apuration_scenarios_match_expected_minutes_and_history(
     for kind, clock in punches:
         await api.add_punch(user_id, kind, clock)
     if decision:
-        adjustments = await api.json('GET', '/adjustments/', params=PERIOD)
+        adjustments = await api.json('GET', '/adjustments', params={**PERIOD, 'scope': 'team'})
         excess = next(item for item in adjustments if item['adjustment_type'] == 'DAILY_EXCESS')
-        action = 'reject' if decision == 'rejected' else 'approve'
-        payload = {'comment': 'Revisao sintetica'}
+        status = 'REJECTED' if decision == 'rejected' else 'APPROVED'
+        payload = {'status': status, 'comment': 'Revisao sintetica'}
         if decision == 'partial':
             payload['approved_amount_hours'] = 0.5
-        await api.request('PUT', f"/adjustments/{excess['id']}/{action}", json=payload)
+        await api.request('PUT', f"/adjustments/{excess['id']}/review", json=payload)
     async with pg_session_factory() as session:
         row = await session.scalar(select(DailySummary).where(
             DailySummary.user_id == user_id, DailySummary.apuration_date == date.fromisoformat(DAY),
@@ -66,7 +66,7 @@ async def test_apuration_scenarios_match_expected_minutes_and_history(
             row.authorized_excess_minutes, row.missing_minutes,
         ))
     assert actual == pytest.approx(expected)
-    history = await api.json('GET', f'/reports/history/user/{user_id}', params=PERIOD)
+    history = await api.json('GET', '/reports/history', params={**PERIOD, 'user_id': user_id})
     day = next(item for item in history['days'] if item['date'] == DAY)
     assert day['worked_time'] == f'{expected[0] // 60:02d}:{expected[0] % 60:02d}'
     assert day['accounted_time'] == f'{expected[1] // 60:02d}:{expected[1] % 60:02d}'

@@ -82,28 +82,3 @@ async def get_anomalies(
     )
 
 
-@anomalies_router.get(
-    "/all",
-    deprecated=True,
-    dependencies=[Depends(deps.get_current_manager)],
-)
-async def get_all_anomalies(
-        month: Month,
-        year: Year,
-        service: Annotated[AnomalyService, Depends()],
-) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year, viewer_role=UserRole.MANAGER)
-
-
-@anomalies_router.get(
-    "/user/{user_id}",
-    deprecated=True,
-    dependencies=[Depends(deps.get_current_manager)],
-)
-async def get_user_anomalies(
-        user_id: int,
-        month: Month,
-        year: Year,
-        service: Annotated[AnomalyService, Depends()],
-) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year, user_id=user_id, viewer_role=UserRole.MANAGER)

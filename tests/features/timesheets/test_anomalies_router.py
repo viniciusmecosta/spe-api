@@ -50,7 +50,7 @@ def test_get_all_anomalies(client: TestClient, mocker: MagicMock) -> None:
         return_value=expected,
     )
 
-    response = client.get("/api/v1/anomalies/all?month=8&year=2026")
+    response = client.get("/api/v1/anomalies?month=8&year=2026")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
@@ -75,7 +75,7 @@ def test_get_user_anomalies(client: TestClient, mocker: MagicMock) -> None:
         return_value=expected,
     )
 
-    response = client.get("/api/v1/anomalies/user/2?month=8&year=2026")
+    response = client.get("/api/v1/anomalies?user_id=2&month=8&year=2026")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1

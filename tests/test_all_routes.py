@@ -10,12 +10,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from app.main import app
+
+from app.core.security import get_api_key_hash, get_password_hash
 from app.database.session import SessionLocal
-from app.features.users.user_models import User
-from app.shared.enums import UserRole, DeviceKeyType
 from app.features.devices.device_models import DeviceCredential
-from app.core.security import get_password_hash, get_api_key_hash
+from app.features.users.user_models import User
+from app.main import app
+from app.shared.enums import DeviceKeyType, UserRole
 
 
 def setup_test_data(db):
@@ -92,9 +93,6 @@ def _generate_report(client, device_key):
     report = ["# 🛡️ Fuzzing & Route Testing Report\n", "Validação total de rotas com base na especificação OpenAPI.\n"]
 
     for path, methods_dict in paths.items():
-        if "/api/v1/backup/trigger" in path or "/api/v1/telegram/" in path:
-            continue
-
         valid_path = path.replace("{id}", "1").replace("{user_id}", "1").replace("{sensor_index}", "1").replace(
             "{record_id}", "1").replace("{version}", "1.0.0")
         invalid_path = path.replace("{id}", "invalid_str").replace("{user_id}", "invalid_str").replace("{sensor_index}",

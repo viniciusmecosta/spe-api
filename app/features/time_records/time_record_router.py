@@ -1,10 +1,8 @@
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
-    Body,
     Depends,
     Query,
     Request,
@@ -17,8 +15,6 @@ from app.features.time_records.time_record_schemas import (
     ManualTimeRecordCreate,
     ReceiptResponse,
     SuccessResponse,
-    TimeRecordCreateAdmin,
-    TimeRecordDeleteAdmin,
     TimeRecordFilters,
     TimeRecordResponse,
     TimeRecordTimelineResponse,
@@ -34,7 +30,6 @@ from app.shared.openapi_responses import (
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
-from app.shared.validation import PageLimit, PageOffset
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 
@@ -66,46 +61,7 @@ async def list_records(
 
 
 @router.post(
-    "/entry",
-    deprecated=True,
-    status_code=status.HTTP_201_CREATED,
-    responses={**BAD_REQUEST_RESPONSE},
-)
-async def register_entry(
-        request: Request,
-        background_tasks: BackgroundTasks,
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-) -> TimeRecordResponse:
-    return await service.register_entry(
-        user_id=current_user.id, request=request, background_tasks=background_tasks
-    )
-
-
-@router.post(
-    "/exit",
-    deprecated=True,
-    status_code=status.HTTP_201_CREATED,
-    responses={**BAD_REQUEST_RESPONSE},
-)
-async def register_exit(
-        request: Request,
-        background_tasks: BackgroundTasks,
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-) -> TimeRecordResponse:
-    return await service.register_exit(
-        user_id=current_user.id, request=request, background_tasks=background_tasks
-    )
-
-
-@router.post(
     "/{id}/type-transitions",
-    responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
-)
-@router.put(
-    "/{id}/toggle",
-    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 async def toggle_record_type(
@@ -118,55 +74,8 @@ async def toggle_record_type(
     )
 
 
-@router.get("/my", deprecated=True)
-async def read_my_records(
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        skip: PageOffset = 0,
-        limit: PageLimit = 100,
-) -> list[TimeRecordResponse]:
-    return await service.get_my_records(user_id=current_user.id, skip=skip, limit=limit)
-
-
-@router.get(
-    "/admin/list",
-    deprecated=True,
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def list_records_for_admin(
-        user_id: int,
-        start_date: datetime,
-        end_date: datetime,
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-) -> list[TimeRecordResponse]:
-    return await service.list_records_for_admin(user_id=user_id, start_date=start_date, end_date=end_date)
-
-
-@router.post(
-    "/admin",
-    deprecated=True,
-    status_code=status.HTTP_201_CREATED,
-    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
-)
-async def create_time_record_admin(
-        record_in: TimeRecordCreateAdmin,
-        request: Request,
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-) -> TimeRecordResponse:
-    return await service.create_admin_record(
-        obj_in=record_in, manager_id=current_user.id, request=request
-    )
-
-
 @router.patch(
     "/{record_id}",
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
-)
-@router.put(
-    "/admin/{record_id}",
-    deprecated=True,
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
 )
 async def update_time_record_admin(
@@ -179,28 +88,6 @@ async def update_time_record_admin(
     return await service.update_admin_record(
         record_id=record_id, obj_in=record_in, manager_id=current_user.id, request=request
     )
-
-
-@router.delete(
-    "/admin/{record_id}",
-    deprecated=True,
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
-)
-async def delete_time_record_admin(
-        record_id: int,
-        service: Annotated[TimeRecordService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-        justification: Annotated[str | None, Query(max_length=300)] = None,
-        request_body: Annotated[TimeRecordDeleteAdmin | None, Body()] = None,
-) -> SuccessResponse:
-    await service.delete_admin_record(
-        record_id=record_id,
-        manager_id=current_user.id,
-        justification=justification,
-        request_body=request_body,
-        validate_justification=True,
-    )
-    return SuccessResponse(status="success", message="Registro excluído com sucesso.")
 
 
 @router.delete(
@@ -218,7 +105,6 @@ async def delete_time_record(
         justification=justification, validate_justification=True,
     )
     return SuccessResponse(status="success", message="Registro excluído com sucesso.")
-
 
 
 @router.get(

@@ -12,7 +12,6 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from app.features.adjustments.adjustment_schemas import (
-    AdjustmentApproveRequest,
     AdjustmentAttachmentResponse,
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
@@ -114,50 +113,6 @@ async def read_adjustments(
     )
 
 
-@router.get("/my", deprecated=True)
-async def read_my_adjustments(
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        skip: Annotated[int, Query(ge=0)] = 0,
-        limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Month | None = None,
-        year: Year | None = None,
-        status: Annotated[
-            str | None,
-            Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
-        ] = None,
-        order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
-        order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
-) -> list[AdjustmentRequestResponse]:
-    return await service.get_my_enriched(
-        user_id=current_user.id, skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
-    )
-
-
-@router.get(
-    "/",
-    deprecated=True,
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def read_all_adjustments(
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-        skip: Annotated[int, Query(ge=0)] = 0,
-        limit: Annotated[int, Query(ge=1, le=100)] = 100,
-        month: Month | None = None,
-        year: Year | None = None,
-        status: Annotated[
-            str | None,
-            Query(pattern="^(?i)(PENDING|APPROVED|REJECTED|NOT_PENDING)$"),
-        ] = None,
-        order_by: Annotated[str, Query(pattern="^(created_at|target_date)$")] = "created_at",
-        order_direction: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
-) -> list[AdjustmentRequestResponse]:
-    return await service.get_all_enriched(
-        skip=skip, limit=limit, month=month, year=year, status=status, order_by=order_by, order_direction=order_direction
-    )
-
-
 @router.put(
     "/{id}/review",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
@@ -171,39 +126,6 @@ async def review_adjustment(
     return await service.review_adjustment(request_id=id, manager_id=current_user.id, review=body)
 
 
-@router.put(
-    "/{id}/approve",
-    deprecated=True,
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
-)
-async def approve_adjustment(
-        id: int,
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-        body: Annotated[AdjustmentApproveRequest | None, Body()] = None,
-) -> AdjustmentRequestResponse:
-    return await service.approve_adjustment(
-        request_id=id,
-        manager_id=current_user.id,
-        comment=body.comment if body else None,
-        approved_amount_hours=body.approved_amount_hours if body else None,
-    )
-
-
-@router.put(
-    "/{id}/reject",
-    deprecated=True,
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
-)
-async def reject_adjustment(
-        id: int,
-        comment: Annotated[str, Body(..., embed=True)],
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-) -> AdjustmentRequestResponse:
-    return await service.reject_adjustment(request_id=id, manager_id=current_user.id, comment=comment)
-
-
 @router.delete(
     "/{id}",
     responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
@@ -215,21 +137,6 @@ async def delete_adjustment(
         current_user: Annotated[User, Depends(deps.get_current_manager)],
 ) -> dict[str, str]:
     await service.delete_adjustment(adjustment_id=id, manager_id=current_user.id, reason=reason)
-    return {"status": "success"}
-
-
-@router.delete(
-    "/admin/{id}",
-    deprecated=True,
-    responses={**BAD_REQUEST_RESPONSE, **CRUD_RESPONSES},
-)
-async def admin_delete_adjustment(
-        id: int,
-        reason: Annotated[str, Query(..., min_length=5, description="Justificativa para a exclusão")],
-        service: Annotated[AdjustmentService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
-) -> dict[str, str]:
-    await service.admin_delete_adjustment(adjustment_id=id, admin_id=current_user.id, reason=reason)
     return {"status": "success"}
 
 

@@ -122,7 +122,7 @@ async def test_utc_admin_request_cannot_write_closed_local_month(pg_session_fact
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post(
-                "/api/v1/time-records/admin",
+                "/api/v1/time-records",
                 json={
                     "user_id": user.id,
                     "record_type": "EXIT",
@@ -160,6 +160,7 @@ async def test_closing_first_rejects_a_writer_that_validated_an_open_month(
 @pytest.mark.asyncio
 async def test_closing_waits_for_the_writer_and_exports_its_summary(pg_session_factory):
     from fastapi import BackgroundTasks
+
     from app.features.reports.excel_service import excel_service
 
     factory = pg_session_factory
@@ -205,7 +206,7 @@ async def test_fractional_schedules_sum_rounded_daily_minutes(pg_session_factory
             UserWorkScheduleConfig(
                 user_id=user.id,
                 day_of_week=day,
-                daily_hours=8.08,
+                daily_minutes=485,
                 valid_from=first,
                 valid_until=last,
             )

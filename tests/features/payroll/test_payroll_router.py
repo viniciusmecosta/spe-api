@@ -2,9 +2,9 @@ import io
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.payroll.payroll_schemas import PayrollClosureResponse
 from app.features.payroll.payroll_service import PayrollService
 from app.features.time_records.time_record_schemas import SuccessResponse
@@ -75,7 +75,7 @@ def test_close_payroll_period(client: TestClient, mocker: MagicMock) -> None:
         return_value=expected,
     )
 
-    response = client.post("/api/v1/payroll/close", json={"month": 8, "year": 2026})
+    response = client.post("/api/v1/payroll/2026/8/transitions", json={"action": "CLOSE"})
     assert response.status_code == 200
     assert response.json()["is_closed"] is True
 
@@ -90,11 +90,11 @@ def test_reopen_payroll_period(client: TestClient, mocker: MagicMock) -> None:
     )
 
     response = client.post(
-        "/api/v1/payroll/reopen",
-        json={"month": 8, "year": 2026, "observation": "Reopen for adjustment"},
+        "/api/v1/payroll/2026/8/transitions",
+        json={"action": "REOPEN", "observation": "Reopen for adjustment"},
     )
     assert response.status_code == 200
-    assert response.json()["status"] == "success"
+    assert response.json()["is_closed"] is False
 
 
 def test_upload_legacy_report(client: TestClient, mocker: MagicMock) -> None:

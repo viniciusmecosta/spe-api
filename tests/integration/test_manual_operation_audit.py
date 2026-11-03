@@ -12,12 +12,12 @@ from app.shared.enums import UserRole
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize(('path', 'action'), [
-    ('/backup/trigger', 'MANUAL_BACKUP_EMAIL'),
-    ('/telegram/manual-backup', 'MANUAL_BACKUP_TELEGRAM'),
-    ('/telegram/manual-report?start_date=2026-10-01&end_date=2026-10-05', 'MANUAL_REPORT_TELEGRAM'),
+@pytest.mark.parametrize(('body', 'action'), [
+    ({'operation': 'BACKUP_EMAIL'}, 'MANUAL_BACKUP_EMAIL'),
+    ({'operation': 'BACKUP_TELEGRAM'}, 'MANUAL_BACKUP_TELEGRAM'),
+    ({'operation': 'REPORT_TELEGRAM', 'start_date': '2026-10-01', 'end_date': '2026-10-05'}, 'MANUAL_REPORT_TELEGRAM'),
 ])
-async def test_manual_operation_is_queued_with_operator_and_audit(pg_session_factory, path, action):
+async def test_manual_operation_is_queued_with_operator_and_audit(pg_session_factory, body, action):
     async with pg_session_factory() as session:
         user = User(username='operator', name='Operador', role=UserRole.MAINTAINER)
         session.add(user)
@@ -32,8 +32,8 @@ async def test_manual_operation_is_queued_with_operator_and_audit(pg_session_fac
     app.dependency_overrides[deps.get_current_active_user] = lambda: user
     try:
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
-            response = await client.post('/api/v1' + path)
-        assert response.status_code == 200
+            response = await client.post('/api/v1/operations/jobs', json=body)
+        assert response.status_code == 202
         job_id = int(response.json()['job_id'])
         async with pg_session_factory() as session:
             job = await session.get(BackgroundJob, job_id)

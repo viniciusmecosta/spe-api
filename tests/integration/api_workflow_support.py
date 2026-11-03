@@ -44,7 +44,7 @@ class ApiWorkflow:
         return result["id"]
 
     async def add_punch(self, user_id, kind, clock):
-        return await self.json("POST", "/time-records/admin", 201, json={
+        return await self.json("POST", "/time-records", 201, json={
             "user_id": user_id, "record_type": kind, "record_datetime": f"{DAY}T{clock}:00-03:00",
             "edit_justification": "Inclusao sintetica de teste",
         })

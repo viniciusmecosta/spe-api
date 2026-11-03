@@ -40,14 +40,14 @@ async def test_extreme_dates_are_rejected_before_mutation(pg_session_factory):
                 'user_id': user_id, 'target_date': '9999-12-31',
                 'amount_hours': 1, 'reason_text': 'Abono sintético',
             }),
-            ('/time-records/admin', {
+            ('/time-records', {
                 'user_id': user_id, 'record_type': 'ENTRY',
                 'record_datetime': '9999-12-31T08:00:00-03:00',
                 'edit_justification': 'Inclusão sintética',
             }),
             ('/schedules/bulk', {
                 'valid_from': '9999-12-31', 'valid_until': '9999-12-31',
-                'users': [{'user_id': user_id, 'schedules': [{'day_of_week': 4, 'daily_hours': 8}]}],
+                'users': [{'user_id': user_id, 'schedules': [{'day_of_week': 4, 'daily_minutes': 480}]}],
             }),
         ]
         for path, payload in cases:

@@ -1,9 +1,9 @@
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.time_records.time_record_models import TimeRecord
 from app.features.time_records.time_record_schemas import TimeRecordTimelineResponse
 from app.features.time_records.time_record_service import TimeRecordService
@@ -50,13 +50,13 @@ def test_register_entry(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         TimeRecordService,
-        "register_entry",
+        "create_record",
         new_callable=AsyncMock,
         return_value=mock_record,
     )
     mocker.patch.object(TimeRecordService, "trigger_auto_print", new_callable=AsyncMock)
 
-    response = client.post("/api/v1/time-records/entry")
+    response = client.post("/api/v1/time-records", json={"record_type": "ENTRY"})
     assert response.status_code == 201
     assert response.json()["record_type"] == "ENTRY"
 
@@ -72,13 +72,13 @@ def test_register_exit(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         TimeRecordService,
-        "register_exit",
+        "create_record",
         new_callable=AsyncMock,
         return_value=mock_record,
     )
     mocker.patch.object(TimeRecordService, "trigger_auto_print", new_callable=AsyncMock)
 
-    response = client.post("/api/v1/time-records/exit")
+    response = client.post("/api/v1/time-records", json={"record_type": "EXIT"})
     assert response.status_code == 201
     assert response.json()["record_type"] == "EXIT"
 
@@ -99,7 +99,7 @@ def test_toggle_record_type(client: TestClient, mocker: MagicMock) -> None:
         return_value=mock_record,
     )
 
-    response = client.put("/api/v1/time-records/1/toggle")
+    response = client.post("/api/v1/time-records/1/type-transitions")
     assert response.status_code == 200
     assert response.json()["record_type"] == "EXIT"
 
@@ -115,12 +115,12 @@ def test_read_my_records(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         TimeRecordService,
-        "get_my_records",
+        "list_records",
         new_callable=AsyncMock,
         return_value=[mock_record],
     )
 
-    response = client.get("/api/v1/time-records/my")
+    response = client.get("/api/v1/time-records")
     assert response.status_code == 200
     assert len(response.json()) == 1
 
@@ -136,13 +136,13 @@ def test_list_records_for_admin(client: TestClient, mocker: MagicMock) -> None:
     )
     mocker.patch.object(
         TimeRecordService,
-        "list_records_for_admin",
+        "list_records",
         new_callable=AsyncMock,
         return_value=[mock_record],
     )
 
     response = client.get(
-        "/api/v1/time-records/admin/list?user_id=1&start_date=2026-08-01T00:00:00&end_date=2026-08-31T23:59:59")
+        "/api/v1/time-records?user_id=1&start_date=2026-08-01T00:00:00&end_date=2026-08-31T23:59:59")
     assert response.status_code == 200
     assert len(response.json()) == 1
 
@@ -158,13 +158,13 @@ def test_create_time_record_admin(client: TestClient, mocker: MagicMock) -> None
     )
     mocker.patch.object(
         TimeRecordService,
-        "create_admin_record",
+        "create_record",
         new_callable=AsyncMock,
         return_value=mock_record,
     )
 
     response = client.post(
-        "/api/v1/time-records/admin",
+        "/api/v1/time-records",
         json={"user_id": 1, "record_type": "ENTRY", "record_datetime": "2026-08-14T08:00:00",
               "edit_justification": "Admin insert"},
     )
@@ -187,8 +187,8 @@ def test_update_time_record_admin(client: TestClient, mocker: MagicMock) -> None
         return_value=mock_record,
     )
 
-    response = client.put(
-        "/api/v1/time-records/admin/1",
+    response = client.patch(
+        "/api/v1/time-records/1",
         json={"record_type": "ENTRY", "record_datetime": "2026-08-14T08:00:00", "edit_justification": "Admin edit"},
     )
     assert response.status_code == 200
@@ -199,8 +199,7 @@ def test_delete_time_record_admin(client: TestClient, mocker: MagicMock) -> None
 
     response = client.request(
         "DELETE",
-        "/api/v1/time-records/admin/1",
-        json={"edit_justification": "Admin delete"},
+        "/api/v1/time-records/1?justification=Admin+delete",
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
@@ -211,7 +210,7 @@ def test_delete_time_record_admin_query_param(client: TestClient, mocker: MagicM
 
     response = client.request(
         "DELETE",
-        "/api/v1/time-records/admin/1?justification=Admin%20delete%20via%20query",
+        "/api/v1/time-records/1?justification=Admin%20delete%20via%20query",
     )
     assert response.status_code == 200
     assert response.json()["status"] == "success"
@@ -220,10 +219,9 @@ def test_delete_time_record_admin_query_param(client: TestClient, mocker: MagicM
 def test_delete_time_record_admin_missing_justification(client: TestClient, mocker: MagicMock) -> None:
     response = client.request(
         "DELETE",
-        "/api/v1/time-records/admin/1",
+        "/api/v1/time-records/1",
     )
     assert response.status_code == 422
-    assert "Justificativa de exclusão é obrigatória" in response.json()["detail"]
 
 
 def test_get_time_record_timeline(client: TestClient, mocker: MagicMock) -> None:
