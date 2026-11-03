@@ -90,7 +90,7 @@ async def test_user_repository_methods(async_db_session, async_normal_user):
     await async_db_session.commit()
     await async_db_session.refresh(other_user)
 
-    async_db_session.add(UserBiometric(user_id=other_user.id, sensor_index=888, template_data="data"))
+    async_db_session.add(UserBiometric(user_id=other_user.id, sensor_index=888))
     await async_db_session.commit()
 
     with pytest.raises(ValueError, match="duplicado na mesma requisicao"):
@@ -234,7 +234,7 @@ def test_sync_user_repository(db_session, normal_user):
     db_session.commit()
     db_session.refresh(other_user)
 
-    db_session.add(UserBiometric(user_id=other_user.id, sensor_index=881, template_data="data"))
+    db_session.add(UserBiometric(user_id=other_user.id, sensor_index=881))
     db_session.commit()
 
     with pytest.raises(ValueError, match="duplicado na mesma requisicao"):

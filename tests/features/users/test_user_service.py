@@ -194,13 +194,13 @@ async def test_process_single_biometric(biometric_service, mocker):
                                                  seen_idx, seen_fgr, current)
     assert res == existing
     assert res.sensor_index == 2
-    assert res.template_data == "data"
+    assert not hasattr(res, "template_data")
     assert res.finger_id == 3
     res2 = await biometric_service.process_single_biometric(user,
                                                   {"id": 11, "sensor_index": 5, "template_data": "data2",
                                                    "finger_id": 4}, seen_idx, seen_fgr, current)
     assert res2.sensor_index == 5
-    assert res2.template_data == "data2"
+    assert not hasattr(res2, "template_data")
     assert res2.finger_id == 4
 
 

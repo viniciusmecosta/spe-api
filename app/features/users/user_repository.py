@@ -73,8 +73,8 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
 
     def _get_bio_fields(self, bio_data: Any):
         if isinstance(bio_data, dict):
-            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("template_data"), bio_data.get("finger_id")
-        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "template_data", None), getattr(bio_data, "finger_id", None)
+            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("finger_id")
+        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "finger_id", None)
 
     def _validate_sensor_idx(self, db: Session, sensor_idx: int, user_id: int, seen_indices: set):
         if sensor_idx is not None:
@@ -96,18 +96,16 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         new_biometrics_list = []
         seen_indices = set()
         for bio_data in biometrics_in:
-            bio_id, sensor_idx, tmpl_data, f_id = self._get_bio_fields(bio_data)
+            bio_id, sensor_idx, f_id = self._get_bio_fields(bio_data)
             self._validate_sensor_idx(db, sensor_idx, db_obj.id, seen_indices)
 
             if bio_id and bio_id in current_biometrics:
                 existing = current_biometrics[bio_id]
                 existing.sensor_index = sensor_idx
-                if tmpl_data is not None:
-                    existing.template_data = tmpl_data
                 existing.finger_id = f_id
                 new_biometrics_list.append(existing)
             else:
-                new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
+                new_bio = UserBiometric(sensor_index=sensor_idx, finger_id=f_id)
                 new_biometrics_list.append(new_bio)
         db_obj.biometrics = new_biometrics_list
 
@@ -259,13 +257,8 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
 
     def _get_bio_fields(self, bio_data: Any):
         if isinstance(bio_data, dict):
-            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("template_data"), bio_data.get(
-                "finger_id")
-        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data,
-                                                                                               "template_data",
-                                                                                               None), getattr(bio_data,
-                                                                                                              "finger_id",
-                                                                                                              None)
+            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("finger_id")
+        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "finger_id", None)
 
     async def _validate_sensor_idx(self, db: AsyncSession, sensor_idx: int, user_id: int, seen_indices: set):
         if sensor_idx is not None:
@@ -289,18 +282,16 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         new_biometrics_list = []
         seen_indices = set()
         for bio_data in biometrics_in:
-            bio_id, sensor_idx, tmpl_data, f_id = self._get_bio_fields(bio_data)
+            bio_id, sensor_idx, f_id = self._get_bio_fields(bio_data)
             await self._validate_sensor_idx(db, sensor_idx, db_obj.id, seen_indices)
 
             if bio_id and bio_id in current_biometrics:
                 existing = current_biometrics[bio_id]
                 existing.sensor_index = sensor_idx
-                if tmpl_data is not None:
-                    existing.template_data = tmpl_data
                 existing.finger_id = f_id
                 new_biometrics_list.append(existing)
             else:
-                new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
+                new_bio = UserBiometric(sensor_index=sensor_idx, finger_id=f_id)
                 new_biometrics_list.append(new_bio)
         db_obj.biometrics = new_biometrics_list
 
