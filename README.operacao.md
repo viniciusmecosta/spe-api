@@ -15,3 +15,19 @@ A limitação na aplicação reduz abuso por origem, mas não impede a saturaç�
 `GET /api/v1/health` informa o estado básico da aplicação. `GET /api/v1/ready` verifica a conexão com PostgreSQL e a revisão do schema. Use a prontidão para avaliar se a instância pode receber tráfego. Mantenha a migração do banco atualizada com `uv run alembic upgrade head`.
 
 A fila de tarefas é persistida no PostgreSQL; rotinas agendadas executam notificações, manutenção e backups conforme o ambiente. Configure SMTP, Telegram, retenção e horários em [README.env.md](README.env.md). O NTP é usado para sincronizar o horário. Os arquivos de upload e backups devem ficar em armazenamento persistente, com cópia e restauração verificadas.
+
+## Auditoria de expedientes
+
+As operações em lote registram um resumo legível e o estado dos expedientes envolvidos. Atualizações guardam os estados anterior e posterior; exclusões guardam o estado anterior. O nome é registrado quando disponível, com o identificador como referência.
+
+O campo `schedule_snapshot_zlib` começa por `v1:`. O restante é uma string Base64 de um documento JSON UTF-8 comprimido com zlib. O objeto contém `valid_from`, `valid_until` e `schedules`, com identificador, funcionário, dia, duração em minutos, horários e configuração de excedente de cada expediente. Para recuperar os dados em Python:
+
+```python
+import base64
+import json
+import zlib
+
+snapshot = json.loads(zlib.decompress(base64.b64decode(valor.removeprefix("v1:"))))
+```
+
+A compressão reduz a repetição dos campos e permite recuperar o conteúdo; ela não é assinatura digital nem comprova integridade contra alteração. Registros anteriores permanecem intactos e são apresentados usando apenas os dados efetivamente registrados.
