@@ -51,6 +51,8 @@ def test_history_requires_authentication():
 
 def test_employee_cannot_read_someone_elses_history(mocker):
     user = User(id=3, role=UserRole.EMPLOYEE, is_active=True)
+    mocker.patch('app.features.reports.report_service.async_user_repository.get',
+                 new_callable=AsyncMock, return_value=User(id=4))
     app.dependency_overrides[deps.get_current_active_user] = lambda: user
     try:
         with TestClient(app) as client:
