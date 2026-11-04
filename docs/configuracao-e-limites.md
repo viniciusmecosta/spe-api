@@ -19,11 +19,11 @@ O [`RateLimitMiddleware`](../app/middleware/rate_limit.py) controla a quantidade
 
 - Janela de 1 segundo (`RATE_LIMIT_REQUESTS_PER_SECOND`): barra rajadas acima do limite por segundo (padrão `30` req/s por IP).
 - Janela de 60 segundos (`RATE_LIMIT_REQUESTS_PER_MINUTE`): limita o volume total por minuto (padrão `600` req/min por IP).
-- Janela de autenticação (`RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE`): limite próprio para `/api/v1/auth/*` e `/api/v1/devices/verify-manager` (padrão `60` req/min por IP).
+- Janela de autenticação (`RATE_LIMIT_AUTH_REQUESTS_PER_MINUTE`): limite próprio compartilhado por `/api/v1/auth/login`, `/api/v1/auth/refresh`, `/api/v1/auth/password` e `/api/v1/devices/verify-manager` (padrão `60` req/min por IP).
 
-Os endpoints `/`, `/api/v1/health` e `/api/v1/ready` ficam fora da contagem para não bloquear healthchecks.
+Os endpoints de saúde também são contabilizados. Requisições locais diretas são isentas, salvo quando há proxy confiável ou cabeçalhos de encaminhamento.
 
-Quando o limite estoura, o middleware responde `429 Too Many Requests` com o header `Retry-After` (segundos até liberar) e body no padrão RFC 9457 Problem Details (`type: "https://api.spe.com/erros/limite-de-requisicoes"`, `code: "RATE_LIMIT_EXCEEDED"`).
+Quando o limite estoura, o middleware responde `429 Too Many Requests`, com o header `Retry-After` em segundos e uma mensagem no campo `detail`.
 
 ### Uso atrás de proxy reverso (`TRUSTED_PROXY_CIDRS`)
 
