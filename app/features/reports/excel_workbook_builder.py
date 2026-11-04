@@ -11,6 +11,7 @@ from openpyxl.utils import get_column_letter
 
 from app.core.config import settings
 from app.shared.document_authenticity import compute_excel_authenticity_hash
+from app.shared.document_signature import sign_xlsx
 from app.shared.schedule_report_service import (
     format_day_groups,
     get_schedule_transitions,
@@ -493,5 +494,4 @@ class ExcelWorkbookBuilder:
 
         output = BytesIO()
         wb.save(output)
-        output.seek(0)
-        return output
+        return BytesIO(sign_xlsx(output.getvalue()))

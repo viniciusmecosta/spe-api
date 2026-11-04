@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     UPLOAD_LOGO_MAX_PIXELS: int = Field(default=16000000, ge=1)
     UPLOAD_REQUEST_MAX_BYTES: int = Field(default=32 * 1024 * 1024, ge=1)
     SECRET_KEY: str
+    DOCUMENT_SIGNING_KEY: str = ""
     ALGORITHM: str
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=30, ge=1, le=365)
     PASSWORD_CHANGE_TOKEN_EXPIRE_MINUTES: int = Field(default=10, ge=1, le=30)

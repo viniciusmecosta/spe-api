@@ -10,6 +10,7 @@ from reportlab.pdfgen import canvas
 
 from app.features.printers.printer_models import Printer
 from app.shared.document_authenticity import compute_receipt_authenticity_hash
+from app.shared.document_signature import sign_pdf
 from app.shared.enums import RecordType
 from app.utils.formatters import mask_cnpj, mask_cpf
 
@@ -144,7 +145,7 @@ class ReceiptService:
         pdf_bytes = buffer.getvalue()
         buffer.close()
 
-        return pdf_bytes
+        return sign_pdf(pdf_bytes)
 
 
 receipt_service = ReceiptService()

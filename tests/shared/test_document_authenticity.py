@@ -15,6 +15,7 @@ from app.shared.document_authenticity import (
     compute_receipt_authenticity_hash,
     compute_timesheet_authenticity_hash,
 )
+from app.shared.document_signature import verify_document
 from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 
 
@@ -109,6 +110,7 @@ def test_excel_workbook_embeds_deterministic_authenticity_hash():
         start_date=date(2026, 8, 1),
         end_date=date(2026, 8, 1),
     )
+    assert verify_document(stream.getvalue()).authentic
     wb = load_workbook(stream)
     assert wb.properties.keywords == f"sha256:{expected_hash}"
     assert wb.properties.identifier == expected_hash
@@ -184,6 +186,7 @@ def test_timesheet_pdf_embeds_deterministic_authenticity_hash():
         period_result=period_result,
     )
     pdf_bytes = pdf_stream.getvalue()
+    assert verify_document(pdf_bytes).authentic
     assert f"sha256:{expected_hash}".encode("ascii") in pdf_bytes
 
 
@@ -204,6 +207,7 @@ def test_receipt_pdf_and_operational_export_authenticity_hashes():
     }
     expected_receipt_hash = compute_receipt_authenticity_hash(receipt_data)
     pdf_bytes = ReceiptService.generate_pdf_receipt(receipt_data)
+    assert verify_document(pdf_bytes).authentic
     assert f"sha256:{expected_receipt_hash}".encode("ascii") in pdf_bytes
 
     export_payload_a = {

@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
 from app.shared.document_authenticity import compute_timesheet_authenticity_hash
+from app.shared.document_signature import sign_pdf
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek
 from app.shared.schedule_report_service import (
     format_day_groups,
@@ -626,5 +627,4 @@ class TimesheetPdfBuilder:
             canvas.setKeywords(f"sha256:{authenticity_hash}")
 
         doc.build(story, onFirstPage=_add_pdf_meta, onLaterPages=_add_pdf_meta)
-        buffer.seek(0)
-        return buffer
+        return io.BytesIO(sign_pdf(buffer.getvalue()))

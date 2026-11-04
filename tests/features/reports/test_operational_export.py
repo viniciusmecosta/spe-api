@@ -15,6 +15,7 @@ from app.features.reports.operational_export_service import (
 from app.features.reports.report_exceptions import ReportUserNotFoundError
 from app.main import app
 from app.shared import deps
+from app.shared.document_signature import verify_document
 from app.shared.enums import RecordType, UserRole
 
 
@@ -40,8 +41,9 @@ async def test_operational_records_include_deleted_and_authenticity_hash(session
     session.scalars.return_value.all.return_value = [record, active_record]
     response = await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
     data = json.loads(response.body)
+    assert verify_document(response.body).authentic
     assert "aviso" not in data
-    assert data["metadados"]["hash_autenticidade"].startswith("sha256:")
+    assert data["metadados"]["hash_dados"].startswith("sha256:")
     assert data["periodo"] == {"inicio": "2026-02-01", "fim": "2026-02-28"}
     assert data["marcacoes"][0]["excluida_em"] is not None
     assert data["marcacoes"][0]["registro_original_id"] == 41

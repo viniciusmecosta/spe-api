@@ -42,9 +42,9 @@ Qualquer alteração em batidas, expedientes, ajustes ou feriados recalcula o re
 - Os pedidos de ajuste com anexo passam por `/api/v1/adjustments`. Gestores aprovam, rejeitam ou lançam abonos (`/api/v1/adjustments/admin/waive`), disparando o recálculo do dia.
 - No fechamento mensal (`POST /api/v1/payroll/{year}/{month}/transitions`), o service valida se há pendências, gera e congela a planilha `.xlsx` oficial do mês e trava edições naquele período. Para reabrir a folha, é obrigatório informar justificativa.
 
-### 4. Autenticidade dos arquivos gerados (`SHA-256`)
+### 4. Verificação de documentos
 
-As planilhas Excel (`/api/v1/reports/export/excel`), espelhos de ponto em PDF (`/api/v1/timesheets/user/{user_id}/pdf` e `/api/v1/timesheets/all/pdf`), comprovantes de batida (`/api/v1/time-records/receipt/{short_id}/pdf`) e arquivos JSON operacionais (`/api/v1/reports/operational-export`) levam nos metadados do arquivo e no header `X-Document-Hash` um hash determinístico `sha256:<digest>` calculado em [`document_authenticity.py`](app/shared/document_authenticity.py) a partir dos registros do banco.
+Planilhas Excel, espelhos em PDF, comprovantes e exportações JSON recém-gerados recebem uma assinatura HMAC do conteúdo. Gestores podem enviar o arquivo a `/api/v1/documents/verify` para verificar se ele foi emitido por uma instalação com a mesma chave e permanece intacto. Arquivos antigos sem assinatura não são verificáveis por esse mecanismo. A verificação não substitui assinatura ICP-Brasil nem comprova a correção dos dados de origem.
 
 ## Bibliotecas utilizadas
 

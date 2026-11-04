@@ -18,6 +18,10 @@ from app.features.devices.device_router import (
 from app.features.holidays.holiday_router import router as holidays_router
 from app.features.payroll.payroll_router import router as payroll_router
 from app.features.printers.printer_router import router as printers_router
+from app.features.reports.aej_preview_router import router as aej_preview_router
+from app.features.reports.document_verification_router import (
+    router as document_verification_router,
+)
 from app.features.reports.report_router import dashboard_router
 from app.features.reports.report_router import router as reports_router
 from app.features.system.monitoring import router as monitoring_router
@@ -52,12 +56,14 @@ api_router.include_router(companies_router, prefix="/companies", tags=["Companie
 api_router.include_router(daily_summaries_router, prefix="/daily-summaries", tags=["Daily Summaries"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(device_router, prefix="/devices", tags=["Devices"])
+api_router.include_router(document_verification_router, prefix="/documents", tags=["Documents"])
 api_router.include_router(device_credentials_router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(firmware_router, prefix="/firmware", tags=["Firmware OTA"])
 api_router.include_router(holidays_router, prefix="/holidays", tags=["Holidays"])
 api_router.include_router(payroll_router, prefix="/payroll", tags=["Payroll"])
 api_router.include_router(printers_router, prefix="/printers", tags=["Printers"])
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
+api_router.include_router(aej_preview_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(routine_logs_router, prefix="/routine-logs", tags=["Routine Logs"])
 api_router.include_router(schedules_router, prefix="/schedules", tags=["Schedules"])
 api_router.include_router(telegram_actions_router, prefix="/telegram", tags=["Telegram"])

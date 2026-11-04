@@ -1,8 +1,8 @@
-# Relatórios, planilhas Excel, PDFs e hash de autenticidade
+# Relatórios, planilhas Excel, PDFs e verificação
 
 [![OpenPyXL](https://img.shields.io/badge/OpenPyXL-3.1%2B-217346)](https://openpyxl.readthedocs.io/) [![ReportLab](https://img.shields.io/badge/ReportLab-5.0%2B-B30B00)](https://www.reportlab.com/) [![Pillow](https://img.shields.io/badge/Pillow-12.3%2B-3776AB)](https://python-pillow.org/) [![QRCode](https://img.shields.io/badge/qrcode-8.2%2B-000000)](https://pypi.org/project/qrcode/) [![Hashids](https://img.shields.io/badge/hashids-1.3%2B-5A4FCF)](https://pypi.org/project/hashids/)
 
-Funcionamento da geração da planilha mensal em Excel, dos espelhos de ponto em PDF/ZIP, dos comprovantes de batida, da exportação operacional em JSON e do cálculo do hash de autenticidade. A lista de endpoints está em [`endpoints.md`](endpoints.md).
+Funcionamento da geração da planilha mensal em Excel, dos espelhos de ponto em PDF/ZIP, dos comprovantes de batida, da exportação operacional em JSON e da verificação de documentos. A lista de endpoints está em [`endpoints.md`](endpoints.md).
 
 ## Bibliotecas utilizadas
 
@@ -30,6 +30,8 @@ O [`TimesheetService`](../app/features/timesheets/timesheet_service.py) gera os 
 
 ## Exportação operacional (`GET /api/v1/reports/operational-export`)
 
+Uma prévia textual de jornada, incompleta e sem valor fiscal, está descrita em [Prévia de jornada](previa-jornada.md).
+
 O [`OperationalExportService`](../app/features/reports/operational_export_service.py) exporta os dados do período (`month`, `year`) em JSON para conferência de gestores e mantenedores em dois formatos (`kind`):
 
 1. `kind=marcacoes`:
@@ -38,13 +40,8 @@ O [`OperationalExportService`](../app/features/reports/operational_export_servic
 2. `kind=jornada`:
    - Exige `user_id` e exporta o relatório detalhado da jornada diária e os totalizadores do funcionário no mês.
 
-## Hash determinístico de autenticidade (`sha256`)
+## Verificação de documentos
 
-Todos os arquivos exportados recebem um hash calculado por [`document_authenticity.py`](../app/shared/document_authenticity.py) diretamente sobre os dados vindos do banco:
+Arquivos PDF, Excel e JSON recém-gerados recebem uma assinatura HMAC-SHA256 sobre o conteúdo integral. Gestores e mantenedores podem enviar até 25 MiB por `POST /api/v1/documents/verify`, no campo multipart `file`; a resposta informa `authentic` e `reason`. Uma assinatura válida indica que o arquivo permanece intacto e foi emitido por uma instalação com a mesma chave; ela não garante que os dados de origem sejam corretos e não é uma assinatura ICP-Brasil.
 
-1. Os dados de domínio do documento (tipo, período, empresa, funcionário, batidas e totais) são normalizados e serializados em JSON canônico (`sort_keys=True`, sem espaços e com datas em ISO-8601), ignorando campos de horário de geração.
-2. A função calcula o `SHA-256` desse conteúdo, gerando o identificador `sha256:<hex_digest>`.
-3. O hash é gravado nos metadados do arquivo e no header HTTP `X-Document-Hash`:
-   - Planilhas Excel (`.xlsx`): propriedades `subject` e `keywords` do arquivo e header `X-Document-Hash`.
-   - Espelhos de ponto e comprovantes (`.pdf`): campos `Subject` e `Keywords` do PDF e header `X-Document-Hash`.
-   - Exportações operacionais (`.json`): campo `"metadados": {"hash_autenticidade": "sha256:<hex_digest>"}` no JSON e header `X-Document-Hash`.
+Configure uma `DOCUMENT_SIGNING_KEY` exclusiva e mantenha seu backup protegido. Se ela não for definida, a API deriva uma chave da `SECRET_KEY`. Alterar a chave escolhida impede a verificação de documentos emitidos anteriormente. Arquivos gerados antes deste recurso, inclusive planilhas antigas de fechamento, não são verificáveis. Os hashes anteriores nos metadados são identificadores de dados e não servem para verificar autenticidade.

@@ -19,6 +19,7 @@ from app.shared import deps
 from app.shared.document_authenticity import (
     compute_operational_export_authenticity_hash,
 )
+from app.shared.document_signature import sign_json
 
 ExportKind = Literal["marcacoes", "jornada"]
 EXPORT_BATCH_SIZE = 1000
@@ -101,10 +102,10 @@ class OperationalExportService:
             )
             payload["jornada"] = report.model_dump(mode="json")
         authenticity_hash = compute_operational_export_authenticity_hash(payload)
-        payload["metadados"] = {"hash_autenticidade": f"sha256:{authenticity_hash}"}
+        payload["metadados"] = {"hash_dados": f"sha256:{authenticity_hash}"}
         filename = f"operacional_{kind}_{user_id if user_id is not None else 'todos'}_{year:04d}{month:02d}.json"
         return Response(
-            content=json.dumps(jsonable_encoder(payload), ensure_ascii=False),
+            content=sign_json(json.dumps(jsonable_encoder(payload), ensure_ascii=False).encode("utf-8")),
             media_type="application/json",
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',

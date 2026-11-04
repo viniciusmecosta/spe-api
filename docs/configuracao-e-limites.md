@@ -76,6 +76,7 @@ Os uploads passam por duas checagens:
 | Variável | Exemplo / Padrão | Descrição |
 | --- | --- | --- |
 | `SECRET_KEY` | Obrigatória | Chave usada para assinar tokens JWT, gerar hashids de comprovantes e criptografar backups. |
+| `DOCUMENT_SIGNING_KEY` | Vazia | Chave dedicada à assinatura HMAC de documentos. Quando vazia, uma chave é derivada de `SECRET_KEY`; a troca da chave impede verificar arquivos anteriores. |
 | `ALGORITHM` | `"HS256"` | Algoritmo de assinatura do JWT. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | Tempo de vida em minutos do access token normal. |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Tempo de vida em dias de cada refresh token emitido. |
