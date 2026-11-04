@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
+from app.features.reports.aej_preview_service import AejPreviewService
 from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.excel_service import ExcelService
 from app.features.reports.operational_export_service import (
@@ -31,6 +32,17 @@ from app.shared.validation import Month, Year
 
 router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 dashboard_router = APIRouter(responses={**AUTH_RESPONSES})
+
+
+@router.get("/aej-preview")
+async def export_aej_preview(
+        month: Month,
+        year: Year,
+        user_id: Annotated[int, Query(gt=0)],
+        service: Annotated[AejPreviewService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+) -> Response:
+    return await service.export(user_id, month, year)
 
 
 @router.get(
