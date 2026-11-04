@@ -73,3 +73,21 @@ def test_invalid_signing_inputs_are_rejected():
         sign_xlsx(b"other")
     with pytest.raises(ValueError):
         sign_json(b"[]")
+
+
+def test_rejects_malformed_signature_containers():
+    pdf = sign_pdf(pdf_bytes())
+    assert not verify_document(pdf[:-1] + b"x").authentic
+
+    xlsx = sign_xlsx(xlsx_bytes())
+    marker = b"SPE-HMAC-SHA256-V1:"
+    position = xlsx.rfind(marker)
+    assert not verify_document(xlsx[:position] + b"X" + xlsx[position + 1:]).authentic
+
+    document = sign_json(b'{"id":1}')
+    assert not verify_document(document[:-1] + b"x").authentic
+    assert not verify_document(document[:-3] + b"z" + document[-2:]).authentic
+
+    unsigned = xlsx_bytes()
+    with pytest.raises(ValueError):
+        sign_xlsx(unsigned[:-2] + b"\x01\x00")
