@@ -127,133 +127,13 @@ def schedule_audit_data(configs, valid_from, valid_until, names=None):
         )
         for user_id, days in sorted(grouped.items(), key=lambda pair: (pair[0] is None, pair[0]))
     )
+    snapshot = json.dumps({"schedules": normalized}, ensure_ascii=False, separators=(",", ":"))
+    compressed = base64.b64encode(zlib.compress(snapshot.encode("utf-8"))).decode("ascii")
     return {
+        "schedule_snapshot_zlib": f"v1:{compressed}",
         "valid_from": str(valid_from) if valid_from is not None else None,
         "valid_until": str(valid_until) if valid_until is not None else None,
         "schedule_summary": summary,
     }
 
-
-def _extract_bulk_user_schedules(user_entry: Any) -> list[dict[str, Any]]:
-    if not isinstance(user_entry, dict) or not isinstance(user_entry.get("schedules"), list):
-        return []
-    uid = user_entry.get("user_id")
-    uname = user_entry.get("user_name")
-    return [
-        {**schedule, "user_id": uid, "user_name": uname}
-        for schedule in user_entry["schedules"]
-        if isinstance(schedule, dict)
-    ]
-
-
-def _extract_legacy_configs(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
-    snapshot_zlib = payload.get("schedule_snapshot_zlib")
-    if isinstance(snapshot_zlib, str) and snapshot_zlib.startswith("v1:"):
-        raw = zlib.decompress(base64.b64decode(snapshot_zlib.removeprefix("v1:")))
-        unpacked = json.loads(raw.decode("utf-8"))
-        schedules = unpacked.get("schedules")
-        if isinstance(schedules, list):
-            return [item for item in schedules if isinstance(item, dict)]
-    bulk = payload.get("bulk_data")
-    if isinstance(bulk, dict) and isinstance(bulk.get("users"), list):
-        extracted: list[dict[str, Any]] = []
-        for user_entry in bulk["users"]:
-            extracted.extend(_extract_bulk_user_schedules(user_entry))
-        return extracted
-    return None
-
-
-def migrate_schedule_audit_payload(
-    payload: dict[str, Any] | None,
-    names: dict[int, str] | None = None,
-    fallback_summary: str | None = None,
-) -> dict[str, Any] | None:
-    if not isinstance(payload, dict):
-        return payload
-    resolved_names = names or {}
-    bulk = payload.get("bulk_data") if isinstance(payload.get("bulk_data"), dict) else {}
-    valid_from = payload.get("valid_from") or bulk.get("valid_from")
-    valid_until = payload.get("valid_until") or bulk.get("valid_until")
-    configs = _extract_legacy_configs(payload)
-    if configs is not None:
-        return schedule_audit_data(configs, valid_from, valid_until, resolved_names)
-    cleaned = {
-        key: value
-        for key, value in payload.items()
-        if key not in {"bulk_data", "schedule_snapshot_zlib", "schedule_snapshot_format", "user_ids"}
-    }
-    if not cleaned.get("schedule_summary") and fallback_summary:
-        cleaned["schedule_summary"] = fallback_summary
-    return cleaned
-
-
-def _decode_json_column(value: Any) -> dict[str, Any] | None:
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str) and value.strip():
-        parsed = json.loads(value)
-        if isinstance(parsed, dict):
-            return parsed
-    return None
-
-
-def _period_key(data: dict[str, Any] | None) -> tuple[str, str] | None:
-    if not isinstance(data, dict):
-        return None
-    vf = data.get("valid_from")
-    vu = data.get("valid_until")
-    if vf and vu:
-        return str(vf), str(vu)
-    return None
-
-
-def _load_user_names(connection: Any, tables: set[str], sa: Any) -> dict[int, str]:
-    if "users" not in tables:
-        return {}
-    user_rows = connection.execute(sa.text("SELECT id, name FROM users")).all()
-    return {int(row[0]): str(row[1]) for row in user_rows if row[0] is not None and row[1]}
-
-
-def migrate_schedule_audit_logs(connection: Any) -> None:
-    import sqlalchemy as sa
-
-    inspector = sa.inspect(connection)
-    tables = set(inspector.get_table_names())
-    if "audit_logs" not in tables:
-        return
-    names = _load_user_names(connection, tables, sa)
-    audit_table = sa.table(
-        "audit_logs",
-        sa.column("id", sa.Integer),
-        sa.column("entity", sa.String),
-        sa.column("old_data", sa.JSON),
-        sa.column("new_data", sa.JSON),
-    )
-    rows = connection.execute(
-        sa.select(audit_table.c.id, audit_table.c.old_data, audit_table.c.new_data)
-        .where(
-            audit_table.c.entity.in_(
-                ["USER_WORK_SCHEDULE_BULK", "USER_WORK_SCHEDULE_CONFIGS", "USER_WORK_SCHEDULE"]
-            )
-        )
-        .order_by(audit_table.c.id.asc())
-    ).all()
-    last_summary_by_period: dict[tuple[str, str], str] = {}
-    for row_id, raw_old, raw_new in rows:
-        old_data = _decode_json_column(raw_old)
-        new_data = _decode_json_column(raw_new)
-        old_key = _period_key(old_data)
-        fallback_old = last_summary_by_period.get(old_key) if old_key else None
-        migrated_old = migrate_schedule_audit_payload(old_data, names, fallback_old)
-        migrated_new = migrate_schedule_audit_payload(new_data, names)
-        new_key = _period_key(migrated_new)
-        new_summary = migrated_new.get("schedule_summary") if isinstance(migrated_new, dict) else None
-        if new_key and new_summary:
-            last_summary_by_period[new_key] = str(new_summary)
-        if migrated_old != old_data or migrated_new != new_data:
-            connection.execute(
-                audit_table.update()
-                .where(audit_table.c.id == row_id)
-                .values(old_data=migrated_old, new_data=migrated_new)
-            )
 

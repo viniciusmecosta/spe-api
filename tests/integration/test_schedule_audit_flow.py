@@ -39,7 +39,9 @@ async def test_schedule_audit_preserves_states_for_create_update_delete(api, pg_
     before = logs[1].old_data
     after = logs[1].new_data
     deleted = logs[2].old_data
-    assert "schedule_snapshot_zlib" not in created
+    assert created["schedule_snapshot_zlib"].startswith("v1:")
+    assert before["schedule_snapshot_zlib"] == created["schedule_snapshot_zlib"]
+    assert deleted["schedule_snapshot_zlib"] == after["schedule_snapshot_zlib"]
     assert "bulk_data" not in created
     assert before["valid_from"] == after["valid_from"] == "2026-09-01"
     assert before["valid_until"] == after["valid_until"] == "2026-09-30"
