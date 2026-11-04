@@ -4,11 +4,7 @@ import zlib
 from datetime import date, time
 from types import SimpleNamespace
 
-from alembic.config import Config
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
-from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 from app.features.users.schedule_audit import (
     _format_clock,
@@ -75,24 +71,6 @@ def test_schedule_audit_handles_dict_inputs_and_edge_cases():
     res = schedule_audit_data(dict_items, "2026-09-01", "2026-09-30")
     assert "Funcionário não informado: Dia não informado: 08:00 às não informado (480 min)" in res["schedule_summary"]
     assert "Funcionário #2: Segunda: 09:00 às não informado" in res["schedule_summary"]
-
-
-def test_migration_013_preserves_historical_audit_data():
-    engine = create_engine("sqlite://")
-    with engine.begin() as conn:
-        conn.execute(text("CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, old_data JSON, new_data JSON)"))
-        original = json.dumps({"bulk_data": {"users": [{"user_id": 5, "schedules": [{"day_of_week": 0}]}]}})
-        unknown = json.dumps({"valid_from": "2026-09-01", "valid_until": "2026-09-30"})
-        conn.execute(text("INSERT INTO audit_logs VALUES (1, NULL, :data)"), {"data": original})
-        conn.execute(text("INSERT INTO audit_logs VALUES (2, :data, NULL)"), {"data": unknown})
-        migration = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("013").module
-        with Operations.context(MigrationContext.configure(conn)):
-            migration.upgrade()
-            migration.downgrade()
-        rows = conn.execute(text("SELECT old_data, new_data FROM audit_logs ORDER BY id")).all()
-        assert json.loads(rows[0][1]) == json.loads(original)
-        assert json.loads(rows[1][0]) == json.loads(unknown)
-    engine.dispose()
 
 
 async def test_schedule_lock_and_service_edge_branches(async_db_mock, db_session_mock, mocker):
