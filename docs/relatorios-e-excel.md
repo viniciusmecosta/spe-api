@@ -42,6 +42,6 @@ O [`OperationalExportService`](../app/features/reports/operational_export_servic
 
 ## Verificação de documentos
 
-Arquivos PDF, Excel e JSON recém-gerados recebem uma assinatura HMAC-SHA256 sobre o conteúdo integral. Gestores e mantenedores podem enviar até 25 MiB por `POST /api/v1/documents/verify`, no campo multipart `file`; a resposta informa `authentic` e `reason`. Uma assinatura válida indica que o arquivo permanece intacto e foi emitido por uma instalação com a mesma chave; ela não garante que os dados de origem sejam corretos e não é uma assinatura ICP-Brasil.
+Arquivos PDF, Excel e JSON recém-gerados recebem uma assinatura HMAC-SHA256 sobre o conteúdo integral. Gestores e mantenedores podem enviar PDF e Excel de até 25 MiB ou JSON de até 256 MiB por `POST /api/v1/documents/verify`, no campo multipart `file`; a resposta informa `authentic` e `reason`. JSONs maiores que 256 MiB não são aceitos para verificação. Uma assinatura válida indica que o arquivo permanece intacto e foi emitido por uma instalação com a mesma chave; ela não garante que os dados de origem sejam corretos e não é uma assinatura ICP-Brasil.
 
 Configure uma `DOCUMENT_SIGNING_KEY` exclusiva e mantenha seu backup protegido. Se ela não for definida, a API deriva uma chave da `SECRET_KEY`. Alterar a chave escolhida impede a verificação de documentos emitidos anteriormente. Arquivos gerados antes deste recurso, inclusive planilhas antigas de fechamento, não são verificáveis. Os hashes anteriores nos metadados são identificadores de dados e não servem para verificar autenticidade.

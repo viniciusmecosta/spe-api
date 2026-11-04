@@ -218,6 +218,37 @@ async def test_operational_export_closes_spool_when_query_fails(session, monkeyp
 
     monkeypatch.setattr(operational_export_service, "_export_file", test_file)
     session.scalars.side_effect = RuntimeError("database failure")
+    service = OperationalExportService(session)
+    actor = MagicMock()
     with pytest.raises(RuntimeError, match="database failure"):
-        await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+        await service.export("marcacoes", 7, 2, 2026, actor)
     assert opened[0].closed
+
+
+@pytest.mark.asyncio
+async def test_interrupted_download_closes_temporary_file(session, monkeypatch):
+    from app.features.reports import operational_export_service
+
+    monkeypatch.setattr(operational_export_service, "EXPORT_READ_SIZE", 16)
+    response = await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+    file = response.body_iterator.ag_frame.f_locals["file"]
+    assert await anext(response.body_iterator)
+    await response.body_iterator.aclose()
+    assert file.closed
+
+
+def test_operational_download_over_http_is_signed():
+    db = AsyncMock()
+    db.get.return_value = SimpleNamespace(id=7, name="Pessoa")
+    db.scalars.return_value = MagicMock()
+    db.scalars.return_value.all.return_value = []
+    app.dependency_overrides[deps.get_current_manager] = lambda: MagicMock(role=UserRole.MANAGER)
+    app.dependency_overrides[OperationalExportService] = lambda: OperationalExportService(db)
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reports/operational-export?user_id=7&month=2&year=2026&kind=marcacoes")
+        assert response.status_code == 200
+        assert verify_document(response.content).authentic
+        assert json.loads(response.content)["marcacoes"] == []
+    finally:
+        app.dependency_overrides.clear()

@@ -4,12 +4,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from app.core.config import settings
 from app.core.exceptions import setup_exception_handlers
 from app.core.lifespan import lifespan
 from app.core.logger import setup_logging
+from app.middleware.body_limit import PathBodyLimitMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.router import api_router as api_v1_router
@@ -36,7 +36,7 @@ app = FastAPI(
     },
 )
 
-app.add_middleware(RequestBodyLimitMiddleware, max_body_size=settings.UPLOAD_REQUEST_MAX_BYTES)
+app.add_middleware(PathBodyLimitMiddleware, max_body_size=settings.UPLOAD_REQUEST_MAX_BYTES)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
