@@ -66,12 +66,13 @@ async def test_preview_no_invented_missing_cpf_or_schedule(db):
 @pytest.mark.asyncio
 async def test_preview_unknown_employee_and_missing_company(db):
     db.get.return_value = None
+    service = AejPreviewService(db)
     with pytest.raises(ReportUserNotFoundError):
-        await AejPreviewService(db).export(7, 2, 2026)
+        await service.export(7, 2, 2026)
     db.get.return_value = SimpleNamespace(id=7)
     db.results[0].first.return_value = None
     with pytest.raises(HTTPException) as error:
-        await AejPreviewService(db).export(7, 2, 2026)
+        await service.export(7, 2, 2026)
     assert error.value.status_code == 422
 
 
@@ -117,8 +118,9 @@ async def test_preview_represents_ignored_and_manual_records(db):
 @pytest.mark.asyncio
 async def test_preview_rejects_characters_not_supported_by_layout(db):
     db.get.return_value.name = "Nome 🐈"
+    service = AejPreviewService(db)
     with pytest.raises(HTTPException) as error:
-        await AejPreviewService(db).export(7, 2, 2026)
+        await service.export(7, 2, 2026)
     assert error.value.status_code == 422
     assert "ISO-8859-1" in error.value.detail
 

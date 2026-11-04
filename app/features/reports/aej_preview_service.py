@@ -44,6 +44,35 @@ def _schedule_for_day(schedules: list[UserWorkScheduleConfig], day: date) -> Use
     return matches[0] if len(matches) == 1 else None
 
 
+def _record_code(ignored: bool, is_entry: bool) -> str:
+    if ignored:
+        return "D"
+    if is_entry:
+        return "E"
+    return "S"
+
+
+def _record_lines(
+    employee_id: int, records: list[TimeRecord], schedules: list[UserWorkScheduleConfig], zone: ZoneInfo,
+) -> list[str]:
+    lines = []
+    counters: dict[date, int] = {}
+    for record in records:
+        day = record.record_datetime.astimezone(zone).date()
+        ignored = record.is_ignored or record.deleted_at is not None
+        is_entry = record.record_type == RecordType.ENTRY
+        if not ignored and is_entry:
+            counters[day] = counters.get(day, 0) + 1
+        sequence = counters.get(day, 0)
+        code = _record_code(ignored, is_entry)
+        source = "I" if record.edited_by or record.original_record_id or record.source_adjustment_id else "T"
+        schedule = _schedule_for_day(schedules, day) if not ignored and is_entry and sequence == 1 else None
+        lines.append(_line("05", employee_id, _date_time(record.record_datetime, zone), "", code,
+                           f"{sequence:03}" if 0 < sequence <= 999 else "", source,
+                           schedule.id if schedule else "", record.edit_justification))
+    return lines
+
+
 class AejPreviewService:
     def __init__(self, db: Annotated[AsyncSession, Depends(deps.get_async_db)]):
         self.db = db
@@ -93,21 +122,7 @@ class AejPreviewService:
         for schedule in schedules:
             lines.append(_line("04", schedule.id, schedule.daily_minutes, _time(schedule.entry_1),
                                _time(schedule.exit_1), _time(schedule.entry_2), _time(schedule.exit_2)))
-        counters: dict[date, int] = {}
-        for record in records:
-            local = record.record_datetime.astimezone(zone)
-            day = local.date()
-            ignored = record.is_ignored or record.deleted_at is not None
-            is_entry = record.record_type == RecordType.ENTRY
-            if not ignored and is_entry:
-                counters[day] = counters.get(day, 0) + 1
-            sequence = counters.get(day, 0)
-            code = "D" if ignored else "E" if is_entry else "S"
-            source = "I" if record.edited_by or record.original_record_id or record.source_adjustment_id else "T"
-            schedule = _schedule_for_day(schedules, day) if not ignored and is_entry and sequence == 1 else None
-            lines.append(_line("05", employee.id, _date_time(record.record_datetime, zone), "", code,
-                               f"{sequence:03}" if 0 < sequence <= 999 else "", source,
-                               schedule.id if schedule else "", record.edit_justification))
+        lines.extend(_record_lines(employee.id, records, schedules, zone))
         lines.append(_line("99", 1, 0, 1, len(schedules), len(records), 0, 0, 0))
         try:
             content = ("\r\n".join(lines) + "\r\n").encode("iso-8859-1")
