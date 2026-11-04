@@ -15,8 +15,17 @@ from app.features.reports.operational_export_service import (
 from app.features.reports.report_exceptions import ReportUserNotFoundError
 from app.main import app
 from app.shared import deps
+from app.shared.document_authenticity import (
+    compute_operational_export_authenticity_hash,
+)
 from app.shared.document_signature import verify_document
 from app.shared.enums import RecordType, UserRole
+
+
+async def response_bytes(response):
+    if hasattr(response, "body_iterator"):
+        return b"".join([chunk async for chunk in response.body_iterator])
+    return response.body
 
 
 @pytest.fixture
@@ -40,8 +49,12 @@ async def test_operational_records_include_deleted_and_authenticity_hash(session
     active_record.deleted_at = None
     session.scalars.return_value.all.return_value = [record, active_record]
     response = await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
-    data = json.loads(response.body)
-    assert verify_document(response.body).authentic
+    body = await response_bytes(response)
+    data = json.loads(body)
+    assert verify_document(body).authentic
+    unsigned = {key: value for key, value in data.items() if key != "assinatura_spe"}
+    assert data["metadados"]["hash_dados"] == "sha256:" + compute_operational_export_authenticity_hash(unsigned)
+    assert int(response.headers["content-length"]) == len(body)
     assert "aviso" not in data
     assert data["metadados"]["hash_dados"].startswith("sha256:")
     assert data["periodo"] == {"inicio": "2026-02-01", "fim": "2026-02-28"}
@@ -59,7 +72,8 @@ async def test_operational_journey_uses_existing_report(session):
     with patch("app.features.reports.operational_export_service.ReportService") as report_service:
         report_service.return_value.get_advanced_user_report_or_404 = AsyncMock(return_value=report)
         response = await OperationalExportService(session).export("jornada", 7, 2, 2026, MagicMock())
-    data = json.loads(response.body)
+    body = await response_bytes(response)
+    data = json.loads(body)
     assert data["tipo"] == "jornada"
     assert data["jornada"]["daily_details"][0]["date"] == "2026-02-01"
     report_service.return_value.get_advanced_user_report_or_404.assert_awaited_once()
@@ -85,7 +99,8 @@ async def test_operational_export_all_employees_with_one_query(session):
     result.all.return_value = [(record, "Pessoa")]
     session.execute.return_value = result
     response = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
-    data = json.loads(response.body)
+    body = await response_bytes(response)
+    data = json.loads(body)
     assert data["usuario"] is None
     assert data["marcacoes"][0]["usuario"] == {"id": 7, "nome": "Pessoa"}
     assert "operacional_marcacoes_todos_202602.json" in response.headers["content-disposition"]
@@ -119,7 +134,8 @@ async def test_collective_export_paginates_without_losing_equal_timestamps(sessi
     second.all.return_value = [(record(EXPORT_BATCH_SIZE + 1), "Pessoa")]
     session.execute.side_effect = [first, second]
     response = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
-    data = json.loads(response.body)
+    body = await response_bytes(response)
+    data = json.loads(body)
     assert [r["id"] for r in data["marcacoes"]] == list(range(1, EXPORT_BATCH_SIZE + 2))
     assert session.execute.await_count == 2
 
@@ -167,3 +183,41 @@ def test_operational_export_route_allows_collective_records():
         service.export.assert_awaited_once_with(kind='marcacoes', user_id=None, month=2, year=2026, user=manager)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_operational_export_spools_to_disk_and_closes_after_download(session, monkeypatch):
+    from app.features.reports import operational_export_service
+
+    monkeypatch.setattr(operational_export_service, "EXPORT_MEMORY_LIMIT", 16)
+    response = await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+    file = response.body_iterator.ag_frame.f_locals["file"]
+    assert file._rolled
+    body = await response_bytes(response)
+    assert file.closed
+    assert verify_document(body).authentic
+    data = json.loads(body)
+    unsigned = {key: value for key, value in data.items() if key != "assinatura_spe"}
+    assert data["metadados"]["hash_dados"] == "sha256:" + compute_operational_export_authenticity_hash(unsigned)
+
+
+@pytest.mark.asyncio
+async def test_operational_export_closes_spool_when_query_fails(session, monkeypatch):
+    from contextlib import contextmanager
+    from tempfile import TemporaryFile
+
+    from app.features.reports import operational_export_service
+
+    opened = []
+
+    @contextmanager
+    def test_file():
+        with TemporaryFile(mode="w+b") as file:
+            opened.append(file)
+            yield file
+
+    monkeypatch.setattr(operational_export_service, "_export_file", test_file)
+    session.scalars.side_effect = RuntimeError("database failure")
+    with pytest.raises(RuntimeError, match="database failure"):
+        await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
+    assert opened[0].closed

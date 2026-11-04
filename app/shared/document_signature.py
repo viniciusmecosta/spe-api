@@ -18,10 +18,16 @@ class VerificationResult(NamedTuple):
     reason: str
 
 
-def _mac(content: bytes, kind: bytes) -> bytes:
+def new_document_mac(kind: bytes) -> hmac.HMAC:
     secret = (settings.DOCUMENT_SIGNING_KEY or settings.SECRET_KEY).encode("utf-8")
     key = hmac.digest(secret, b"spe/document-signing/v1", "sha256")
-    return hmac.new(key, kind + b"\0" + content, hashlib.sha256).hexdigest().encode("ascii")
+    return hmac.new(key, kind + b"\0", hashlib.sha256)
+
+
+def _mac(content: bytes, kind: bytes) -> bytes:
+    signer = new_document_mac(kind)
+    signer.update(content)
+    return signer.hexdigest().encode("ascii")
 
 
 def sign_pdf(content: bytes) -> bytes:

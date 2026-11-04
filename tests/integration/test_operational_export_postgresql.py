@@ -13,6 +13,10 @@ from app.shared.enums import UserRole
 pytestmark = pytest.mark.asyncio
 
 
+async def response_bytes(response):
+    return b"".join([chunk async for chunk in response.body_iterator])
+
+
 async def test_operational_export_filters_local_month_and_deleted_records(pg_session_factory, monkeypatch):
     import json
 
@@ -32,7 +36,7 @@ async def test_operational_export_filters_local_month_and_deleted_records(pg_ses
         result = await OperationalExportService(session).export(
             "marcacoes", employee.id, 2, 2026, MagicMock(),
         )
-        records = json.loads(result.body)["marcacoes"]
+        records = json.loads(await response_bytes(result))["marcacoes"]
         assert len(records) == 2
         assert records[0]["data_hora"].startswith("2026-02-01T00:00:00")
         assert records[1]["data_hora"].startswith("2026-02-28T23:59:00")
@@ -45,7 +49,7 @@ async def test_operational_export_filters_local_month_and_deleted_records(pg_ses
             user_id=other.id, record_type="ENTRY", record_datetime=datetime(2026, 2, 2, 12, tzinfo=UTC),
         ))
         result = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
-        collective = json.loads(result.body)["marcacoes"]
+        collective = json.loads(await response_bytes(result))["marcacoes"]
         assert [item["usuario"]["id"] for item in collective] == [employee.id, other.id, employee.id]
         assert collective[1]["usuario"]["nome"] == "Outra pessoa"
         assert collective[-1]["excluida_em"] is not None
@@ -66,7 +70,7 @@ async def test_collective_export_paginates_over_five_thousand_equal_timestamps(p
         service = OperationalExportService(session)
         collective = await service.export("marcacoes", None, 2, 2026, MagicMock())
         individual = await service.export("marcacoes", employee.id, 2, 2026, MagicMock())
-        collective_ids = [record["id"] for record in json.loads(collective.body)["marcacoes"]]
-        individual_ids = [record["id"] for record in json.loads(individual.body)["marcacoes"]]
+        collective_ids = [record["id"] for record in json.loads(await response_bytes(collective))["marcacoes"]]
+        individual_ids = [record["id"] for record in json.loads(await response_bytes(individual))["marcacoes"]]
         assert len(collective_ids) == 5001
         assert collective_ids == sorted(set(collective_ids)) == individual_ids
