@@ -61,6 +61,10 @@ def test_setup_exception_handlers():
     def raise_401_cred():
         raise StarletteHTTPException(status_code=401, detail="Could not validate credentials")
 
+    @test_app.get("/error-401-custom")
+    def raise_401_custom():
+        raise StarletteHTTPException(status_code=401, detail="Sessão expirada.")
+
     @test_app.get("/error-sqlalchemy")
     def raise_db_err():
         raise SQLAlchemyError("Database explosion")
@@ -117,6 +121,10 @@ def test_setup_exception_handlers():
     res = client.get("/error-401-cred")
     assert res.status_code == 401
     assert res.json()["detail"] == "Não foi possível validar as credenciais de acesso."
+
+    res = client.get("/error-401-custom")
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Sessão expirada."
 
     res = client.get("/error-sqlalchemy")
     assert res.status_code == 500

@@ -22,10 +22,6 @@ from app.shared.document_authenticity import (
 
 ExportKind = Literal["marcacoes", "jornada"]
 MAX_RECORDS = 5000
-NOTICE = (
-    "Exportação operacional sem valor fiscal: não é AFD nem AEJ, "
-    "sem assinatura digital e sem garantia de inviolabilidade."
-)
 
 
 class OperationalExportService:
@@ -89,7 +85,6 @@ class OperationalExportService:
         )
 
         payload = {
-            "aviso": NOTICE,
             "tipo": kind,
             "gerado_em": datetime.now(UTC).isoformat(),
             "fuso_horario": settings.TIMEZONE,

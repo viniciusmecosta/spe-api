@@ -28,7 +28,7 @@ def session():
 
 
 @pytest.mark.asyncio
-async def test_operational_records_include_deleted_and_not_fiscal(session):
+async def test_operational_records_include_deleted_and_authenticity_hash(session):
     record = SimpleNamespace(
         id=42, record_datetime=datetime(2026, 2, 1, 12, tzinfo=UTC),
         record_type=RecordType.ENTRY, device_name="Relógio", is_ignored=True,
@@ -40,8 +40,8 @@ async def test_operational_records_include_deleted_and_not_fiscal(session):
     session.scalars.return_value.all.return_value = [record, active_record]
     response = await OperationalExportService(session).export("marcacoes", 7, 2, 2026, MagicMock())
     data = json.loads(response.body)
-    assert "não é AFD nem AEJ" in data["aviso"]
-    assert "sem garantia de inviolabilidade" in data["aviso"]
+    assert "aviso" not in data
+    assert data["metadados"]["hash_autenticidade"].startswith("sha256:")
     assert data["periodo"] == {"inicio": "2026-02-01", "fim": "2026-02-28"}
     assert data["marcacoes"][0]["excluida_em"] is not None
     assert data["marcacoes"][0]["registro_original_id"] == 41

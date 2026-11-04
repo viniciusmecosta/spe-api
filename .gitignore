@@ -263,7 +263,6 @@ portarias/
 htmlcov/
 *.xml
 *.log
-docs/
 backups/
 
 # Auditorias locais
