@@ -15,6 +15,8 @@ class ReportAdjustmentItem(BaseModel):
     time: dt_time | None = None
     amount_hours: float | None = None
     approved_amount_hours: float | None = None
+    amount_minutes: int | None = None
+    approved_amount_minutes: int | None = None
     reason_text: str | None = None
     status: AdjustmentStatus
     manager_id: int | None = None

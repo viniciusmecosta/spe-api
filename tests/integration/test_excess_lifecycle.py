@@ -45,7 +45,8 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
             assert row.authorized_excess_minutes == authorized
 
     await verify(480, 0)
-    await api.request("PUT", f"/adjustments/{excess_id}/review", json={"status": "APPROVED", "approved_amount_hours": 0.5})
+    response = await api.request("PUT", f"/adjustments/{excess_id}/review", json={"status": "APPROVED", "approved_amount_minutes": 30})
+    assert response.json()["approved_amount_minutes"] == 30
     await verify(510, 30)
     async with pg_session_factory() as session:
         before = await session.scalar(select(AdjustmentRequest).where(AdjustmentRequest.id == excess_id))
@@ -79,8 +80,8 @@ async def test_excess_approval_transitions_update_summary_and_audit(api, pg_sess
         audit = await session.scalar(select(AuditLog).where(
             AuditLog.action == "APPROVE_ADJUSTMENT", AuditLog.entity_id == excess_id,
         ).order_by(AuditLog.id.desc()))
-        assert audit.old_data["approved_amount_hours"] == 0.5
-        assert audit.new_data["approved_amount_hours"] == 0.75
+        assert audit.old_data["approved_amount_minutes"] == 30
+        assert audit.new_data["approved_amount_minutes"] == 45
     await api.request("PUT", f"/adjustments/{excess_id}/review", json={"status": "REJECTED", "comment": "Revisão sintética"})
     await verify(480, 0)
     await api.request("PUT", f"/adjustments/admin/{excess_id}/revert-status",

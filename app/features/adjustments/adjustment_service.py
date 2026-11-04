@@ -21,7 +21,10 @@ from app.features.adjustments.adjustment_exceptions import (
     WaiverAttachmentRequiredError,
     WaiverLimitExceededError,
 )
-from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.adjustments.adjustment_models import (
+    AdjustmentRequest,
+    hours_to_minutes,
+)
 from app.features.adjustments.adjustment_repository import (
     AsyncAdjustmentRepository,
     async_adjustment_repository,
@@ -97,7 +100,7 @@ class AdjustmentService:
     async def _validate_waiver_limit(self, db: AsyncSession, user_id: int, target_date: date,
                                      amount_hours: float | None):
         import math
-        if amount_hours is None or not math.isfinite(amount_hours) or amount_hours <= 0:
+        if amount_hours is None or not math.isfinite(amount_hours) or amount_hours <= 0 or not hours_to_minutes(amount_hours):
             raise WaiverLimitExceededError("O abono deve informar uma quantidade positiva e finita de horas.")
         await self.repo.lock_waivers(db, user_id, target_date)
 
@@ -311,7 +314,7 @@ class AdjustmentService:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
         elif request.adjustment_type == AdjustmentType.DAILY_EXCESS:
             if (approved_amount_hours is not None
-                    and round(approved_amount_hours * 60) > round((request.amount_hours or 0) * 60)):
+                    and hours_to_minutes(approved_amount_hours) > (request.amount_minutes or 0)):
                 raise ExcessApprovalLimitError()
             request.approved_amount_hours = approved_amount_hours
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
@@ -321,7 +324,7 @@ class AdjustmentService:
         await audit_service.async_log_change(
             session, manager_id, "APPROVE_ADJUSTMENT",
             old_model=old_data, new_model=updated,
-            new_data={"comment": comment, "approved_amount_hours": approved_amount_hours} if (comment or approved_amount_hours is not None) else None
+            new_data={"comment": comment, "approved_amount_minutes": updated.approved_amount_minutes} if (comment or approved_amount_hours is not None) else None
         )
         return await self._build_response(session, updated)
 

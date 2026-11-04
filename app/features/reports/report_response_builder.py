@@ -138,6 +138,8 @@ class ReportResponseBuilder:
             time=getattr(adj, 'time', None),
             amount_hours=getattr(adj, 'amount_hours', None),
             approved_amount_hours=getattr(adj, 'approved_amount_hours', None),
+            amount_minutes=getattr(adj, 'amount_minutes', None),
+            approved_amount_minutes=getattr(adj, 'approved_amount_minutes', None),
             reason_text=getattr(adj, 'reason_text', None),
             status=getattr(adj, 'status', AdjustmentStatus.PENDING),
             manager_id=getattr(adj, 'manager_id', None),

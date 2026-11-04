@@ -10,7 +10,25 @@ from app.shared.timezone import to_app_timezone
 from app.shared.validation import BusinessDate
 
 
-class AdjustmentRequestBase(BaseModel):
+class MinuteInput(BaseModel):
+    @model_validator(mode='before')
+    @classmethod
+    def parse_minutes(cls, value):
+        if not isinstance(value, dict):
+            return value
+        value = dict(value)
+        for minutes, hours in (('amount_minutes', 'amount_hours'), ('approved_amount_minutes', 'approved_amount_hours')):
+            if minutes in value:
+                amount = value.pop(minutes)
+                if hours in value:
+                    raise ValueError('Informe apenas uma unidade para a duração.')
+                if amount is not None and (isinstance(amount, bool) or not isinstance(amount, int)):
+                    raise ValueError('A duração deve ser informada em minutos inteiros.')
+                value[hours] = amount / 60 if amount is not None else None
+        return value
+
+
+class AdjustmentRequestBase(MinuteInput):
     adjustment_type: AdjustmentType
     target_date: date
     record_type: RecordType | None = None
@@ -36,19 +54,19 @@ class AdjustmentRequestCreate(AdjustmentRequestBase):
         return self
 
 
-class AdjustmentWaiverCreate(BaseModel):
+class AdjustmentWaiverCreate(MinuteInput):
     user_id: int
     target_date: BusinessDate
     amount_hours: float = Field(gt=0, le=10, allow_inf_nan=False)
     reason_text: str
 
 
-class AdjustmentApproveRequest(BaseModel):
+class AdjustmentApproveRequest(MinuteInput):
     comment: str | None = None
     approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
-class AdjustmentReviewRequest(BaseModel):
+class AdjustmentReviewRequest(MinuteInput):
     status: Literal[AdjustmentStatus.APPROVED, AdjustmentStatus.REJECTED]
     comment: str | None = None
     approved_amount_hours: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -91,6 +109,16 @@ class AdjustmentRequestResponse(AdjustmentRequestBase):
     reviewed_at: datetime | None = None
     attachments: list[AdjustmentAttachmentResponse] = []
     time_records: list[TimeRecordSimple] = []
+
+    @computed_field
+    @property
+    def amount_minutes(self) -> int | None:
+        return round(self.amount_hours * 60) if self.amount_hours is not None else None
+
+    @computed_field
+    @property
+    def approved_amount_minutes(self) -> int | None:
+        return round(self.approved_amount_hours * 60) if self.approved_amount_hours is not None else None
 
     def _build_extra_time_info(self) -> dict:
         extra_mins = round(self.amount_hours * 60) if self.amount_hours else 0
