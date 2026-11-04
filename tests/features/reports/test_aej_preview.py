@@ -41,11 +41,13 @@ async def test_preview_uses_actual_data_and_states_limitations(db):
     response = await AejPreviewService(db).export(7, 2, 2026)
     lines = response.body.decode("iso-8859-1").split("\r\n")
     assert lines[0].startswith("01|1|12345678000199|||")
+    assert lines[0].endswith("|002")
     assert lines[1] == "03|7|12345678901|José"
     assert lines[2] == "04|3|480|0800|1200|1300|1700"
-    assert lines[3] == "05|7|2026-02-02T09:01:00-0300||E|1|T|3|"
+    assert lines[3] == "05|7|2026-02-02T09:01:00-0300||E|001|T|3|"
     assert lines[4] == "99|1|0|1|1|1|0|0|0"
     assert response.headers["x-export-status"] == "draft-not-fiscal-unsigned-incomplete"
+    assert response.headers["x-export-limitations"] == "night-hours-unverified"
     assert "nao_fiscal" in response.headers["content-disposition"]
     assert b"ASSINATURA_DIGITAL" not in response.body
 
@@ -57,7 +59,7 @@ async def test_preview_no_invented_missing_cpf_or_schedule(db):
     response = await AejPreviewService(db).export(7, 2, 2026)
     lines = response.body.decode("iso-8859-1").splitlines()
     assert lines[1] == "03|7||José"
-    assert lines[2] == "05|7|2026-02-02T09:01:00-0300||E|1|T||"
+    assert lines[2] == "05|7|2026-02-02T09:01:00-0300||E|001|T||"
     assert lines[3] == "99|1|0|1|0|1|0|0|0"
 
 
@@ -108,8 +110,8 @@ async def test_preview_represents_ignored_and_manual_records(db):
     db.results[2].all.return_value = [original, ignored, exit_record]
     response = await AejPreviewService(db).export(7, 2, 2026)
     lines = response.body.decode("iso-8859-1").splitlines()
-    assert "05|7|2026-02-02T09:01:00-0300||D|1|I||Ajuste autorizado" in lines
-    assert "05|7|2026-02-02T09:01:00-0300||S|1|I||Incluído pelo gestor" in lines
+    assert "05|7|2026-02-02T09:01:00-0300||D|001|I||Ajuste autorizado" in lines
+    assert "05|7|2026-02-02T09:01:00-0300||S|001|I||Incluído pelo gestor" in lines
 
 
 @pytest.mark.asyncio

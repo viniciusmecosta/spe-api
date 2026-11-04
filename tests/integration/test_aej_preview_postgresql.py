@@ -30,6 +30,6 @@ async def test_preview_uses_real_schedules_and_markings(pg_session_factory):
         lines = response.body.decode("iso-8859-1").splitlines()
         assert lines[1] == f"03|{employee.id}|12345678901|José"
         assert lines[2] == f"04|{schedule.id}|480|0800|1600||"
-        assert lines[3] == f"05|{employee.id}|2026-02-02T08:00:00-0300||E|1|T|{schedule.id}|"
-        assert lines[4] == f"05|{employee.id}|2026-02-02T16:00:00-0300||S|1|T||"
+        assert lines[3] == f"05|{employee.id}|2026-02-02T08:00:00-0300||E|001|T|{schedule.id}|"
+        assert lines[4] == f"05|{employee.id}|2026-02-02T16:00:00-0300||S|001|T||"
         assert lines[5] == "99|1|0|1|1|2|0|0|0"

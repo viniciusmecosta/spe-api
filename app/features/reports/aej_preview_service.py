@@ -87,7 +87,7 @@ class AejPreviewService:
         cpf = "".join(c for c in (employee.cpf or "") if c.isdigit())
         lines = [
             _line("01", "1" if company_id else "", company_id, "", "", company.name,
-                  first.isoformat(), last.isoformat(), _date_time(datetime.now(zone), zone), "001"),
+                  first.isoformat(), last.isoformat(), _date_time(datetime.now(zone), zone), "002"),
             _line("03", employee.id, cpf, employee.name),
         ]
         for schedule in schedules:
@@ -106,7 +106,8 @@ class AejPreviewService:
             source = "I" if record.edited_by or record.original_record_id or record.source_adjustment_id else "T"
             schedule = _schedule_for_day(schedules, day) if not ignored and is_entry and sequence == 1 else None
             lines.append(_line("05", employee.id, _date_time(record.record_datetime, zone), "", code,
-                               sequence or "", source, schedule.id if schedule else "", record.edit_justification))
+                               f"{sequence:03}" if 0 < sequence <= 999 else "", source,
+                               schedule.id if schedule else "", record.edit_justification))
         lines.append(_line("99", 1, 0, 1, len(schedules), len(records), 0, 0, 0))
         try:
             content = ("\r\n".join(lines) + "\r\n").encode("iso-8859-1")
@@ -116,4 +117,5 @@ class AejPreviewService:
             "Content-Disposition": f'attachment; filename="rascunho_nao_fiscal_jornada_{user_id}_{year:04}{month:02}.txt"',
             "Cache-Control": "no-store",
             "X-Export-Status": "draft-not-fiscal-unsigned-incomplete",
+            "X-Export-Limitations": "night-hours-unverified",
         })
