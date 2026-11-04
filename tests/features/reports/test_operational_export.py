@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 from app.features.reports.operational_export_service import (
-    MAX_RECORDS,
+    EXPORT_BATCH_SIZE,
     OperationalExportService,
 )
 from app.features.reports.report_exceptions import ReportUserNotFoundError
@@ -73,16 +73,6 @@ async def test_operational_export_rejects_unknown_user(session):
 
 
 @pytest.mark.asyncio
-async def test_operational_export_rejects_too_many_records(session):
-    session.scalars.return_value.all.return_value = [None] * (MAX_RECORDS + 1)
-    service = OperationalExportService(session)
-    actor = MagicMock()
-    with pytest.raises(HTTPException) as error:
-        await service.export("marcacoes", 7, 2, 2026, actor)
-    assert error.value.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_operational_export_all_employees_with_one_query(session):
     record = SimpleNamespace(
         id=42, user_id=7, record_datetime=datetime(2026, 2, 1, 12, tzinfo=UTC),
@@ -113,16 +103,23 @@ async def test_operational_journey_requires_employee(session):
 
 
 @pytest.mark.asyncio
-async def test_collective_export_rejects_too_many_records(session):
-    record = SimpleNamespace(user_id=1)
-    result = MagicMock()
-    result.all.return_value = [(record, 'Pessoa')] * (MAX_RECORDS + 1)
-    session.execute.return_value = result
-    service = OperationalExportService(session)
-    actor = MagicMock()
-    with pytest.raises(HTTPException) as error:
-        await service.export('marcacoes', None, 2, 2026, actor)
-    assert error.value.status_code == 422
+async def test_collective_export_paginates_without_losing_equal_timestamps(session):
+    timestamp = datetime(2026, 2, 1, 12, tzinfo=UTC)
+    def record(number):
+        return SimpleNamespace(
+            id=number, user_id=7, record_datetime=timestamp,
+            record_type=RecordType.ENTRY, device_name="Relógio", is_ignored=False,
+            deleted_at=None, original_record_id=None, source_adjustment_id=None,
+        )
+    first = MagicMock()
+    first.all.return_value = [(record(i), "Pessoa") for i in range(1, EXPORT_BATCH_SIZE + 1)]
+    second = MagicMock()
+    second.all.return_value = [(record(EXPORT_BATCH_SIZE + 1), "Pessoa")]
+    session.execute.side_effect = [first, second]
+    response = await OperationalExportService(session).export("marcacoes", None, 2, 2026, MagicMock())
+    data = json.loads(response.body)
+    assert [r["id"] for r in data["marcacoes"]] == list(range(1, EXPORT_BATCH_SIZE + 2))
+    assert session.execute.await_count == 2
 
 
 def test_operational_export_requires_manager():

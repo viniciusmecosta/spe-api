@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -21,7 +21,7 @@ from app.shared.document_authenticity import (
 )
 
 ExportKind = Literal["marcacoes", "jornada"]
-MAX_RECORDS = 5000
+EXPORT_BATCH_SIZE = 1000
 
 
 class OperationalExportService:
@@ -29,26 +29,30 @@ class OperationalExportService:
         self.db = db
 
     async def _fetch_export_records(
-        self, conditions: tuple, user_id: int | None
-    ) -> tuple[list[TimeRecord], dict[int | None, str]]:
-        if user_id is None:
-            statement = (
-                select(TimeRecord, User.name).join(User, TimeRecord.user_id == User.id)
-                .where(*conditions).order_by(TimeRecord.record_datetime, TimeRecord.id).limit(MAX_RECORDS + 1)
-            )
-            rows = list((await self.db.execute(statement)).all())
-            records = [row[0] for row in rows]
-            names = {row[0].user_id: row[1] for row in rows}
-        else:
-            statement = (
-                select(TimeRecord).where(*conditions, TimeRecord.user_id == user_id)
-                .order_by(TimeRecord.record_datetime, TimeRecord.id).limit(MAX_RECORDS + 1)
-            )
-            records = list((await self.db.scalars(statement)).all())
-            names = {}
-        if len(records) > MAX_RECORDS:
-            raise HTTPException(status_code=422, detail="Período excede o limite de registros para exportação.")
-        return records, names
+        self, conditions: tuple, user_id: int | None, tz: ZoneInfo,
+    ) -> list[dict]:
+        output: list[dict] = []
+        cursor: tuple[datetime, int] | None = None
+        while True:
+            if user_id is None:
+                statement = select(TimeRecord, User.name).join(User, TimeRecord.user_id == User.id)
+            else:
+                statement = select(TimeRecord).where(TimeRecord.user_id == user_id)
+            statement = statement.where(*conditions)
+            if cursor is not None:
+                statement = statement.where(tuple_(TimeRecord.record_datetime, TimeRecord.id) > cursor)
+            statement = statement.order_by(TimeRecord.record_datetime, TimeRecord.id).limit(EXPORT_BATCH_SIZE)
+            if user_id is None:
+                rows = list((await self.db.execute(statement)).all())
+                records = [row[0] for row in rows]
+                names = {row[0].user_id: row[1] for row in rows}
+            else:
+                records = list((await self.db.scalars(statement)).all())
+                names = {}
+            output.extend(self._serialize_marcacoes(records, names, tz, user_id is None))
+            if len(records) < EXPORT_BATCH_SIZE:
+                return output
+            cursor = (records[-1].record_datetime, records[-1].id)
 
     @staticmethod
     def _serialize_marcacoes(
@@ -80,10 +84,6 @@ class OperationalExportService:
         last = date(year, month, monthrange(year, month)[1])
         start = datetime.combine(first, time.min, tzinfo=tz)
         end = datetime.combine(last + timedelta(days=1), time.min, tzinfo=tz)
-        records, names = await self._fetch_export_records(
-            (TimeRecord.record_datetime >= start, TimeRecord.record_datetime < end), user_id
-        )
-
         payload = {
             "tipo": kind,
             "gerado_em": datetime.now(UTC).isoformat(),
@@ -92,7 +92,9 @@ class OperationalExportService:
             "usuario": {"id": employee.id, "nome": employee.name} if employee else None,
         }
         if kind == "marcacoes":
-            payload["marcacoes"] = self._serialize_marcacoes(records, names, tz, user_id is None)
+            payload["marcacoes"] = await self._fetch_export_records(
+                (TimeRecord.record_datetime >= start, TimeRecord.record_datetime < end), user_id, tz
+            )
         else:
             report = await ReportService(self.db).get_advanced_user_report_or_404(
                 user_id=user_id, month=month, year=year, current_user=user,
