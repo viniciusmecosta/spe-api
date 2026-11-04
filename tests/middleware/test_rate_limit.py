@@ -109,6 +109,13 @@ async def test_auth_limit_is_shared_across_sensitive_paths(application):
 
 
 @pytest.mark.asyncio
+async def test_device_manager_verification_shares_auth_limit(application):
+    async with client(application) as session:
+        assert (await session.post('/api/v1/devices/verify-manager')).status_code == 200
+        assert (await session.post('/api/v1/auth/login')).status_code == 429
+
+
+@pytest.mark.asyncio
 async def test_health_routes_and_other_http_requests_are_protected(application):
     async with client(application) as session:
         assert (await session.get('/api/v1/health')).status_code == 200

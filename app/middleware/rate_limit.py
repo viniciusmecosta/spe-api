@@ -47,7 +47,10 @@ class RateLimitMiddleware:
         path = scope['path'].rstrip('/')
         ip = get_client_ip(request)
         policies = [(self.burst_limit, 'burst'), (self.general_limit, 'general')]
-        if path in {'/api/v1/auth/login', '/api/v1/auth/refresh', '/api/v1/auth/password'}:
+        if path in {
+            '/api/v1/auth/login', '/api/v1/auth/refresh', '/api/v1/auth/password',
+            '/api/v1/devices/verify-manager',
+        }:
             policies.append((self.auth_limit, 'auth'))
         for limit, name in policies:
             if not await self.limiter.hit(limit, name, ip):
