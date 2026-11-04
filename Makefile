@@ -1,4 +1,4 @@
-.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore db-restore-test venv db-init db-pg-up db-dump-ddl db-dump-data
+.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore db-restore-test venv db-init db-pg-up db-dump-ddl db-dump-data db-reset-001
 
 ifeq ($(OS),Windows_NT)
     PYTHON := .venv\Scripts\python.exe
@@ -95,3 +95,6 @@ db-pg-up:
 # Aplica a estrutura no PostgreSQL já provisionado.
 db-init:
 	$(ALEMBIC) upgrade head
+
+db-reset-001:
+	$(PYTHON) -m scripts.reset_database

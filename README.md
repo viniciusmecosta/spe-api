@@ -84,6 +84,8 @@ uv run granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
 Pelo [`Makefile`](Makefile), os mesmos passos podem ser executados com `make setup`, `make upgrade`, `make seed` e `make run`.
 
+`make db-reset-001` apaga e recria o banco configurado em `SQLALCHEMY_DATABASE_URI` e aplica somente a migração `001`. Todos os dados desse banco são perdidos.
+
 Para subir tudo com Docker Compose:
 
 ```bash
