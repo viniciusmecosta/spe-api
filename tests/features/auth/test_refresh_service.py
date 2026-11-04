@@ -191,3 +191,56 @@ def test_sync_user_reset_requirement_revokes_existing_access(db_session, normal_
     )
     assert updated.password_change_required is True
     assert updated.auth_version == version + 1
+
+
+async def test_auth_repository_methods_and_password_change_branches(
+    async_db_mock, refresh_user, mocker
+):
+    from unittest.mock import MagicMock
+
+    from app.core.exceptions import DomainException
+    from app.features.users.user_repository import async_user_repository
+
+    now = datetime.now(UTC)
+    async_db_mock.scalar.return_value = None
+    assert await auth_repository.find_refresh(async_db_mock, "h") is None
+    assert await auth_repository.lock_user(async_db_mock, 1) is None
+    await auth_repository.revoke_family(async_db_mock, "fam", now)
+    await auth_repository.revoke_user(async_db_mock, 1, now)
+    async_db_mock.execute.return_value = SimpleNamespace(rowcount=3)
+    assert await auth_repository.purge_expired(async_db_mock, now, 10) == 3
+
+    service = AuthService(async_db_mock)
+    refresh_user.password_change_required = True
+    token = service._issue_tokens(refresh_user)
+    assert token.password_change_required is True
+    assert token.refresh_token is None
+
+    refresh_user.password_change_required = False
+    mocker.patch.object(
+        auth_repository, "lock_user", new_callable=AsyncMock, return_value=refresh_user
+    )
+    mocker.patch(
+        "app.features.auth.auth_service.security.verify_password",
+        return_value=False,
+    )
+    with pytest.raises(InvalidCredentialsError):
+        await service.change_password(refresh_user, "wrong", "new-password")
+
+    mocker.patch(
+        "app.features.auth.auth_service.security.verify_password",
+        side_effect=[True, True],
+    )
+    with pytest.raises(DomainException):
+        await service.change_password(refresh_user, "same", "same")
+
+    mocker.patch.object(
+        async_user_repository, "get", new_callable=AsyncMock, return_value=refresh_user
+    )
+    db_user = MagicMock()
+    db_user.id = 1
+    db_user.auth_version = 1
+    await async_user_repository.update(
+        async_db_mock, db_obj=db_user, obj_in={"password_change_required": True}
+    )
+    assert db_user.password_change_required is True

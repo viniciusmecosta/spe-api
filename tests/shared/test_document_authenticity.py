@@ -1,5 +1,6 @@
 from datetime import date, datetime, time
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from openpyxl import load_workbook
 from pydantic import BaseModel
@@ -41,6 +42,8 @@ def test_canonicalize_and_compute_document_hash_determinism():
     )
     assert len(first) == 64
     assert first == second
+    mock_digest = compute_document_hash("mock", MagicMock())
+    assert len(mock_digest) == 64
 
 
 def test_excel_workbook_embeds_deterministic_authenticity_hash():

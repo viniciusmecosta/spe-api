@@ -70,9 +70,8 @@ async def test_summary_failure_rolls_back_source_and_keeps_previous_summary(
             daily_summary_service,
             "_calculate_user_day",
             side_effect=RuntimeError("outage"),
-        ):
-            with pytest.raises(DailySummaryRecalculationError):
-                await session.commit()
+        ), pytest.raises(DailySummaryRecalculationError):
+            await session.commit()
         await session.rollback()
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 0
@@ -99,9 +98,8 @@ async def test_retrying_commit_after_calculation_failure_refreshes_summary(
             daily_summary_service,
             "_calculate_user_day",
             side_effect=RuntimeError("outage"),
-        ):
-            with pytest.raises(DailySummaryRecalculationError):
-                await session.commit()
+        ), pytest.raises(DailySummaryRecalculationError):
+            await session.commit()
         await session.commit()
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
@@ -326,6 +324,7 @@ with SessionLocal() as session:
         capture_output=True,
         text=True,
         timeout=30,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     values = json.loads(result.stdout)
@@ -468,6 +467,7 @@ def test_alembic_connects_with_percent_encoded_password(pg_url, monkeypatch):
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         assert result.returncode == 0, result.stderr
         assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() in result.stdout

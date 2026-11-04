@@ -4,9 +4,9 @@ from datetime import date, time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
 import pytest
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.companies.company_models import Company
 from app.features.holidays.holiday_models import Holiday
@@ -14,11 +14,11 @@ from app.features.timesheets.timesheet_exceptions import (
     NoTimesheetRecordsFoundError,
     TimesheetUserNotFoundError,
 )
-from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.timesheets.timesheet_pdf_builder import TimesheetPdfBuilder
+from app.features.timesheets.timesheet_service import TimesheetService
 from app.features.users.user_models import User, UserWorkScheduleConfig
 from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, UserRole
-from app.shared.time_calculation_service import PeriodTimeResult, DailyTimeResult
+from app.shared.time_calculation_service import DailyTimeResult
 
 timesheet_service = TimesheetService()
 timesheet_pdf_builder = TimesheetPdfBuilder()
@@ -32,7 +32,9 @@ def test_format_duration():
 
 
 def test_validate_date_not_future():
-    from app.features.timesheets.timesheet_exceptions import FutureTimesheetNotAllowedError
+    from app.features.timesheets.timesheet_exceptions import (
+        FutureTimesheetNotAllowedError,
+    )
     with pytest.raises(FutureTimesheetNotAllowedError):
         timesheet_service.validate_date_not_future(1, 2099)
 
@@ -236,7 +238,7 @@ async def test_generate_user_timesheet_pdf_success(db_session_mock, mocker):
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -350,7 +352,7 @@ async def test_generate_user_timesheet_pdf_with_logo_success(db_session_mock, mo
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -406,7 +408,7 @@ async def test_generate_user_timesheet_pdf_with_logo_not_found(db_session_mock, 
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -463,7 +465,7 @@ async def test_generate_user_timesheet_pdf_with_logo_os_error(db_session_mock, m
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
     assert isinstance(buffer, io.BytesIO)
@@ -521,7 +523,7 @@ async def test_exhaustive_pdf_structural_generation(db_session_mock, mocker):
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
     captured_story = []
 
@@ -714,7 +716,7 @@ async def test_generate_user_timesheet_pdf_with_schedules(db_session_mock, mocke
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
 
     buffer = await timesheet_service.generate_user_timesheet_pdf(db_session_mock, 1, 10, 2023)
@@ -754,8 +756,9 @@ def test_draw_company_header_and_notes(mocker):
 @pytest.mark.asyncio
 async def test_generate_user_timesheet_pdf_async_session(mocker):
     from unittest.mock import AsyncMock
+
     from app.features.companies.company_models import Company
-    from app.shared.time_calculation_service import DailyTimeResult, PeriodTimeResult
+    from app.shared.time_calculation_service import DailyTimeResult
 
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
@@ -808,7 +811,7 @@ async def test_generate_user_timesheet_pdf_async_session(mocker):
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
 
     buf = await timesheet_service.generate_user_timesheet_pdf(async_sess, 1, 10, 2023)
@@ -839,7 +842,7 @@ async def test_generate_batch_timesheets_pdf_async_session(mocker):
 
 @pytest.mark.asyncio
 async def test_timesheet_summary_table_content(mocker, db_session_mock):
-    from reportlab.platypus import SimpleDocTemplate, Table, Paragraph
+    from reportlab.platypus import SimpleDocTemplate, Table
     mock_user = MagicMock(spec=User)
     mock_user.id = 1
     mock_user.name = "Test User"
@@ -886,7 +889,7 @@ async def test_timesheet_summary_table_content(mocker, db_session_mock):
     mock_period.daily_is_holiday = daily_hol
     mock_period.daily_expected_seconds = defaultdict(float)
     mock_period.daily_accounted_results = defaultdict(lambda: SimpleNamespace(accounted_seconds=0))
-    mock_period.daily_waivers = {dt: None for dt in daily_res.keys()}
+    mock_period.daily_waivers = {dt: None for dt in daily_res}
     mock_calc.return_value = mock_period
 
     captured_summary_rows = []
@@ -973,6 +976,7 @@ async def test_same_employee_names_generate_separate_files(mocker):
 @pytest.mark.asyncio
 async def test_add_timesheet_to_zip_empty_pdf_marks_failed(mocker):
     import zipfile
+
     from app.features.timesheets.timesheet_service import TimesheetZip
 
     session = AsyncMock()

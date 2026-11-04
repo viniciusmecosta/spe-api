@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.daily_summaries import daily_summary_events
 from app.features.daily_summaries.daily_summary_events import (
     _after_commit,
     _after_rollback,
@@ -22,7 +23,6 @@ from app.features.daily_summaries.daily_summary_events import (
     recalculate_changed_days,
     schedule_days,
 )
-from app.features.daily_summaries import daily_summary_events
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord

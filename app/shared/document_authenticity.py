@@ -4,6 +4,8 @@ from datetime import date, datetime, time
 from enum import Enum
 from typing import Any
 
+from pydantic import BaseModel
+
 
 def _canonicalize(value: Any) -> Any:
     if isinstance(value, Enum):
@@ -16,7 +18,7 @@ def _canonicalize(value: Any) -> Any:
         return {str(k): _canonicalize(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
     if isinstance(value, (list, tuple, set)):
         return [_canonicalize(item) for item in value]
-    if hasattr(value, "model_dump"):
+    if isinstance(value, BaseModel):
         return _canonicalize(value.model_dump(mode="json"))
     return str(value)
 
@@ -135,7 +137,8 @@ def compute_timesheet_authenticity_hash(
         }
         for adj in (adjustments or [])
     ]
-    daily_results = getattr(period_result, "daily_results", None) or {}
+    raw_daily_results = getattr(period_result, "daily_results", None)
+    daily_results = raw_daily_results if isinstance(raw_daily_results, dict) else {}
     daily_snapshot = {
         str(day_key): {
             "punch_blocks": list(getattr(res, "punch_blocks", []) or []),

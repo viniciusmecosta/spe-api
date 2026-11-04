@@ -1,11 +1,11 @@
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 
 @pytest.fixture
 def async_db_mock():
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
     session = MagicMock()
     session.scalar = AsyncMock()
     session.scalars = AsyncMock()
@@ -17,18 +17,18 @@ def async_db_mock():
     return session
 
 
+from app.features.devices.device_models import UserBiometric
+from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import (
     BiometricValidationError,
     InsufficientPrivilegesError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
 from app.features.users.user_service import UserService
 from app.features.users.user_validator import UserValidator
-from app.features.users.user_biometric_service import UserBiometricService
 from app.shared.enums import UserRole
 
 
@@ -275,6 +275,7 @@ async def test_update_user_not_found(user_service):
 
 def test_serialize_user_state():
     from datetime import date
+
     from app.features.system.audit_service import serialize_model
     user = User(
         id=1, username="test", is_active=True, data_nascimento=date(2000, 1, 1),

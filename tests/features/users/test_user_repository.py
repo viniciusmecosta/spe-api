@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
@@ -270,6 +270,7 @@ def test_user_pagination_cursor_conditions():
 @pytest.mark.asyncio
 async def test_protect_last_maintainer_and_cursor_pagination(async_db_session, async_normal_user):
     from unittest.mock import AsyncMock, MagicMock
+
     from app.core.exceptions import DomainException
     from app.features.users.user_exceptions import InsufficientPrivilegesError
 

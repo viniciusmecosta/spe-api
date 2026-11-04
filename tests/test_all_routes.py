@@ -26,7 +26,7 @@ def setup_test_data(db):
         "employee": {"username": "fuzz_employee", "role": UserRole.EMPLOYEE},
     }
 
-    for key, data in users.items():
+    for data in users.values():
         user = db.query(User).filter(User.username == data["username"]).first()
         if not user:
             user = User(
@@ -131,31 +131,26 @@ def _generate_report(client, device_key):
 
                         scenario_desc = f"{auth_name} | {p_name} | {path_desc}"
 
-                        try:
-                            kwargs = {"headers": headers}
-                            if has_body or method in ["POST", "PUT", "PATCH"]:
-                                kwargs["json"] = payload
+                        kwargs = {"headers": headers}
+                        if has_body or method in ["POST", "PUT", "PATCH"]:
+                            kwargs["json"] = payload
 
-                            response = client.request(method.upper(), path_variant, **kwargs)
+                        response = client.request(method.upper(), path_variant, **kwargs)
 
-                            status = response.status_code
+                        status = response.status_code
 
-                            if status >= 500:
-                                marker = "❌ CRITICAL ERROR (500)"
-                                failures += 1
-                            elif status == 200 and path_desc == "Invalid Path Params" and path != valid_path:
-                                marker = "⚠️ WARNING (Accepted Invalid Path Param)"
-                            else:
-                                marker = "✅ OK"
-
-                            report.append(f"- **{scenario_desc}**: HTTP {status} {marker}")
-
-                            if status >= 500:
-                                report.append(f"  - *Details*: `{response.text[:300]}`")
-
-                        except Exception as e:
+                        if status >= 500:
+                            marker = "❌ CRITICAL ERROR (500)"
                             failures += 1
-                            report.append(f"- **{scenario_desc}**: Exception `{str(e)}` ❌ FATAL CRASH")
+                        elif status == 200 and path_desc == "Invalid Path Params" and path != valid_path:
+                            marker = "⚠️ WARNING (Accepted Invalid Path Param)"
+                        else:
+                            marker = "✅ OK"
+
+                        report.append(f"- **{scenario_desc}**: HTTP {status} {marker}")
+
+                        if status >= 500:
+                            report.append(f"  - *Details*: `{response.text[:300]}`")
 
     report_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "route_test_report.md")
     with open(report_path, "w", encoding="utf-8") as f:
