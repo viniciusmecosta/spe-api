@@ -1,5 +1,7 @@
 # Configuração, variáveis do `.env.example` e rate limit
 
+A análise do SonarQube na pipeline usa o relatório `coverage.xml` gerado pelos testes. Para ativá-la, configure o segredo `SONAR_TOKEN` e a variável `SONAR_HOST_URL` no repositório; sem ambos, a etapa é ignorada. Ajuste `sonar.projectKey` conforme o projeto no servidor. O diretório `scripts` permanece fora do escopo da análise.
+
 [![Pydantic Settings](https://img.shields.io/badge/Pydantic_Settings-2.15%2B-E92063)](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) [![Starlette](https://img.shields.io/badge/Starlette-1.6%2B-009688)](https://www.starlette.io/) [![limits](https://img.shields.io/badge/limits-5.8%2B-4B8BBE)](https://limits.readthedocs.io/) [![asyncpg](https://img.shields.io/badge/asyncpg-0.29%2B-336791)](https://magicstack.github.io/asyncpg/) [![Pillow](https://img.shields.io/badge/Pillow-12.3%2B-3776AB)](https://python-pillow.org/)
 
 Referência de todas as variáveis de ambiente do [`.env.example`](../.env.example), funcionamento do middleware de rate limit por IP, configuração de proxy reverso e limites de upload.
