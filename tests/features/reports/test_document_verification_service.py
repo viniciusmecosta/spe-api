@@ -70,3 +70,15 @@ async def test_malformed_json_trailer_reports_why():
     malformed = UploadFile(file=BytesIO(signed[:-1] + b"X"), filename="bad.json")
     assert (await service.verify(unsigned))["authentic"] is False
     assert (await service.verify(malformed))["reason"] == "Assinatura inválida ou documento alterado."
+
+
+@pytest.mark.parametrize("content", [b'{"value":1}', b"%PDF-test"])
+async def test_rejects_first_chunk_exceeding_limit(monkeypatch, content):
+    from app.features.reports import document_verification_service as module
+
+    monkeypatch.setattr(module, "MAX_JSON_DOCUMENT_BYTES", 4)
+    monkeypatch.setattr(module, "MAX_DOCUMENT_BYTES", 4)
+    upload = UploadFile(file=BytesIO(content), filename="document")
+    with pytest.raises(HTTPException) as error:
+        await DocumentVerificationService().verify(upload)
+    assert error.value.status_code == 413
