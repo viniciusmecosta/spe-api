@@ -173,6 +173,7 @@ async def test_schedule_lock_and_service_edge_branches(async_db_mock, db_session
         status=AdjustmentStatus.PENDING,
         adjustment_type=AdjustmentType.DAILY_EXCESS,
         amount_hours=1.0,
+        amount_minutes=60,
     )
     mocker.patch.object(adj_service.repo, "lock", new_callable=AsyncMock)
     mocker.patch.object(adj_service.repo, "get", new_callable=AsyncMock, return_value=excess_req)
