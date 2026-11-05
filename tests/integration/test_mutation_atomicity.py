@@ -71,7 +71,7 @@ async def prepare_create(api, resource):
             "password": PASSWORD,
         }, 201
     user_id = await api.create_employee()
-    return "/time-records/admin", {
+    return "/time-records", {
         "user_id": user_id, "record_type": "ENTRY",
         "record_datetime": f"{DAY}T08:00:00-03:00",
         "edit_justification": "Inclusao sintetica para teste de atomicidade",
@@ -119,7 +119,7 @@ async def test_update_rolls_back_when_audit_fails(
     path, payload, status = await prepare_create(mutation_api, resource)
     created = await mutation_api.json("POST", path, status, json=payload)
     update_path = path if resource == "company" else f"{path.rstrip('/')}/{created['id']}"
-    method = "PATCH" if resource == "printer" else "PUT"
+    method = "PATCH" if resource in {"printer", "record"} else "PUT"
     update = {"name": "Nome Sintetico Atualizado"}
     if resource == "record":
         update = {
@@ -144,7 +144,7 @@ async def test_delete_rolls_back_when_audit_fails(
     delete_path = f"{path.rstrip('/')}/{created['id']}"
     body = {}
     if resource == "record":
-        body = {"json": {"edit_justification": "Exclusao sintetica para teste de atomicidade"}}
+        body = {"params": {"justification": "Exclusao sintetica para teste de atomicidade"}}
     before = await snapshot(pg_session_factory, resource)
     audit = fail_audit(monkeypatch)
 
@@ -167,7 +167,7 @@ async def test_explicit_null_for_required_storage_field_is_rejected(
     path, payload, status = await prepare_create(mutation_api, resource)
     created = await mutation_api.json("POST", path, status, json=payload)
     update_path = path if resource == "company" else f"{path.rstrip('/')}/{created['id']}"
-    method = "PATCH" if resource == "printer" else "PUT"
+    method = "PATCH" if resource in {"printer", "record"} else "PUT"
     before = await snapshot(pg_session_factory, resource)
 
     await mutation_api.request(method, update_path, 422, json={field: None})
@@ -182,9 +182,8 @@ async def test_payroll_rolls_back_when_audit_fails(
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
-    period = {"month": 9, "year": 2026}
     if action == "reopen":
-        await mutation_api.request("POST", "/payroll/close", json=period)
+        await mutation_api.request("POST", "/payroll/2026/9/transitions", json={"action": "CLOSE"})
     async with pg_session_factory() as session:
         before = (await session.execute(select(PayrollClosure.id, PayrollClosure.deleted_at))).all()
     files_before = {path.name for path in tmp_path.rglob("*") if path.is_file()}
@@ -194,9 +193,9 @@ async def test_payroll_rolls_back_when_audit_fails(
         from app.features.payroll.payroll_service import PayrollService
 
         monkeypatch.setattr(PayrollService, "_queue_notification", AsyncMock(side_effect=RuntimeError("queue failure")))
-    payload = period if action == "close" else {**period, "observation": "Teste sintetico"}
+    payload = {"action": action.upper()} if action == "close" else {"action": "REOPEN", "observation": "Teste sintetico"}
 
-    await mutation_api.request("POST", f"/payroll/{action}", 500, json=payload)
+    await mutation_api.request("POST", "/payroll/2026/9/transitions", 500, json=payload)
 
     async with pg_session_factory() as session:
         after = (await session.execute(select(PayrollClosure.id, PayrollClosure.deleted_at))).all()

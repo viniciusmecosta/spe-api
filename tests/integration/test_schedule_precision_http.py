@@ -20,7 +20,7 @@ async def test_schedule_minutes_match_reports_excel_and_persisted_reprocessing(a
     user_id = await api.create_employee()
     await api.request('POST', '/schedules/bulk', json={
         'valid_from': '2026-09-15', 'valid_until': '2026-09-30', 'users': [{
-            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_hours': 8.02,
+            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_minutes': 481,
                 'entry_1': '08:00', 'exit_1': '12:00', 'entry_2': '13:00', 'exit_2': '17:01',
                 'is_daily_excess_enabled': True}],
         }],
@@ -28,13 +28,13 @@ async def test_schedule_minutes_match_reports_excel_and_persisted_reprocessing(a
     days = ('2026-09-15', '2026-09-22', '2026-09-29')
     for day in days:
         for kind, clock in (('ENTRY', '08:00'), ('EXIT', '12:00'), ('ENTRY', '13:00'), ('EXIT', '17:01')):
-            await api.request('POST', '/time-records/admin', 201, json={
+            await api.request('POST', '/time-records', 201, json={
                 'user_id': user_id, 'record_type': kind, 'record_datetime': f'{day}T{clock}:00-03:00',
                 'edit_justification': 'Registro sintetico',
             })
     async with pg_session_factory() as session:
         schedule = await session.scalar(select(UserWorkScheduleConfig).where(UserWorkScheduleConfig.user_id == user_id))
-        assert schedule.daily_hours == pytest.approx(8 + 1 / 60)
+        assert schedule.daily_minutes == 481
         rows = list((await session.scalars(select(DailySummary).where(
             DailySummary.user_id == user_id, DailySummary.apuration_date.in_([date.fromisoformat(day) for day in days]),
         ))).all())
@@ -61,17 +61,17 @@ async def test_schedule_minutes_match_reports_excel_and_persisted_reprocessing(a
     assert total[22].value == timedelta(hours=24, minutes=3)
 
 
-async def test_excess_detected_when_legacy_daily_hours_is_zero(api, pg_session_factory):
+async def test_excess_detected_when_daily_minutes_is_zero(api, pg_session_factory):
     user_id = await api.create_employee()
     await api.request('POST', '/schedules/bulk', json={
         'valid_from': '2026-09-01', 'valid_until': '2026-09-30', 'users': [{
-            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_hours': 8,
+            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_minutes': 480,
                 'entry_1': '08:00', 'exit_1': '16:01', 'is_daily_excess_enabled': True}],
         }],
     })
     async with pg_session_factory() as session:
         await session.execute(update(UserWorkScheduleConfig).where(
-            UserWorkScheduleConfig.user_id == user_id).values(daily_hours=0))
+            UserWorkScheduleConfig.user_id == user_id).values(daily_minutes=0))
         await session.commit()
     await api.add_punch(user_id, 'ENTRY', '08:00')
     await api.add_punch(user_id, 'EXIT', '16:02')
@@ -91,12 +91,12 @@ async def test_schedule_and_punch_seconds_do_not_create_false_excess(api, pg_ses
     user_id = await api.create_employee()
     await api.request('POST', '/schedules/bulk', json={
         'valid_from': '2026-09-01', 'valid_until': '2026-09-30', 'users': [{
-            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_hours': 8,
+            'user_id': user_id, 'schedules': [{'day_of_week': 1, 'daily_minutes': 480,
                 'entry_1': '08:00:59', 'exit_1': '16:01:01', 'is_daily_excess_enabled': True}],
         }],
     })
     for kind, clock in (('ENTRY', '08:00:59'), ('EXIT', '16:01:01')):
-        await api.request('POST', '/time-records/admin', 201, json={
+        await api.request('POST', '/time-records', 201, json={
             'user_id': user_id, 'record_type': kind, 'record_datetime': f'2026-09-29T{clock}-03:00',
             'edit_justification': 'Registro sintetico',
         })

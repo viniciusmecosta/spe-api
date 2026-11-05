@@ -15,7 +15,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from app.database.connection import postgres_connection_params
-from app.features.system.backup_crypto import decrypt_backup
+from app.features.system.backup_crypto import decrypt_backup, resolve_existing_file
 from app.features.system.backup_manifest import (
     validate_manifest,
     validate_manifest_file,
@@ -32,12 +32,6 @@ try:
 except ImportError:
     psycopg2 = None
 
-try:
-    from scripts.database_migration_config import quote_identifier
-except ModuleNotFoundError:
-    from database_migration_config import quote_identifier
-
-DEFAULT_DML_PATH = ROOT_DIR / "scripts" / "data_inserts_postgresql.sql"
 FILENAME_SPE_DUMP = "spe_dump.sql"
 FILENAME_SPE_DB = "spe-db.sql"
 MAX_SQL_BYTES = 2 * 1024 * 1024 * 1024
@@ -61,6 +55,10 @@ ALLOWED_SET_NAMES = {
     "transaction_timeout",
     "constraints",
 }
+
+
+def quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
 
 
 def load_environment() -> None:
@@ -465,11 +463,11 @@ def _truncate_database_tables(cursor: Any, table_names: list[str]) -> None:
     cursor.execute(f"TRUNCATE TABLE {qualified} RESTART IDENTITY CASCADE")
 
 
-def _check_sql_file(sql_path: Path) -> None:
-    if not sql_path.is_file():
-        raise FileNotFoundError(f"Arquivo SQL não encontrado: {sql_path}")
-    if sql_path.stat().st_size > MAX_SQL_BYTES:
+def _check_sql_file(sql_path: Path) -> Path:
+    safe_path = resolve_existing_file(sql_path)
+    if safe_path.stat().st_size > MAX_SQL_BYTES:
         raise ValueError(f"Arquivo SQL excede o limite de {MAX_SQL_BYTES} bytes")
+    return safe_path
 
 
 def _execute_statements(cursor, statement_factory, statement_count: int) -> None:
@@ -532,8 +530,9 @@ def _execute_restore(cursor, statement_factory, statement_count, application_tab
 
 
 def _iter_sql_file_statements(sql_path: Path) -> Iterator[str]:
+    safe_path = resolve_existing_file(sql_path)
     remainder = ""
-    with sql_path.open("r", encoding="utf-8") as source:
+    with safe_path.open("r", encoding="utf-8") as source:
         for line in sql_lines(source, reject_psql_commands=True):
             remainder += line
             if len(remainder.encode("utf-8")) > MAX_STATEMENT_BYTES:
@@ -656,10 +655,12 @@ def apply_sql_file(
 
 def _find_data_member(archive: zipfile.ZipFile) -> zipfile.ZipInfo:
     files = [item for item in archive.infolist() if not item.is_dir()]
-    by_basename = {Path(item.filename).name: item for item in files}
     for name in (FILENAME_SPE_DUMP, "data.sql", "data_inserts_postgresql.sql"):
-        if name in by_basename:
-            return by_basename[name]
+        matches = [item for item in files if Path(item.filename).name == name]
+        if len(matches) > 1:
+            raise ValueError("O ZIP contém arquivos de dados SQL com nomes duplicados")
+        if matches:
+            return matches[0]
     sql_files = [item for item in files if item.filename.lower().endswith(".sql")]
     sql_files = [item for item in sql_files if Path(item.filename).name != FILENAME_SPE_DB]
     if len(sql_files) == 1:
@@ -675,7 +676,6 @@ def find_backup_source() -> Path | None:
         ROOT_DIR / "spe.zip",
         ROOT_DIR / FILENAME_SPE_DUMP,
         ROOT_DIR / "scripts" / FILENAME_SPE_DUMP,
-        DEFAULT_DML_PATH,
     ]
     return next((path for path in candidates if path.is_file()), None)
 
@@ -688,9 +688,10 @@ def restore_backup(
     dry_run: bool = False,
     allow_unverified_dump: bool = False,
 ) -> dict[str, Any]:
-    target = source_path or find_backup_source()
-    if not target or not target.is_file():
+    candidate = source_path or find_backup_source()
+    if not candidate or not candidate.is_file():
         raise FileNotFoundError("Arquivo de backup ou dump não encontrado")
+    target = resolve_existing_file(candidate)
 
     if target.name.endswith(".zip.enc"):
         return _restore_encrypted_backup(
@@ -773,7 +774,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Valida e aplica um dump somente de dados no PostgreSQL, preservando o schema."
     )
-    parser.add_argument("--file", type=Path, default=DEFAULT_DML_PATH, help="Arquivo SQL ou ZIP")
+    parser.add_argument("--file", type=Path, help="Arquivo SQL; para ZIP ou backup criptografado use --restore")
     parser.add_argument(
         "--restore",
         action="store_true",
@@ -796,14 +797,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if not args.restore and args.file is None:
+        parser.error("informe --file ou --restore")
     if not args.no_truncate and not args.yes and not args.dry_run:
         parser.error("a restauração apaga os dados atuais; informe --yes")
 
     try:
-        source = None if args.restore and args.file == DEFAULT_DML_PATH else args.file
         if args.restore:
             result = restore_backup(
-                source,
+                args.file,
                 allow_destructive=args.yes,
                 expected_database=args.confirm_database,
                 dry_run=args.dry_run,

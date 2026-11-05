@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -21,7 +21,10 @@ from app.features.adjustments.adjustment_exceptions import (
     WaiverAttachmentRequiredError,
     WaiverLimitExceededError,
 )
-from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.adjustments.adjustment_models import (
+    AdjustmentRequest,
+    hours_to_minutes,
+)
 from app.features.adjustments.adjustment_repository import (
     AsyncAdjustmentRepository,
     async_adjustment_repository,
@@ -29,6 +32,7 @@ from app.features.adjustments.adjustment_repository import (
 from app.features.adjustments.adjustment_schemas import (
     AdjustmentRequestCreate,
     AdjustmentRequestResponse,
+    AdjustmentReviewRequest,
     AdjustmentWaiverCreate,
 )
 from app.features.payroll.payroll_service import payroll_service
@@ -96,7 +100,7 @@ class AdjustmentService:
     async def _validate_waiver_limit(self, db: AsyncSession, user_id: int, target_date: date,
                                      amount_hours: float | None):
         import math
-        if amount_hours is None or not math.isfinite(amount_hours) or amount_hours <= 0:
+        if amount_hours is None or not math.isfinite(amount_hours) or amount_hours <= 0 or not hours_to_minutes(amount_hours):
             raise WaiverLimitExceededError("O abono deve informar uma quantidade positiva e finita de horas.")
         await self.repo.lock_waivers(db, user_id, target_date)
 
@@ -120,6 +124,22 @@ class AdjustmentService:
             await payroll_service.async_validate_period_open(session, target_date)
         else:
             payroll_service.validate_period_open(session, target_date)
+
+    async def list_adjustments(
+            self, current_user: User, scope: Literal["mine", "team"] = "mine",
+            skip: int = 0, limit: int = 100, month: int | None = None,
+            year: int | None = None, status: str | None = None,
+            order_by: str = "created_at", order_direction: str = "desc",
+    ) -> list[AdjustmentRequest]:
+        filters = {"skip": skip, "limit": limit, "month": month, "year": year, "status": status,
+                   "order_by": order_by, "order_direction": order_direction}
+        if scope == "mine":
+            return await self.get_my_enriched(user_id=current_user.id, **filters)
+        if scope != "team":
+            raise DomainException(status_code=422, detail="Escopo de ajustes inválido.")
+        if current_user.role not in (UserRole.MANAGER, UserRole.MAINTAINER):
+            raise AdjustmentPermissionError("Acesso negado aos ajustes da equipe.")
+        return await self.get_all_enriched(**filters)
 
     async def get_all_enriched(
             self, db: AsyncSession | None = None, skip: int = 0, limit: int = 100,
@@ -190,29 +210,9 @@ class AdjustmentService:
         await audit_service.async_log_change(session, manager_id, "CREATE_WAIVER", new_model=adjustment)
         return await self._build_response(session, adjustment)
 
-    @transactional
     async def admin_delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, admin_id: int = 0,
                                       reason: str = "") -> None:
-        session = db if db is not None else self.db
-        assert session is not None
-        await self.repo.lock(session, adjustment_id)
-        request = await self.repo.get(session, adjustment_id)
-        if not request:
-            raise AdjustmentNotFoundError(adjustment_id=adjustment_id)
-        await self._validate_period_open(session, request.target_date)
-
-        if request.adjustment_type not in [AdjustmentType.EXTRA_TIME, AdjustmentType.WAIVER, AdjustmentType.DAILY_EXCESS]:
-            raise InvalidAdjustmentTypeError(adjustment_type=str(request.adjustment_type))
-
-        if request.status == AdjustmentStatus.APPROVED:
-            await self._revert_adjustment_action(session, request, admin_id)
-
-        old_data = serialize_model(request)
-        await self.repo.soft_delete(session, adjustment_id, admin_id)
-        await audit_service.async_log_change(
-            session, admin_id, "DELETE_ADJUSTMENT", entity="ADJUSTMENT", entity_id=adjustment_id,
-            old_model=old_data, new_data={"reason": reason}
-        )
+        await self.delete_adjustment(db=db, adjustment_id=adjustment_id, manager_id=admin_id, reason=reason)
 
     @transactional
     async def delete_adjustment(self, db: AsyncSession | None = None, adjustment_id: int = 0, manager_id: int = 0,
@@ -283,6 +283,18 @@ class AdjustmentService:
             await upload_storage.remove(stored)
             raise
 
+    async def review_adjustment(
+        self, request_id: int, manager_id: int, review: AdjustmentReviewRequest,
+    ) -> AdjustmentRequestResponse:
+        if review.status == AdjustmentStatus.APPROVED:
+            return await self.approve_adjustment(
+                request_id=request_id, manager_id=manager_id, comment=review.comment,
+                approved_amount_hours=review.approved_amount_hours,
+            )
+        return await self.reject_adjustment(
+            request_id=request_id, manager_id=manager_id, comment=review.comment,
+        )
+
     @transactional
     async def approve_adjustment(self, db: AsyncSession | None = None, request_id: int = 0, manager_id: int = 0,
                            comment: str | None = None, approved_amount_hours: float | None = None) -> AdjustmentRequestResponse:
@@ -302,7 +314,7 @@ class AdjustmentService:
                 raise WaiverAttachmentRequiredError("Para aprovar um abono, é obrigatório haver anexo.")
         elif request.adjustment_type == AdjustmentType.DAILY_EXCESS:
             if (approved_amount_hours is not None
-                    and round(approved_amount_hours * 60) > round((request.amount_hours or 0) * 60)):
+                    and hours_to_minutes(approved_amount_hours) > (request.amount_minutes or 0)):
                 raise ExcessApprovalLimitError()
             request.approved_amount_hours = approved_amount_hours
         elif request.adjustment_type != AdjustmentType.EXTRA_TIME:
@@ -312,7 +324,7 @@ class AdjustmentService:
         await audit_service.async_log_change(
             session, manager_id, "APPROVE_ADJUSTMENT",
             old_model=old_data, new_model=updated,
-            new_data={"comment": comment, "approved_amount_hours": approved_amount_hours} if (comment or approved_amount_hours is not None) else None
+            new_data={"comment": comment, "approved_amount_minutes": updated.approved_amount_minutes} if (comment or approved_amount_hours is not None) else None
         )
         return await self._build_response(session, updated)
 

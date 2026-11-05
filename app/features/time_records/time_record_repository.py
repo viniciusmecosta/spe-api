@@ -13,9 +13,27 @@ from app.features.time_records.time_record_models import (
 )
 from app.features.time_records.time_record_schemas import (
     TimeRecordCreate,
+    TimeRecordFilters,
     TimeRecordUpdate,
 )
 from app.shared.enums import RecordType
+
+
+def filtered_records_statement(user_id: int, filters: TimeRecordFilters):
+    statement = (
+        select(TimeRecord)
+        .options(selectinload(TimeRecord.editor))
+        .where(TimeRecord.user_id == user_id, TimeRecord.is_ignored.is_(False))
+    )
+    if filters.start_date is not None:
+        statement = statement.where(TimeRecord.record_datetime >= filters.start_date)
+    if filters.end_date is not None:
+        statement = statement.where(TimeRecord.record_datetime <= filters.end_date)
+    return (
+        statement.order_by(TimeRecord.record_datetime.desc(), TimeRecord.id.desc())
+        .offset(filters.skip)
+        .limit(filters.limit)
+    )
 
 
 class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeRecordUpdate]):
@@ -25,11 +43,10 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
     def create(
         self,
         db: Session,
-            *,
-            obj_in: TimeRecordCreate | None = None,
-            user_id: int | None = None,
-            record_type: RecordType | None = None,
-            record_datetime: datetime | None = None,
+        obj_in: TimeRecordCreate | None = None,
+        user_id: int | None = None,
+        record_type: RecordType | None = None,
+        record_datetime: datetime | None = None,
         ip_address: str | None = None,
         device_name: str | None = None,
         biometric_id: int | None = None,
@@ -77,6 +94,11 @@ class TimeRecordRepository(BaseRepository[TimeRecord, TimeRecordCreate, TimeReco
             .order_by(desc(TimeRecord.record_datetime))
         )
         return db.scalars(stmt).first()
+
+    def get_filtered(
+        self, db: Session, *, user_id: int, filters: TimeRecordFilters,
+    ) -> list[TimeRecord]:
+        return list(db.scalars(filtered_records_statement(user_id, filters)).all())
 
     def get_all_by_user(
         self, db: Session, user_id: int, skip: int = 0, limit: int = 100
@@ -214,16 +236,15 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
         super().__init__(TimeRecord)
 
     async def create(
-            self,
-            db: AsyncSession,
-            *,
-            obj_in: TimeRecordCreate | None = None,
-            user_id: int | None = None,
-            record_type: RecordType | None = None,
-            record_datetime: datetime | None = None,
-            ip_address: str | None = None,
-            device_name: str | None = None,
-            biometric_id: int | None = None,
+        self,
+        db: AsyncSession,
+        obj_in: TimeRecordCreate | None = None,
+        user_id: int | None = None,
+        record_type: RecordType | None = None,
+        record_datetime: datetime | None = None,
+        ip_address: str | None = None,
+        device_name: str | None = None,
+        biometric_id: int | None = None,
     ) -> TimeRecord:
         if obj_in is not None:
             return await super().create(db, obj_in=obj_in)
@@ -270,6 +291,12 @@ class AsyncTimeRecordRepository(AsyncBaseRepository[TimeRecord, TimeRecordCreate
         )
         result = await db.scalars(stmt)
         return result.first()
+
+    async def get_filtered(
+        self, db: AsyncSession, *, user_id: int, filters: TimeRecordFilters,
+    ) -> list[TimeRecord]:
+        result = await db.scalars(filtered_records_statement(user_id, filters))
+        return list(result.all())
 
     async def get_all_by_user(
             self, db: AsyncSession, user_id: int, skip: int = 0, limit: int = 100

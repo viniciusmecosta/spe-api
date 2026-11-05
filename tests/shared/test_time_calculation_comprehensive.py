@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
+
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.reports.report_service import ReportService
 from app.features.time_records.time_record_models import TimeRecord
@@ -27,7 +28,7 @@ def schedule_8h():
         id=1,
         user_id=1,
         day_of_week=DayOfWeek.SEGUNDA.value,
-        daily_hours=8.0,
+        daily_minutes=480,
         entry_1=time(8, 0),
         exit_1=time(12, 0),
         entry_2=time(13, 0),
@@ -119,7 +120,7 @@ def test_scenario_9h30_worked_30m_early_lunch_1h_staying_late(time_service, sche
 def test_scenario_legacy_schedule_disabled(time_service):
     legacy_sched = UserWorkScheduleConfig(
         id=2, user_id=1, day_of_week=DayOfWeek.SEGUNDA.value,
-        daily_hours=8.0, is_daily_excess_enabled=False, valid_from=date(2026, 1, 1),
+        daily_minutes=480, is_daily_excess_enabled=False, valid_from=date(2026, 1, 1),
     )
     tz = ZoneInfo("America/Sao_Paulo")
     r1 = TimeRecord(id=1, user_id=1, record_datetime=datetime(2026, 7, 1, 8, 0, tzinfo=tz), record_type=RecordType.ENTRY)

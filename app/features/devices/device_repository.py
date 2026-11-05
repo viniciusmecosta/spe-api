@@ -24,7 +24,8 @@ class DeviceCredentialRepository(BaseRepository[DeviceCredential, DeviceCredenti
     def __init__(self):
         super().__init__(DeviceCredential)
 
-    def create(self, db: Session, *, obj_in: DeviceCredentialCreate) -> DeviceCredential:
+    def create(self, db: Session, obj_in: DeviceCredentialCreate | None = None) -> DeviceCredential:
+        assert obj_in is not None
         hashed_key = get_api_key_hash(obj_in.api_key)
         db_obj = DeviceCredential(
             name=obj_in.name,
@@ -74,12 +75,11 @@ class FirmwareRepository(BaseRepository[Firmware, Firmware, Firmware]):
         return list(db.scalars(stmt).all())
 
     def create(
-            self,
-            db: Session,
-            *,
-            obj_in: Firmware | None = None,
-            version: str | None = None,
-            file_path: str | None = None,
+        self,
+        db: Session,
+        obj_in: Firmware | None = None,
+        version: str | None = None,
+        file_path: str | None = None,
     ) -> Firmware:
         if obj_in is not None:
             db_obj = obj_in
@@ -116,7 +116,8 @@ class AsyncDeviceCredentialRepository(
     def __init__(self):
         super().__init__(DeviceCredential)
 
-    async def create(self, db: AsyncSession, *, obj_in: DeviceCredentialCreate) -> DeviceCredential:
+    async def create(self, db: AsyncSession, obj_in: DeviceCredentialCreate | None = None) -> DeviceCredential:
+        assert obj_in is not None
         hashed_key = get_api_key_hash(obj_in.api_key)
         db_obj = DeviceCredential(
             name=obj_in.name,
@@ -170,13 +171,12 @@ class AsyncFirmwareRepository(AsyncBaseRepository[Firmware, Firmware, Firmware])
         return list(result.all())
 
     async def create(
-            self,
-            db: AsyncSession,
-            *,
-            obj_in: Firmware | None = None,
-            version: str | None = None,
-            file_path: str | None = None,
-            commit: bool = True,
+        self,
+        db: AsyncSession,
+        obj_in: Firmware | None = None,
+        version: str | None = None,
+        file_path: str | None = None,
+        commit: bool = True,
     ) -> Firmware:
         if obj_in is not None:
             db_obj = obj_in

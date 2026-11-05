@@ -153,11 +153,12 @@ class ReportService:
         start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=tz)
         end_dt = datetime.combine(end_date, datetime.max.time(), tzinfo=tz)
 
+        is_own_user = current_user.id == user_id if current_user is not None else False
         records, holidays, anomalies, all_adjustments = await self._fetch_history_data(
-            session, user_id, start_dt, end_dt, start_date, end_date, month, year, (current_user.id == user_id)
+            session, user_id, start_dt, end_dt, start_date, end_date, month, year, is_own_user
         )
 
-        is_manager = current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
+        is_manager = current_user is not None and current_user.role in [UserRole.MANAGER, UserRole.MAINTAINER]
 
         period_result = await self._calculate_period(
             session, user_id, start_date, end_date, records,

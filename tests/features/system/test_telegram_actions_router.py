@@ -1,8 +1,8 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
-import pytest
 from app.features.system.audit_service import AuditService
 from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.users.user_models import User
@@ -33,8 +33,8 @@ def test_trigger_manual_backup(client: TestClient, mocker: MagicMock) -> None:
     mock_task = mocker.patch.object(RoutineOrchestrator, "_record_manual_job", new_callable=AsyncMock, return_value=42)
     mock_audit = mocker.patch.object(AuditService, "async_log", new_callable=AsyncMock)
 
-    response = client.post("/api/v1/telegram/manual-backup")
-    assert response.status_code == 200
+    response = client.post("/api/v1/operations/jobs", json={"operation": "BACKUP_TELEGRAM"})
+    assert response.status_code == 202
     assert "Telegram" in response.json()["message"]
     mock_task.assert_awaited_once()
     mock_audit.assert_not_awaited()
@@ -44,20 +44,20 @@ def test_trigger_manual_report_success(client: TestClient, mocker: MagicMock) ->
     mock_task = mocker.patch.object(RoutineOrchestrator, "_record_manual_job", new_callable=AsyncMock, return_value=42)
     mock_audit = mocker.patch.object(AuditService, "async_log", new_callable=AsyncMock)
 
-    response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-01&end_date=2026-08-05")
-    assert response.status_code == 200
+    response = client.post("/api/v1/operations/jobs", json={"operation": "REPORT_TELEGRAM", "start_date": "2026-08-01", "end_date": "2026-08-05"})
+    assert response.status_code == 202
     assert "processamento em background" in response.json()["message"]
     mock_task.assert_awaited_once()
     mock_audit.assert_not_awaited()
 
 
 def test_trigger_manual_report_start_after_end(client: TestClient) -> None:
-    response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-10&end_date=2026-08-05")
+    response = client.post("/api/v1/operations/jobs", json={"operation": "REPORT_TELEGRAM", "start_date": "2026-08-10", "end_date": "2026-08-05"})
     assert response.status_code == 400
     assert "A data de início não pode ser maior" in response.json()["detail"]
 
 
 def test_trigger_manual_report_period_exceeded(client: TestClient) -> None:
-    response = client.post("/api/v1/telegram/manual-report?start_date=2026-08-01&end_date=2026-08-15")
+    response = client.post("/api/v1/operations/jobs", json={"operation": "REPORT_TELEGRAM", "start_date": "2026-08-01", "end_date": "2026-08-15"})
     assert response.status_code == 400
     assert "Período excedido" in response.json()["detail"]

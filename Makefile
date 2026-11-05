@@ -1,4 +1,4 @@
-.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore db-restore-test venv db-init db-pg-up db-dump-ddl db-dump-data db-dump-sqlite db-apply-dump db-check db-migrate-all
+.PHONY: setup run run-prod docker-build docker-up docker-logs docker-down migrate upgrade seed clean test lint dump restore db-restore-test venv db-init db-pg-up db-dump-ddl db-dump-data db-reset-001
 
 ifeq ($(OS),Windows_NT)
     PYTHON := .venv\Scripts\python.exe
@@ -14,11 +14,11 @@ setup:
 
 # Inicia a API em desenvolvimento.
 run:
-	granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
+	uv run --no-sync granian --interface asgi --host 0.0.0.0 --port 8000 --reload --reload-paths app app.main:app
 
 # Inicia a API em produção.
 run-prod:
-	granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
+	uv run --no-sync granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 
 # Cria uma nova revisão Alembic.
 migrate:
@@ -30,7 +30,7 @@ upgrade:
 
 # Insere os dados iniciais da aplicação.
 seed:
-	$(PYTHON) app/initial_data.py
+	$(PYTHON) -m app.initial_data
 
 # Constrói as imagens Docker.
 docker-build:
@@ -96,25 +96,5 @@ db-pg-up:
 db-init:
 	$(ALEMBIC) upgrade head
 
-# Converte spe.db em inserts para PostgreSQL.
-db-dump-sqlite:
-	$(PYTHON) scripts/export_sqlite_to_postgresql.py
-
-# Limpa os dados e aplica o dump convertido.
-db-apply-dump:
-	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
-
-# Compara todos os dados do SQLite e PostgreSQL.
-db-check:
-	$(PYTHON) scripts/verify_parity.py
-
-# Migra SQLite na revisão 002, aplica as demais migrações e cria a apuração histórica.
-db-migrate-all:
-	$(ALEMBIC) upgrade 002
-	$(PYTHON) scripts/export_sqlite_to_postgresql.py
-	$(PYTHON) scripts/apply_sql_to_postgresql.py --dry-run
-	$(PYTHON) scripts/apply_sql_to_postgresql.py --yes
-	$(ALEMBIC) upgrade head
-	$(PYTHON) scripts/verify_parity.py
-	$(PYTHON) -m scripts.backfill_daily_summaries --execute
-	$(PYTHON) scripts/verify_parity.py
+db-reset-001:
+	$(PYTHON) -m scripts.reset_database

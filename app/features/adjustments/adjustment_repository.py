@@ -16,27 +16,82 @@ from app.features.adjustments.adjustment_schemas import AdjustmentRequestCreate
 from app.shared.enums import AdjustmentStatus, AdjustmentType
 
 
+def _build_adjustment_model(obj_in: AdjustmentRequestCreate, user_id: int | None = None) -> AdjustmentRequest:
+    target_user_id = user_id if user_id is not None else getattr(obj_in, "user_id", None)
+    return AdjustmentRequest(
+        user_id=target_user_id,
+        adjustment_type=obj_in.adjustment_type,
+        record_type=obj_in.record_type,
+        target_date=obj_in.target_date,
+        time=obj_in.time,
+        amount_hours=obj_in.amount_hours,
+        reason_text=obj_in.reason_text,
+    )
+
+
+def _build_adjustments_stmt(
+    *,
+    user_id: int | None = None,
+    skip: int = 0,
+    limit: int = 100,
+    month: int | None = None,
+    year: int | None = None,
+    status: str | None = None,
+    order_by: str = "created_at",
+    order_direction: str = "desc",
+):
+    stmt = (
+        select(AdjustmentRequest)
+        .options(
+            selectinload(AdjustmentRequest.user),
+            selectinload(AdjustmentRequest.manager),
+            selectinload(AdjustmentRequest.attachments),
+        )
+        .where(AdjustmentRequest.deleted_at.is_(None))
+    )
+    if user_id is not None:
+        stmt = stmt.where(
+            AdjustmentRequest.user_id == user_id,
+            ~and_(
+                AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
+                AdjustmentRequest.status == AdjustmentStatus.PENDING,
+            ),
+        )
+    if month and year:
+        stmt = stmt.where(
+            func.extract("month", AdjustmentRequest.target_date) == month,
+            func.extract("year", AdjustmentRequest.target_date) == year,
+        )
+    elif year:
+        stmt = stmt.where(func.extract("year", AdjustmentRequest.target_date) == year)
+
+    if status:
+        if status.upper() == "NOT_PENDING":
+            stmt = stmt.where(AdjustmentRequest.status != AdjustmentStatus.PENDING)
+        else:
+            stmt = stmt.where(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
+
+    order_column = (
+        AdjustmentRequest.target_date
+        if order_by == "target_date"
+        else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
+    )
+    stmt = stmt.order_by(desc(order_column) if order_direction == "desc" else order_column)
+    return stmt.offset(skip).limit(limit)
+
+
 class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCreate, Any]):
     def __init__(self):
         super().__init__(AdjustmentRequest)
 
     def create(
-            self,
-            db: Session,
-            *,
-            obj_in: AdjustmentRequestCreate,
-            user_id: int | None = None,
+        self,
+        db: Session,
+        obj_in: AdjustmentRequestCreate | None = None,
+        user_id: int | None = None,
     ) -> AdjustmentRequest:
-        target_user_id = user_id if user_id is not None else getattr(obj_in, "user_id", None)
-        db_obj = AdjustmentRequest(
-            user_id=target_user_id,
-            adjustment_type=obj_in.adjustment_type,
-            record_type=obj_in.record_type,
-            target_date=obj_in.target_date,
-            time=obj_in.time,
-            amount_hours=obj_in.amount_hours,
-            reason_text=obj_in.reason_text,
-        )
+        assert obj_in is not None
+        db_obj = _build_adjustment_model(obj_in, user_id)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -69,45 +124,16 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
         order_by: str = "created_at",
         order_direction: str = "desc",
     ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(
-                AdjustmentRequest.user_id == user_id,
-                AdjustmentRequest.deleted_at.is_(None),
-                ~and_(
-                    AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
-                    AdjustmentRequest.status == AdjustmentStatus.PENDING
-                )
-            )
+        stmt = _build_adjustments_stmt(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            month=month,
+            year=year,
+            status=status,
+            order_by=order_by,
+            order_direction=order_direction,
         )
-
-        if month and year:
-            stmt = stmt.where(
-                func.extract("month", AdjustmentRequest.target_date) == month,
-                func.extract("year", AdjustmentRequest.target_date) == year,
-            )
-        elif year:
-            stmt = stmt.where(func.extract("year", AdjustmentRequest.target_date) == year)
-
-        if status:
-            if status.upper() == "NOT_PENDING":
-                stmt = stmt.where(AdjustmentRequest.status != AdjustmentStatus.PENDING)
-            else:
-                stmt = stmt.where(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
-
-        order_column = (
-            AdjustmentRequest.target_date
-            if order_by == "target_date"
-            else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
-        )
-        stmt = stmt.order_by(desc(order_column) if order_direction == "desc" else order_column)
-        stmt = stmt.offset(skip).limit(limit)
-
         return list(db.scalars(stmt).all())
 
     def get_all(
@@ -121,38 +147,15 @@ class AdjustmentRepository(BaseRepository[AdjustmentRequest, AdjustmentRequestCr
         order_by: str = "created_at",
         order_direction: str = "desc",
     ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(AdjustmentRequest.deleted_at.is_(None))
+        stmt = _build_adjustments_stmt(
+            skip=skip,
+            limit=limit,
+            month=month,
+            year=year,
+            status=status,
+            order_by=order_by,
+            order_direction=order_direction,
         )
-
-        if month and year:
-            stmt = stmt.where(
-                func.extract("month", AdjustmentRequest.target_date) == month,
-                func.extract("year", AdjustmentRequest.target_date) == year,
-            )
-        elif year:
-            stmt = stmt.where(func.extract("year", AdjustmentRequest.target_date) == year)
-
-        if status:
-            if status.upper() == "NOT_PENDING":
-                stmt = stmt.where(AdjustmentRequest.status != AdjustmentStatus.PENDING)
-            else:
-                stmt = stmt.where(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
-
-        order_column = (
-            AdjustmentRequest.target_date
-            if order_by == "target_date"
-            else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
-        )
-        stmt = stmt.order_by(desc(order_column) if order_direction == "desc" else order_column)
-        stmt = stmt.offset(skip).limit(limit)
-
         return list(db.scalars(stmt).all())
 
     def count_pending(self, db: Session, from_date: date | None = None) -> int:
@@ -242,22 +245,13 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
         super().__init__(AdjustmentRequest)
 
     async def create(
-            self,
-            db: AsyncSession,
-            *,
-            obj_in: AdjustmentRequestCreate,
-            user_id: int | None = None,
+        self,
+        db: AsyncSession,
+        obj_in: AdjustmentRequestCreate | None = None,
+        user_id: int | None = None,
     ) -> AdjustmentRequest:
-        target_user_id = user_id if user_id is not None else getattr(obj_in, "user_id", None)
-        db_obj = AdjustmentRequest(
-            user_id=target_user_id,
-            adjustment_type=obj_in.adjustment_type,
-            record_type=obj_in.record_type,
-            target_date=obj_in.target_date,
-            time=obj_in.time,
-            amount_hours=obj_in.amount_hours,
-            reason_text=obj_in.reason_text,
-        )
+        assert obj_in is not None
+        db_obj = _build_adjustment_model(obj_in, user_id)
         db.add(db_obj)
         await persist_changes(db)
         refreshed = await self.get(db, db_obj.id)
@@ -290,102 +284,50 @@ class AsyncAdjustmentRepository(AsyncBaseRepository[AdjustmentRequest, Adjustmen
             await db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))'), {'scope': key})
 
     async def get_all_by_user(
-            self,
-            db: AsyncSession,
-            user_id: int,
-            skip: int = 0,
-            limit: int = 100,
-            month: int | None = None,
-            year: int | None = None,
-            status: str | None = None,
-            order_by: str = "created_at",
-            order_direction: str = "desc",
+        self,
+        db: AsyncSession,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        month: int | None = None,
+        year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at",
+        order_direction: str = "desc",
     ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(
-                AdjustmentRequest.user_id == user_id,
-                AdjustmentRequest.deleted_at.is_(None),
-                ~and_(
-                    AdjustmentRequest.adjustment_type == AdjustmentType.DAILY_EXCESS,
-                    AdjustmentRequest.status == AdjustmentStatus.PENDING
-                )
-            )
+        stmt = _build_adjustments_stmt(
+            user_id=user_id,
+            skip=skip,
+            limit=limit,
+            month=month,
+            year=year,
+            status=status,
+            order_by=order_by,
+            order_direction=order_direction,
         )
-
-        if month and year:
-            stmt = stmt.where(
-                func.extract("month", AdjustmentRequest.target_date) == month,
-                func.extract("year", AdjustmentRequest.target_date) == year,
-            )
-        elif year:
-            stmt = stmt.where(func.extract("year", AdjustmentRequest.target_date) == year)
-
-        if status:
-            if status.upper() == "NOT_PENDING":
-                stmt = stmt.where(AdjustmentRequest.status != AdjustmentStatus.PENDING)
-            else:
-                stmt = stmt.where(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
-
-        order_column = (
-            AdjustmentRequest.target_date
-            if order_by == "target_date"
-            else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
-        )
-        stmt = stmt.order_by(desc(order_column) if order_direction == "desc" else order_column)
-        stmt = stmt.offset(skip).limit(limit)
-
         result = await db.scalars(stmt)
         return list(result.all())
 
     async def get_all(
-            self,
-            db: AsyncSession,
-            skip: int = 0,
-            limit: int = 100,
-            month: int | None = None,
-            year: int | None = None,
-            status: str | None = None,
-            order_by: str = "created_at",
-            order_direction: str = "desc",
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        month: int | None = None,
+        year: int | None = None,
+        status: str | None = None,
+        order_by: str = "created_at",
+        order_direction: str = "desc",
     ) -> list[AdjustmentRequest]:
-        stmt = (
-            select(AdjustmentRequest)
-            .options(
-                selectinload(AdjustmentRequest.user),
-                selectinload(AdjustmentRequest.manager),
-                selectinload(AdjustmentRequest.attachments),
-            )
-            .where(AdjustmentRequest.deleted_at.is_(None))
+        stmt = _build_adjustments_stmt(
+            skip=skip,
+            limit=limit,
+            month=month,
+            year=year,
+            status=status,
+            order_by=order_by,
+            order_direction=order_direction,
         )
-
-        if month and year:
-            stmt = stmt.where(
-                func.extract("month", AdjustmentRequest.target_date) == month,
-                func.extract("year", AdjustmentRequest.target_date) == year,
-            )
-        elif year:
-            stmt = stmt.where(func.extract("year", AdjustmentRequest.target_date) == year)
-
-        if status:
-            if status.upper() == "NOT_PENDING":
-                stmt = stmt.where(AdjustmentRequest.status != AdjustmentStatus.PENDING)
-            else:
-                stmt = stmt.where(AdjustmentRequest.status == AdjustmentStatus(status.upper()))
-
-        order_column = (
-            AdjustmentRequest.target_date
-            if order_by == "target_date"
-            else func.coalesce(AdjustmentRequest.reviewed_at, AdjustmentRequest.created_at)
-        )
-        stmt = stmt.order_by(desc(order_column) if order_direction == "desc" else order_column)
-        stmt = stmt.offset(skip).limit(limit)
-
         result = await db.scalars(stmt)
         return list(result.all())
 

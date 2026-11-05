@@ -13,6 +13,7 @@ from app.features.system.backup_crypto import (
     TAG_SIZE,
     decrypt_backup,
     encrypt_backup,
+    resolve_existing_file,
 )
 from app.features.system.backup_manifest import (
     add_manifest,
@@ -27,7 +28,8 @@ def test_application_does_not_import_scripts():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
-                assert node.module != "scripts" and not node.module.startswith("scripts."), path
+                assert node.module != "scripts", path
+                assert not node.module.startswith("scripts."), path
             if isinstance(node, ast.Import):
                 assert all(
                     name.name != "scripts" and not name.name.startswith("scripts.")
@@ -151,3 +153,71 @@ def test_manifest_legacy_and_invalid_metadata(tmp_path):
     empty_tables = set()
     with pytest.raises(ValueError, match="inválido"):
         validate_manifest("-- SPE-DUMP-MANIFEST: {\n", empty_tables)
+
+
+def test_backup_crypto_keeps_secure_temporary_descriptor(tmp_path, monkeypatch):
+    import tempfile
+
+    source = tmp_path / 'backup.zip'
+    source.write_bytes(b'conteudo sensivel')
+    original_open = Path.open
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
+
+    def guarded_open(path, mode='r', *args, **kwargs):
+        if 'w' in mode and (path.name.startswith('.backup.zip.enc.') or path.name.startswith('spe-restore-')):
+            raise AssertionError('arquivo temporário foi reaberto pelo caminho')
+        return original_open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', guarded_open)
+    encrypted = encrypt_backup(source, 'x' * 40)
+    restored = decrypt_backup(encrypted, 'x' * 40)
+    assert restored.read_bytes() == b'conteudo sensivel'
+    restored.unlink()
+
+
+def test_backup_crypto_cleans_temporary_files_after_authentication_failure(tmp_path, monkeypatch):
+    import tempfile
+
+    source = tmp_path / 'backup.zip'
+    source.write_bytes(b'conteudo sensivel')
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
+    encrypted = encrypt_backup(source, 'x' * 40)
+    with pytest.raises(InvalidTag):
+        decrypt_backup(encrypted, 'y' * 40)
+    assert not list(tmp_path.glob('spe-restore-*'))
+    assert not list(tmp_path.glob('.backup.zip.enc.*.tmp'))
+
+
+def test_backup_crypto_cleans_temporary_file_if_destination_exists(tmp_path):
+    source = tmp_path / 'backup.zip'
+    source.write_bytes(b'conteudo sensivel')
+    destination = tmp_path / 'backup.zip.enc'
+    destination.write_bytes(b'backup anterior')
+    with pytest.raises(FileExistsError):
+        encrypt_backup(source, 'x' * 40, destination)
+    assert destination.read_bytes() == b'backup anterior'
+    assert not list(tmp_path.glob('.backup.zip.enc.*.tmp'))
+
+
+def test_decrypt_propagates_temporary_file_creation_failure(tmp_path, monkeypatch):
+    import tempfile
+
+    source = tmp_path / 'backup.zip'
+    source.write_bytes(b'conteudo sensivel')
+    encrypted = encrypt_backup(source, 'x' * 40)
+
+    def unavailable(*args, **kwargs):
+        raise OSError('armazenamento temporário indisponível')
+
+    monkeypatch.setattr(tempfile, 'NamedTemporaryFile', unavailable)
+    with pytest.raises(OSError, match='temporário indisponível'):
+        decrypt_backup(encrypted, 'x' * 40)
+
+
+def test_resolve_existing_file_raises_when_missing(tmp_path):
+    missing_file = tmp_path / 'inexistente.enc'
+    missing_dir_file = tmp_path / 'pasta_inexistente' / 'inexistente.enc'
+    with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
+        resolve_existing_file(missing_file)
+    with pytest.raises(FileNotFoundError, match='Arquivo não encontrado'):
+        resolve_existing_file(missing_dir_file)

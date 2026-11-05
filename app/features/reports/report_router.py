@@ -1,10 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 
+from app.features.reports.aej_preview_service import AejPreviewService
 from app.features.reports.dashboard_service import DashboardService
 from app.features.reports.excel_service import ExcelService
+from app.features.reports.operational_export_service import (
+    ExportKind,
+    OperationalExportService,
+)
 from app.features.reports.report_schemas import (
     AdvancedUserReportResponse,
     DashboardMetricsResponse,
@@ -29,6 +34,17 @@ router = APIRouter(responses={**UNAUTHORIZED_RESPONSE})
 dashboard_router = APIRouter(responses={**AUTH_RESPONSES})
 
 
+@router.get("/aej-preview")
+async def export_aej_preview(
+        month: Month,
+        year: Year,
+        user_id: Annotated[int, Query(gt=0)],
+        service: Annotated[AejPreviewService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
+) -> Response:
+    return await service.export(user_id, month, year)
+
+
 @router.get(
     "/dashboard",
     responses={**FORBIDDEN_RESPONSE},
@@ -48,29 +64,18 @@ async def get_my_dashboard(
     return await dashboard_service.get_my_dashboard(current_user=current_user)
 
 
-@router.get("/history/me")
-async def get_my_history(
+@router.get("/history", responses={**FORBIDDEN_RESPONSE})
+async def get_history(
         report_service: Annotated[ReportService, Depends()],
         current_user: Annotated[User, Depends(deps.get_current_active_user)],
+        user_id: Annotated[int | None, Query(gt=0)] = None,
         month: Month | None = None,
         year: Year | None = None,
 ) -> HistoryResponse:
-    return await report_service.get_history_report(user_id=current_user.id, month=month, year=year,
-                                                   current_user=current_user)
-
-
-@router.get(
-    "/history/user/{user_id}",
-    responses={**FORBIDDEN_RESPONSE},
-)
-async def get_user_history(
-        user_id: int,
-        report_service: Annotated[ReportService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_active_user)],
-        month: Month | None = None,
-        year: Year | None = None,
-) -> HistoryResponse:
-    return await report_service.get_history_report(user_id=user_id, month=month, year=year, current_user=current_user)
+    return await report_service.get_history_report(
+        user_id=current_user.id if user_id is None else user_id,
+        month=month, year=year, current_user=current_user,
+    )
 
 
 @router.get(
@@ -96,13 +101,30 @@ async def export_monthly_report_excel(
         month: Month | None = None,
         year: Year | None = None,
         employee_ids: Annotated[list[int] | None, Depends(deps.parse_optional_employee_ids)] = None,
+        regenerate: bool = False,
 ) -> Response:
     return await excel_service.export_monthly_report(
         month=month,
         year=year,
         employee_ids=employee_ids,
         current_user=current_user,
+        regenerate=regenerate,
     )
+
+
+@router.get(
+    "/operational-export",
+    responses={**BAD_REQUEST_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+async def export_operational_data(
+        kind: ExportKind,
+        month: Month,
+        year: Year,
+        service: Annotated[OperationalExportService, Depends()],
+        current_user: Annotated[User, Depends(deps.get_current_manager)],
+        user_id: Annotated[int | None, Query(gt=0)] = None,
+) -> Response:
+    return await service.export(kind=kind, user_id=user_id, month=month, year=year, user=current_user)
 
 
 @router.get(

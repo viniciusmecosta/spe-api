@@ -66,6 +66,31 @@ def _retain_file(job_id: int, source: str, filename: str) -> tuple[str, str]:
     return str(destination), filename
 
 
+def _retain_combined_log(job_id: int, log_items: list[tuple[str, str]]) -> tuple[str, str]:
+    if len(log_items) == 1:
+        return _retain_file(job_id, log_items[0][0], log_items[0][1])
+    directory = Path(settings.UPLOAD_DIR) / DELIVERY_DIRECTORY / str(job_id)
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination = directory / f'{uuid.uuid4().hex}.log'
+    sections = []
+    for path, filename in log_items:
+        content = redact(Path(path).read_text(encoding='utf-8', errors='replace')).rstrip('\n')
+        sections.append(f'=== {filename} ===\n{content}')
+    destination.write_text('\n\n'.join(sections) + '\n', encoding='utf-8')
+    destination.chmod(0o600)
+    first_stem = Path(log_items[0][1]).stem
+    last_suffix = Path(log_items[-1][1]).stem.removeprefix('log_')
+    return str(destination), f'{first_stem}_{last_suffix}.log'
+
+
+def _retain_attachments(job_id: int, attachments: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    retained = [_retain_file(job_id, path, filename) for path, filename in attachments if not filename.endswith('.log')]
+    log_items = [(path, filename) for path, filename in attachments if filename.endswith('.log')]
+    if log_items:
+        retained.append(_retain_combined_log(job_id, log_items))
+    return retained
+
+
 def _log_incidents(attachments) -> list[str]:
     incidents = []
     for path, filename in attachments:
@@ -180,7 +205,7 @@ async def prepare_notification(job: dict) -> dict:
     attachments = content['attachments']
     await asyncio.to_thread(_append_logs, attachments, routine, start, end)
     context['incidents'] = await asyncio.to_thread(_log_incidents, attachments)
-    retained = [await asyncio.to_thread(_retain_file, job['id'], path, filename) for path, filename in attachments]
+    retained = await asyncio.to_thread(_retain_attachments, job['id'], attachments)
     if 'BACKUP' in routine:
         retained.insert(0, await _retain_backup(job['id']))
     parts = _notification_parts(routine, content, retained, context, start, end)

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.features.adjustments.adjustment_models import AdjustmentRequest
+from app.features.daily_summaries import daily_summary_events
 from app.features.daily_summaries.daily_summary_events import (
     _after_commit,
     _after_rollback,
@@ -22,7 +23,6 @@ from app.features.daily_summaries.daily_summary_events import (
     recalculate_changed_days,
     schedule_days,
 )
-from app.features.daily_summaries import daily_summary_events
 from app.features.holidays.holiday_models import Holiday
 from app.features.payroll.payroll_models import PayrollClosure
 from app.features.time_records.time_record_models import TimeRecord
@@ -97,7 +97,7 @@ def test_scope_for_schedule():
     sched = UserWorkScheduleConfig(
         user_id=10,
         day_of_week=0,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 1, 15),
         valid_until=date(2026, 1, 20),
     )
@@ -113,7 +113,7 @@ def test_scope_for_schedule_open_ended():
     sched = UserWorkScheduleConfig(
         user_id=10,
         day_of_week=0,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 7, 5),
         valid_until=None,
     )
@@ -131,7 +131,7 @@ def test_schedule_edit_recalculates_only_old_and_new_weekdays():
     new = UserWorkScheduleConfig(
         user_id=7,
         day_of_week=2,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 9, 10),
         valid_until=date(2026, 9, 20),
     )
@@ -174,7 +174,7 @@ def test_scopes_support_schedule_deletion_and_unknown_sources():
     schedule = UserWorkScheduleConfig(
         user_id=7,
         day_of_week=0,
-        daily_hours=8,
+        daily_minutes=480,
         valid_from=date(2026, 9, 1),
         valid_until=date(2026, 9, 10),
     )
@@ -224,7 +224,7 @@ def test_enqueue_changed_days_tracks_schedule_changes_in_reset_excess():
     sched = UserWorkScheduleConfig(
         user_id=7,
         day_of_week=1,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 9, 10),
         valid_until=date(2026, 9, 20),
     )
@@ -245,7 +245,7 @@ def test_enqueue_changed_days_tracks_dirty_schedule_changes():
         id=18,
         user_id=7,
         day_of_week=1,
-        daily_hours=8.0,
+        daily_minutes=480,
         valid_from=date(2026, 9, 10),
         valid_until=date(2026, 9, 20),
     )

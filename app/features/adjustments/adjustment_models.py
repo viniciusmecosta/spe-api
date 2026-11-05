@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
@@ -6,7 +7,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -22,6 +22,10 @@ from app.shared.enums import AdjustmentStatus, AdjustmentType, RecordType
 
 def get_local_time():
     return datetime.now(ZoneInfo(settings.TIMEZONE))
+
+
+def hours_to_minutes(value):
+    return int((Decimal(str(value)) * 60).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if value is not None else None
 
 
 class AdjustmentRequest(Base):
@@ -40,7 +44,7 @@ class AdjustmentRequest(Base):
     record_type = Column(Enum(RecordType), nullable=True)
     target_date = Column(Date, nullable=False)
     time = Column(Time, nullable=True)
-    amount_hours = Column(Float, nullable=True)
+    amount_minutes = Column(Integer, nullable=True)
     reason_text = Column(String, nullable=True)
 
     status = Column(Enum(AdjustmentStatus), default=AdjustmentStatus.PENDING, nullable=False)
@@ -50,12 +54,28 @@ class AdjustmentRequest(Base):
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(Integer, ForeignKey(USERS_ID, ondelete=SET_NULL_ACTION), nullable=True)
-    approved_amount_hours = Column(Float, nullable=True)
+    approved_amount_minutes = Column(Integer, nullable=True)
     applied_time_record_id = Column(Integer, ForeignKey("time_records.id", name="fk_adjustment_applied_record",
                                                        ondelete=SET_NULL_ACTION, use_alter=True), nullable=True)
 
     user = relationship("User", foreign_keys=[user_id], backref="adjustment_requests")
     manager = relationship("User", foreign_keys=[manager_id], backref="reviewed_adjustments")
+
+    @property
+    def amount_hours(self):
+        return self.amount_minutes / 60 if self.amount_minutes is not None else None
+
+    @amount_hours.setter
+    def amount_hours(self, value):
+        self.amount_minutes = hours_to_minutes(value)
+
+    @property
+    def approved_amount_hours(self):
+        return self.approved_amount_minutes / 60 if self.approved_amount_minutes is not None else None
+
+    @approved_amount_hours.setter
+    def approved_amount_hours(self, value):
+        self.approved_amount_minutes = hours_to_minutes(value)
 
     @property
     def user_name(self):

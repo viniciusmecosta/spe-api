@@ -10,6 +10,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app.core.config import settings
+from app.shared.document_authenticity import compute_excel_authenticity_hash
+from app.shared.document_signature import sign_xlsx
 from app.shared.schedule_report_service import (
     format_day_groups,
     get_schedule_transitions,
@@ -470,9 +472,19 @@ class ExcelWorkbookBuilder:
     def build(self, month, year, user_reports, company, logo_path, start_date: date, end_date: date) -> BytesIO:
         wb = Workbook()
         now, _ = trusted_time_service.get_trusted_time()
+        authenticity_hash = compute_excel_authenticity_hash(
+            month=month,
+            year=year,
+            start_date=start_date,
+            end_date=end_date,
+            company=company,
+            user_reports=user_reports,
+        )
         wb.properties.creator = settings.PROJECT_NAME
         wb.properties.title = "Relatório de Ponto - Excel"
-        wb.properties.subject = "Documento oficial de registro de ponto"
+        wb.properties.subject = f"Documento oficial de registro de ponto | sha256:{authenticity_hash}"
+        wb.properties.keywords = f"sha256:{authenticity_hash}"
+        wb.properties.identifier = authenticity_hash
         wb.properties.created = now
 
         self._build_summary_sheet(wb, month, year, user_reports, company, logo_path)
@@ -482,5 +494,4 @@ class ExcelWorkbookBuilder:
 
         output = BytesIO()
         wb.save(output)
-        output.seek(0)
-        return output
+        return BytesIO(sign_xlsx(output.getvalue()))

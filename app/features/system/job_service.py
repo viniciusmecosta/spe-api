@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,7 +36,7 @@ class JobService:
             raise HTTPException(status_code=404, detail='Tarefa não encontrada.')
         if job.status not in ('FAILED', 'PARTIAL'):
             raise HTTPException(status_code=409, detail='A tarefa precisa estar encerrada com falha para tentar novamente.')
-        result = dict(job.result)
+        result = dict(cast(dict[str, Any], job.result))
         if job.kind == 'REPROCESS' and result.get('failed'):
             job.payload = {**job.payload, 'retry_items': result['failed']}
             result = {}

@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.shared.validation import Month, Year
 
@@ -13,6 +13,22 @@ class PayrollClosureCreate(BaseModel):
 
 class PayrollReopenCreate(PayrollClosureCreate):
     observation: str
+
+
+class PayrollCloseTransition(BaseModel):
+    action: Literal["CLOSE"]
+    model_config = ConfigDict(extra="forbid")
+
+
+class PayrollReopenTransition(BaseModel):
+    action: Literal["REOPEN"]
+    observation: str = Field(min_length=1, max_length=1000)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+PayrollTransitionRequest = Annotated[
+    PayrollCloseTransition | PayrollReopenTransition, Field(discriminator="action")
+]
 
 
 class PayrollHistoryItem(BaseModel):
@@ -36,3 +52,11 @@ class PayrollClosureResponse(PayrollClosureCreate):
     report_path: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PayrollTransitionResponse(BaseModel):
+    year: Year
+    month: Month
+    action: Literal["CLOSE", "REOPEN"]
+    is_closed: bool
+    closure: PayrollClosureResponse | None = None

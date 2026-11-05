@@ -9,8 +9,7 @@ def minutes_to_seconds(minutes: Any) -> float:
 
 
 def _legacy_schedule_seconds(schedule: Any) -> float:
-    hours = Decimal(str(getattr(schedule, 'daily_hours', 0) or 0))
-    return minutes_to_seconds(hours * 60)
+    return minutes_to_seconds(getattr(schedule, 'daily_minutes', 0) or 0)
 
 
 def _parse_time(value: Any) -> time | None:

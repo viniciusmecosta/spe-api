@@ -1,11 +1,11 @@
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 
 @pytest.fixture
 def async_db_mock():
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
     session = MagicMock()
     session.scalar = AsyncMock()
     session.scalars = AsyncMock()
@@ -17,18 +17,18 @@ def async_db_mock():
     return session
 
 
+from app.features.devices.device_models import UserBiometric
+from app.features.users.user_biometric_service import UserBiometricService
 from app.features.users.user_exceptions import (
     BiometricValidationError,
     InsufficientPrivilegesError,
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from app.features.devices.device_models import UserBiometric
 from app.features.users.user_models import User
 from app.features.users.user_schemas import UserUpdate
 from app.features.users.user_service import UserService
 from app.features.users.user_validator import UserValidator
-from app.features.users.user_biometric_service import UserBiometricService
 from app.shared.enums import UserRole
 
 
@@ -194,13 +194,13 @@ async def test_process_single_biometric(biometric_service, mocker):
                                                  seen_idx, seen_fgr, current)
     assert res == existing
     assert res.sensor_index == 2
-    assert res.template_data == "data"
+    assert not hasattr(res, "template_data")
     assert res.finger_id == 3
     res2 = await biometric_service.process_single_biometric(user,
                                                   {"id": 11, "sensor_index": 5, "template_data": "data2",
                                                    "finger_id": 4}, seen_idx, seen_fgr, current)
     assert res2.sensor_index == 5
-    assert res2.template_data == "data2"
+    assert not hasattr(res2, "template_data")
     assert res2.finger_id == 4
 
 
@@ -275,6 +275,7 @@ async def test_update_user_not_found(user_service):
 
 def test_serialize_user_state():
     from datetime import date
+
     from app.features.system.audit_service import serialize_model
     user = User(
         id=1, username="test", is_active=True, data_nascimento=date(2000, 1, 1),

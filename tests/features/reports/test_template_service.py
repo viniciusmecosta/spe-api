@@ -62,6 +62,8 @@ def test_get_backup_email_html():
     assert "Registros de ponto" in result
     assert "Period Text" in result
     assert "<p>Report HTML</p>" in result
+    assert "#235a43" not in result
+    assert "border-top:4px" not in result
 
 
 def test_get_payroll_email_html_reabertura():

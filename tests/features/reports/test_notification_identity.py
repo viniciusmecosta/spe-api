@@ -1,12 +1,11 @@
 from datetime import date, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.features.reports.daily_report_service import DailyReportService
 from app.features.system.telegram_service import TelegramService
-from app.features.time_records.time_record_models import TimeRecord
-from app.features.users.user_models import User
 from app.shared.enums import RecordType
 
 
@@ -22,17 +21,17 @@ from app.shared.enums import RecordType
 async def test_notifications_keep_employees_with_matching_names_separate(names, channel):
     rows = [
         (
-            TimeRecord(
+            SimpleNamespace(
                 user_id=user_id,
                 record_type=RecordType.ENTRY,
                 record_datetime=datetime.fromisoformat(f"2026-10-26T{hour}:00:00-03:00"),
             ),
-            User(id=user_id, name=name),
+            SimpleNamespace(id=user_id, name=name),
         )
         for user_id, name, hour in [(1, names[0], "08"), (2, names[1], "09")]
     ]
-    session = AsyncMock()
-    session.execute.return_value = MagicMock(all=MagicMock(return_value=rows))
+    session = MagicMock()
+    session.execute = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=rows)))
     day = date(2026, 10, 26)
     if channel == "email":
         with patch(

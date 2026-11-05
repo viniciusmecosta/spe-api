@@ -89,7 +89,6 @@ class FirmwareListResponse(BaseModel):
 
 class UserBiometricBase(BaseModel):
     sensor_index: int | None = None
-    template_data: str | None = None
     finger_id: int | None = Field(None, ge=0, le=9)
 
 
@@ -100,7 +99,6 @@ class UserBiometricCreate(UserBiometricBase):
 class UserBiometricUpdate(BaseModel):
     id: int | None = None
     sensor_index: int | None = None
-    template_data: str | None = None
     finger_id: int | None = Field(None, ge=0, le=9)
 
 

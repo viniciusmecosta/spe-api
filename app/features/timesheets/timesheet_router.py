@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.features.timesheets.anomaly_service import AnomalyService
@@ -70,26 +70,15 @@ async def get_official_timesheet_all_pdf(
     return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
 
-@anomalies_router.get(
-    "/all",
-    dependencies=[Depends(deps.get_current_manager)],
-)
-async def get_all_anomalies(
+@anomalies_router.get("", dependencies=[Depends(deps.get_current_manager)])
+async def get_anomalies(
         month: Month,
         year: Year,
         service: Annotated[AnomalyService, Depends()],
+        user_id: Annotated[int | None, Query(gt=0)] = None,
 ) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year, viewer_role=UserRole.MANAGER)
+    return await service.get_anomalies_by_month(
+        month=month, year=year, user_id=user_id, viewer_role=UserRole.MANAGER,
+    )
 
 
-@anomalies_router.get(
-    "/user/{user_id}",
-    dependencies=[Depends(deps.get_current_manager)],
-)
-async def get_user_anomalies(
-        user_id: int,
-        month: Month,
-        year: Year,
-        service: Annotated[AnomalyService, Depends()],
-) -> list[AnomalyResponse]:
-    return await service.get_anomalies_by_month(month=month, year=year, user_id=user_id, viewer_role=UserRole.MANAGER)

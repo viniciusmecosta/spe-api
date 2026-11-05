@@ -140,9 +140,27 @@ class AuditService:
             return self.compute_diffs(raw_old, raw_new)
         return raw_old, raw_new
 
+    def _prepare_change_log_args(
+        self,
+        db: Any | None,
+        entity: str | None,
+        entity_id: int | None,
+        old_model: Any | None,
+        new_model: Any | None,
+        old_data: dict | None,
+        new_data: dict | None,
+    ) -> tuple[Any, str, int, dict | None, dict | None]:
+        session = db if db is not None else self.db
+        assert session is not None
+        raw_old = self._prepare_raw_data(old_model, old_data)
+        raw_new = self._prepare_raw_data(new_model, new_data)
+        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
+        final_old, final_new = self._compute_final_data(raw_old, raw_new)
+        return session, resolved_entity, resolved_id, final_old, final_new
+
     def log_change(
         self,
-            db: Any | None = None,
+        db: Any | None = None,
         user_id: int | None = None,
         action: str = "",
         *,
@@ -153,13 +171,9 @@ class AuditService:
         old_data: dict | None = None,
         new_data: dict | None = None,
     ):
-        session = db if db is not None else self.db
-        assert session is not None
-        raw_old = self._prepare_raw_data(old_model, old_data)
-        raw_new = self._prepare_raw_data(new_model, new_data)
-        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
-        final_old, final_new = self._compute_final_data(raw_old, raw_new)
-
+        session, resolved_entity, resolved_id, final_old, final_new = self._prepare_change_log_args(
+            db, entity, entity_id, old_model, new_model, old_data, new_data
+        )
         return self.log(
             session,
             user_id=user_id,
@@ -170,20 +184,23 @@ class AuditService:
             new_data=final_new,
         )
 
+    def _preserve_schedule_period(
+        self, old_data: dict, new_data: dict, actual_old: dict, actual_new: dict
+    ) -> None:
+        if "schedule_summary" not in old_data and "schedule_summary" not in new_data:
+            return
+        for period_key in ("valid_from", "valid_until"):
+            if old_data.get(period_key) is not None:
+                actual_old[period_key] = old_data[period_key]
+            if new_data.get(period_key) is not None:
+                actual_new[period_key] = new_data[period_key]
+
     def compute_diffs(self, old_data: dict, new_data: dict) -> tuple[dict, dict]:
-        actual_old = {}
-        actual_new = {}
-
         all_keys = set(old_data.keys()).union(new_data.keys())
-        for key in all_keys:
-            old_val = old_data.get(key)
-            new_val = new_data.get(key)
-            if old_val != new_val:
-                if key in old_data:
-                    actual_old[key] = old_val
-                if key in new_data:
-                    actual_new[key] = new_val
-
+        changed_keys = {key for key in all_keys if old_data.get(key) != new_data.get(key)}
+        actual_old = {key: old_data[key] for key in changed_keys if key in old_data}
+        actual_new = {key: new_data[key] for key in changed_keys if key in new_data}
+        self._preserve_schedule_period(old_data, new_data, actual_old, actual_new)
         return actual_old, actual_new
 
     async def get_logs(self, db: AsyncSession | None = None, action: str | None = None,
@@ -225,25 +242,21 @@ class AuditService:
         return await self.repo.create(session, obj_in=obj_in)
 
     async def async_log_change(
-            self,
-            db: AsyncSession | None = None,
-            user_id: int | None = None,
-            action: str = "",
-            *,
-            entity: str | None = None,
-            entity_id: int | None = None,
-            old_model: Any | None = None,
-            new_model: Any | None = None,
-            old_data: dict | None = None,
-            new_data: dict | None = None,
+        self,
+        db: AsyncSession | None = None,
+        user_id: int | None = None,
+        action: str = "",
+        *,
+        entity: str | None = None,
+        entity_id: int | None = None,
+        old_model: Any | None = None,
+        new_model: Any | None = None,
+        old_data: dict | None = None,
+        new_data: dict | None = None,
     ):
-        session = db if db is not None else self.db
-        assert session is not None
-        raw_old = self._prepare_raw_data(old_model, old_data)
-        raw_new = self._prepare_raw_data(new_model, new_data)
-        resolved_entity, resolved_id = self._resolve_entity_info(entity, entity_id, old_model, new_model)
-        final_old, final_new = self._compute_final_data(raw_old, raw_new)
-
+        session, resolved_entity, resolved_id, final_old, final_new = self._prepare_change_log_args(
+            db, entity, entity_id, old_model, new_model, old_data, new_data
+        )
         return await self.async_log(
             session,
             user_id=user_id,

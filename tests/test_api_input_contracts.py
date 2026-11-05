@@ -42,21 +42,21 @@ def validated_client():
     '/routine-logs/?limit=-1',
     '/routine-logs/?limit=1001',
     '/users/?after_id=2147483648',
-    '/time-records/my?skip=-1',
-    '/time-records/my?limit=0',
-    '/reports/history/me?month=1&year=10000',
-    '/reports/history/user/1?month=1&year=9999',
+    '/time-records?skip=-1',
+    '/time-records?limit=0',
+    '/reports/history?month=1&year=10000',
+    '/reports/history?user_id=1&month=1&year=9999',
     '/reports/team-hours?month=1&year=10000',
     '/reports/user/1?month=1&year=10000',
     '/reports/export/excel?month=1&year=9999',
     '/timesheets/user/1/pdf?month=1&year=10000',
     '/timesheets/all/pdf?month=1&year=9999',
-    '/anomalies/all?month=13&year=2026',
-    '/anomalies/user/1?month=0&year=2026',
-    '/anomalies/all?month=1&year=10000',
+    '/anomalies?month=13&year=2026',
+    '/anomalies?user_id=1&month=0&year=2026',
+    '/anomalies?month=1&year=10000',
     '/payroll/?year=10000',
-    '/adjustments/my?month=1&year=10000',
-    '/adjustments/?month=1&year=10000',
+    '/adjustments?month=1&year=10000',
+    '/adjustments?scope=team&month=1&year=10000',
 ])
 def test_invalid_query_is_rejected_before_database_access(validated_client, path):
     client, session = validated_client
@@ -81,7 +81,7 @@ def test_invalid_employee_filter_cannot_broaden_export(validated_client, path, s
 def test_invalid_payroll_competence_is_rejected(validated_client, field, value):
     client, session = validated_client
     payload = {'month': 1, 'year': 2026, field: value}
-    response = client.post('/api/v1/payroll/close', json=payload)
+    response = client.post(f"/api/v1/payroll/{payload['year']}/{payload['month']}/transitions", json={'action': 'CLOSE'})
     assert response.status_code == 422, response.text
     session.scalars.assert_not_awaited()
 
@@ -89,7 +89,7 @@ def test_invalid_payroll_competence_is_rejected(validated_client, field, value):
 def test_largest_supported_report_year_is_accepted(validated_client, mocker):
     client, _ = validated_client
     get_anomalies = mocker.patch.object(AnomalyService, 'get_anomalies_by_month', new_callable=AsyncMock, return_value=[])
-    response = client.get('/api/v1/anomalies/all?month=12&year=9998')
+    response = client.get('/api/v1/anomalies?month=12&year=9998')
     assert response.status_code == 200, response.text
     assert get_anomalies.await_args.kwargs['year'] == 9998
 
@@ -99,7 +99,7 @@ def test_schedule_day_is_validated_at_api_boundary(validated_client, day):
     client, session = validated_client
     response = client.post('/api/v1/schedules/bulk', json={
         'valid_from': '2026-10-01', 'valid_until': '2026-10-31',
-        'users': [{'user_id': 1, 'schedules': [{'day_of_week': day, 'daily_hours': 8}]}],
+        'users': [{'user_id': 1, 'schedules': [{'day_of_week': day, 'daily_minutes': 480}]}],
     })
     assert response.status_code == 422, response.text
     session.execute.assert_not_awaited()
@@ -127,14 +127,14 @@ def test_schedule_reversed_dates_are_rejected_in_path(validated_client, method):
 
 
 def test_schedule_schema_preserves_valid_overnight_shift_and_same_day_period():
-    schedule = WorkScheduleBase(day_of_week=6, daily_hours=8, entry_1='22:00', exit_1='06:00',
+    schedule = WorkScheduleBase(day_of_week=6, daily_minutes=480, entry_1='22:00', exit_1='06:00',
                                 valid_from=date(2026, 10, 1), valid_until=date(2026, 10, 1))
     assert schedule.entry_1.hour == 22
     assert schedule.exit_1.hour == 6
     assert BulkWorkScheduleCreate(valid_from=date(2026, 10, 1), valid_until=date(2026, 10, 1), users=[])
     invalid_start, invalid_end = date(2026, 10, 2), date(2026, 10, 1)
     with pytest.raises(ValidationError):
-        WorkScheduleBase(day_of_week=0, daily_hours=8, valid_from=invalid_start, valid_until=invalid_end)
+        WorkScheduleBase(day_of_week=0, daily_minutes=480, valid_from=invalid_start, valid_until=invalid_end)
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_direct_schedule_service_rejects_invalid_input_before_writing(oper
     session = AsyncMock()
     service = UserWorkScheduleService(session)
     payload = {'valid_from': date(2026, 10, 1), 'valid_until': date(2026, 10, 31),
-               'users': [{'user_id': 1, 'schedules': [{'day_of_week': 0, 'daily_hours': 8}]}]}
+               'users': [{'user_id': 1, 'schedules': [{'day_of_week': 0, 'daily_minutes': 480}]}]}
     if invalid == 'day':
         payload['users'][0]['schedules'][0]['day_of_week'] = 7
     else:

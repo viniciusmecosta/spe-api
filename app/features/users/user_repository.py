@@ -20,6 +20,26 @@ from app.features.users.user_schemas import UserCreate, UserUpdate
 from app.shared.enums import UserRole
 
 
+def _build_users_filter_stmt(
+    is_active: bool | None = None,
+    role: str | None = None,
+    search: str | None = None,
+):
+    stmt = select(User).options(
+        selectinload(User.current_schedules_rel),
+        selectinload(User.biometrics),
+        selectinload(User.historical_schedules),
+    )
+    if is_active is not None:
+        stmt = stmt.where(User.is_active == is_active)
+    if role is not None:
+        stmt = stmt.where(User.role == role)
+    if search:
+        search_term = f"%{search}%"
+        stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
+    return stmt
+
+
 class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def __init__(self):
         super().__init__(User)
@@ -43,7 +63,6 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
     def get_multi(
         self,
         db: Session,
-        *,
         skip: int = 0,
         limit: int = 100,
         is_active: bool | None = None,
@@ -52,29 +71,16 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         order_by: str = "id",
         order_direction: str = "asc",
     ) -> list[User]:
-        stmt = select(User).options(
-            selectinload(User.current_schedules_rel),
-            selectinload(User.biometrics),
-            selectinload(User.historical_schedules),
-        )
-        if is_active is not None:
-            stmt = stmt.where(User.is_active == is_active)
-        if role is not None:
-            stmt = stmt.where(User.role == role)
-        if search:
-            search_term = f"%{search}%"
-            stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
-
+        stmt = _build_users_filter_stmt(is_active=is_active, role=role, search=search)
         order_column = user_order_column(order_by)
         stmt = stmt.order_by(*user_sort_order(order_column, order_direction.lower() == "desc"))
-
         stmt = stmt.offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
 
     def _get_bio_fields(self, bio_data: Any):
         if isinstance(bio_data, dict):
-            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("template_data"), bio_data.get("finger_id")
-        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "template_data", None), getattr(bio_data, "finger_id", None)
+            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("finger_id")
+        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "finger_id", None)
 
     def _validate_sensor_idx(self, db: Session, sensor_idx: int, user_id: int, seen_indices: set):
         if sensor_idx is not None:
@@ -96,18 +102,16 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         new_biometrics_list = []
         seen_indices = set()
         for bio_data in biometrics_in:
-            bio_id, sensor_idx, tmpl_data, f_id = self._get_bio_fields(bio_data)
+            bio_id, sensor_idx, f_id = self._get_bio_fields(bio_data)
             self._validate_sensor_idx(db, sensor_idx, db_obj.id, seen_indices)
 
             if bio_id and bio_id in current_biometrics:
                 existing = current_biometrics[bio_id]
                 existing.sensor_index = sensor_idx
-                if tmpl_data is not None:
-                    existing.template_data = tmpl_data
                 existing.finger_id = f_id
                 new_biometrics_list.append(existing)
             else:
-                new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
+                new_bio = UserBiometric(sensor_index=sensor_idx, finger_id=f_id)
                 new_biometrics_list.append(new_bio)
         db_obj.biometrics = new_biometrics_list
 
@@ -131,6 +135,9 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
         if update_data.get("password"):
             update_data["password_hash"] = get_password_hash(update_data["password"])
             del update_data["password"]
+            update_data["auth_version"] = User.auth_version + 1
+
+        if update_data.get("password_change_required") is True:
             update_data["auth_version"] = User.auth_version + 1
 
         for field, value in update_data.items():
@@ -158,8 +165,9 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         super().__init__(User)
 
     async def create(
-            self, db: AsyncSession, *, obj_in: UserCreate | dict[str, Any]
+        self, db: AsyncSession, obj_in: UserCreate | dict[str, Any] | None = None
     ) -> User:
+        assert obj_in is not None
         if isinstance(obj_in, dict):
             create_data = dict(obj_in)
         elif hasattr(obj_in, "model_dump"):
@@ -217,32 +225,18 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         return result.first()
 
     async def get_multi(
-            self,
-            db: AsyncSession,
-            *,
-            skip: int = 0,
-            after_id: int | None = None,
-            limit: int = 100,
-            is_active: bool | None = None,
-            role: str | None = None,
-            search: str | None = None,
-            order_by: str = "id",
-            order_direction: str = "asc",
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        after_id: int | None = None,
+        is_active: bool | None = None,
+        role: str | None = None,
+        search: str | None = None,
+        order_by: str = "id",
+        order_direction: str = "asc",
     ) -> list[User]:
-        stmt = select(User).options(
-            selectinload(User.current_schedules_rel),
-            selectinload(User.biometrics),
-            selectinload(User.historical_schedules),
-        )
-
-        if is_active is not None:
-            stmt = stmt.where(User.is_active == is_active)
-        if role is not None:
-            stmt = stmt.where(User.role == role)
-        if search:
-            search_term = f"%{search}%"
-            stmt = stmt.where(or_(User.name.ilike(search_term), User.username.ilike(search_term)))
-
+        stmt = _build_users_filter_stmt(is_active=is_active, role=role, search=search)
         order_column = user_order_column(order_by)
         descending = order_direction.lower() == "desc"
         if after_id:
@@ -256,13 +250,8 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
 
     def _get_bio_fields(self, bio_data: Any):
         if isinstance(bio_data, dict):
-            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("template_data"), bio_data.get(
-                "finger_id")
-        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data,
-                                                                                               "template_data",
-                                                                                               None), getattr(bio_data,
-                                                                                                              "finger_id",
-                                                                                                              None)
+            return bio_data.get("id"), bio_data.get("sensor_index"), bio_data.get("finger_id")
+        return getattr(bio_data, "id", None), getattr(bio_data, "sensor_index", None), getattr(bio_data, "finger_id", None)
 
     async def _validate_sensor_idx(self, db: AsyncSession, sensor_idx: int, user_id: int, seen_indices: set):
         if sensor_idx is not None:
@@ -286,18 +275,16 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         new_biometrics_list = []
         seen_indices = set()
         for bio_data in biometrics_in:
-            bio_id, sensor_idx, tmpl_data, f_id = self._get_bio_fields(bio_data)
+            bio_id, sensor_idx, f_id = self._get_bio_fields(bio_data)
             await self._validate_sensor_idx(db, sensor_idx, db_obj.id, seen_indices)
 
             if bio_id and bio_id in current_biometrics:
                 existing = current_biometrics[bio_id]
                 existing.sensor_index = sensor_idx
-                if tmpl_data is not None:
-                    existing.template_data = tmpl_data
                 existing.finger_id = f_id
                 new_biometrics_list.append(existing)
             else:
-                new_bio = UserBiometric(sensor_index=sensor_idx, template_data=tmpl_data, finger_id=f_id)
+                new_bio = UserBiometric(sensor_index=sensor_idx, finger_id=f_id)
                 new_biometrics_list.append(new_bio)
         db_obj.biometrics = new_biometrics_list
 
@@ -321,6 +308,9 @@ class AsyncUserRepository(AsyncBaseRepository[User, UserCreate, UserUpdate]):
         if update_data.get("password"):
             update_data["password_hash"] = await asyncio.to_thread(get_password_hash, update_data["password"])
             del update_data["password"]
+            update_data["auth_version"] = User.auth_version + 1
+
+        if update_data.get("password_change_required") is True:
             update_data["auth_version"] = User.auth_version + 1
 
         for field, value in update_data.items():

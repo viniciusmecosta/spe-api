@@ -4,16 +4,17 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends
-from fastapi.encoders import jsonable_encoder
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.database.schedule_lock import lock_schedule_mutations
 from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
 )
 from app.features.system.audit_service import audit_service
+from app.features.users.schedule_audit import schedule_audit_data
 from app.features.users.user_exceptions import (
     BulkScheduleNotFoundError,
     BulkScheduleValidationError,
@@ -47,13 +48,13 @@ class UserWorkScheduleService:
             sch.is_daily_excess_enabled if sch.is_daily_excess_enabled is not None else True,
         )
 
-        sch.daily_hours = sch_data.get('daily_hours', sch.daily_hours)
-        sch.daily_hours = schedule_expected_seconds(sch) / 3600
+        sch.daily_minutes = sch_data.get('daily_minutes', sch.daily_minutes)
+        sch.daily_minutes = int(schedule_expected_seconds(sch) / 60)
 
     def _extract_schedule_data(self, sch: UserWorkScheduleConfig) -> dict:
         return {
             "day_of_week": sch.day_of_week,
-            "daily_hours": sch.daily_hours,
+            "daily_minutes": sch.daily_minutes,
             "is_daily_excess_enabled": sch.is_daily_excess_enabled,
             "valid_from": str(sch.valid_from) if sch.valid_from else None,
             "valid_until": str(sch.valid_until) if sch.valid_until else None,
@@ -168,7 +169,7 @@ class UserWorkScheduleService:
     def _extract_schedule_item(cfg: UserWorkScheduleConfig) -> dict:
         return {
             "day_of_week": cfg.day_of_week,
-            "daily_hours": cfg.daily_hours,
+            "daily_minutes": cfg.daily_minutes,
             "is_daily_excess_enabled": cfg.is_daily_excess_enabled,
             "entry_1": cfg.entry_1,
             "exit_1": cfg.exit_1,
@@ -271,6 +272,13 @@ class UserWorkScheduleService:
             else:
                 session.delete(cfg)
 
+    async def _schedule_user_names(self, session: Any, user_ids: set[int]) -> dict[int, str]:
+        if not user_ids:
+            return {}
+        statement = select(User.id, User.name).where(User.id.in_(user_ids))
+        result = await session.execute(statement) if hasattr(session, "sync_session") else session.execute(statement)
+        return {row.id: row.name for row in result.all() if row.name}
+
     async def _commit_and_audit_bulk(self, session: Any, current_user_id: int, action: str,
                                      old_data: dict | None = None, new_data: dict | None = None):
         if hasattr(session, "sync_session"):
@@ -287,6 +295,13 @@ class UserWorkScheduleService:
                 entity="USER_WORK_SCHEDULE_BULK", entity_id=0,
                 old_data=old_data, new_data=new_data
             )
+
+    @staticmethod
+    async def _lock_mutations(session: Any) -> None:
+        if isinstance(session, AsyncSession):
+            await session.run_sync(lock_schedule_mutations)
+        elif not hasattr(session, "sync_session"):
+            lock_schedule_mutations(session)
 
     async def bulk_add_schedules(self, db: Any | None = None, bulk_data: Any = None,
                                   current_user_id: int = 0):
@@ -310,6 +325,7 @@ class UserWorkScheduleService:
         if not users_input:
             raise BulkScheduleValidationError("Nenhum usuário informado.")
 
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, valid_from, valid_until)
 
         uids = [u.get('user_id') for u in users_input if u.get('user_id')]
@@ -329,9 +345,16 @@ class UserWorkScheduleService:
         for sch in new_schedules:
             session.add(sch)
 
+        if hasattr(session, "sync_session"):
+            await session.flush()
+        else:
+            session.flush()
         await self._commit_and_audit_bulk(
             session, current_user_id, "CREATE",
-            new_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            new_data=schedule_audit_data(
+                new_schedules, valid_from, valid_until,
+                {user_id: user.name for user_id, user in users_map.items()},
+            ),
         )
 
         return {"message": f"{len(new_schedules)} expedientes criados com sucesso."}
@@ -364,6 +387,7 @@ class UserWorkScheduleService:
         if (new_valid_until - new_valid_from).days > 31:
             raise BulkScheduleValidationError("A duração do expediente não pode ser superior a 1 mês.")
 
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, old_valid_from, old_valid_until)
         await self.check_payroll_closure(session, new_valid_from, new_valid_until)
 
@@ -378,21 +402,31 @@ class UserWorkScheduleService:
         if errors:
             raise BulkScheduleValidationError(errors)
 
+        audit_names = await self._schedule_user_names(
+            session, {cfg.user_id for cfg in old_configs} | {user.id for user, _ in to_create}
+        )
+        old_audit_data = schedule_audit_data(old_configs, old_valid_from, old_valid_until, audit_names)
         await self._delete_schedule_configs(session, to_delete)
 
         for cfg, new_data in to_update:
             self._apply_schedule_updates(cfg, new_data, new_valid_from, new_valid_until)
             session.add(cfg)
 
+        new_configs = [cfg for cfg, _ in to_update]
         for user, new_data in to_create:
             new_sch = UserWorkScheduleConfig(user_id=user.id)
             self._apply_schedule_updates(new_sch, new_data, new_valid_from, new_valid_until)
             session.add(new_sch)
+            new_configs.append(new_sch)
 
+        if hasattr(session, "sync_session"):
+            await session.flush()
+        else:
+            session.flush()
         await self._commit_and_audit_bulk(
             session, current_user_id, "UPDATE",
-            old_data={"valid_from": str(old_valid_from), "valid_until": str(old_valid_until)},
-            new_data={"valid_from": str(new_valid_from), "valid_until": str(new_valid_until), "bulk_data": jsonable_encoder(bulk_data)}
+            old_data=old_audit_data,
+            new_data=schedule_audit_data(new_configs, new_valid_from, new_valid_until, audit_names),
         )
 
         return {"message": "Expedientes atualizados com sucesso."}
@@ -406,17 +440,23 @@ class UserWorkScheduleService:
 
     @staticmethod
     def _validate_schedule_days(users_input: list[dict]) -> None:
+        seen = set()
         for user_input in users_input:
             for schedule in user_input.get('schedules', []):
                 day = schedule.get('day_of_week')
                 if not isinstance(day, int) or not 0 <= day <= 6:
                     raise BulkScheduleValidationError('O dia da semana deve estar entre 0 e 6.')
+                key = (user_input.get('user_id'), day)
+                if key in seen:
+                    raise BulkScheduleValidationError('O mesmo usuário e dia da semana foram informados mais de uma vez.')
+                seen.add(key)
 
     async def delete_bulk_schedules(self, db: Any | None = None, valid_from: date | None = None,
                                     valid_until: date | None = None,
                                     current_user_id: int = 0):
         session = db if db is not None else self.db
         assert session is not None
+        await self._lock_mutations(session)
         await self.check_payroll_closure(session, valid_from, valid_until)
 
         configs = await self._query_schedule_configs(session, valid_from, valid_until)
@@ -425,11 +465,13 @@ class UserWorkScheduleService:
 
         count = len(configs)
 
+        audit_names = await self._schedule_user_names(session, {cfg.user_id for cfg in configs})
+        old_audit_data = schedule_audit_data(configs, valid_from, valid_until, audit_names)
         await self._delete_schedule_configs(session, configs)
 
         await self._commit_and_audit_bulk(
             session, current_user_id, "DELETE",
-            old_data={"valid_from": str(valid_from), "valid_until": str(valid_until), "count": count}
+            old_data=old_audit_data,
         )
 
         return {"message": f"{count} registros removidos com sucesso."}

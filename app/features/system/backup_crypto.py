@@ -27,44 +27,58 @@ def encrypt_backup(source: Path, secret: str, destination: Path | None = None) -
     destination = destination or source.with_name(source.name + ".enc")
     encryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
     encryptor.authenticate_additional_data(MAGIC)
-    with tempfile.NamedTemporaryFile(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent,
-                                     delete=False) as temporary_file:
-        temporary = Path(temporary_file.name)
+    temporary = None
     try:
-        with temporary.open("wb") as output, source.open("rb") as original:
-            output.write(MAGIC + nonce)
-            for chunk in iter(lambda: original.read(CHUNK_SIZE), b""):
-                output.write(encryptor.update(chunk))
-            output.write(encryptor.finalize())
-            output.write(encryptor.tag)
-            output.flush()
-            os.fsync(output.fileno())
+        with tempfile.NamedTemporaryFile(prefix=f'.{destination.name}.', suffix='.tmp', dir=destination.parent,
+                                         delete=False) as output:
+            temporary = Path(output.name)
+            with source.open("rb") as original:
+                output.write(MAGIC + nonce)
+                for chunk in iter(lambda: original.read(CHUNK_SIZE), b""):
+                    output.write(encryptor.update(chunk))
+                output.write(encryptor.finalize())
+                output.write(encryptor.tag)
+                output.flush()
+                os.fsync(output.fileno())
         os.link(temporary, destination)
         return destination
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def resolve_existing_file(path: Path) -> Path:
+    resolved = path.resolve()
+    parent = resolved.parent
+    if parent.is_dir():
+        for entry in parent.iterdir():
+            if entry.name == resolved.name and entry.is_file():
+                return entry
+    raise FileNotFoundError(f"Arquivo não encontrado: {path}")
 
 
 def decrypt_backup(source: Path, secret: str) -> Path:
     key = _key(secret)
-    if source.stat().st_size < len(MAGIC) + NONCE_SIZE + TAG_SIZE:
+    safe_source = resolve_existing_file(source)
+    if safe_source.stat().st_size < len(MAGIC) + NONCE_SIZE + TAG_SIZE:
         raise ValueError("Backup criptografado incompleto")
-    with source.open("rb") as encrypted:
+    with safe_source.open("rb") as encrypted:
         header = encrypted.read(len(MAGIC) + NONCE_SIZE)
         if not header.startswith(MAGIC):
             raise ValueError("Formato de backup criptografado inválido")
         encrypted.seek(-TAG_SIZE, os.SEEK_END)
         tag = encrypted.read(TAG_SIZE)
         encrypted.seek(len(MAGIC) + NONCE_SIZE)
-        remaining = source.stat().st_size - len(MAGIC) - NONCE_SIZE - TAG_SIZE
+        remaining = safe_source.stat().st_size - len(MAGIC) - NONCE_SIZE - TAG_SIZE
         decryptor = Cipher(
             algorithms.AES(key), modes.GCM(header[len(MAGIC):], tag)
         ).decryptor()
         decryptor.authenticate_additional_data(MAGIC)
-        with tempfile.NamedTemporaryFile(prefix='spe-restore-', suffix='.zip', delete=False) as temporary:
-            target = Path(temporary.name)
+        target = None
+        completed = False
         try:
-            with target.open("wb") as temporary:
+            with tempfile.NamedTemporaryFile(prefix='spe-restore-', suffix='.zip', delete=False) as temporary:
+                target = Path(temporary.name)
                 while remaining:
                     chunk = encrypted.read(min(CHUNK_SIZE, remaining))
                     if not chunk:
@@ -72,7 +86,8 @@ def decrypt_backup(source: Path, secret: str) -> Path:
                     temporary.write(decryptor.update(chunk))
                     remaining -= len(chunk)
                 temporary.write(decryptor.finalize())
+            completed = True
             return target
-        except Exception:
-            target.unlink(missing_ok=True)
-            raise
+        finally:
+            if target is not None and not completed:
+                target.unlink(missing_ok=True)

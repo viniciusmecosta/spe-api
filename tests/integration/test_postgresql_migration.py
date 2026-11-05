@@ -70,9 +70,8 @@ async def test_summary_failure_rolls_back_source_and_keeps_previous_summary(
             daily_summary_service,
             "_calculate_user_day",
             side_effect=RuntimeError("outage"),
-        ):
-            with pytest.raises(DailySummaryRecalculationError):
-                await session.commit()
+        ), pytest.raises(DailySummaryRecalculationError):
+            await session.commit()
         await session.rollback()
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 0
@@ -99,9 +98,8 @@ async def test_retrying_commit_after_calculation_failure_refreshes_summary(
             daily_summary_service,
             "_calculate_user_day",
             side_effect=RuntimeError("outage"),
-        ):
-            with pytest.raises(DailySummaryRecalculationError):
-                await session.commit()
+        ), pytest.raises(DailySummaryRecalculationError):
+            await session.commit()
         await session.commit()
     async with factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 2
@@ -117,12 +115,13 @@ async def test_utc_admin_request_cannot_write_closed_local_month(pg_session_fact
         session.add(PayrollClosure(month=1, year=2026, closed_by_user_id=user.id))
         await session.commit()
     app.dependency_overrides[deps.get_current_manager] = lambda: user
+    app.dependency_overrides[deps.get_current_active_user] = lambda: user
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post(
-                "/api/v1/time-records/admin",
+                "/api/v1/time-records",
                 json={
                     "user_id": user.id,
                     "record_type": "EXIT",
@@ -133,6 +132,7 @@ async def test_utc_admin_request_cannot_write_closed_local_month(pg_session_fact
         assert response.status_code == 400
     finally:
         app.dependency_overrides.pop(deps.get_current_manager, None)
+        app.dependency_overrides.pop(deps.get_current_active_user, None)
     async with pg_session_factory() as session:
         assert await session.scalar(select(func.count()).select_from(TimeRecord)) == 0
 
@@ -160,6 +160,7 @@ async def test_closing_first_rejects_a_writer_that_validated_an_open_month(
 @pytest.mark.asyncio
 async def test_closing_waits_for_the_writer_and_exports_its_summary(pg_session_factory):
     from fastapi import BackgroundTasks
+
     from app.features.reports.excel_service import excel_service
 
     factory = pg_session_factory
@@ -205,7 +206,7 @@ async def test_fractional_schedules_sum_rounded_daily_minutes(pg_session_factory
             UserWorkScheduleConfig(
                 user_id=user.id,
                 day_of_week=day,
-                daily_hours=8.08,
+                daily_minutes=485,
                 valid_from=first,
                 valid_until=last,
             )
@@ -323,6 +324,7 @@ with SessionLocal() as session:
         capture_output=True,
         text=True,
         timeout=30,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     values = json.loads(result.stdout)
@@ -465,6 +467,7 @@ def test_alembic_connects_with_percent_encoded_password(pg_url, monkeypatch):
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         assert result.returncode == 0, result.stderr
         assert ScriptDirectory.from_config(Config("alembic.ini")).get_current_head() in result.stdout

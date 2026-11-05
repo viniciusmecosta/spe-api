@@ -17,7 +17,7 @@ async def test_manual_punch_rolls_back_when_ntp_audit_fails(mutation_api, pg_ses
     monkeypatch.setattr(audit_service, "async_log_change", AsyncMock(side_effect=RuntimeError("audit unavailable")))
     before = await snapshot(pg_session_factory, "record")
 
-    await mutation_api.request("POST", "/time-records/entry", 500)
+    await mutation_api.request("POST", "/time-records", 500, json={"record_type": "ENTRY"})
 
     assert await snapshot(pg_session_factory, "record") == before
 

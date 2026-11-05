@@ -223,8 +223,13 @@ temp_backup_*.db
 temp_backup_*.sql
 temp_inserts_*.sql
 temp_*.zip
+temp_*.zip.enc
 spe.zip
+spe.zip.enc
 *.zip
+*.zip.enc
+scripts/spe.zip.enc
+scripts/*.zip.enc
 *.sql
 scripts/*.sql
 /uploads
@@ -248,6 +253,8 @@ route_test_report.md
 
 deploy/
 .env-prod
+.env-prod-*
+env-prod-*
 portarias/
 
 # Test generated files
@@ -256,7 +263,6 @@ portarias/
 htmlcov/
 *.xml
 *.log
-docs/
 backups/
 
 # Auditorias locais

@@ -9,12 +9,15 @@ from app.features.holidays.holiday_models import Holiday
 from app.features.holidays.holiday_schemas import HolidayCreate
 
 
+def _month_stmt(month: int, year: int):
+    start_date = date(year, month, 1)
+    end_date = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return select(Holiday).where(Holiday.date >= start_date, Holiday.date < end_date)
+
+
 class HolidayRepository(BaseRepository[Holiday, HolidayCreate, HolidayCreate]):
     def __init__(self):
         super().__init__(Holiday)
-
-    def create(self, db: Session, *, obj_in: HolidayCreate) -> Holiday:
-        return super().create(db, obj_in=obj_in)
 
     def get_all(self, db: Session) -> list[Holiday]:
         stmt = select(Holiday).order_by(Holiday.date)
@@ -28,14 +31,7 @@ class HolidayRepository(BaseRepository[Holiday, HolidayCreate, HolidayCreate]):
         return super().get(db, id)
 
     def get_by_month(self, db: Session, month: int, year: int) -> list[Holiday]:
-        start_date = date(year, month, 1)
-        if month == 12:
-            end_date = date(year + 1, 1, 1)
-        else:
-            end_date = date(year, month + 1, 1)
-
-        stmt = select(Holiday).where(Holiday.date >= start_date, Holiday.date < end_date)
-        return list(db.scalars(stmt).all())
+        return list(db.scalars(_month_stmt(month, year)).all())
 
     def delete(self, db: Session, id: int):
         super().remove(db, id=id)
@@ -44,9 +40,6 @@ class HolidayRepository(BaseRepository[Holiday, HolidayCreate, HolidayCreate]):
 class AsyncHolidayRepository(AsyncBaseRepository[Holiday, HolidayCreate, HolidayCreate]):
     def __init__(self):
         super().__init__(Holiday)
-
-    async def create(self, db: AsyncSession, *, obj_in: HolidayCreate) -> Holiday:
-        return await super().create(db, obj_in=obj_in)
 
     async def get_all(self, db: AsyncSession) -> list[Holiday]:
         stmt = select(Holiday).order_by(Holiday.date)
@@ -62,14 +55,7 @@ class AsyncHolidayRepository(AsyncBaseRepository[Holiday, HolidayCreate, Holiday
         return await super().get(db, id)
 
     async def get_by_month(self, db: AsyncSession, month: int, year: int) -> list[Holiday]:
-        start_date = date(year, month, 1)
-        if month == 12:
-            end_date = date(year + 1, 1, 1)
-        else:
-            end_date = date(year, month + 1, 1)
-
-        stmt = select(Holiday).where(Holiday.date >= start_date, Holiday.date < end_date)
-        result = await db.scalars(stmt)
+        result = await db.scalars(_month_stmt(month, year))
         return list(result.all())
 
     async def delete(self, db: AsyncSession, id: int):

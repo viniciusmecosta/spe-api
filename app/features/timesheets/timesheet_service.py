@@ -126,7 +126,7 @@ class TimesheetService:
         records, holidays, all_adjustments, company = await self._fetch_period_data(
             session, user_id, start_dt, end_dt, start_date, end_date, month, year
         )
-        historical_schedules = user.historical_schedules if user else []
+        historical_schedules = user.historical_schedules
         period_result = await daily_summary_service.build_period(
             session, user_id, start_date, end_date,
             records, all_adjustments, holidays, historical_schedules,

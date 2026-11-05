@@ -1,12 +1,17 @@
-import pytest
 from datetime import date, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.features.adjustments.adjustment_models import AdjustmentRequest
 from app.features.time_records.time_record_models import TimeRecord
-from app.shared.enums import RecordType, AdjustmentType, AdjustmentStatus, DayOfWeek
-from app.shared.time_calculation_service import time_calculation_service, _DailyProcessState, DailyTimeResult
+from app.shared.enums import AdjustmentStatus, AdjustmentType, DayOfWeek, RecordType
+from app.shared.time_calculation_service import (
+    DailyTimeResult,
+    _DailyProcessState,
+    time_calculation_service,
+)
 
 
 @pytest.fixture
@@ -45,7 +50,7 @@ def schedule_factory():
         sched.valid_from = valid_from
         sched.valid_until = valid_until
         sched.day_of_week = day
-        sched.daily_hours = hours
+        sched.daily_minutes = round(hours * 60)
         sched.entry_1 = None
         sched.exit_1 = None
         sched.entry_2 = None
@@ -111,7 +116,7 @@ def test_process_records_matrix(record_factory, punch_times, expected_worked, ex
         dt = datetime(2023, 10, 10, hr, mn, 0)
         records.append(record_factory(dt, r_type))
 
-    worked, entries, exits, punches, blocks = time_calculation_service._process_records(records)
+    worked, _entries, _exits, punches, blocks = time_calculation_service._process_records(records)
 
     assert worked == expected_worked
     assert blocks == expected_blocks

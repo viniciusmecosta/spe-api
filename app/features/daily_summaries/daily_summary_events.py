@@ -33,11 +33,11 @@ SOURCE_MODELS = (
 RELEVANT_FIELDS = {
     TimeRecord: ("user_id", "record_datetime", "record_type", "is_ignored", "deleted_at"),
     AdjustmentRequest: (
-        "user_id", "target_date", "adjustment_type", "status", "amount_hours",
-        "approved_amount_hours", "deleted_at",
+        "user_id", "target_date", "adjustment_type", "status", "amount_minutes",
+        "approved_amount_minutes", "deleted_at",
     ),
     UserWorkScheduleConfig: (
-        "user_id", "day_of_week", "daily_hours", "entry_1", "exit_1",
+        "user_id", "day_of_week", "daily_minutes", "entry_1", "exit_1",
         "entry_2", "exit_2", "valid_from", "valid_until",
         "is_daily_excess_enabled",
     ),

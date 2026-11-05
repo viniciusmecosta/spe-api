@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
@@ -90,7 +90,7 @@ async def test_user_repository_methods(async_db_session, async_normal_user):
     await async_db_session.commit()
     await async_db_session.refresh(other_user)
 
-    async_db_session.add(UserBiometric(user_id=other_user.id, sensor_index=888, template_data="data"))
+    async_db_session.add(UserBiometric(user_id=other_user.id, sensor_index=888))
     await async_db_session.commit()
 
     with pytest.raises(ValueError, match="duplicado na mesma requisicao"):
@@ -234,7 +234,7 @@ def test_sync_user_repository(db_session, normal_user):
     db_session.commit()
     db_session.refresh(other_user)
 
-    db_session.add(UserBiometric(user_id=other_user.id, sensor_index=881, template_data="data"))
+    db_session.add(UserBiometric(user_id=other_user.id, sensor_index=881))
     db_session.commit()
 
     with pytest.raises(ValueError, match="duplicado na mesma requisicao"):
@@ -270,6 +270,7 @@ def test_user_pagination_cursor_conditions():
 @pytest.mark.asyncio
 async def test_protect_last_maintainer_and_cursor_pagination(async_db_session, async_normal_user):
     from unittest.mock import AsyncMock, MagicMock
+
     from app.core.exceptions import DomainException
     from app.features.users.user_exceptions import InsufficientPrivilegesError
 

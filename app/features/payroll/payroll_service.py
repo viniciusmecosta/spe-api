@@ -34,7 +34,14 @@ from app.features.payroll.payroll_repository import (
     async_payroll_repository,
     payroll_repository,
 )
-from app.features.payroll.payroll_schemas import PayrollClosureResponse
+from app.features.payroll.payroll_schemas import (
+    PayrollCloseTransition,
+    PayrollClosureCreate,
+    PayrollClosureResponse,
+    PayrollReopenCreate,
+    PayrollTransitionRequest,
+    PayrollTransitionResponse,
+)
 from app.features.reports.excel_service import excel_service
 from app.features.system.audit_service import audit_service
 from app.features.system.email_service import email_service
@@ -173,6 +180,26 @@ class PayrollService:
         for mo in range(max_month, 0, -1):
             result.append(self._build_period_response(mo, year, closures_by_month))
         return result
+
+    async def transition_period(
+        self, *, year: int, month: int, transition: PayrollTransitionRequest,
+        current_user: User, background_tasks: BackgroundTasks,
+    ) -> PayrollTransitionResponse:
+        if isinstance(transition, PayrollCloseTransition):
+            closure = await self.close_period(
+                period=PayrollClosureCreate(year=year, month=month),
+                current_user=current_user, background_tasks=background_tasks,
+            )
+            return PayrollTransitionResponse(
+                year=year, month=month, action=transition.action, is_closed=True, closure=closure,
+            )
+        await self.reopen_period(
+            period=PayrollReopenCreate(year=year, month=month, observation=transition.observation),
+            current_user=current_user, background_tasks=background_tasks,
+        )
+        return PayrollTransitionResponse(
+            year=year, month=month, action=transition.action, is_closed=False,
+        )
 
     async def close_period(
             self,

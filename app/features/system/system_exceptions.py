@@ -32,3 +32,8 @@ class BackupGenerationFailedError(DomainException):
 class SMTPConnectionFailedError(DomainException):
     def __init__(self, detail: str = "Falha na conexão SMTP ao tentar enviar o email."):
         super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
+
+
+class OperationPermissionError(DomainException):
+    def __init__(self, detail: str = "Acesso negado. Requer privilégios de Mantenedor."):
+        super().__init__(detail=detail, status_code=status.HTTP_403_FORBIDDEN)

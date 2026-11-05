@@ -51,7 +51,6 @@ class UserBiometricService:
     ) -> UserBiometric:
         bio_id = self._get_bio_attr(bio_data, "id")
         sensor_idx = self._get_bio_attr(bio_data, "sensor_index")
-        tmpl_data = self._get_bio_attr(bio_data, "template_data")
         finger_id = self._get_bio_attr(bio_data, "finger_id")
 
         await self.validate_sensor_index(user, sensor_idx, seen_indices)
@@ -60,13 +59,10 @@ class UserBiometricService:
         if bio_id and bio_id in current_biometrics:
             existing = current_biometrics[bio_id]
             existing.sensor_index = sensor_idx
-            if tmpl_data is not None:
-                existing.template_data = tmpl_data
             existing.finger_id = finger_id
             return existing
 
         return UserBiometric(
             sensor_index=sensor_idx,
-            template_data=tmpl_data,
             finger_id=finger_id,
         )

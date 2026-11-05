@@ -26,33 +26,39 @@ def _closed_period_statement(first: date, last: date):
     )
 
 
+def _build_payroll_closure(
+    obj_in: Any | None = None,
+    month: int | None = None,
+    year: int | None = None,
+    user_id: int | None = None,
+) -> PayrollClosure:
+    if obj_in is not None:
+        if isinstance(obj_in, PayrollClosure):
+            return obj_in
+        if isinstance(obj_in, dict):
+            return PayrollClosure(**obj_in)
+        return PayrollClosure(
+            month=getattr(obj_in, "month", month),
+            year=getattr(obj_in, "year", year),
+            is_closed=True,
+            closed_by_user_id=getattr(obj_in, "user_id", user_id),
+        )
+    return PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
+
+
 class PayrollRepository(BaseRepository[PayrollClosure, Any, Any]):
     def __init__(self):
         super().__init__(PayrollClosure)
 
     def create(
-            self,
-            db: Session,
-            *,
-            obj_in: Any | None = None,
-            month: int | None = None,
-            year: int | None = None,
-            user_id: int | None = None,
+        self,
+        db: Session,
+        obj_in: Any | None = None,
+        month: int | None = None,
+        year: int | None = None,
+        user_id: int | None = None,
     ) -> PayrollClosure:
-        if obj_in is not None:
-            if isinstance(obj_in, PayrollClosure):
-                db_obj = obj_in
-            elif isinstance(obj_in, dict):
-                db_obj = PayrollClosure(**obj_in)
-            else:
-                db_obj = PayrollClosure(
-                    month=getattr(obj_in, "month", month),
-                    year=getattr(obj_in, "year", year),
-                    is_closed=True,
-                    closed_by_user_id=getattr(obj_in, "user_id", user_id),
-                )
-        else:
-            db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
+        db_obj = _build_payroll_closure(obj_in, month, year, user_id)
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
@@ -103,29 +109,15 @@ class AsyncPayrollRepository(AsyncBaseRepository[PayrollClosure, Any, Any]):
         super().__init__(PayrollClosure)
 
     async def create(
-            self,
-            db: AsyncSession,
-            *,
-            obj_in: Any | None = None,
-            month: int | None = None,
-            year: int | None = None,
-            user_id: int | None = None,
-            commit: bool = True,
+        self,
+        db: AsyncSession,
+        obj_in: Any | None = None,
+        month: int | None = None,
+        year: int | None = None,
+        user_id: int | None = None,
+        commit: bool = True,
     ) -> PayrollClosure:
-        if obj_in is not None:
-            if isinstance(obj_in, PayrollClosure):
-                db_obj = obj_in
-            elif isinstance(obj_in, dict):
-                db_obj = PayrollClosure(**obj_in)
-            else:
-                db_obj = PayrollClosure(
-                    month=getattr(obj_in, "month", month),
-                    year=getattr(obj_in, "year", year),
-                    is_closed=True,
-                    closed_by_user_id=getattr(obj_in, "user_id", user_id),
-                )
-        else:
-            db_obj = PayrollClosure(month=month, year=year, is_closed=True, closed_by_user_id=user_id)
+        db_obj = _build_payroll_closure(obj_in, month, year, user_id)
         db.add(db_obj)
         if commit:
             await persist_changes(db)

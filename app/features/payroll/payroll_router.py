@@ -4,9 +4,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from fastapi.responses import FileResponse
 
 from app.features.payroll.payroll_schemas import (
-    PayrollClosureCreate,
     PayrollClosureResponse,
-    PayrollReopenCreate,
+    PayrollTransitionRequest,
+    PayrollTransitionResponse,
 )
 from app.features.payroll.payroll_service import PayrollService
 from app.features.time_records.time_record_schemas import SuccessResponse
@@ -18,7 +18,7 @@ from app.shared.openapi_responses import (
     CRUD_RESPONSES,
     NOT_FOUND_RESPONSE,
 )
-from app.shared.validation import Year
+from app.shared.validation import Month, Year
 
 router = APIRouter(responses={**AUTH_RESPONSES})
 
@@ -35,36 +35,20 @@ async def list_payroll_periods(
 
 
 @router.post(
-    "/close",
+    "/{year}/{month}/transitions",
     responses={**BAD_REQUEST_RESPONSE},
 )
-async def close_payroll_period(
-        period: PayrollClosureCreate,
-        background_tasks: BackgroundTasks,
-        service: Annotated[PayrollService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-) -> PayrollClosureResponse:
-    return await service.close_period(
-        period=period,
-        current_user=current_user,
-        background_tasks=background_tasks,
-    )
-
-
-@router.post(
-    "/reopen",
-    responses={**BAD_REQUEST_RESPONSE},
-)
-async def reopen_payroll_period(
-        period: PayrollReopenCreate,
-        background_tasks: BackgroundTasks,
-        service: Annotated[PayrollService, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_manager)],
-) -> SuccessResponse:
-    return await service.reopen_period(
-        period=period,
-        current_user=current_user,
-        background_tasks=background_tasks,
+async def transition_payroll_period(
+    year: Year,
+    month: Month,
+    transition: PayrollTransitionRequest,
+    background_tasks: BackgroundTasks,
+    service: Annotated[PayrollService, Depends()],
+    current_user: Annotated[User, Depends(deps.get_current_manager)],
+) -> PayrollTransitionResponse:
+    return await service.transition_period(
+        year=year, month=month, transition=transition,
+        current_user=current_user, background_tasks=background_tasks,
     )
 
 

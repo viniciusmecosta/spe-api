@@ -8,7 +8,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -33,7 +32,7 @@ class UserWorkScheduleConfig(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     day_of_week = Column(SmallInteger, nullable=False)
-    daily_hours = Column(Float, nullable=False)
+    daily_minutes = Column(Integer, nullable=False)
     entry_1 = Column(Time, nullable=True)
     exit_1 = Column(Time, nullable=True)
     entry_2 = Column(Time, nullable=True)
@@ -58,6 +57,7 @@ class User(Base):
     endereco = Column(String, nullable=True)
     data_nascimento = Column(Date, nullable=True)
     password_hash = Column(String)
+    password_change_required = Column(Boolean, nullable=False, default=False, server_default="false")
     auth_version = Column(Integer, nullable=False, default=0, server_default="0")
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(Enum(UserRole, native_enum=False, length=50), default=UserRole.EMPLOYEE, nullable=False)

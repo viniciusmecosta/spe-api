@@ -9,23 +9,18 @@ from fastapi import (
 
 from app.features.system.audit_service import AuditService
 from app.features.system.job_schemas import (
-    JobAdmissionResponse,
     JobDetailResponse,
     JobRetryResponse,
 )
 from app.features.system.job_service import JobService
 from app.features.system.routine_log_service import RoutineLogService
-from app.features.system.routine_orchestrator import RoutineOrchestrator
 from app.features.system.system_schemas import (
     AuditLogResponse,
     RoutineLogResponse,
 )
-from app.features.system.telegram_service import TelegramService
-from app.features.users.user_models import User
 from app.shared import deps
 from app.shared.openapi_responses import (
     AUTH_RESPONSES,
-    BAD_REQUEST_RESPONSE,
     FORBIDDEN_RESPONSE,
     UNAUTHORIZED_RESPONSE,
 )
@@ -60,23 +55,6 @@ async def read_audit_logs(
     )
 
 
-@backup_router.post(
-    "/trigger",
-    response_model=JobAdmissionResponse,
-    response_model_exclude_unset=True,
-    dependencies=[Depends(deps.get_current_maintainer)],
-)
-async def trigger_manual_backup(
-        audit_svc: Annotated[AuditService, Depends()],
-        routine_orch: Annotated[RoutineOrchestrator, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
-) -> dict[str, str]:
-    return await routine_orch.trigger_manual_backup_email(
-        current_user=current_user,
-        audit_svc=audit_svc,
-    )
-
-
 @routine_logs_router.get(
     "/",
     dependencies=[Depends(deps.get_current_maintainer)],
@@ -99,47 +77,6 @@ async def read_routine_logs(
         order_by=order_by,
         skip=skip,
         limit=limit,
-    )
-
-
-@telegram_actions_router.post(
-    "/manual-backup",
-    response_model=JobAdmissionResponse,
-    response_model_exclude_unset=True,
-    dependencies=[Depends(deps.get_current_maintainer)],
-)
-async def trigger_manual_backup_telegram(
-        audit_svc: Annotated[AuditService, Depends()],
-        routine_orch: Annotated[RoutineOrchestrator, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
-) -> dict[str, str]:
-    return await routine_orch.trigger_manual_backup_telegram(
-        current_user=current_user,
-        audit_svc=audit_svc,
-    )
-
-
-@telegram_actions_router.post(
-    "/manual-report",
-    response_model=JobAdmissionResponse,
-    response_model_exclude_unset=True,
-    dependencies=[Depends(deps.get_current_maintainer)],
-    responses={**BAD_REQUEST_RESPONSE},
-)
-async def trigger_manual_report_telegram(
-        start_date: Annotated[date, Query(description="Data inicial do período (YYYY-MM-DD)")],
-        end_date: Annotated[date, Query(description="Data final do período (YYYY-MM-DD)")],
-        audit_svc: Annotated[AuditService, Depends()],
-        telegram_svc: Annotated[TelegramService, Depends()],
-        routine_orch: Annotated[RoutineOrchestrator, Depends()],
-        current_user: Annotated[User, Depends(deps.get_current_maintainer)],
-) -> dict[str, str]:
-    return await routine_orch.trigger_manual_report_telegram(
-        start_date=start_date,
-        end_date=end_date,
-        current_user=current_user,
-        audit_svc=audit_svc,
-        telegram_svc=telegram_svc,
     )
 
 

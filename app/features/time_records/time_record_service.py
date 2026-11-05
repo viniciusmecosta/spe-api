@@ -43,10 +43,12 @@ from app.features.time_records.time_record_repository import (
     time_record_repository,
 )
 from app.features.time_records.time_record_schemas import (
+    ManualTimeRecordCreate,
     ReceiptResponse,
     ReceiptTimelineItem,
     TimeRecordCreateAdmin,
     TimeRecordDeleteAdmin,
+    TimeRecordFilters,
     TimeRecordResponse,
     TimeRecordUpdate,
 )
@@ -139,28 +141,49 @@ class TimeRecordService:
         return record
 
     @transactional(response_model=TimeRecordResponse)
+    async def register_manual_record(
+        self, *, user_id: int, request: Request, record_type: RecordType,
+        background_tasks: BackgroundTasks | None = None, db: Any | None = None,
+    ) -> TimeRecord:
+        session = db if db is not None else self.db
+        assert session is not None
+        record = await self._register_manual_punch(session, user_id, request, record_type)
+        if background_tasks is not None:
+            await self.trigger_auto_print(db=session, record=record, background_tasks=background_tasks)
+        return record
+
+    async def create_record(
+        self, *, record_in: ManualTimeRecordCreate | TimeRecordCreateAdmin,
+        current_user: User, request: Request, background_tasks: BackgroundTasks,
+    ) -> TimeRecordResponse:
+        if isinstance(record_in, TimeRecordCreateAdmin):
+            if current_user.role not in (UserRole.MANAGER, UserRole.MAINTAINER):
+                raise TimeRecordAccessDeniedError()
+            return await self.create_admin_record(
+                obj_in=record_in, manager_id=current_user.id, request=request,
+            )
+        return await self.register_manual_record(
+            user_id=current_user.id, request=request, record_type=record_in.record_type,
+            background_tasks=background_tasks,
+        )
+
     async def register_entry(self, db: Any | None = None, user_id: int = 0,
                              request: Request | None = None,
                              background_tasks: BackgroundTasks | None = None) -> TimeRecord:
-        session = db if db is not None else self.db
-        assert session is not None
         assert request is not None
-        record = await self._register_manual_punch(session, user_id, request, RecordType.ENTRY)
-        if background_tasks is not None:
-            await self.trigger_auto_print(record=record, background_tasks=background_tasks)
-        return record
+        return await self.register_manual_record(
+            db=db, user_id=user_id, request=request, record_type=RecordType.ENTRY,
+            background_tasks=background_tasks,
+        )
 
-    @transactional(response_model=TimeRecordResponse)
     async def register_exit(self, db: Any | None = None, user_id: int = 0,
                             request: Request | None = None,
                             background_tasks: BackgroundTasks | None = None) -> TimeRecord:
-        session = db if db is not None else self.db
-        assert session is not None
         assert request is not None
-        record = await self._register_manual_punch(session, user_id, request, RecordType.EXIT)
-        if background_tasks is not None:
-            await self.trigger_auto_print(record=record, background_tasks=background_tasks)
-        return record
+        return await self.register_manual_record(
+            db=db, user_id=user_id, request=request, record_type=RecordType.EXIT,
+            background_tasks=background_tasks,
+        )
 
     async def _process_toggle_invalidations(self, db: Any, record: TimeRecord, new_type: RecordType):
         previous_type = record.record_type
@@ -327,6 +350,18 @@ class TimeRecordService:
             device_name=device_name,
             biometric_id=biometric_id,
         )
+
+    async def list_records(
+        self, *, filters: TimeRecordFilters, current_user: User, db: Any | None = None,
+    ) -> list[TimeRecord]:
+        user_id = filters.user_id if filters.user_id is not None else current_user.id
+        if user_id != current_user.id and current_user.role not in (UserRole.MANAGER, UserRole.MAINTAINER):
+            raise TimeRecordAccessDeniedError()
+        session = db if db is not None else self.db
+        assert session is not None
+        if hasattr(session, "sync_session"):
+            return await self.repo.get_filtered(session, user_id=user_id, filters=filters)
+        return time_record_repository.get_filtered(session, user_id=user_id, filters=filters)
 
     async def get_my_records(self, db: Any | None = None, user_id: int = 0, skip: int = 0, limit: int = 100) -> list[
         TimeRecord]:

@@ -14,12 +14,16 @@ ALGORITHM = settings.ALGORITHM
 
 
 def create_access_token(subject: str | Any, name: str | None = None,
-                        expires_delta: timedelta | None = None, auth_version: int = 0) -> str:
+                        expires_delta: timedelta | None = None, auth_version: int = 0,
+                        purpose: str = "access", session_id: str | None = None) -> str:
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:
         expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": str(subject), "ver": auth_version}
+    to_encode["purpose"] = purpose
+    if session_id:
+        to_encode["sid"] = session_id
     if name:
         to_encode["name"] = name
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)

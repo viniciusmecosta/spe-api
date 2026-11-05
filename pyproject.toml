@@ -32,6 +32,7 @@ dependencies = [
     "tzlocal>=5.4.4",
     "watchfiles>=1.2.0",
     "cryptography>=45.0.0",
+    "limits>=5.8,<6",
 ]
 
 [dependency-groups]

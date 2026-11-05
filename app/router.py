@@ -18,6 +18,9 @@ from app.features.devices.device_router import (
 from app.features.holidays.holiday_router import router as holidays_router
 from app.features.payroll.payroll_router import router as payroll_router
 from app.features.printers.printer_router import router as printers_router
+from app.features.reports.document_verification_router import (
+    router as document_verification_router,
+)
 from app.features.reports.report_router import dashboard_router
 from app.features.reports.report_router import router as reports_router
 from app.features.system.monitoring import router as monitoring_router
@@ -52,6 +55,7 @@ api_router.include_router(companies_router, prefix="/companies", tags=["Companie
 api_router.include_router(daily_summaries_router, prefix="/daily-summaries", tags=["Daily Summaries"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(device_router, prefix="/devices", tags=["Devices"])
+api_router.include_router(document_verification_router, prefix="/documents", tags=["Documents"])
 api_router.include_router(device_credentials_router, prefix="/device-credentials", tags=["Device Credentials"])
 api_router.include_router(firmware_router, prefix="/firmware", tags=["Firmware OTA"])
 api_router.include_router(holidays_router, prefix="/holidays", tags=["Holidays"])

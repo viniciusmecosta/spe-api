@@ -2,23 +2,13 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import pytest
 from app.core.config import settings
 from app.database.base import Base
-import app.features.companies.company_models
-import app.features.printers.printer_models
-import app.features.users.user_models
-import app.features.devices.device_models
-import app.features.holidays.holiday_models
-import app.features.payroll.payroll_models
-import app.features.adjustments.adjustment_models
-import app.features.time_records.time_record_models
-import app.features.system.system_models
-import app.features.daily_summaries.daily_summary_models
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
@@ -52,6 +42,7 @@ def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_m
     monkeypatch.setattr(settings, "TELEGRAM_BOT_TOKEN", "")
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "")
     monkeypatch.setattr(settings, "BACKGROUND_JOBS_ENABLED", False)
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
 
     if "integration" not in request.node.nodeid:
         import app.database.session as db_session_mod
