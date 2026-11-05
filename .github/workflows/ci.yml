@@ -78,7 +78,7 @@ jobs:
 
       - name: Analyze with SonarQube
         if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
-        uses: SonarSource/sonarqube-scan-action@v7
+        uses: SonarSource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2
 
   postgresql:
     runs-on: ubuntu-latest

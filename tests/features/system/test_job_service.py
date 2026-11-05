@@ -1,4 +1,5 @@
 from datetime import datetime
+from importlib import import_module
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -6,6 +7,11 @@ from fastapi import HTTPException
 
 from app.features.system.job_service import JobService
 from app.features.system.system_models import BackgroundJob
+
+
+@pytest.fixture(scope="module", autouse=True)
+def load_models():
+    import_module("app.database.models")
 
 
 @pytest.mark.asyncio

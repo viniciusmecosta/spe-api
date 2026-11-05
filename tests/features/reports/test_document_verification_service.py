@@ -79,6 +79,7 @@ async def test_rejects_first_chunk_exceeding_limit(monkeypatch, content):
     monkeypatch.setattr(module, "MAX_JSON_DOCUMENT_BYTES", 4)
     monkeypatch.setattr(module, "MAX_DOCUMENT_BYTES", 4)
     upload = UploadFile(file=BytesIO(content), filename="document")
+    service = DocumentVerificationService()
     with pytest.raises(HTTPException) as error:
-        await DocumentVerificationService().verify(upload)
+        await service.verify(upload)
     assert error.value.status_code == 413
