@@ -132,6 +132,13 @@ async def test_execute_and_process_once(mocker):
     await job_queue.process_once()
 
     mocker.patch.object(job_queue.settings, "BACKGROUND_JOBS_ENABLED", True)
+    mocker.patch("app.features.system.job_queue.claim", new_callable=AsyncMock, side_effect=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await job_queue.process_once()
+
+    mocker.patch("app.features.system.job_queue.claim", new_callable=AsyncMock, side_effect=ConnectionResetError("WinError 64"))
+    await job_queue.process_once()
+
     mocker.patch("app.features.system.job_queue.claim", new_callable=AsyncMock, return_value=None)
     await job_queue.process_once()
 

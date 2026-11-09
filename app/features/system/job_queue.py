@@ -134,7 +134,13 @@ async def _process_claimed(job: dict):
 async def process_once():
     if not settings.BACKGROUND_JOBS_ENABLED:
         return
-    job = await claim()
+    try:
+        job = await claim()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning('Fila de tarefas indisponível temporariamente: %s', type(exc).__name__)
+        return
     if not job:
         return
     try:
