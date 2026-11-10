@@ -169,6 +169,9 @@ def test_build_payroll_message_with_attachment():
     assert msg["Subject"] == "sub"
     payloads = msg.get_payload()
     assert len(payloads) == 2
+    html_part = payloads[0].get_payload(decode=True).decode("utf-8")
+    assert "Folha de ponto" in html_part
+    assert "Competência 01/2023" in html_part
 
 
 def test_build_backup_message_dev(mock_template_service):

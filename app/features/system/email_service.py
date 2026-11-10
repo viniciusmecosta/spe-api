@@ -36,7 +36,7 @@ class EmailService:
                 subject = f"Folha de Ponto DEV - {month:02d}/{year}"
 
             tz = ZoneInfo(settings.TIMEZONE)
-            now_str = datetime.now(tz).strftime("%d/%m/%Y %H:%M:%S")
+            now_str = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
 
             body_html = template_service.get_payroll_email_html(
                 action=action,
@@ -177,7 +177,10 @@ class EmailService:
         msg['From'] = self._get_sender_address()
         msg['To'] = ", ".join(to_emails)
         msg['Subject'] = subject
-        msg.attach(MIMEText(body_html, 'html'))
+        wrapped = template_service.get_backup_email_html(
+            f"Competência {month:02d}/{year}", body_html, {"title": "Folha de ponto"}
+        )
+        msg.attach(MIMEText(wrapped if isinstance(wrapped, str) else body_html, 'html'))
 
         if attachment:
             filename = f"Folha_{month:02d}_{year}.xlsx"

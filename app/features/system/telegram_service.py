@@ -127,7 +127,7 @@ class TelegramService:
         return self._retry(lambda: self.deliver_document(file_path, caption, filename))
 
     async def generate_report_text(self, db: AsyncSession, start_date: date, end_date: date,
-                                   title_prefix: str = "Relatório Gerencial - Fechamento") -> str:
+                                   title_prefix: str = "Registros de Ponto") -> str:
         try:
             fmt_start = start_date.strftime(DATE_FORMAT)
             fmt_end = end_date.strftime(DATE_FORMAT)
@@ -137,7 +137,7 @@ class TelegramService:
             else:
                 title_date = f"{fmt_start} a {fmt_end}"
 
-            text = f"<b>{html.escape(title_prefix)} {title_date}</b>\n\n"
+            text = f"<b>{html.escape(title_prefix)} - {title_date}</b>\n\n"
 
             start_dt, _ = local_day_bounds(start_date)
             _, end_dt = local_day_bounds(end_date)
@@ -177,7 +177,7 @@ class TelegramService:
         for record, user in records:
             date_str = to_app_timezone(record.record_datetime).strftime(DATE_FORMAT)
             time_str = to_app_timezone(record.record_datetime).strftime("%H:%M")
-            marker = "E:" if record.record_type == RecordType.ENTRY else "S:"
+            marker = "🟢" if record.record_type == RecordType.ENTRY else "🟠"
 
             fmt_name = html.escape(report_names[user.id])
 

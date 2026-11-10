@@ -118,7 +118,7 @@ async def _prepare_payroll(job: dict) -> dict:
         report = (root / payload['report_path']).resolve()
         if not report.is_relative_to(root):
             raise ValueError('Caminho do relatório inválido')
-        attachments.append(await asyncio.to_thread(_retain_file, job['id'], str(report), report.name))
+        attachments.append(await asyncio.to_thread(_retain_file, job['id'], str(report), f"Folha_{payload['month']:02d}_{payload['year']}.xlsx"))
     parts = [{'kind': 'email', 'to': [recipient], 'attachments': attachments,
               'report_html': body, 'period': f"Competência {payload['month']:02d}/{payload['year']}",
               'message_id': f'<{uuid.uuid4().hex}@spe.local>', 'status': 'PENDING', 'attempts': 0}
@@ -132,8 +132,12 @@ async def _report_content(session, routine, start, end, context):
     from app.features.system.routine_orchestrator import routine_orchestrator
     content = {'html': '', 'text': '', 'attachments': [], 'period': '', 'recipients': []}
     if 'REPORT' in routine and 'TELEGRAM' in routine:
-        content['text'] = await telegram_service.generate_report_text(session, start, end)
-        content['text'] += f"\n\n{html.escape(context.get('company', context['project']))} · {html.escape(context['version'])} · {html.escape(context['environment'])}\nExecução #{context['execution_id']}"
+        report_body = await telegram_service.generate_report_text(session, start, end)
+        company, cnpj = company_identity(context)
+        header = f"Empresa: {html.escape(company)}" + (f"\nCNPJ: {html.escape(cnpj)}" if cnpj else "")
+        title, _, rest = report_body.partition("\n\n")
+        content['text'] = f"{title}\n{header}\n\n{rest}" if rest else f"{report_body}\n{header}"
+
     if 'EMAIL' in routine:
         content['html'], content['attachments'], content['period'] = await routine_orchestrator._generate_daily_backup_report(session, start, end)
         users = (await session.scalars(select(User).where(User.role == UserRole.MAINTAINER,
@@ -171,7 +175,24 @@ async def _retain_backup(job_id):
         await routine_orchestrator._cleanup_backup_files(backup, sql, archive)
 
 
-def _notification_parts(routine, content, attachments, context, start, end):
+def _format_generated_at(context: dict) -> str:
+    raw = str(context.get('generated_at') or '')
+    if not raw:
+        from app.features.system.notification_context import base_context
+        raw = base_context()['generated_at']
+    date_part, sep, time_part = raw.partition(' ')
+    return f"{date_part} às {time_part}" if sep else raw
+
+
+def _document_caption(routine: str, filename: str, identity: str, context: dict, start: date) -> str:
+    generated_at = _format_generated_at(context)
+    if filename.endswith('.log'):
+        return f"{identity}\nOperação: Log do sistema\nPeríodo: {start:%d/%m/%Y} a {generated_at}"
+    operation = "Backup manual" if "MANUAL" in routine else "Backup automático"
+    return f"{identity}\nOperação: {operation}\nGerado em: {generated_at}"
+
+
+def _notification_parts(routine, content, attachments, context, start):
     if 'EMAIL' in routine:
         return [{'kind': 'email', 'to': [recipient], 'attachments': attachments,
                  'report_html': content['html'], 'period': content['period'],
@@ -183,7 +204,7 @@ def _notification_parts(routine, content, attachments, context, start, end):
     company, cnpj = company_identity(context)
     identity = f"Empresa: {company}" + (f"\nCNPJ: {cnpj}" if cnpj else '')
     parts.extend({'kind': 'document', 'path': path, 'filename': filename,
-                  'caption': f"{identity}\nArquivo: {filename}\n{start:%d/%m/%Y} a {end:%d/%m/%Y} · Execução #{context['execution_id']}"}
+                  'caption': _document_caption(routine, filename, identity, context, start)}
                  for path, filename in attachments)
     return parts
 
@@ -208,7 +229,7 @@ async def prepare_notification(job: dict) -> dict:
     retained = await asyncio.to_thread(_retain_attachments, job['id'], attachments)
     if 'BACKUP' in routine:
         retained.insert(0, await _retain_backup(job['id']))
-    parts = _notification_parts(routine, content, retained, context, start, end)
+    parts = _notification_parts(routine, content, retained, context, start)
     for part in parts:
         part.update(status='PENDING', attempts=0)
     return {'parts': parts, 'context': context}

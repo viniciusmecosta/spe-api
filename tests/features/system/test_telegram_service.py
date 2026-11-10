@@ -141,11 +141,11 @@ async def test_generate_report_text_with_records(service, async_db_mock):
 
     result = await service.generate_report_text(async_db_mock, start_date, end_date)
 
-    assert "Relatório Gerencial" in result
+    assert "Registros de Ponto" in result
     assert "01/01/2023" in result
     assert "John Doe" in result
-    assert "E: 09:00" in result
-    assert "S: 18:00" in result
+    assert "🟢 09:00" in result
+    assert "🟠 18:00" in result
 
 
 async def test_generate_report_text_sqlalchemy_error(service, async_db_mock):
@@ -192,8 +192,8 @@ def test_group_daily_activity(service):
     assert "01/01/2023" in result
     assert "John Doe" in result["01/01/2023"]
     assert "Jane Smith" in result["01/01/2023"]
-    assert result["01/01/2023"]["John Doe"] == ["E: 09:00", "S: 18:00"]
-    assert result["01/01/2023"]["Jane Smith"] == ["E: 10:00"]
+    assert result["01/01/2023"]["John Doe"] == ["🟢 09:00", "🟠 18:00"]
+    assert result["01/01/2023"]["Jane Smith"] == ["🟢 10:00"]
 
 
 def test_telegram_429_invalid_retry_after_defaults_to_30(service, mocker):
@@ -203,3 +203,15 @@ def test_telegram_429_invalid_retry_after_defaults_to_30(service, mocker):
     result = service.deliver_text("msg")
     assert result.status == "RETRY"
     assert result.retry_after == 30
+
+
+def test_validate_manual_report_dates(service):
+    from app.features.system.system_exceptions import (
+        TelegramInvalidDateRangeError,
+        TelegramPeriodExceededError,
+    )
+    service.validate_manual_report_dates(date(2026, 1, 1), date(2026, 1, 5))
+    with pytest.raises(TelegramInvalidDateRangeError):
+        service.validate_manual_report_dates(date(2026, 1, 5), date(2026, 1, 1))
+    with pytest.raises(TelegramPeriodExceededError):
+        service.validate_manual_report_dates(date(2026, 1, 1), date(2026, 1, 10))
