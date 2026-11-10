@@ -118,7 +118,7 @@ async def _prepare_payroll(job: dict) -> dict:
         report = (root / payload['report_path']).resolve()
         if not report.is_relative_to(root):
             raise ValueError('Caminho do relatório inválido')
-        attachments.append(await asyncio.to_thread(_retain_file, job['id'], str(report), report.name))
+        attachments.append(await asyncio.to_thread(_retain_file, job['id'], str(report), f"Folha_{payload['month']:02d}_{payload['year']}.xlsx"))
     parts = [{'kind': 'email', 'to': [recipient], 'attachments': attachments,
               'report_html': body, 'period': f"Competência {payload['month']:02d}/{payload['year']}",
               'message_id': f'<{uuid.uuid4().hex}@spe.local>', 'status': 'PENDING', 'attempts': 0}

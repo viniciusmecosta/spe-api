@@ -88,11 +88,12 @@ class TemplateService:
         if incidents:
             items = ''.join('<li style="margin:5px 0;word-break:break-word;overflow-wrap:anywhere">' + escape(str(item)) + '</li>' for item in incidents)
             incident_html = '<section style="border-top:1px solid #e5e7eb;padding-top:14px;margin-top:8px"><h2 style="font-size:14px;font-weight:600;color:#111827;margin:0 0 6px">Ocorrências relevantes</h2><ul style="padding-left:18px;font-size:12px;color:#374151;line-height:1.45;margin:0">' + items + '</ul></section>'
+        preheader = f"{title} - {escape(period_text)}." if info.get('title') == 'Folha de ponto' else "Batidas de ponto e ocorrências do período."
         return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>@media(max-width:600px){{.email-pad{{padding:16px 12px!important}}.punch-table{{font-size:12px!important}}.punch-table th,.punch-table td{{padding:6px 4px!important}}}}</style></head>
 <body style="margin:0;background:#f3f4f6;color:#1f2937;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.5">
-<div style="display:none;max-height:0;overflow:hidden">Batidas de ponto e ocorrências do período.</div>
+<div style="display:none;max-height:0;overflow:hidden">{preheader}</div>
 <table role="presentation" style="width:100%;border-collapse:collapse"><tr><td align="center" style="padding:20px 8px">
 <table role="presentation" style="width:100%;max-width:680px;border-collapse:collapse;background:#ffffff;border:1px solid #d1d5db">
 <tr><td class="email-pad" style="padding:22px 26px 16px;border-bottom:1px solid #e5e7eb">{logo}
@@ -111,6 +112,9 @@ Gerado em {escape(generated_at)}<br>
                                date_str: str) -> str:
         color = "#e65100" if action.lower() == "reabertura" else "#1565c0"
         action_title = "Folha Reaberta" if action.lower() == "reabertura" else "Folha Fechada"
+        raw_date = str(date_str)
+        gen_date, sep, gen_time = raw_date.partition(' ')
+        formatted_date = f"{gen_date} às {gen_time}" if sep else raw_date
 
         message = ('O relatório consolidado da folha de ponto segue em anexo.' if action.lower() == 'fechamento'
                    else 'As marcações foram desbloqueadas e podem receber edições ou aprovações no sistema.')
@@ -118,7 +122,7 @@ Gerado em {escape(generated_at)}<br>
 <h2 style="color:{color};font-size:18px;margin:0 0 10px;font-weight:600">{action_title}</h2>
 <p style="margin:0 0 10px;font-size:13px;color:#1f2937">Competência <strong>{month:02d}/{year}</strong></p>
 <p style="margin:0 0 10px;font-size:13px;color:#374151;line-height:1.55"><strong>Ação:</strong> {escape(action)}<br><strong>Responsável:</strong> {escape(user_name)}<br>
-<strong>Data e hora:</strong> {escape(date_str)}</p><p style="margin:0;font-size:13px;color:#4b5563">{message}</p></section>"""
+<strong>Data e hora:</strong> {escape(formatted_date)}</p><p style="margin:0;font-size:13px;color:#4b5563">{message}</p></section>"""
 
 
 template_service = TemplateService()

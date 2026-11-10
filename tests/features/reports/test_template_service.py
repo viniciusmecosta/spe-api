@@ -13,8 +13,10 @@ def test_generate_punches_html_even_punches(db_session_mock):
     assert "#ffffff" in result
     assert "#2E7D32" in result
     assert "#EF6C00" in result
-    assert "08:00" in result
-    assert "12:00" in result
+    assert ">08:00<" in result
+    assert ">12:00<" in result
+    assert "E 08:00" not in result
+    assert "S 12:00" not in result
     assert "white-space: nowrap" in result
 
 
@@ -53,6 +55,8 @@ def test_get_daily_report_html_with_records():
     }
     anomalies = ["Anomaly 1"]
     result = TemplateService.get_daily_report_html("Segunda", "2023-10-10", True, user_activity, anomalies)
+    assert "Segunda - 2023-10-10" in result
+    assert "—" not in result
     assert "User 1" in result
     assert "Anomaly 1" in result
 
@@ -65,6 +69,20 @@ def test_get_backup_email_html():
     assert "#235a43" not in result
     assert "border-top:4px" not in result
 
+    payroll_wrapped = TemplateService.get_backup_email_html(
+        "Competência 10/2026",
+        "<section>Conteúdo</section>",
+        {
+            "title": "Folha de ponto",
+            "company": "Empresa Teste",
+            "cnpj": "11222333000181",
+            "generated_at": "10/11/2026 09:00",
+        },
+    )
+    assert "Folha de ponto - Competência 10/2026." in payroll_wrapped
+    assert "CNPJ: 11.222.333/0001-81" in payroll_wrapped
+    assert "Gerado em 10/11/2026 às 09:00" in payroll_wrapped
+
 
 def test_get_payroll_email_html_reabertura():
     result = TemplateService.get_payroll_email_html("Reabertura", "Admin", 10, 2023, "10/11/2023 10:00")
@@ -73,7 +91,7 @@ def test_get_payroll_email_html_reabertura():
     assert "Reabertura" in result
     assert "Admin" in result
     assert "10/2023" in result
-    assert "10/11/2023 10:00" in result
+    assert "10/11/2023 às 10:00" in result
     assert "desbloqueadas" in result
 
 
@@ -84,7 +102,7 @@ def test_get_payroll_email_html_fechamento():
     assert "Fechamento" in result
     assert "Admin2" in result
     assert "11/2023" in result
-    assert "10/12/2023 10:00" in result
+    assert "10/12/2023 às 10:00" in result
     assert "segue em anexo" in result
 
 

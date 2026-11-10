@@ -155,6 +155,8 @@ async def test_prepare_payroll_and_report_content(mocker, tmp_path):
     prepared = await notification_jobs.prepare_notification(job)
     assert len(prepared["parts"]) == 1
     assert prepared["parts"][0]["kind"] == "email"
+    assert prepared["parts"][0]["attachments"][0][1] == "Folha_05_2026.xlsx"
+    assert "01/01/2026 às 10:00" in prepared["parts"][0]["report_html"]
 
     job_bad_path = {
         "id": 11,
