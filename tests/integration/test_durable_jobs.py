@@ -226,7 +226,7 @@ async def test_notification_preparation_preserves_files_and_real_report_content(
                 assert 'password=hidden' not in body
         elif 'REPORT' in routine:
             assert 'Ana &lt;Nevoa&gt;' in text_send.call_args.args[0]
-            assert 'E: 07:00' in text_send.call_args.args[0]
+            assert '🟢 07:00' in text_send.call_args.args[0]
         if routine == 'TELEGRAM_HOURLY_BACKUP':
             document_send.assert_called_once()
         if routine in ('TELEGRAM_HOURLY_BACKUP', 'TELEGRAM_MANUAL_BACKUP'):

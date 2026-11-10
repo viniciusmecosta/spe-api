@@ -29,7 +29,7 @@ class JobService:
         from fastapi import HTTPException
         from sqlalchemy import select
 
-        from app.features.system.job_queue import utc_now
+        from app.features.system.job_queue import nudge_worker, utc_now
         from app.features.system.system_models import BackgroundJob
         job = await self.db.scalar(select(BackgroundJob).where(BackgroundJob.id == job_id).with_for_update())
         if job is None:
@@ -56,4 +56,5 @@ class JobService:
         job.attempts = 0
         job.finished_at = None
         job.next_attempt_at = utc_now()
+        nudge_worker()
         return {'job_id': str(job.id), 'status': job.status}

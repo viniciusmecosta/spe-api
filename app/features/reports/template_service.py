@@ -27,7 +27,7 @@ class TemplateService:
             punches_html = ""
             for p in punches:
                 color = "#2E7D32" if p['type'] == 'E' else "#EF6C00"
-                punches_html += f"""<span style="display: inline-block; white-space: nowrap; background-color: {color}; color: #ffffff; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; margin: 2px 4px 2px 0; line-height: 1.35;">{p['type']} {escape(p['time'])}</span>"""
+                punches_html += f"""<span style="display: inline-block; white-space: nowrap; background-color: {color}; color: #ffffff; padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; margin: 2px 4px 2px 0; line-height: 1.35;">{escape(p['time'])}</span>"""
 
             html += f"""
             <tr style="background-color: {bg_color}; border-bottom: 1px solid #e5e7eb;">
@@ -56,7 +56,7 @@ class TemplateService:
     @classmethod
     def get_daily_report_html(cls, day_name: str, formatted_date: str, records_present: bool,
                               user_activity: dict[str, list[dict[str, str]]], anomalies: list[str]) -> str:
-        html = f'<section style="margin-bottom:22px"><h2 style="font-size:15px;font-weight:600;color:#111827;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb">{escape(day_name)} — {escape(formatted_date)}</h2>'
+        html = f'<section style="margin-bottom:22px"><h2 style="font-size:15px;font-weight:600;color:#111827;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #e5e7eb">{escape(day_name)} - {escape(formatted_date)}</h2>'
 
         if not records_present:
             html += "<p style='font-size: 13px; color: #4b5563; padding: 12px 14px; background: #f8fafc; border: 1px solid #e5e7eb; margin: 0;'>Sem registros de ponto neste dia.</p>"
@@ -76,10 +76,13 @@ class TemplateService:
         metadata = ' · '.join(escape(str(info[key])) for key in ('project', 'version', 'environment'))
         _, cnpj = company_identity(info)
         phone = format_company_phone(str(info.get('phone') or ''))
-        address = ' · '.join(escape(str(value)) for value in (cnpj, info.get('address'), phone) if value)
+        cnpj_label = f"CNPJ: {cnpj}" if cnpj else ""
+        address = ' · '.join(escape(str(value)) for value in (cnpj_label, info.get('address'), phone) if value)
         title = escape(str(info.get('title', 'Registros de ponto')))
-        execution = escape(str(info.get('execution_id', '')))
-        attempt = escape(str(info.get('attempt', 1)))
+        raw_generated = str(info['generated_at'])
+        gen_date, sep, gen_time = raw_generated.partition(' ')
+        generated_at = f"{gen_date} às {gen_time}" if sep else raw_generated
+
         incidents = info.get('incidents', [])
         incident_html = ''
         if incidents:
@@ -98,9 +101,9 @@ class TemplateService:
 <p style="font-size:13px;color:#4b5563;margin:6px 0 0">{escape(period_text)}</p></td></tr>
 <tr><td class="email-pad" style="padding:18px 26px 22px">{report_html}{incident_html}</td></tr>
 <tr><td class="email-pad" style="padding:16px 26px;background:#f9fafb;border-top:1px solid #e5e7eb;color:#4b5563;font-size:11px;line-height:1.55;word-break:break-word">
-<strong style="color:#111827">{company}</strong><br>{address}<br>{metadata}<br>
-Gerado em {escape(str(info['generated_at']))} ({escape(str(info['timezone']))})<br>
-Tentativa {attempt}{' · Execução ' + execution if execution else ''}
+<strong style="color:#111827">{company}</strong><br>{address}<br>
+Gerado em {escape(generated_at)}<br>
+{metadata}
 </td></tr></table></td></tr></table></body></html>"""
 
     @staticmethod

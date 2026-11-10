@@ -26,21 +26,28 @@ def _ctx(session):
 def test_telegram_backup_identifies_company_and_cnpj(routine):
     context = {'company': 'Empresa Exemplo', 'cnpj': '11222333000181', 'project': 'SPE', 'execution_id': '9'}
     parts = notification_jobs._notification_parts(
-        routine, {'text': ''}, [('path', 'spe.zip.enc')], context, date(2026, 11, 1), date(2026, 11, 2)
+        routine, {'text': ''}, [('path', 'spe.zip.enc')], context, date(2026, 11, 1)
     )
     caption = parts[0]['caption']
     assert 'Empresa: Empresa Exemplo' in caption
     assert 'CNPJ: 11.222.333/0001-81' in caption
-    assert 'spe.zip.enc' in caption
+    assert 'Operação: Backup' in caption
+    assert 'Gerado em:' in caption
 
 
 def test_telegram_backup_uses_project_when_company_is_missing():
     context = {'company': '', 'project': 'SPE Exemplo', 'execution_id': '9'}
     parts = notification_jobs._notification_parts(
         'TELEGRAM_HOURLY_BACKUP', {'text': ''}, [('path', 'spe.zip.enc')], context,
-        date(2026, 11, 1), date(2026, 11, 2)
+        date(2026, 11, 1)
     )
     assert 'Empresa: SPE Exemplo' in parts[0]['caption']
+    log_parts = notification_jobs._notification_parts(
+        'TELEGRAM_DAILY_REPORT', {'text': ''}, [('path', 'log_01112026.log')], {'company': 'SPE'},
+        date(2026, 11, 1)
+    )
+    assert 'Operação: Log do sistema' in log_parts[0]['caption']
+    assert 'Período: 01/11/2026 a ' in log_parts[0]['caption']
 
 
 @pytest.mark.asyncio

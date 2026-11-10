@@ -5,8 +5,9 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import asyncpg
 from sqlalchemy import and_, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.config import settings
 from app.core.request_context import request_context, request_id
@@ -20,6 +21,17 @@ LEASE_SECONDS = 300
 
 def utc_now():
     return datetime.now(UTC)
+
+
+def nudge_worker(delay_seconds: float = 0.5) -> None:
+    if not settings.BACKGROUND_JOBS_ENABLED:
+        return
+    from app.core.lifespan import scheduler
+    if not scheduler.running:
+        return
+    scheduled_job = scheduler.get_job('durable_jobs')
+    if scheduled_job is not None:
+        scheduled_job.modify(next_run_time=utc_now() + timedelta(seconds=delay_seconds))
 
 
 async def enqueue(session, kind: str, payload: dict, key: str | None = None) -> BackgroundJob:
@@ -41,6 +53,7 @@ async def enqueue(session, kind: str, payload: dict, key: str | None = None) -> 
         job = await session.scalar(select(BackgroundJob).where(BackgroundJob.deduplication_key == key))
         if job is None:
             raise
+    nudge_worker()
     return job
 
 
@@ -138,7 +151,7 @@ async def process_once():
         job = await claim()
     except asyncio.CancelledError:
         raise
-    except Exception as exc:
+    except (SQLAlchemyError, OSError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
         logger.warning('Fila de tarefas indisponível temporariamente: %s', type(exc).__name__)
         return
     if not job:
@@ -146,6 +159,7 @@ async def process_once():
     try:
         with request_context(job["payload"].get("request_id")):
             await _process_claimed(job)
+        nudge_worker(0.1)
     except asyncio.CancelledError:
         
         raise
@@ -153,3 +167,4 @@ async def process_once():
         logger.exception('Falha no processamento da tarefa %s', job['id'])
         job['result']['summary'] = {'error': 'Falha interna no processamento', 'attempts': job['attempts']}
         await checkpoint(job, 'RETRY' if job['attempts'] < 4 else 'FAILED', delay=60)
+        nudge_worker(0.1)

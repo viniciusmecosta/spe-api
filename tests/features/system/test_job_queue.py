@@ -163,3 +163,23 @@ async def test_execute_and_process_once(mocker):
     mock_cp = mocker.patch("app.features.system.job_queue.checkpoint", new_callable=AsyncMock)
     await job_queue.process_once()
     mock_cp.assert_awaited_once_with(job_data, "RETRY", delay=60)
+
+
+def test_nudge_worker_branches(mocker):
+    mocker.patch.object(job_queue.settings, "BACKGROUND_JOBS_ENABLED", False)
+    job_queue.nudge_worker()
+
+    mocker.patch.object(job_queue.settings, "BACKGROUND_JOBS_ENABLED", True)
+    fake_scheduler = mocker.patch("app.core.lifespan.scheduler")
+    fake_scheduler.running = False
+    job_queue.nudge_worker()
+    fake_scheduler.get_job.assert_not_called()
+
+    fake_scheduler.running = True
+    fake_scheduler.get_job.return_value = None
+    job_queue.nudge_worker()
+
+    scheduled_job = MagicMock()
+    fake_scheduler.get_job.return_value = scheduled_job
+    job_queue.nudge_worker(0.1)
+    scheduled_job.modify.assert_called_once()
