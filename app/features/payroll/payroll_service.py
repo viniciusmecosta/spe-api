@@ -5,15 +5,14 @@ import os
 import pathlib
 import uuid
 from datetime import date, datetime
-from io import BytesIO
-from typing import Annotated, Any
-from zoneinfo import ZoneInfo
-
 from fastapi import BackgroundTasks, Depends
+from io import BytesIO
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
+from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.errors import constraint_name
@@ -395,7 +394,7 @@ class PayrollService:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
         filename = os.path.basename(file_path)
-        return str(file_path), filename
+        return file_path.as_posix(), filename
 
 
 payroll_service = PayrollService()

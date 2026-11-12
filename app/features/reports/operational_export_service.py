@@ -5,15 +5,14 @@ from calendar import monthrange
 from collections.abc import AsyncIterator, Iterator
 from contextlib import ExitStack, contextmanager
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Annotated, BinaryIO, Literal
-from zoneinfo import ZoneInfo
-
 from fastapi import Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
+from typing import Annotated, BinaryIO, Literal, cast
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.features.reports.report_exceptions import ReportUserNotFoundError
@@ -137,7 +136,16 @@ class OperationalExportService:
                 "excluida_em": record.deleted_at.isoformat() if record.deleted_at else None,
                 "registro_original_id": record.original_record_id,
                 "ajuste_origem_id": record.source_adjustment_id,
-                **({"usuario": {"id": record.user_id, "nome": names[record.user_id]}} if include_user else {}),
+                **(
+                    {
+                        "usuario": {
+                            "id": record.user_id,
+                            "nome": names[cast(int | None, record.user_id)],
+                        }
+                    }
+                    if include_user
+                    else {}
+                ),
             }
             for record in records
         ]
