@@ -82,6 +82,8 @@ uv run python -m app.initial_data
 uv run granian --interface asgi --host 0.0.0.0 --port 8000 app.main:app
 ```
 
+Antes de executar `app.initial_data`, preencha `FIRST_SUPERUSER` e `FIRST_SUPERUSER_PASSWORD` no `.env`. Depois que o mantenedor inicial for criado, os dois campos podem ficar vazios; a API não depende deles para iniciar. As demais configurações obrigatórias são validadas na inicialização, e valores ausentes ou fora do formato esperado geram erro.
+
 Pelo [`Makefile`](Makefile), os mesmos passos podem ser executados com `make setup`, `make upgrade`, `make seed` e `make run`.
 
 `make db-reset-001` apaga e recria o banco configurado em `SQLALCHEMY_DATABASE_URI` e aplica somente a migração `001`. Todos os dados desse banco são perdidos.

@@ -44,14 +44,14 @@ Os uploads passam por duas checagens:
 
 ### Aplicação e ambiente
 
-| Variável | Exemplo / Padrão | Descrição |
-| --- | --- | --- |
+| Variável | Exemplo / Padrão                      | Descrição |
+| --- |---------------------------------------| --- |
 | `PROJECT_NAME` | `"SPE - Sistema de Ponto Eletrônico"` | Nome da API exibido na rota raiz, relatórios e OpenAPI. |
-| `APP_VERSION` | `"1.4.2"` | Versão retornada em `/api/v1/health` e no OpenAPI. |
-| `ENVIRONMENT` | `"PROD"` | Ambiente de execução (`DEV`, `TEST` ou `PROD`). |
-| `TIMEZONE` | `"America/Fortaleza"` | Fuso horário usado na apuração de ponto, agendador cron e registros de batida. |
-| `UPLOAD_DIR` | `"uploads"` | Pasta local onde ficam salvos anexos, logos, relatórios fechados e firmwares. |
-| `BACKEND_CORS_ORIGINS` | `'["*"]'` | Lista JSON de origens liberadas no CORS. |
+| `APP_VERSION` | `"2.0.3"`                             | Versão retornada em `/api/v1/health` e no OpenAPI. |
+| `ENVIRONMENT` | `"PROD"`                              | Ambiente de execução (`DEV`, `TEST` ou `PROD`). |
+| `TIMEZONE` | `"America/Fortaleza"`                 | Fuso horário usado na apuração de ponto, agendador cron e registros de batida. |
+| `UPLOAD_DIR` | `"uploads"`                           | Pasta local onde ficam salvos anexos, logos, relatórios fechados e firmwares. |
+| `BACKEND_CORS_ORIGINS` | `'["*"]'`                             | Lista JSON de origens liberadas no CORS. |
 
 ### PostgreSQL e pool de conexões
 
@@ -83,6 +83,8 @@ Os uploads passam por duas checagens:
 | `PASSWORD_CHANGE_TOKEN_EXPIRE_MINUTES` | `10` | Tempo de vida em minutos do token temporário emitido quando `password_change_required=true`. |
 | `FIRST_SUPERUSER` | `""` | Username do mantenedor criado por `python -m app.initial_data`. |
 | `FIRST_SUPERUSER_PASSWORD` | `""` | Senha inicial desse mantenedor. |
+
+As variáveis obrigatórias são validadas durante a importação da aplicação. Valores ausentes ou inválidos impedem a inicialização. `SECRET_KEY` deve ter pelo menos 32 bytes; `TIMEZONE`, `SQLALCHEMY_DATABASE_URI`, `BACKEND_CORS_ORIGINS`, `ENVIRONMENT` e `APP_VERSION` também são validados. `FIRST_SUPERUSER` e `FIRST_SUPERUSER_PASSWORD` podem ficar vazios depois da criação inicial. Para executar `python -m app.initial_data`, informe ambos; a rotina de criação falha com uma mensagem clara se estiverem vazios ou incompletos.
 
 ### E-mail (SMTP) e Telegram
 

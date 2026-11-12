@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 def init_db(db: Session) -> None:
     username = settings.FIRST_SUPERUSER
+    password = settings.FIRST_SUPERUSER_PASSWORD
+    if not username.strip() and not password.strip():
+        raise ValueError("FIRST_SUPERUSER e FIRST_SUPERUSER_PASSWORD são necessários para criar o mantenedor inicial")
+    if not username.strip() or not password.strip():
+        raise ValueError("FIRST_SUPERUSER e FIRST_SUPERUSER_PASSWORD devem ser informados juntos")
 
     user = user_repository.get_by_username(db, username=username)
     if not user:
@@ -26,7 +31,7 @@ def init_db(db: Session) -> None:
         db_user = User(
             username=username,
             name="Mantenedor do Sistema",
-            password_hash=get_password_hash(settings.FIRST_SUPERUSER_PASSWORD),
+            password_hash=get_password_hash(password),
             role=UserRole.MAINTAINER,
             is_active=True
         )

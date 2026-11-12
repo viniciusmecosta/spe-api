@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy.exc import SQLAlchemyError
 
 import pytest
+from app.database import models as _models
 from app.initial_data import init_db, main
 
 
@@ -11,6 +12,13 @@ def test_init_db_creates_user(db_session):
     with patch("app.features.users.user_repository.user_repository.get_by_username", return_value=None):
         with patch("app.initial_data.get_password_hash", return_value="hashed"):
             init_db(db_session)
+
+
+def test_init_db_requires_credentials_for_initial_maintainer(monkeypatch, db_session):
+    monkeypatch.setattr("app.initial_data.settings.FIRST_SUPERUSER", "")
+    monkeypatch.setattr("app.initial_data.settings.FIRST_SUPERUSER_PASSWORD", "")
+    with pytest.raises(ValueError, match="FIRST_SUPERUSER"):
+        init_db(db_session)
 
 
 def test_init_db_user_exists(db_session):
