@@ -50,6 +50,7 @@ def test_models_indexes_and_alembic_env(monkeypatch):
         spec = importlib.util.spec_from_file_location("alembic_env_test", env_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        mock_config.set_main_option.assert_called_with("sqlalchemy.url", "postgresql+psycopg2://u:p%%40@localhost/db")
         mock_file_config.assert_called_once_with("alembic.ini")
         assert module.compare_type(None, None, None, Text(), String()) is False
         assert module.compare_type(None, None, None, Text(), Enum("A", "B", native_enum=False)) is False
@@ -66,6 +67,17 @@ def test_models_indexes_and_alembic_env(monkeypatch):
         spec2 = importlib.util.spec_from_file_location("alembic_env_test_online", env_path)
         module2 = importlib.util.module_from_spec(spec2)
         spec2.loader.exec_module(module2)
+        mock_config.set_main_option.assert_called_with("sqlalchemy.url", "postgresql+psycopg2://u:p@localhost/db")
+
+    monkeypatch.setattr(settings, "SQLALCHEMY_DATABASE_URI", "postgresql+psycopg2://u:p@localhost/db")
+    with (
+        patch("alembic.context", mock_context),
+        patch("sqlalchemy.engine_from_config", return_value=mock_engine),
+    ):
+        spec3 = importlib.util.spec_from_file_location("alembic_env_test_explicit_driver", env_path)
+        module3 = importlib.util.module_from_spec(spec3)
+        spec3.loader.exec_module(module3)
+        mock_config.set_main_option.assert_called_with("sqlalchemy.url", "postgresql+psycopg2://u:p@localhost/db")
 
 
 def test_alembic_version_migrations(mocker):

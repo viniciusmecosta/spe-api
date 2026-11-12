@@ -52,6 +52,7 @@ dev = [
 plugins = [
     "pydantic.mypy",
 ]
+
 ignore_missing_imports = true
 disable_error_code = [
     "arg-type",
@@ -70,4 +71,8 @@ disable_error_code = [
     "list-item",
     "misc"
 ]
+
+[tool.coverage.run]
+source = ["app", "alembic"]
+relative_files = true
 

@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, is_dev, is_prod, settings
-from app.core.config_validation import assemble_cors_origins, validate_proxy_networks
+from app.core.config_validation import assemble_cors_origins, resolve_upload_dir, validate_proxy_networks
 
 
 def test_config_settings_initialization():
@@ -52,6 +52,10 @@ def test_validate_proxy_networks():
     assert validate_proxy_networks(["10.0.0.0/8", "192.168.1.1/32"]) == ["10.0.0.0/8", "192.168.1.1/32"]
 
 
+def test_absolute_upload_directory_is_preserved(tmp_path):
+    assert resolve_upload_dir(str(tmp_path)) == str(tmp_path)
+
+
 def valid_settings_data():
     return {
         "PROJECT_NAME": "SPE",
@@ -91,6 +95,9 @@ def test_missing_required_settings_fail_initialization():
         ("SECRET_KEY", "short"),
         ("ALGORITHM", "none"),
         ("BACKEND_CORS_ORIGINS", ["file:///tmp"]),
+        ("PROJECT_NAME", "   "),
+        ("SQLALCHEMY_DATABASE_URI", "postgresql://user:pass@localhost"),
+        ("BACKEND_CORS_ORIGINS", ["http://localhost:invalid"]),
     ],
 )
 def test_malformed_settings_fail_initialization(field, value):
@@ -98,6 +105,11 @@ def test_malformed_settings_fail_initialization(field, value):
     values[field] = value
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **values)
+
+
+def test_cors_origins_rejects_non_list():
+    with pytest.raises(TypeError, match="lista de origens"):
+        assemble_cors_origins(42)
 
 
 def test_initial_superuser_settings_can_be_empty():

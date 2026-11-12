@@ -21,6 +21,14 @@ def test_init_db_requires_credentials_for_initial_maintainer(monkeypatch, db_ses
         init_db(db_session)
 
 
+@pytest.mark.parametrize("username,password", [("admin", ""), ("", "password")])
+def test_init_db_requires_both_credentials(monkeypatch, db_session, username, password):
+    monkeypatch.setattr("app.initial_data.settings.FIRST_SUPERUSER", username)
+    monkeypatch.setattr("app.initial_data.settings.FIRST_SUPERUSER_PASSWORD", password)
+    with pytest.raises(ValueError, match="devem ser informados juntos"):
+        init_db(db_session)
+
+
 def test_init_db_user_exists(db_session):
     fake_user = MagicMock()
     with patch("app.features.users.user_repository.user_repository.get_by_username", return_value=fake_user):

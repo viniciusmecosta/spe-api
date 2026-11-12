@@ -45,7 +45,9 @@ jobs:
     needs: type-check
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+      SONAR_HOST_URL: https://sonarcloud.io
+      SECRET_KEY: ci-test-key-not-for-production-0123456789
+      ENVIRONMENT: TEST
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -74,14 +76,31 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          uv run --no-sync --no-build python -m pytest tests/ -q --tb=short --cov=app --cov=alembic --cov-branch --cov-report=xml
+          uv run --no-sync --no-build python -m pytest tests/ -q --tb=short --cov --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Verify coverage report
+        run: |
+          uv run --no-sync --no-build python -c "import xml.etree.ElementTree as ET; root = ET.parse('coverage.xml').getroot(); assert int(root.attrib['lines-valid']) > 0 and int(root.attrib['lines-covered']) > 0, 'Coverage report has no covered lines'"
+
+      - name: Check SonarQube configuration
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::Configure SONAR_TOKEN as a repository secret."
+            exit 1
+          fi
 
       - name: Analyze with SonarQube
-        if: env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        if: env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@c7ee0f9df90b7aa20e8dcf9695dcfe2e7da5b4f2
+        with:
+          args: -Dsonar.qualitygate.wait=true
 
   postgresql:
     runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-test-key-not-for-production-0123456789
+      ENVIRONMENT: TEST
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -108,6 +127,4 @@ jobs:
           done
           exit 1
       - name: Test native PostgreSQL migrations and transactional apuration
-        env:
-          ENVIRONMENT: dev
         run: uv run --no-sync --no-build python -m pytest tests/integration/ -q --tb=short --no-cov

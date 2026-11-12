@@ -105,3 +105,8 @@ uv run mypy app/
 ```
 
 Para rodar os testes de integração e testar todas as migrações Alembic no PostgreSQL, defina `SPE_TEST_DATABASE_URL` apontando para um banco de testes.
+
+A pipeline gera `coverage.xml` com cobertura de linhas e ramificações para o SonarQube Cloud. Configure o segredo
+`SONAR_TOKEN` no repositório. No projeto do SonarQube
+Cloud, desative a análise automática em **Administration > Analysis Method** para usar a análise da pipeline. A chave do
+projeto está em `sonar-project.properties`; a pipeline verifica o quality gate.

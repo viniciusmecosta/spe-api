@@ -1,9 +1,9 @@
 import asyncio
-
 import httpx
 import pytest
 from fastapi import FastAPI
 from starlette.requests import Request
+from types import SimpleNamespace
 
 from app.core.config import settings
 from app.middleware.rate_limit import RateLimitMiddleware, is_direct_loopback
@@ -47,6 +47,7 @@ async def test_burst_limit_separates_origins_and_recovers(application):
 async def test_hundred_concurrent_requests_respect_burst_limit(application, monkeypatch):
     monkeypatch.setattr(settings, 'RATE_LIMIT_REQUESTS_PER_SECOND', 30)
     monkeypatch.setattr(settings, 'RATE_LIMIT_REQUESTS_PER_MINUTE', 1000)
+    monkeypatch.setattr('limits.aio.storage.memory.time', SimpleNamespace(time=lambda: 1000.0))
     async with client(application) as session:
         results = await asyncio.gather(*(session.get('/api/v1/items') for _ in range(100)))
     assert sum(result.status_code == 200 for result in results) == 30

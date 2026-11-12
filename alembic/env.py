@@ -1,5 +1,4 @@
 from logging.config import fileConfig
-
 from sqlalchemy import Enum, String, Text
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -15,7 +14,9 @@ if config.config_file_name is not None:
 
 db_url = settings.SQLALCHEMY_DATABASE_URI
 if db_url.startswith("postgresql+asyncpg://"):
-    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
