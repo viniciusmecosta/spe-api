@@ -201,6 +201,22 @@ def test_session_module_sync_uri_prefix(monkeypatch):
     importlib.reload(app.database.session)
 
 
+def test_session_module_preserves_explicit_sync_driver(monkeypatch):
+    import importlib
+    import app.core.config
+    import app.database.session
+
+    uri = "postgresql+psycopg2://user:pass@localhost:5432/spe_db"
+    with monkeypatch.context() as patcher:
+        patcher.setattr(app.core.config.settings, "SQLALCHEMY_DATABASE_URI", uri)
+        patcher.setattr("sqlalchemy.create_engine", MagicMock())
+        patcher.setattr("sqlalchemy.ext.asyncio.create_async_engine", MagicMock())
+        patcher.setattr("sqlalchemy.event.listen", MagicMock())
+        importlib.reload(app.database.session)
+        assert app.database.session.db_uri_sync == uri
+    importlib.reload(app.database.session)
+
+
 def test_session_module_listen_exception(monkeypatch):
     import importlib
     import sqlalchemy.event

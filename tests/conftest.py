@@ -1,17 +1,17 @@
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
-from zoneinfo import ZoneInfo
-
 import pytest
+from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
+from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.database.base import Base
 from app.features.companies.company_models import Company
 from app.features.users.user_models import User
 from app.shared.enums import UserRole
+from app.shared.trusted_time_service import trusted_time_service
 
 if not settings.SECRET_KEY:
     settings.SECRET_KEY = "test-secret-key-for-jwt-signing-spe-app"
@@ -43,6 +43,8 @@ def prevent_real_email_sending(monkeypatch, request, async_db_mock, db_session_m
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "")
     monkeypatch.setattr(settings, "BACKGROUND_JOBS_ENABLED", False)
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    if request.node.path.name != "test_trusted_time_service.py":
+        monkeypatch.setattr(trusted_time_service, "sync_ntp_with_backoff_async", AsyncMock(return_value=True))
 
     if "integration" not in request.node.nodeid:
         import app.database.session as db_session_mod

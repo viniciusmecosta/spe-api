@@ -395,7 +395,7 @@ class PayrollService:
             raise PayrollClosureNotFoundError(period=f"ID {closure_id}")
 
         filename = os.path.basename(file_path)
-        return str(file_path), filename
+        return file_path.as_posix(), filename
 
 
 payroll_service = PayrollService()

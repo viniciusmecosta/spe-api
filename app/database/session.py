@@ -16,6 +16,7 @@ from app.core.config import settings
 
 POSTGRESQL_ASYNCPG_PREFIX = "postgresql+asyncpg://"
 POSTGRESQL_SYNC_PREFIX = "postgresql://"
+POSTGRESQL_SYNC_DRIVER_PREFIX = "postgresql+psycopg2://"
 
 pool_kwargs = {
     "pool_pre_ping": True,
@@ -47,7 +48,9 @@ def on_sync_connect(dbapi_connection, connection_record):
 
 db_uri_sync = settings.SQLALCHEMY_DATABASE_URI
 if db_uri_sync.startswith(POSTGRESQL_ASYNCPG_PREFIX):
-    db_uri_sync = db_uri_sync.replace(POSTGRESQL_ASYNCPG_PREFIX, POSTGRESQL_SYNC_PREFIX, 1)
+    db_uri_sync = db_uri_sync.replace(POSTGRESQL_ASYNCPG_PREFIX, POSTGRESQL_SYNC_DRIVER_PREFIX, 1)
+elif db_uri_sync.startswith(POSTGRESQL_SYNC_PREFIX):
+    db_uri_sync = db_uri_sync.replace(POSTGRESQL_SYNC_PREFIX, POSTGRESQL_SYNC_DRIVER_PREFIX, 1)
 
 sync_connect_args = (
     {"connect_timeout": settings.DB_CONNECT_TIMEOUT_SECONDS}

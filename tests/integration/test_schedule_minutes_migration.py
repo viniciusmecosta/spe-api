@@ -7,7 +7,7 @@ from sqlalchemy.engine import make_url
 
 
 def test_schedule_minutes_migration_converts_and_restores_values(pg_url):
-    engine = create_engine(make_url(pg_url).set(drivername="postgresql"))
+    engine = create_engine(make_url(pg_url).set(drivername="postgresql+psycopg2"))
     migration = ScriptDirectory.from_config(Config("alembic.ini")).get_revision("011").module
     with engine.begin() as connection:
         connection.execute(text("CREATE SCHEMA migration_minutes_test"))
