@@ -115,7 +115,6 @@ class TrustedTimeService:
         except Exception:
             logger.exception("Failed to sync NTP")
             with self._ntp_lock:
-                self._ntp_offset = None
                 self._last_ntp_sync = now_utc_locked
 
     def _request_ntp_from_servers(self, client: ntplib.NTPClient) -> ntplib.NTPStats | None:

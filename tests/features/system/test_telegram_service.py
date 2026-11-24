@@ -154,9 +154,8 @@ async def test_generate_report_text_sqlalchemy_error(service, async_db_mock):
     start_date = date(2023, 1, 1)
     end_date = date(2023, 1, 1)
 
-    result = await service.generate_report_text(async_db_mock, start_date, end_date)
-
-    assert result == "Erro interno ao gerar relatório gerencial."
+    with pytest.raises(SQLAlchemyError):
+        await service.generate_report_text(async_db_mock, start_date, end_date)
 
 
 async def test_generate_report_text_exceed_max_length(service, async_db_mock):
