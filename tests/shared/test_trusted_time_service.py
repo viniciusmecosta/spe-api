@@ -216,3 +216,15 @@ def test_request_ntp_from_servers_all_fail_and_execute_none(mocker):
     trusted_time_service._execute_ntp_request(datetime.now(UTC))
     assert trusted_time_service._ntp_offset is None
 
+
+def test_execute_ntp_request_preserves_existing_offset_on_failure(mocker, monkeypatch):
+    trusted_time_service.reset_ntp_cache()
+    monkeypatch.setattr(trusted_time_service, "_ntp_offset", 5.0)
+    mocker.patch.object(trusted_time_service, "_request_ntp_from_servers", return_value=None)
+
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    trusted_time_service._execute_ntp_request(now_utc)
+
+    assert trusted_time_service._ntp_offset == 5.0
+    assert trusted_time_service._last_ntp_sync == now_utc
+

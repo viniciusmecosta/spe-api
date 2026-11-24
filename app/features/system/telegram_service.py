@@ -9,7 +9,6 @@ from typing import Annotated
 import requests
 from fastapi import Depends
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -128,48 +127,44 @@ class TelegramService:
 
     async def generate_report_text(self, db: AsyncSession, start_date: date, end_date: date,
                                    title_prefix: str = "Registros de Ponto") -> str:
-        try:
-            fmt_start = start_date.strftime(DATE_FORMAT)
-            fmt_end = end_date.strftime(DATE_FORMAT)
+        fmt_start = start_date.strftime(DATE_FORMAT)
+        fmt_end = end_date.strftime(DATE_FORMAT)
 
-            if start_date == end_date:
-                title_date = fmt_start
-            else:
-                title_date = f"{fmt_start} a {fmt_end}"
+        if start_date == end_date:
+            title_date = fmt_start
+        else:
+            title_date = f"{fmt_start} a {fmt_end}"
 
-            text = f"<b>{html.escape(title_prefix)} - {title_date}</b>\n\n"
+        text = f"<b>{html.escape(title_prefix)} - {title_date}</b>\n\n"
 
-            start_dt, _ = local_day_bounds(start_date)
-            _, end_dt = local_day_bounds(end_date)
+        start_dt, _ = local_day_bounds(start_date)
+        _, end_dt = local_day_bounds(end_date)
 
-            stmt = (
-                select(TimeRecord, User)
-                .join(User, TimeRecord.user_id == User.id)
-                .filter(TimeRecord.record_datetime >= start_dt)
-                .filter(TimeRecord.record_datetime < end_dt)
-                .filter(TimeRecord.is_ignored.is_(False), TimeRecord.deleted_at.is_(None))
-                .order_by(TimeRecord.record_datetime, User.name)
-            )
-            result = await db.execute(stmt)
-            records = result.all()
+        stmt = (
+            select(TimeRecord, User)
+            .join(User, TimeRecord.user_id == User.id)
+            .filter(TimeRecord.record_datetime >= start_dt)
+            .filter(TimeRecord.record_datetime < end_dt)
+            .filter(TimeRecord.is_ignored.is_(False), TimeRecord.deleted_at.is_(None))
+            .order_by(TimeRecord.record_datetime, User.name)
+        )
+        result = await db.execute(stmt)
+        records = result.all()
 
-            if not records:
-                text += "Sem registros de ponto no período."
-                return text
+        if not records:
+            text += "Sem registros de ponto no período."
+            return text
 
-            daily_activity = self._group_daily_activity(records)
+        daily_activity = self._group_daily_activity(records)
 
-            for d_str, users_data in daily_activity.items():
-                text += f"<b>{d_str}</b>\n"
-                for name, punches in users_data.items():
-                    punches_str = " | ".join(punches)
-                    text += f"{name} - {punches_str}\n"
-                text += "\n"
+        for d_str, users_data in daily_activity.items():
+            text += f"<b>{d_str}</b>\n"
+            for name, punches in users_data.items():
+                punches_str = " | ".join(punches)
+                text += f"{name} - {punches_str}\n"
+            text += "\n"
 
-            return text.strip()
-        except (SQLAlchemyError, ValueError):
-            logger.exception("Erro ao gerar relatório do Telegram")
-            return "Erro interno ao gerar relatório gerencial."
+        return text.strip()
 
     def _group_daily_activity(self, records) -> dict[str, dict[str, list[str]]]:
         daily_activity: dict[str, dict[str, list[str]]] = {}
